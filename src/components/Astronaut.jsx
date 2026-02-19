@@ -7,7 +7,7 @@ Title: Tenhun Falling spaceman (FanArt)
 */
 
 import React, { useEffect, useRef } from "react";
-import { useGLTF, useAnimations, useMotion } from "@react-three/drei";
+import { useGLTF, useAnimations } from "@react-three/drei";
 import { useMotionValue, useSpring } from "motion/react";
 import { useFrame } from "@react-three/fiber";
 
@@ -27,10 +27,13 @@ export function Astronaut(props) {
   const ySpring = useSpring(yPosition, { damping: 30 });
   useEffect(() => {
     yPosition.set(-1);
-  }, [ySpring]);
-    useFrame(() => {
-        group.current.position.y = ySpring.get();
-    });
+  }, [yPosition]);
+
+  useFrame(() => {
+    if (group.current) {
+      group.current.position.y = ySpring.get();
+    }
+  });
   return (
     <group
       ref={group}
