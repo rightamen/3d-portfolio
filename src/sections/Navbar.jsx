@@ -1,46 +1,37 @@
 import { useState } from 'react'
-import { motion } from 'framer-motion'
+import { motion as Motion } from 'motion/react'
 
-function Navigation() {
+function Navigation({ onNavigate }) {
+  const navItems = [
+    { label: 'Home', href: '#home' },
+    { label: 'About', href: '#about' },
+    { label: 'Work', href: '#work' },
+    { label: 'Contact', href: '#contact' },
+  ]
+
   return (
     <ul className="nav-ul">
-      <li className="nav-li">
-        <a className="nav-link">Home</a>
-      </li>
-      <li className="nav-li">
-        <a className="nav-link">About</a>
-      </li>
-      <li className="nav-li">
-        <a className="nav-link">Work</a>
-      </li>
-      <li className="nav-li">
-        <a className="nav-link">Contact</a>
-      </li>
+      {navItems.map((item) => (
+        <li key={item.href} className="nav-li">
+          <a href={item.href} className="nav-link" onClick={onNavigate}>
+            {item.label}
+          </a>
+        </li>
+      ))}
     </ul>
   )
 }
 
 const Navbar = () => {
-  console.log(motion)
-
   const [isOpen, setIsOpen] = useState(false)
 
   return (
-    <div
-      className="
-        fixed
-        inset-x-0
-        z-20
-        w-full
-        backdrop-blur-lg
-        bg-primary/40
-      "
-    >
+    <div className="fixed inset-x-0 z-20 w-full bg-primary/40 backdrop-blur-lg">
       <div className="mx-auto c-space max-w-7xl">
         <div className="flex items-center justify-between py-2 sm:py-0">
           <a
-            href="/"
-            className="text-xl font-bold transition-colors text-neutral-400 hover:text-white"
+            href="#home"
+            className="text-xl font-bold text-neutral-400 transition-colors hover:text-white"
           >
             Right
           </a>
@@ -65,7 +56,7 @@ const Navbar = () => {
       </div>
 
       {isOpen && (
-        <motion.div
+        <Motion.div
           className="block overflow-hidden text-center sm:hidden"
           initial={{ opacity: 0, x: -10 }}
           animate={{ opacity: 1, x: 0 }}
@@ -73,9 +64,9 @@ const Navbar = () => {
           style={{ maxHeight: '100vh' }}
         >
           <nav className="pb-5">
-            <Navigation />
+            <Navigation onNavigate={() => setIsOpen(false)} />
           </nav>
-        </motion.div>
+        </Motion.div>
       )}
     </div>
   )

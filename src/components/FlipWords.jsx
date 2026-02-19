@@ -1,6 +1,6 @@
 "use client";
 import React, { useCallback, useEffect, useState } from "react";
-import { AnimatePresence, motion } from "motion/react";
+import { AnimatePresence, motion as Motion } from "motion/react";
 import { twMerge } from "tailwind-merge";
 
 export const FlipWords = ({
@@ -30,7 +30,7 @@ export const FlipWords = ({
       onExitComplete={() => {
         setIsAnimating(false);
       }}>
-      <motion.div
+      <Motion.div
         initial={{
           opacity: 0,
           y: 10,
@@ -59,7 +59,7 @@ export const FlipWords = ({
         key={currentWord}>
         {/* edit suggested by Sajal: https://x.com/DewanganSajal */}
         {currentWord.split(" ").map((word, wordIndex) => (
-          <motion.span
+          <Motion.span
             key={word + wordIndex}
             initial={{ opacity: 0, y: 10, filter: "blur(8px)" }}
             animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
@@ -69,7 +69,7 @@ export const FlipWords = ({
             }}
             className="inline-block whitespace-nowrap">
             {word.split("").map((letter, letterIndex) => (
-              <motion.span
+              <Motion.span
                 key={word + letterIndex}
                 initial={{ opacity: 0, y: 10, filter: "blur(8px)" }}
                 animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
@@ -79,12 +79,12 @@ export const FlipWords = ({
                 }}
                 className="inline-block">
                 {letter}
-              </motion.span>
+              </Motion.span>
             ))}
             <span className="inline-block">&nbsp;</span>
-          </motion.span>
+          </Motion.span>
         ))}
-      </motion.div>
+      </Motion.div>
     </AnimatePresence>
   );
 };

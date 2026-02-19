@@ -1,4 +1,4 @@
-import { motion, useScroll, useTransform, useSpring } from "motion/react"
+import { motion as Motion, useScroll, useTransform, useSpring } from "motion/react"
 
 const ParallaxBackground = () => {
   const { scrollYProgress } = useScroll()
@@ -46,7 +46,7 @@ const ParallaxBackground = () => {
       />
 
       {/* ================= Far Mountain ================= */}
-      <motion.div
+      <Motion.div
         className="absolute inset-0 -z-40"
         style={{
           backgroundImage: "url(/assets/mountain-3.png)",
@@ -62,7 +62,7 @@ const ParallaxBackground = () => {
       />
 
       {/* ================= Planets ================= */}
-      <motion.div
+      <Motion.div
         className="absolute inset-0 -z-30"
         style={{
           backgroundImage: "url(/assets/planets.png)",
@@ -77,7 +77,7 @@ const ParallaxBackground = () => {
       />
 
       {/* ================= Mid Mountain ================= */}
-      <motion.div
+      <Motion.div
         className="absolute inset-0 -z-20"
         style={{
           backgroundImage: "url(/assets/mountain-2.png)",
@@ -90,7 +90,7 @@ const ParallaxBackground = () => {
       />
 
       {/* ================= Near Mountain ================= */}
-      <motion.div
+      <Motion.div
         className="absolute inset-0 -z-10"
         style={{
           backgroundImage: "url(/assets/mountain-1.png)",
