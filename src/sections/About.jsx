@@ -1,6 +1,8 @@
+import { useRef } from "react";
 import Card from "../components/Card";
 
 const About = () => {
+  const grid2Container = useRef(null);
   return (
     <section className="c-space section-spacing">
       <h2 className="text-heading">About Me</h2>
@@ -84,11 +86,67 @@ const About = () => {
 
         {/* Grid 2 */}
         <div className="grid-default-color grid-2">
-          <div className="flex items-center justify-center w-full">
+          <div
+            ref={grid2Container}
+            className="relative flex items-center justify-center w-full h-full"
+          >
             <p className="flex items-end text-5xl text-gray-500">
               MODEL IS CRAFT
             </p>
-            <Card />
+            <Card
+              rotate={30}
+              style={{ top: "30%", left: "20%" }}
+              text="Form"
+              containerRef={grid2Container}
+            />
+            <Card
+              rotate={-30}
+              style={{ top: "60%", left: "45%" }}
+              text="Structure"
+              containerRef={grid2Container}
+            />
+            <Card
+              rotate={90}
+              style={{ bottom: "30%", left: "70%" }}
+              text="Light"
+              containerRef={grid2Container}
+            />
+            <Card
+              rotate={-45}
+              style={{ top: "55%", left: "0%" }}
+              text="Materiality"
+              containerRef={grid2Container}
+            />
+            <Card
+              rotate={20}
+              style={{ top: "10%", left: "30%" }}
+              text="Sculptural"
+              containerRef={grid2Container}
+            />
+            <Card
+              rotate={30}
+              style={{ top: "70%", left: "70%" }}
+              image="assets/logos/autodesk-max.svg"
+              containerRef={grid2Container}
+            />
+            <Card
+              rotate={-45}
+              style={{ top: "70%", left: "25%" }}
+              image="assets/logos/autodeskmaya.svg"
+              containerRef={grid2Container}
+            />
+            <Card
+              rotate={-45}
+              style={{ top: "5%", left: "10%" }}
+              image="assets/logos/blender.svg"
+              containerRef={grid2Container}
+            />
+            <Card
+              rotate={20}
+              style={{ top: "25%", left: "70%" }}
+              image="assets/logos/zbrush.svg"
+              containerRef={grid2Container}
+            />
           </div>
         </div>
 
