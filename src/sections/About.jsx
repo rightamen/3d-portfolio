@@ -4,7 +4,7 @@ import Card from "../components/Card";
 const About = () => {
   const grid2Container = useRef(null);
   return (
-    <section className="c-space section-spacing">
+    <section id="about" className="c-space section-space">
       <h2 className="text-heading">About Me</h2>
 
       <div

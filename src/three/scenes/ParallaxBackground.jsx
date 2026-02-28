@@ -1,28 +1,12 @@
-import { motion as Motion, useScroll, useTransform, useSpring } from "motion/react"
+import { motion as Motion } from "motion/react";
+import useParallaxEffect from "../hooks/useParallaxEffect";
 
 const ParallaxBackground = () => {
-  const { scrollYProgress } = useScroll()
-
-  // ⭐ 视差 easing（弹簧平滑）
-  const smooth = useSpring(scrollYProgress, {
-    stiffness: 80,
-    damping: 20,
-    mass: 0.4,
-  })
-
-  // ⭐ 深度层速度分离
-  const mountain3Y = useTransform(smooth, [0, 1], ["0%", "80%"])
-  const mountain2Y = useTransform(smooth, [0, 1], ["0%", "40%"])
-  const mountain1Y = useTransform(smooth, [0, 1], ["0%", "10%"])
-  const planetsX = useTransform(smooth, [0, 1], ["0%", "-30%"])
-
-  // ⭐ 深度模糊（远景更模糊）
-  const blurFar = useTransform(smooth, [0, 1], ["2px", "6px"])
-  const blurMid = useTransform(smooth, [0, 1], ["1px", "3px"])
+  const { mountain3Y, mountain2Y, mountain1Y, planetsX, blurFar, blurMid } =
+    useParallaxEffect();
 
   return (
     <section className="absolute inset-0 overflow-hidden pointer-events-none">
-
       {/* ================= Sky ================= */}
       <div
         className="absolute inset-0 -z-50"
@@ -54,8 +38,6 @@ const ParallaxBackground = () => {
           backgroundPosition: "center",
           y: mountain3Y,
           filter: blurFar,
-
-          // ⭐ GPU合成关键
           willChange: "transform",
           transform: "translateZ(0)",
         }}
@@ -70,7 +52,6 @@ const ParallaxBackground = () => {
           backgroundPosition: "center",
           x: planetsX,
           filter: blurMid,
-
           willChange: "transform",
           transform: "translate3d(0,0,0)",
         }}
@@ -84,7 +65,6 @@ const ParallaxBackground = () => {
           backgroundSize: "cover",
           backgroundPosition: "center",
           y: mountain2Y,
-
           willChange: "transform",
         }}
       />
@@ -97,12 +77,11 @@ const ParallaxBackground = () => {
           backgroundSize: "cover",
           backgroundPosition: "center",
           y: mountain1Y,
-
           willChange: "transform",
         }}
       />
     </section>
-  )
-}
+  );
+};
 
-export default ParallaxBackground
+export default ParallaxBackground;

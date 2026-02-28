@@ -1,5 +1,5 @@
 "use client";
-import React, { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { AnimatePresence, motion as Motion } from "motion/react";
 import { twMerge } from "tailwind-merge";
 
@@ -19,10 +19,13 @@ export const FlipWords = ({
   }, [currentWord, words]);
 
   useEffect(() => {
-    if (!isAnimating)
-      setTimeout(() => {
-        startAnimation();
-      }, duration);
+    if (isAnimating) return;
+
+    const timeoutId = setTimeout(() => {
+      startAnimation();
+    }, duration);
+
+    return () => clearTimeout(timeoutId);
   }, [isAnimating, duration, startAnimation]);
 
   return (
