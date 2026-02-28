@@ -5,7 +5,7 @@ function Navigation({ onNavigate }) {
   const navItems = [
     { label: 'Home', href: '#home' },
     { label: 'About', href: '#about' },
-    { label: 'Work', href: '#work' },
+    { label: 'Work', href: '#projects' },
     { label: 'Contact', href: '#contact' },
   ]
 
