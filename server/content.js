@@ -22,6 +22,16 @@ export const profile = {
 
 export const projects = [
   {
+    slug: 'fire-extinguisher-next-gen',
+    title: 'Next-Gen Fire Extinguisher',
+    image: '/assets/projects/game-engine.jpg',
+    modelUrl: '/models/fire-extinguisher.glb',
+    summary:
+      'A real FBX production asset converted into a web-ready GLB preview with embedded PBR texture maps for viewer testing.',
+    stack: ['3ds Max', 'FBX', 'PBR', 'GLB'],
+    year: '2026',
+  },
+  {
     slug: 'creature-accessories',
     title: 'Creature Accessory Study',
     image: '/assets/projects/accessories.jpg',

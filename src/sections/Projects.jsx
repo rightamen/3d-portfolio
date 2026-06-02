@@ -1,6 +1,11 @@
 import { motion as Motion } from 'motion/react'
+import { lazy, Suspense, useState } from 'react'
+
+const ModelPreview = lazy(() => import('../components/ModelPreview'))
 
 const Projects = ({ projects = [] }) => {
+  const [previewProject, setPreviewProject] = useState(null)
+
   return (
     <section id="projects" className="c-space section-space">
       <div className="section-kicker">Selected Work</div>
@@ -42,10 +47,28 @@ const Projects = ({ projects = [] }) => {
                   </span>
                 ))}
               </div>
+              {project.modelUrl && (
+                <button
+                  type="button"
+                  className="secondary-action mt-2 w-full"
+                  onClick={() => setPreviewProject(project)}
+                >
+                  Open 3D Preview
+                </button>
+              )}
             </div>
           </Motion.article>
         ))}
       </div>
+
+      {previewProject && (
+        <Suspense fallback={null}>
+          <ModelPreview
+            project={previewProject}
+            onClose={() => setPreviewProject(null)}
+          />
+        </Suspense>
+      )}
     </section>
   )
 }

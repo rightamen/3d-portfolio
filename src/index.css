@@ -184,6 +184,34 @@ html {
   @apply grid gap-4;
 }
 
+.model-overlay {
+  @apply fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-3 backdrop-blur-md;
+}
+
+.model-panel {
+  @apply flex h-[min(88vh,48rem)] w-full max-w-5xl flex-col rounded-lg border border-white/10 bg-[#080b16] shadow-2xl;
+}
+
+.model-toolbar {
+  @apply flex items-center justify-between gap-4 border-b border-white/10 p-4;
+}
+
+.model-controls {
+  @apply flex flex-wrap gap-2 border-b border-white/10 px-4 py-3;
+}
+
+.mode-button {
+  @apply inline-flex min-h-9 items-center justify-center rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-semibold text-neutral-300 transition hover:border-aqua/40 hover:text-white;
+}
+
+.mode-button-active {
+  @apply inline-flex min-h-9 items-center justify-center rounded-full border border-aqua/50 bg-aqua px-4 py-2 text-xs font-semibold text-[#031014];
+}
+
+.model-canvas {
+  @apply min-h-0 flex-1;
+}
+
 /* Navigation Bar */
 .nav-ul {
   @apply flex flex-col items-center gap-4 sm:flex-row md:gap-6 relative z-20;
