@@ -108,6 +108,10 @@ body {
   overflow-x: hidden;
 }
 
+html {
+  scroll-behavior: smooth;
+}
+
 .c-space {
   @apply sm:px-10 px-5 lg:px-15;
 }
@@ -121,7 +125,7 @@ body {
 }
 
 .text-heading {
-  @apply font-bold text-3xl md:text-4xl;
+  @apply font-bold text-3xl md:text-4xl max-w-3xl;
 }
 
 .headtext {
@@ -130,6 +134,54 @@ body {
 
 .subtext {
   @apply text-neutral-400 text-sm md:text-base text-pretty;
+}
+
+.section-kicker {
+  @apply mb-3 text-sm font-semibold uppercase tracking-[0.22em] text-aqua;
+}
+
+.primary-action {
+  @apply inline-flex min-h-11 items-center justify-center rounded-full border border-aqua/50 bg-aqua px-6 py-3 text-sm font-semibold text-[#031014] transition duration-200 hover:-translate-y-0.5 hover:bg-mint disabled:cursor-not-allowed disabled:opacity-60;
+}
+
+.secondary-action {
+  @apply inline-flex min-h-11 items-center justify-center rounded-full border border-white/15 bg-white/5 px-6 py-3 text-sm font-semibold text-white transition duration-200 hover:-translate-y-0.5 hover:border-white/30 hover:bg-white/10;
+}
+
+.skill-pill {
+  @apply inline-flex items-center rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-neutral-300;
+}
+
+.project-card {
+  @apply flex min-h-[34rem] flex-col overflow-hidden rounded-lg border border-white/10 bg-[#101321]/80 transition duration-300 hover:-translate-y-1 hover:border-aqua/30;
+}
+
+.project-media {
+  @apply h-64 overflow-hidden bg-midnight;
+}
+
+.project-media img {
+  @apply transition duration-500 group-hover:scale-105;
+}
+
+.timeline-panel {
+  @apply rounded-lg border border-white/10 bg-[#101321]/80 p-5 md:p-7;
+}
+
+.timeline-item {
+  @apply border-b border-white/10 py-5 first:pt-0 last:border-b-0 last:pb-0;
+}
+
+.contact-panel {
+  @apply grid gap-8 rounded-lg border border-white/10 bg-[#101321]/80 p-6 md:grid-cols-[0.9fr_1.1fr] md:p-8;
+}
+
+.contact-link {
+  @apply inline-flex min-h-10 items-center justify-center rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-neutral-200 transition duration-200 hover:border-aqua/40 hover:text-white;
+}
+
+.contact-form {
+  @apply grid gap-4;
 }
 
 /* Navigation Bar */

@@ -1,66 +1,57 @@
-import { Canvas } from "@react-three/fiber";
-import { Astronaut } from "../three/objects/Astronaut";
-import HeroText from "../components/HeroText";
-import ParallaxBackground from "../three/scenes/ParallaxBackground";
-import { Float, Loader } from "@react-three/drei";
-import { useMediaQuery } from "react-responsive";
-import { useFrame } from "@react-three/fiber";
-import { easing } from "maath";
-import { Suspense } from "react";
-const Hero = () => {
-  const isMobile = useMediaQuery({ maxWidth: 853 }); // 简单的移动设备检测
+import { Canvas, useFrame } from '@react-three/fiber'
+import { Float, Loader, PerformanceMonitor } from '@react-three/drei'
+import { Suspense, useState } from 'react'
+import { useMediaQuery } from 'react-responsive'
+import { easing } from 'maath'
+import HeroText from '../components/HeroText'
+import { Astronaut } from '../three/objects/Astronaut'
+import ParallaxBackground from '../three/scenes/ParallaxBackground'
+
+const Hero = ({ profile, status }) => {
+  const [dpr, setDpr] = useState(1.5)
+  const isMobile = useMediaQuery({ maxWidth: 853 })
+
   return (
-    <section
-      className="
-        c-space
-        flex
-        min-h-screen
-        items-start
-        justify-center
-        overflow-hidden
-        md:items-start
-        md:justify-start
-      "
-    >
-      <HeroText />
+    <section className="c-space relative flex min-h-screen items-start justify-center overflow-hidden md:justify-start">
+      <HeroText profile={profile} status={status} />
       <ParallaxBackground />
       <figure
-        className="absolute inset-0"
-        style={{ width: "100vw", height: "100vh" }}
+        className="pointer-events-none absolute inset-0"
+        style={{ width: '100vw', height: '100vh' }}
+        aria-hidden="true"
       >
-        <Canvas camera={{ position: [0, 1, 3] }}>
+        <Canvas camera={{ position: [0, 1, 3] }} dpr={dpr}>
           <Suspense fallback={null}>
+            <PerformanceMonitor
+              onIncline={() => setDpr(1.75)}
+              onDecline={() => setDpr(1)}
+            />
             <ambientLight intensity={0.7} />
             <directionalLight position={[3, 3, 3]} intensity={1} />
-
             <Float speed={1.5} rotationIntensity={0.4} floatIntensity={0.6}>
               <Astronaut
-                scale={isMobile ? 0.23 : 0.3}
-                position={isMobile ? [0, -1.5, 0] : [1.3, -1, 0]}
+                scale={isMobile ? 0.18 : 0.3}
+                position={isMobile ? [0, -2.1, 0] : [1.25, -1, 0]}
               />
             </Float>
-
             <Rig />
           </Suspense>
         </Canvas>
-
         <Loader />
       </figure>
     </section>
-  );
-};
+  )
+}
 
 function Rig() {
   useFrame((state, delta) => {
-    const x = state.pointer.x;
-    const y = state.pointer.y;
+    const x = state.pointer.x
+    const y = state.pointer.y
+    easing.damp(state.camera.position, [x * 0.8, 1 + y * 0.6, 3], 0.35, delta)
+    state.camera.lookAt(0, 0, 0)
+  })
 
-    easing.damp(state.camera.position, [x * 0.8, 1 + y * 0.6, 3], 0.35, delta);
-
-    state.camera.lookAt(0, 0, 0);
-  });
-
-  return null;
+  return null
 }
 
-export default Hero;
+export default Hero

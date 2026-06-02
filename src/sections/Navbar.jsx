@@ -6,6 +6,7 @@ function Navigation({ onNavigate }) {
     { label: 'Home', href: '#home' },
     { label: 'About', href: '#about' },
     { label: 'Work', href: '#projects' },
+    { label: 'Experience', href: '#experience' },
     { label: 'Contact', href: '#contact' },
   ]
 
@@ -26,14 +27,14 @@ const Navbar = () => {
   const [isOpen, setIsOpen] = useState(false)
 
   return (
-    <div className="fixed inset-x-0 z-20 w-full bg-primary/40 backdrop-blur-lg">
+    <div className="fixed inset-x-0 z-20 w-full border-b border-white/10 bg-[#050616]/70 backdrop-blur-lg">
       <div className="mx-auto c-space max-w-7xl">
         <div className="flex items-center justify-between py-2 sm:py-0">
           <a
             href="#home"
-            className="text-xl font-bold text-neutral-400 transition-colors hover:text-white"
+            className="text-xl font-bold text-neutral-300 transition-colors hover:text-white"
           >
-            Right
+            mrright.blog
           </a>
 
           <button
@@ -45,7 +46,7 @@ const Navbar = () => {
             <img
               src={isOpen ? '/assets/close.svg' : '/assets/menu.svg'}
               className="h-6 w-6"
-              alt="menu"
+              alt=""
             />
           </button>
 

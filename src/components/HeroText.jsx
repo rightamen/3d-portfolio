@@ -1,13 +1,15 @@
-import { FlipWords } from '../components/FlipWords'
 import { motion as Motion } from 'motion/react'
+import { FlipWords } from './FlipWords'
 
-const HeroText = () => {
+const HeroText = ({ profile, status }) => {
   const words = [
-    'High-Quality 3D Models',
-    'Optimized Game Assets',
-    'Realistic Textures',
-    'Creative 3D Designs',
+    'Sculpted 3D Forms',
+    'Realtime Web Scenes',
+    'Material Studies',
+    'Portfolio Systems',
   ]
+  const name = profile?.name || 'Right'
+  const title = profile?.title || '3D Artist and realtime portfolio creator'
 
   const variants = {
     hidden: { opacity: 0, x: -50 },
@@ -15,8 +17,8 @@ const HeroText = () => {
   }
 
   return (
-    <div className="z-10 mt-20 rounded-3xl bg-clip-text text-center md:mt-40 md:text-left">
-      <div className="c-space hidden flex-col md:flex">
+    <div className="relative z-10 mt-20 max-w-4xl rounded-3xl bg-clip-text text-center drop-shadow-[0_3px_18px_rgba(0,0,0,0.65)] md:mt-40 md:text-left">
+      <div className="hidden flex-col md:flex">
         <Motion.h1
           className="text-4xl font-medium"
           variants={variants}
@@ -24,12 +26,12 @@ const HeroText = () => {
           animate="visible"
           transition={{ delay: 1 }}
         >
-          Hi, I&apos;m Right
+          Hi, I&apos;m {name}
         </Motion.h1>
 
         <div className="flex flex-col items-start">
           <Motion.p
-            className="text-5xl font-medium text-neutral-300"
+            className="mt-5 text-5xl font-medium text-neutral-300"
             variants={variants}
             initial="hidden"
             animate="visible"
@@ -37,7 +39,7 @@ const HeroText = () => {
           >
             A 3D Artist
             <br />
-            Dedicated to crafting
+            building
           </Motion.p>
 
           <Motion.div
@@ -50,31 +52,45 @@ const HeroText = () => {
           </Motion.div>
 
           <Motion.p
-            className="text-4xl font-medium text-neutral-300"
+            className="mt-3 max-w-2xl text-2xl font-medium leading-relaxed text-neutral-300"
             variants={variants}
             initial="hidden"
             animate="visible"
             transition={{ delay: 1.8 }}
           >
-            Model Creation
+            {title}
           </Motion.p>
+          <Motion.div
+            className="mt-7 flex items-center gap-3"
+            variants={variants}
+            initial="hidden"
+            animate="visible"
+            transition={{ delay: 2 }}
+          >
+            <a href="#projects" className="primary-action">
+              View Work
+            </a>
+            <a href="#contact" className="secondary-action">
+              Contact
+            </a>
+          </Motion.div>
         </div>
       </div>
 
-      <div className="flex flex-col space-y-6 md:hidden">
+      <div className="flex max-w-[21rem] flex-col space-y-4 md:hidden">
         <Motion.p
-          className="text-4xl font-medium"
+          className="text-3xl font-medium"
           variants={variants}
           initial="hidden"
           animate="visible"
           transition={{ delay: 1 }}
         >
-          Hi, I&apos;m Right
+          Hi, I&apos;m {name}
         </Motion.p>
 
         <div>
           <Motion.p
-            className="text-4xl font-black text-neutral-300"
+            className="text-3xl font-black text-neutral-300"
             variants={variants}
             initial="hidden"
             animate="visible"
@@ -89,19 +105,24 @@ const HeroText = () => {
             animate="visible"
             transition={{ delay: 1.5 }}
           >
-            <FlipWords words={words} className="text-5xl font-bold text-white" />
+            <FlipWords words={words} className="text-4xl font-bold text-white" />
           </Motion.div>
 
           <Motion.p
-            className="text-4xl font-black text-neutral-300"
+            className="text-2xl font-black text-neutral-300"
             variants={variants}
             initial="hidden"
             animate="visible"
             transition={{ delay: 1.8 }}
           >
-            Model Sculpture
+            3D for the web
           </Motion.p>
         </div>
+        <p className="mx-auto max-w-xs text-sm leading-relaxed text-neutral-200">
+          {status === 'error'
+            ? 'Portfolio API is starting. The 3D scene is still available.'
+            : title}
+        </p>
       </div>
     </div>
   )

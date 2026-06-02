@@ -1,35 +1,63 @@
-# 3D Portfolio
+# mrright.blog 3D Portfolio
 
-A personal portfolio built with **React + Vite + Tailwind CSS + React Three Fiber**.
+A full-stack personal portfolio for Right, built with React, Vite, Tailwind CSS,
+React Three Fiber, and a small Node/Express API.
 
-## Tech Stack
+## Features
 
-- React 19
-- Vite 7
-- Tailwind CSS 4
-- three.js / @react-three/fiber / @react-three/drei
-- motion (for UI animations)
+- 3D hero scene with a responsive astronaut model and parallax background
+- API-powered profile, projects, experience, and skills content
+- Project, experience, about, contact, and footer sections
+- Contact form endpoint that writes messages to `data/messages.jsonl`
+- Production server that serves the Vite `dist` build and `/api/*`
+- VPS deployment helper for systemd-based Linux servers
 
-## Getting Started
+## Local Development
 
 ```bash
 npm install
-npm run dev
+npm run dev:full
 ```
 
-## Scripts
+The frontend runs on `http://localhost:5173`; Vite proxies `/api` to the
+Express server on `http://localhost:4173`.
 
-- `npm run dev` - start local development server
-- `npm run build` - build production assets
-- `npm run preview` - preview production build locally
-- `npm run lint` - run ESLint checks
+## Production Build
 
-## Current Sections
+```bash
+npm run build
+npm run start
+```
 
-- Navbar (desktop + mobile menu)
-- Hero (3D astronaut + parallax background + animated text)
-- Placeholder anchors for About / Work / Contact
+The production server listens on `PORT` or `4173`.
 
-## Notes
+## VPS Deploy
 
-- The production build currently reports a large bundle warning because the 3D stack and model assets are loaded in the main entry chunk.
+Set these environment variables before deployment:
+
+```bash
+VPS_HOST=147.79.20.232
+VPS_PORT=22
+VPS_USER=root
+VPS_PASSWORD=your-root-password
+```
+
+Then run:
+
+```bash
+npm run deploy:vps
+```
+
+The script uploads the built app to `/opt/mrright-portfolio`, installs
+production dependencies, creates a `mrright-portfolio` systemd service, and
+checks `/api/health`.
+
+## Cloudflare DNS
+
+For `mrright.blog`, point:
+
+- `mrright.blog` A record to the VPS IPv4 address
+- `www.mrright.blog` CNAME to `mrright.blog`
+
+After the VPS service is running behind port 80/443, keep Cloudflare proxy
+enabled for the root and `www` records.
