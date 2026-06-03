@@ -512,6 +512,10 @@ select.field-input option:disabled {
   @apply mt-2 flex min-h-10 w-full cursor-pointer items-center rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm font-semibold text-neutral-300 transition duration-200 hover:border-aqua/40 hover:bg-aqua/10 hover:text-white;
 }
 
+.asset-upload-control-done {
+  @apply border-mint/40 bg-mint/10 text-mint hover:border-mint/60 hover:bg-mint/15 hover:text-mint;
+}
+
 .asset-upload-control input {
   @apply sr-only;
 }

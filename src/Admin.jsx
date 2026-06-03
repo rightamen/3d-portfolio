@@ -176,6 +176,11 @@ const viewerFeaturePresets = [
   'Case study',
 ]
 
+const emptyUploadStatus = {
+  image: 'idle',
+  modelUrl: 'idle',
+}
+
 const emptyProjectForm = () => ({
   downloadPolicy: downloadPolicyPresets[2].value,
   format: 'Image case study',
@@ -217,7 +222,7 @@ const Admin = () => {
   const [editorScrollKey, setEditorScrollKey] = useState(0)
   const [projectStatus, setProjectStatus] = useState('idle')
   const [searchQuery, setSearchQuery] = useState('')
-  const [uploadStatus, setUploadStatus] = useState('idle')
+  const [uploadStatus, setUploadStatus] = useState(emptyUploadStatus)
 
   useEffect(() => {
     if (!editorScrollKey) return
@@ -338,7 +343,10 @@ const Admin = () => {
   const uploadAsset = async (file, targetField) => {
     if (!file) return
 
-    setUploadStatus('uploading')
+    setUploadStatus((current) => ({
+      ...current,
+      [targetField]: 'uploading',
+    }))
     try {
       const payload = await uploadAdminAsset(token, file)
       const extension = getExtension(payload.file.name)
@@ -372,10 +380,15 @@ const Admin = () => {
 
         return next
       })
-      setUploadStatus('done')
-      window.setTimeout(() => setUploadStatus('idle'), 1600)
+      setUploadStatus((current) => ({
+        ...current,
+        [targetField]: 'done',
+      }))
     } catch {
-      setUploadStatus('error')
+      setUploadStatus((current) => ({
+        ...current,
+        [targetField]: 'error',
+      }))
     }
   }
 
@@ -387,7 +400,7 @@ const Admin = () => {
   const startEditingProject = (project) => {
     setActiveSection('projects')
     setProjectStatus('idle')
-    setUploadStatus('idle')
+    setUploadStatus(emptyUploadStatus)
     setEditingProject({
       ...project,
       isNew: false,
@@ -400,7 +413,7 @@ const Admin = () => {
   const startCreatingProject = () => {
     setActiveSection('projects')
     setProjectStatus('idle')
-    setUploadStatus('idle')
+    setUploadStatus(emptyUploadStatus)
     setEditingProject({
       ...emptyProjectForm(),
       ...projectPresets[0].values,
@@ -743,8 +756,15 @@ const Admin = () => {
                   </label>
                   <label className="field-label">
                     Upload Image
-                    <span className="asset-upload-control">
-                      Choose image file
+                    <span
+                      className={`asset-upload-control ${
+                        uploadStatus.image === 'done' ? 'asset-upload-control-done' : ''
+                      }`}
+                    >
+                      {uploadStatus.image === 'uploading' && 'Uploading image...'}
+                      {uploadStatus.image === 'done' && 'Uploaded successfully'}
+                      {uploadStatus.image === 'error' && 'Upload failed. Choose again'}
+                      {uploadStatus.image === 'idle' && 'Choose image file'}
                       <input
                         type="file"
                         accept=".jpg,.jpeg,.png,.webp,.gif"
@@ -767,8 +787,15 @@ const Admin = () => {
                   </label>
                   <label className="field-label">
                     Upload Model
-                    <span className="asset-upload-control">
-                      Choose model file
+                    <span
+                      className={`asset-upload-control ${
+                        uploadStatus.modelUrl === 'done' ? 'asset-upload-control-done' : ''
+                      }`}
+                    >
+                      {uploadStatus.modelUrl === 'uploading' && 'Uploading model...'}
+                      {uploadStatus.modelUrl === 'done' && 'Uploaded successfully'}
+                      {uploadStatus.modelUrl === 'error' && 'Upload failed. Choose again'}
+                      {uploadStatus.modelUrl === 'idle' && 'Choose model file'}
                       <input
                         type="file"
                         accept=".glb,.gltf,.fbx,.obj,.zip"
@@ -919,14 +946,6 @@ const Admin = () => {
                 </div>
                 {projectStatus === 'error' && (
                   <p className="text-sm text-coral">Could not save this project.</p>
-                )}
-                {uploadStatus === 'uploading' && (
-                  <p className="text-sm text-neutral-400">Uploading asset...</p>
-                )}
-                {uploadStatus === 'error' && (
-                  <p className="text-sm text-coral">
-                    Upload failed. Check the file type and size.
-                  </p>
                 )}
               </form>
             </section>
