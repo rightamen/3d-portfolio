@@ -6,8 +6,10 @@ import {
   getAdminComments,
   getAdminContactMessages,
   getAdminDownloadRequests,
+  getAdminProjects,
   getAdminSummary,
   updateAdminDownloadRequest,
+  updateAdminProject,
 } from './lib/api'
 
 const tokenKey = 'mrright-admin-token'
@@ -18,6 +20,14 @@ const formatDate = (value) =>
     timeStyle: 'short',
   }).format(new Date(value))
 
+const listToText = (value) => (Array.isArray(value) ? value.join(', ') : '')
+
+const textToList = (value) =>
+  value
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
+
 const Admin = () => {
   const [token, setToken] = useState('')
   const [tokenInput, setTokenInput] = useState(() => window.localStorage.getItem(tokenKey) || '')
@@ -25,9 +35,12 @@ const Admin = () => {
   const [data, setData] = useState({
     comments: [],
     messages: [],
+    projects: [],
     requests: [],
     summary: null,
   })
+  const [editingProject, setEditingProject] = useState(null)
+  const [projectStatus, setProjectStatus] = useState('idle')
 
   const loadAdminData = async (activeToken = token) => {
     if (!activeToken) {
@@ -37,17 +50,25 @@ const Admin = () => {
 
     setStatus('loading')
     try {
-      const [summaryPayload, commentsPayload, messagesPayload, requestsPayload] =
+      const [
+        summaryPayload,
+        commentsPayload,
+        messagesPayload,
+        requestsPayload,
+        projectsPayload,
+      ] =
         await Promise.all([
           getAdminSummary(activeToken),
           getAdminComments(activeToken),
           getAdminContactMessages(activeToken),
           getAdminDownloadRequests(activeToken),
+          getAdminProjects(activeToken),
         ])
 
       setData({
         comments: commentsPayload.comments,
         messages: messagesPayload.messages,
+        projects: projectsPayload.projects,
         requests: requestsPayload.requests,
         summary: summaryPayload.summary,
       })
@@ -75,6 +96,33 @@ const Admin = () => {
   const updateRequestStatus = async (id, nextStatus) => {
     await updateAdminDownloadRequest(token, id, nextStatus)
     await loadAdminData(token)
+  }
+
+  const saveProject = async (event) => {
+    event.preventDefault()
+    setProjectStatus('saving')
+
+    try {
+      await updateAdminProject(token, editingProject.slug, {
+        ...editingProject,
+        stack: textToList(editingProject.stackText),
+        viewerFeatures: textToList(editingProject.viewerFeaturesText),
+      })
+      setEditingProject(null)
+      setProjectStatus('saved')
+      await loadAdminData(token)
+    } catch {
+      setProjectStatus('error')
+    }
+  }
+
+  const startEditingProject = (project) => {
+    setProjectStatus('idle')
+    setEditingProject({
+      ...project,
+      stackText: listToText(project.stack),
+      viewerFeaturesText: listToText(project.viewerFeatures),
+    })
   }
 
   const deleteItem = async (label, action) => {
@@ -136,6 +184,7 @@ const Admin = () => {
             {[
               ['Comments', data.summary.comments],
               ['Likes', data.summary.likes],
+              ['Projects', data.projects.length],
               ['Downloads', data.summary.download_requests],
               ['Pending', data.summary.pending_downloads],
               ['Messages', data.summary.contact_messages],
@@ -146,6 +195,236 @@ const Admin = () => {
               </div>
             ))}
           </section>
+
+          <section className="admin-section">
+            <div className="admin-section-header">
+              <h2>Projects</h2>
+              <span>{data.projects.length}</span>
+            </div>
+            <div className="admin-table">
+              {data.projects.map((project) => (
+                <article key={project.slug} className="admin-row">
+                  <div>
+                    <strong>{project.title}</strong>
+                    <span>
+                      {project.slug} · {project.year} ·{' '}
+                      {project.isPublic === false ? 'hidden' : 'public'}
+                    </span>
+                    <p>{project.summary}</p>
+                    <small>{project.stack?.join(', ')}</small>
+                  </div>
+                  <div className="admin-actions">
+                    <span
+                      className={`status-pill ${
+                        project.isPublic === false ? 'status-rejected' : 'status-approved'
+                      }`}
+                    >
+                      {project.isPublic === false ? 'hidden' : 'public'}
+                    </span>
+                    <button
+                      type="button"
+                      className="secondary-action"
+                      onClick={() => startEditingProject(project)}
+                    >
+                      Edit
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
+
+          {editingProject && (
+            <section className="admin-section">
+              <div className="admin-section-header">
+                <h2>Edit Project</h2>
+                <span>{editingProject.slug}</span>
+              </div>
+              <form className="admin-editor" onSubmit={saveProject}>
+                <label className="field-label">
+                  Title
+                  <input
+                    className="field-input field-input-focus"
+                    value={editingProject.title}
+                    onChange={(event) =>
+                      setEditingProject((current) => ({
+                        ...current,
+                        title: event.target.value,
+                      }))
+                    }
+                    required
+                  />
+                </label>
+                <label className="field-label">
+                  Summary
+                  <textarea
+                    className="field-input field-input-focus min-h-24 resize-none"
+                    value={editingProject.summary}
+                    onChange={(event) =>
+                      setEditingProject((current) => ({
+                        ...current,
+                        summary: event.target.value,
+                      }))
+                    }
+                    required
+                  />
+                </label>
+                <label className="field-label">
+                  Workflow
+                  <textarea
+                    className="field-input field-input-focus min-h-28 resize-none"
+                    value={editingProject.workflow || ''}
+                    onChange={(event) =>
+                      setEditingProject((current) => ({
+                        ...current,
+                        workflow: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <label className="field-label">
+                    Year
+                    <input
+                      className="field-input field-input-focus"
+                      value={editingProject.year}
+                      onChange={(event) =>
+                        setEditingProject((current) => ({
+                          ...current,
+                          year: event.target.value,
+                        }))
+                      }
+                      required
+                    />
+                  </label>
+                  <label className="field-label">
+                    Format
+                    <input
+                      className="field-input field-input-focus"
+                      value={editingProject.format || ''}
+                      onChange={(event) =>
+                        setEditingProject((current) => ({
+                          ...current,
+                          format: event.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="field-label">
+                    Image URL
+                    <input
+                      className="field-input field-input-focus"
+                      value={editingProject.image}
+                      onChange={(event) =>
+                        setEditingProject((current) => ({
+                          ...current,
+                          image: event.target.value,
+                        }))
+                      }
+                      required
+                    />
+                  </label>
+                  <label className="field-label">
+                    Model URL
+                    <input
+                      className="field-input field-input-focus"
+                      value={editingProject.modelUrl || ''}
+                      onChange={(event) =>
+                        setEditingProject((current) => ({
+                          ...current,
+                          modelUrl: event.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="field-label">
+                    Model Size
+                    <input
+                      className="field-input field-input-focus"
+                      value={editingProject.modelSize || ''}
+                      onChange={(event) =>
+                        setEditingProject((current) => ({
+                          ...current,
+                          modelSize: event.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="field-label">
+                    Download Policy
+                    <input
+                      className="field-input field-input-focus"
+                      value={editingProject.downloadPolicy || ''}
+                      onChange={(event) =>
+                        setEditingProject((current) => ({
+                          ...current,
+                          downloadPolicy: event.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+                </div>
+                <label className="field-label">
+                  Stack
+                  <input
+                    className="field-input field-input-focus"
+                    value={editingProject.stackText}
+                    onChange={(event) =>
+                      setEditingProject((current) => ({
+                        ...current,
+                        stackText: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+                <label className="field-label">
+                  Viewer Features
+                  <input
+                    className="field-input field-input-focus"
+                    value={editingProject.viewerFeaturesText}
+                    onChange={(event) =>
+                      setEditingProject((current) => ({
+                        ...current,
+                        viewerFeaturesText: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+                <label className="admin-toggle">
+                  <input
+                    type="checkbox"
+                    checked={editingProject.isPublic !== false}
+                    onChange={(event) =>
+                      setEditingProject((current) => ({
+                        ...current,
+                        isPublic: event.target.checked,
+                      }))
+                    }
+                  />
+                  Public project
+                </label>
+                <div className="flex flex-wrap gap-3">
+                  <button
+                    type="submit"
+                    className="primary-action"
+                    disabled={projectStatus === 'saving'}
+                  >
+                    {projectStatus === 'saving' ? 'Saving...' : 'Save Project'}
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary-action"
+                    onClick={() => setEditingProject(null)}
+                  >
+                    Cancel
+                  </button>
+                </div>
+                {projectStatus === 'error' && (
+                  <p className="text-sm text-coral">Could not save this project.</p>
+                )}
+              </form>
+            </section>
+          )}
 
           <section className="admin-section">
             <div className="admin-section-header">

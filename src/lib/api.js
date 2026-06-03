@@ -58,11 +58,20 @@ export const getAdminContactMessages = (token) =>
 export const getAdminDownloadRequests = (token) =>
   adminRequest('/api/admin/download-requests', token)
 
+export const getAdminProjects = (token) => adminRequest('/api/admin/projects', token)
+
 export const updateAdminDownloadRequest = (token, id, status) =>
   adminRequest(`/api/admin/download-requests/${id}`, token, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ status }),
+  })
+
+export const updateAdminProject = (token, slug, payload) =>
+  adminRequest(`/api/admin/projects/${slug}`, token, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
   })
 
 export const deleteAdminComment = (token, id) =>

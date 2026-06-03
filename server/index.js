@@ -3,7 +3,7 @@ import express from 'express'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createContactMessagesStore } from './contactMessagesStore.js'
-import { experience, profile, projects, skills } from './content.js'
+import { experience, profile, projects as staticProjects, skills } from './content.js'
 import { createDownloadRequestsStore } from './downloadRequestsStore.js'
 import { createInteractionsStore } from './interactionsStore.js'
 import { createPostgresStores } from './postgresStores.js'
@@ -21,9 +21,20 @@ const stores = process.env.DATABASE_URL
       contactMessagesStore: createContactMessagesStore(dataDir),
       downloadRequestsStore: createDownloadRequestsStore(dataDir),
       interactionsStore: createInteractionsStore(dataDir),
+      projectStore: {
+        getProject: async (projects, slug) =>
+          projects.find((project) => project.slug === slug) || null,
+        listProjects: async (projects) => projects.map((project) => ({ ...project, isPublic: true })),
+      },
     }
 
-const { adminStore, contactMessagesStore, downloadRequestsStore, interactionsStore } = stores
+const {
+  adminStore,
+  contactMessagesStore,
+  downloadRequestsStore,
+  interactionsStore,
+  projectStore,
+} = stores
 
 const app = express()
 const port = process.env.PORT || 4173
@@ -58,11 +69,17 @@ app.get('/api/profile', (_request, response) => {
 })
 
 app.get('/api/projects', (_request, response) => {
-  response.json({ projects })
+  projectStore
+    .listProjects(staticProjects)
+    .then((projects) => response.json({ projects }))
+    .catch((error) => {
+      console.error(error)
+      response.status(500).json({ error: 'Could not load projects.' })
+    })
 })
 
-app.get('/api/projects/:slug', (request, response) => {
-  const project = projects.find((item) => item.slug === request.params.slug)
+app.get('/api/projects/:slug', async (request, response) => {
+  const project = await projectStore.getProject(staticProjects, request.params.slug)
 
   if (!project) {
     return response.status(404).json({
@@ -74,7 +91,7 @@ app.get('/api/projects/:slug', (request, response) => {
 })
 
 app.get('/api/projects/:slug/interactions', async (request, response) => {
-  const project = projects.find((item) => item.slug === request.params.slug)
+  const project = await projectStore.getProject(staticProjects, request.params.slug)
 
   if (!project) {
     return response.status(404).json({
@@ -90,7 +107,7 @@ app.get('/api/projects/:slug/interactions', async (request, response) => {
 })
 
 app.post('/api/projects/:slug/like', async (request, response) => {
-  const project = projects.find((item) => item.slug === request.params.slug)
+  const project = await projectStore.getProject(staticProjects, request.params.slug)
   const visitorId = String(request.body?.visitorId ?? '').trim().slice(0, 120)
 
   if (!project) {
@@ -110,7 +127,7 @@ app.post('/api/projects/:slug/like', async (request, response) => {
 })
 
 app.post('/api/projects/:slug/comments', async (request, response) => {
-  const project = projects.find((item) => item.slug === request.params.slug)
+  const project = await projectStore.getProject(staticProjects, request.params.slug)
   const author = String(request.body?.author ?? '').trim().slice(0, 80)
   const message = String(request.body?.message ?? '').trim().slice(0, 1000)
 
@@ -134,7 +151,7 @@ app.post('/api/projects/:slug/comments', async (request, response) => {
 })
 
 app.post('/api/projects/:slug/download-requests', async (request, response) => {
-  const project = projects.find((item) => item.slug === request.params.slug)
+  const project = await projectStore.getProject(staticProjects, request.params.slug)
   const name = String(request.body?.name ?? '').trim().slice(0, 120)
   const email = String(request.body?.email ?? '').trim().slice(0, 180)
   const purpose = String(request.body?.purpose ?? '').trim().slice(0, 1200)
@@ -209,6 +226,52 @@ app.get('/api/admin/contact-messages', requireAdmin, async (_request, response) 
 
 app.get('/api/admin/download-requests', requireAdmin, async (_request, response) => {
   response.json({ requests: await adminStore.listDownloadRequests() })
+})
+
+app.get('/api/admin/projects', requireAdmin, async (_request, response) => {
+  response.json({ projects: await adminStore.listProjects(staticProjects) })
+})
+
+app.patch('/api/admin/projects/:slug', requireAdmin, async (request, response) => {
+  const baseProject = staticProjects.find((project) => project.slug === request.params.slug)
+
+  if (!baseProject) {
+    return response.status(404).json({
+      error: 'Project not found.',
+    })
+  }
+
+  const normalized = {
+    downloadPolicy: String(request.body?.downloadPolicy ?? '').trim().slice(0, 120),
+    format: String(request.body?.format ?? '').trim().slice(0, 120),
+    image: String(request.body?.image ?? '').trim().slice(0, 500),
+    isPublic: request.body?.isPublic !== false,
+    modelSize: String(request.body?.modelSize ?? '').trim().slice(0, 120),
+    modelUrl: String(request.body?.modelUrl ?? '').trim().slice(0, 500),
+    stack: Array.isArray(request.body?.stack)
+      ? request.body.stack.map((item) => String(item).trim()).filter(Boolean).slice(0, 20)
+      : [],
+    summary: String(request.body?.summary ?? '').trim().slice(0, 1000),
+    title: String(request.body?.title ?? '').trim().slice(0, 180),
+    viewerFeatures: Array.isArray(request.body?.viewerFeatures)
+      ? request.body.viewerFeatures.map((item) => String(item).trim()).filter(Boolean).slice(0, 20)
+      : [],
+    workflow: String(request.body?.workflow ?? '').trim().slice(0, 2000),
+    year: String(request.body?.year ?? '').trim().slice(0, 20),
+  }
+
+  if (!normalized.title || !normalized.summary || !normalized.image || !normalized.year) {
+    return response.status(400).json({
+      error: 'Title, summary, image, and year are required.',
+    })
+  }
+
+  await adminStore.updateProject(request.params.slug, normalized)
+  const project = await projectStore.getProject(staticProjects, request.params.slug, {
+    includeHidden: true,
+  })
+
+  return response.json({ project })
 })
 
 app.patch('/api/admin/download-requests/:id', requireAdmin, async (request, response) => {

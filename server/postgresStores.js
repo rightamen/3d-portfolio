@@ -12,6 +12,35 @@ const toComment = (row) => ({
   createdAt: row.created_at.toISOString(),
 })
 
+const toProjectOverride = (row) => ({
+  downloadPolicy: row.download_policy,
+  format: row.format,
+  image: row.image,
+  isPublic: row.is_public,
+  modelSize: row.model_size,
+  modelUrl: row.model_url,
+  slug: row.slug,
+  stack: row.stack,
+  summary: row.summary,
+  title: row.title,
+  viewerFeatures: row.viewer_features,
+  workflow: row.workflow,
+  year: row.year,
+})
+
+const mergeProject = (project, override) => {
+  if (!override) return { ...project, isPublic: true }
+
+  return {
+    ...project,
+    ...Object.fromEntries(
+      Object.entries(override).filter(
+        ([key, value]) => key !== 'slug' && value !== null && value !== undefined,
+      ),
+    ),
+  }
+}
+
 const ensureSchema = async (pool) => {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS contact_messages (
@@ -54,6 +83,23 @@ const ensureSchema = async (pool) => {
 
     CREATE INDEX IF NOT EXISTS download_requests_status_created_idx
       ON download_requests (status, created_at);
+
+    CREATE TABLE IF NOT EXISTS project_overrides (
+      slug text PRIMARY KEY,
+      title text,
+      summary text,
+      workflow text,
+      year text,
+      image text,
+      model_url text,
+      format text,
+      model_size text,
+      download_policy text,
+      stack jsonb,
+      viewer_features jsonb,
+      is_public boolean NOT NULL DEFAULT true,
+      updated_at timestamptz NOT NULL DEFAULT now()
+    );
   `)
 }
 
@@ -66,6 +112,28 @@ export const createPostgresStores = async (databaseUrl) => {
   })
 
   await ensureSchema(pool)
+
+  const projectStore = {
+    listProjects: async (baseProjects, { includeHidden = false } = {}) => {
+      const result = await pool.query(`
+        SELECT slug, title, summary, workflow, year, image, model_url, format,
+          model_size, download_policy, stack, viewer_features, is_public
+        FROM project_overrides
+      `)
+      const overrides = new Map(
+        result.rows.map((row) => [row.slug, toProjectOverride(row)]),
+      )
+
+      return baseProjects
+        .map((project) => mergeProject(project, overrides.get(project.slug)))
+        .filter((project) => includeHidden || project.isPublic !== false)
+    },
+
+    getProject: async (baseProjects, slug, { includeHidden = false } = {}) => {
+      const projects = await projectStore.listProjects(baseProjects, { includeHidden })
+      return projects.find((project) => project.slug === slug) || null
+    },
+  }
 
   const contactMessagesStore = {
     addMessage: async (message) => {
@@ -278,6 +346,52 @@ export const createPostgresStores = async (databaseUrl) => {
       return result.rows[0] || null
     },
 
+    listProjects: async (baseProjects) =>
+      projectStore.listProjects(baseProjects, { includeHidden: true }),
+
+    updateProject: async (slug, project) => {
+      const result = await pool.query(
+        `
+          INSERT INTO project_overrides
+            (slug, title, summary, workflow, year, image, model_url, format,
+             model_size, download_policy, stack, viewer_features, is_public, updated_at)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12::jsonb, $13, now())
+          ON CONFLICT (slug) DO UPDATE SET
+            title = EXCLUDED.title,
+            summary = EXCLUDED.summary,
+            workflow = EXCLUDED.workflow,
+            year = EXCLUDED.year,
+            image = EXCLUDED.image,
+            model_url = EXCLUDED.model_url,
+            format = EXCLUDED.format,
+            model_size = EXCLUDED.model_size,
+            download_policy = EXCLUDED.download_policy,
+            stack = EXCLUDED.stack,
+            viewer_features = EXCLUDED.viewer_features,
+            is_public = EXCLUDED.is_public,
+            updated_at = now()
+          RETURNING slug
+        `,
+        [
+          slug,
+          project.title,
+          project.summary,
+          project.workflow,
+          project.year,
+          project.image,
+          project.modelUrl || null,
+          project.format,
+          project.modelSize,
+          project.downloadPolicy,
+          JSON.stringify(project.stack || []),
+          JSON.stringify(project.viewerFeatures || []),
+          project.isPublic !== false,
+        ],
+      )
+
+      return result.rows[0] || null
+    },
+
     deleteComment: async (id) => {
       const result = await pool.query(
         `
@@ -324,5 +438,6 @@ export const createPostgresStores = async (databaseUrl) => {
     contactMessagesStore,
     downloadRequestsStore,
     interactionsStore,
+    projectStore,
   }
 }
