@@ -1,7 +1,7 @@
-import { Center, Grid, Html, OrbitControls, useGLTF, useProgress } from '@react-three/drei'
+import { Grid, Html, OrbitControls, useGLTF, useProgress } from '@react-three/drei'
 import { Canvas } from '@react-three/fiber'
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
-import { MeshStandardMaterial } from 'three'
+import { Box3, MeshStandardMaterial, Vector3 } from 'three'
 
 const modes = [
   { id: 'textured', label: 'Texture' },
@@ -11,6 +11,25 @@ const modes = [
 
 const ModelScene = ({ url, mode }) => {
   const { scene } = useGLTF(url)
+  const displayScene = useMemo(() => scene.clone(true), [scene])
+  const transform = useMemo(() => {
+    const box = new Box3().setFromObject(displayScene)
+    const size = new Vector3()
+    const center = new Vector3()
+
+    box.getSize(size)
+    box.getCenter(center)
+
+    const maxDimension = Math.max(size.x, size.y, size.z) || 1
+    const scale = 2.35 / maxDimension
+    const bottom = (box.min.y - center.y) * scale
+
+    return {
+      position: [-center.x * scale, -center.y * scale, -center.z * scale],
+      scale,
+      gridY: bottom,
+    }
+  }, [displayScene])
   const clayMaterial = useMemo(
     () => new MeshStandardMaterial({ color: '#b8bdc7', roughness: 0.72 }),
     [],
@@ -26,7 +45,7 @@ const ModelScene = ({ url, mode }) => {
   )
 
   useEffect(() => {
-    scene.traverse((object) => {
+    displayScene.traverse((object) => {
       if (!object.isMesh) return
 
       if (!object.userData.originalMaterial) {
@@ -37,12 +56,25 @@ const ModelScene = ({ url, mode }) => {
       if (mode === 'wireframe') object.material = wireMaterial
       if (mode === 'textured') object.material = object.userData.originalMaterial
     })
-  }, [clayMaterial, mode, scene, wireMaterial])
+  }, [clayMaterial, displayScene, mode, wireMaterial])
 
   return (
-    <Center>
-      <primitive object={scene} scale={1.4} rotation={[0, -0.35, 0]} />
-    </Center>
+    <>
+      <primitive
+        object={displayScene}
+        position={transform.position}
+        scale={transform.scale}
+        rotation={[0, -0.35, 0]}
+      />
+      <Grid
+        args={[8, 8]}
+        cellColor="#2f4254"
+        sectionColor="#6ad8e6"
+        fadeDistance={8}
+        fadeStrength={1.6}
+        position={[0, transform.gridY, 0]}
+      />
+    </>
   )
 }
 
@@ -111,28 +143,20 @@ const ModelPreview = ({ project, onClose }) => {
         </div>
 
         <div className="model-canvas">
-          <Canvas camera={{ position: [0, 0.8, 4.6], fov: 42 }} dpr={[1, 1.75]}>
+          <Canvas camera={{ position: [0, 0.55, 4.8], fov: 42 }} dpr={[1, 1.75]}>
             <Suspense fallback={<CanvasLoader />}>
               <ambientLight intensity={0.65} />
               <directionalLight position={[2.5, 3, 4]} intensity={1.8} />
               <ModelScene url={project.modelUrl} mode={mode} />
-              <Grid
-                args={[8, 8]}
-                cellColor="#2f4254"
-                sectionColor="#6ad8e6"
-                fadeDistance={8}
-                fadeStrength={1.6}
-                position={[0, -1.15, 0]}
-              />
               <OrbitControls
                 ref={controlsRef}
                 enableDamping
                 makeDefault
-                minDistance={1.6}
-                maxDistance={8}
+                minDistance={1.2}
+                maxDistance={9}
                 autoRotate={autoRotate}
                 autoRotateSpeed={0.85}
-                target={[0, -0.15, 0]}
+                target={[0, 0, 0]}
               />
             </Suspense>
           </Canvas>
