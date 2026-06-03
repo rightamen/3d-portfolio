@@ -56,6 +56,8 @@ const toTitle = (value) =>
 
 const getExtension = (fileName) => fileName.split('.').pop()?.toUpperCase() || ''
 
+const getFileExtension = (fileName) => `.${fileName.split('.').pop()?.toLowerCase() || ''}`
+
 const formatFileSize = (size) => {
   if (!Number.isFinite(size) || size <= 0) return ''
   if (size < 1024 * 1024) return `${Math.max(1, Math.round(size / 1024))} KB`
@@ -204,6 +206,58 @@ const appendKeyword = (text, keyword) => {
   return Array.from(values).join(', ')
 }
 
+const exportGlb = (object, GLTFExporter) =>
+  new Promise((resolve, reject) => {
+    const exporter = new GLTFExporter()
+    exporter.parse(
+      object,
+      (result) => {
+        if (result instanceof ArrayBuffer) {
+          resolve(result)
+          return
+        }
+
+        reject(new Error('GLB exporter returned JSON instead of binary data.'))
+      },
+      (error) => reject(error),
+      {
+        binary: true,
+        embedImages: true,
+        forceIndices: true,
+        truncateDrawRange: true,
+      },
+    )
+  })
+
+const convertModelInBrowser = async (file) => {
+  const extension = getFileExtension(file.name)
+  if (!['.fbx', '.obj'].includes(extension)) {
+    return {
+      converted: false,
+      file,
+      originalExtension: getExtension(file.name),
+    }
+  }
+
+  const baseName = file.name.replace(/\.[^.]+$/, '')
+  const [{ GLTFExporter }, { FBXLoader }, { OBJLoader }] = await Promise.all([
+    import('three/examples/jsm/exporters/GLTFExporter.js'),
+    import('three/examples/jsm/loaders/FBXLoader.js'),
+    import('three/examples/jsm/loaders/OBJLoader.js'),
+  ])
+  const object =
+    extension === '.fbx'
+      ? new FBXLoader().parse(await file.arrayBuffer(), '')
+      : new OBJLoader().parse(await file.text())
+  const glbBuffer = await exportGlb(object, GLTFExporter)
+
+  return {
+    converted: true,
+    file: new File([glbBuffer], `${baseName}.glb`, { type: 'model/gltf-binary' }),
+    originalExtension: getExtension(file.name),
+  }
+}
+
 const Admin = () => {
   const editorRef = useRef(null)
   const [token, setToken] = useState('')
@@ -343,24 +397,57 @@ const Admin = () => {
   const uploadAsset = async (file, targetField) => {
     if (!file) return
 
+    let uploadFile = file
+    let localConversion = {
+      converted: false,
+      originalExtension: getExtension(file.name),
+    }
+
     setUploadStatus((current) => ({
       ...current,
-      [targetField]: { phase: 'uploading', progress: 0, message: '' },
+      [targetField]: {
+        phase: targetField === 'modelUrl' ? 'processing' : 'uploading',
+        progress: 0,
+        message: targetField === 'modelUrl' ? 'Preparing model...' : '',
+      },
     }))
     try {
-      const payload = await uploadAdminAsset(token, file, (progress) => {
+      if (targetField === 'modelUrl') {
+        setUploadStatus((current) => ({
+          ...current,
+          [targetField]: {
+            phase: 'processing',
+            progress: 6,
+            message: 'Converting locally to GLB...',
+          },
+        }))
+
+        try {
+          localConversion = await convertModelInBrowser(file)
+          uploadFile = localConversion.file
+        } catch {
+          localConversion = {
+            converted: false,
+            failed: true,
+            originalExtension: getExtension(file.name),
+          }
+          uploadFile = file
+        }
+      }
+
+      const payload = await uploadAdminAsset(token, uploadFile, (progress) => {
         setUploadStatus((current) => ({
           ...current,
           [targetField]: {
             phase: progress >= 100 && targetField === 'modelUrl' ? 'processing' : 'uploading',
             progress,
-            message: progress >= 100 && targetField === 'modelUrl' ? 'Converting to GLB...' : '',
+            message: progress >= 100 && targetField === 'modelUrl' ? 'Finalizing model...' : '',
           },
         }))
       })
       const extension = getExtension(payload.file.name)
       const size = formatFileSize(payload.file.size)
-      const title = toTitle(payload.file.name)
+      const title = toTitle(file.name)
 
       setEditingProject((current) => {
         const next = {
@@ -369,11 +456,11 @@ const Admin = () => {
         }
 
         if (targetField === 'modelUrl') {
-          const converted = payload.conversion?.status === 'converted'
+          const converted = localConversion.converted || payload.conversion?.status === 'converted'
           next.format = converted ? 'GLB model' : extension ? `${extension} model` : next.format
           next.modelSize = size || next.modelSize
           next.stackText = appendKeyword(
-            appendKeyword(next.stackText, extension || '3D'),
+            appendKeyword(next.stackText, localConversion.originalExtension || extension || '3D'),
             converted ? 'GLB' : '3D',
           )
           if (!next.title) next.title = title
@@ -395,10 +482,14 @@ const Admin = () => {
       })
       const conversionStatus = payload.conversion?.status
       const uploadMessage =
-        targetField === 'modelUrl' && conversionStatus === 'converted'
-          ? 'Uploaded and converted to GLB'
+        targetField === 'modelUrl' && localConversion.converted
+          ? 'Converted locally and uploaded'
+          : targetField === 'modelUrl' && conversionStatus === 'converted'
+            ? 'Uploaded and converted to GLB'
           : targetField === 'modelUrl' && conversionStatus === 'skipped'
-            ? 'Uploaded, converter unavailable'
+            ? localConversion.failed
+              ? 'Uploaded, local conversion failed'
+              : 'Uploaded, converter unavailable'
             : targetField === 'modelUrl' && conversionStatus === 'failed'
               ? 'Uploaded, conversion failed'
               : 'Uploaded successfully'
