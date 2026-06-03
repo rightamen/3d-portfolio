@@ -490,8 +490,22 @@ html {
 
 .field-input {
   @apply w-full min-h-10 rounded-md px-3 py-2 text-sm
-         bg-white/10 transition duration-200
+         bg-white/10 text-white transition duration-200
          placeholder-neutral-500 border border-white/10 mt-2;
+  color-scheme: dark;
+}
+
+select.field-input {
+  @apply cursor-pointer bg-[#252839] text-white;
+}
+
+select.field-input option {
+  background: #252839;
+  color: #ffffff;
+}
+
+select.field-input option:disabled {
+  color: #9ca3af;
 }
 
 .field-input-focus {
