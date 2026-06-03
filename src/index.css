@@ -520,6 +520,14 @@ select.field-input option:disabled {
   @apply sr-only;
 }
 
+.asset-upload-progress {
+  @apply mt-2 block h-1.5 overflow-hidden rounded-full bg-white/10;
+}
+
+.asset-upload-progress span {
+  @apply block h-full rounded-full bg-aqua transition-all duration-300;
+}
+
 .field-input-focus {
   @apply focus-visible:outline-none
          focus-visible:ring-2

@@ -177,8 +177,8 @@ const viewerFeaturePresets = [
 ]
 
 const emptyUploadStatus = {
-  image: 'idle',
-  modelUrl: 'idle',
+  image: { phase: 'idle', progress: 0, message: '' },
+  modelUrl: { phase: 'idle', progress: 0, message: '' },
 }
 
 const emptyProjectForm = () => ({
@@ -222,7 +222,7 @@ const Admin = () => {
   const [editorScrollKey, setEditorScrollKey] = useState(0)
   const [projectStatus, setProjectStatus] = useState('idle')
   const [searchQuery, setSearchQuery] = useState('')
-  const [uploadStatus, setUploadStatus] = useState(emptyUploadStatus)
+  const [uploadStatus, setUploadStatus] = useState(() => ({ ...emptyUploadStatus }))
 
   useEffect(() => {
     if (!editorScrollKey) return
@@ -345,10 +345,19 @@ const Admin = () => {
 
     setUploadStatus((current) => ({
       ...current,
-      [targetField]: 'uploading',
+      [targetField]: { phase: 'uploading', progress: 0, message: '' },
     }))
     try {
-      const payload = await uploadAdminAsset(token, file)
+      const payload = await uploadAdminAsset(token, file, (progress) => {
+        setUploadStatus((current) => ({
+          ...current,
+          [targetField]: {
+            phase: progress >= 100 && targetField === 'modelUrl' ? 'processing' : 'uploading',
+            progress,
+            message: progress >= 100 && targetField === 'modelUrl' ? 'Converting to GLB...' : '',
+          },
+        }))
+      })
       const extension = getExtension(payload.file.name)
       const size = formatFileSize(payload.file.size)
       const title = toTitle(payload.file.name)
@@ -360,9 +369,13 @@ const Admin = () => {
         }
 
         if (targetField === 'modelUrl') {
-          next.format = extension ? `${extension} model` : next.format
+          const converted = payload.conversion?.status === 'converted'
+          next.format = converted ? 'GLB model' : extension ? `${extension} model` : next.format
           next.modelSize = size || next.modelSize
-          next.stackText = appendKeyword(next.stackText, extension || '3D')
+          next.stackText = appendKeyword(
+            appendKeyword(next.stackText, extension || '3D'),
+            converted ? 'GLB' : '3D',
+          )
           if (!next.title) next.title = title
           if (next.isNew && !next.slug) next.slug = createSlug(title)
           if (!next.summary) {
@@ -380,14 +393,27 @@ const Admin = () => {
 
         return next
       })
+      const conversionStatus = payload.conversion?.status
+      const uploadMessage =
+        targetField === 'modelUrl' && conversionStatus === 'converted'
+          ? 'Uploaded and converted to GLB'
+          : targetField === 'modelUrl' && conversionStatus === 'skipped'
+            ? 'Uploaded, converter unavailable'
+            : targetField === 'modelUrl' && conversionStatus === 'failed'
+              ? 'Uploaded, conversion failed'
+              : 'Uploaded successfully'
       setUploadStatus((current) => ({
         ...current,
-        [targetField]: 'done',
+        [targetField]: { phase: 'done', progress: 100, message: uploadMessage },
       }))
     } catch {
       setUploadStatus((current) => ({
         ...current,
-        [targetField]: 'error',
+        [targetField]: {
+          phase: 'error',
+          progress: 0,
+          message: 'Upload failed. Check size and format.',
+        },
       }))
     }
   }
@@ -400,7 +426,7 @@ const Admin = () => {
   const startEditingProject = (project) => {
     setActiveSection('projects')
     setProjectStatus('idle')
-    setUploadStatus(emptyUploadStatus)
+    setUploadStatus({ ...emptyUploadStatus })
     setEditingProject({
       ...project,
       isNew: false,
@@ -413,7 +439,7 @@ const Admin = () => {
   const startCreatingProject = () => {
     setActiveSection('projects')
     setProjectStatus('idle')
-    setUploadStatus(emptyUploadStatus)
+    setUploadStatus({ ...emptyUploadStatus })
     setEditingProject({
       ...emptyProjectForm(),
       ...projectPresets[0].values,
@@ -758,19 +784,24 @@ const Admin = () => {
                     Upload Image
                     <span
                       className={`asset-upload-control ${
-                        uploadStatus.image === 'done' ? 'asset-upload-control-done' : ''
+                        uploadStatus.image.phase === 'done' ? 'asset-upload-control-done' : ''
                       }`}
                     >
-                      {uploadStatus.image === 'uploading' && 'Uploading image...'}
-                      {uploadStatus.image === 'done' && 'Uploaded successfully'}
-                      {uploadStatus.image === 'error' && 'Upload failed. Choose again'}
-                      {uploadStatus.image === 'idle' && 'Choose image file'}
+                      {uploadStatus.image.phase === 'uploading' && 'Uploading image...'}
+                      {uploadStatus.image.phase === 'done' && uploadStatus.image.message}
+                      {uploadStatus.image.phase === 'error' && uploadStatus.image.message}
+                      {uploadStatus.image.phase === 'idle' && 'Choose image file'}
                       <input
                         type="file"
                         accept=".jpg,.jpeg,.png,.webp,.gif"
                         onChange={(event) => selectAsset(event, 'image')}
                       />
                     </span>
+                    {uploadStatus.image.phase !== 'idle' && (
+                      <span className="asset-upload-progress">
+                        <span style={{ width: `${uploadStatus.image.progress}%` }} />
+                      </span>
+                    )}
                   </label>
                   <label className="field-label">
                     Model URL
@@ -789,19 +820,25 @@ const Admin = () => {
                     Upload Model
                     <span
                       className={`asset-upload-control ${
-                        uploadStatus.modelUrl === 'done' ? 'asset-upload-control-done' : ''
+                        uploadStatus.modelUrl.phase === 'done' ? 'asset-upload-control-done' : ''
                       }`}
                     >
-                      {uploadStatus.modelUrl === 'uploading' && 'Uploading model...'}
-                      {uploadStatus.modelUrl === 'done' && 'Uploaded successfully'}
-                      {uploadStatus.modelUrl === 'error' && 'Upload failed. Choose again'}
-                      {uploadStatus.modelUrl === 'idle' && 'Choose model file'}
+                      {uploadStatus.modelUrl.phase === 'uploading' && 'Uploading model...'}
+                      {uploadStatus.modelUrl.phase === 'processing' && uploadStatus.modelUrl.message}
+                      {uploadStatus.modelUrl.phase === 'done' && uploadStatus.modelUrl.message}
+                      {uploadStatus.modelUrl.phase === 'error' && uploadStatus.modelUrl.message}
+                      {uploadStatus.modelUrl.phase === 'idle' && 'Choose model file'}
                       <input
                         type="file"
                         accept=".glb,.gltf,.fbx,.obj,.zip"
                         onChange={(event) => selectAsset(event, 'modelUrl')}
                       />
                     </span>
+                    {uploadStatus.modelUrl.phase !== 'idle' && (
+                      <span className="asset-upload-progress">
+                        <span style={{ width: `${uploadStatus.modelUrl.progress}%` }} />
+                      </span>
+                    )}
                   </label>
                   <label className="field-label">
                     Model Size

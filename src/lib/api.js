@@ -88,13 +88,37 @@ export const deleteAdminProject = (token, slug) =>
     method: 'DELETE',
   })
 
-export const uploadAdminAsset = (token, file) => {
+export const uploadAdminAsset = (token, file, onProgress) => {
   const formData = new FormData()
   formData.append('file', file)
 
-  return adminRequest('/api/admin/uploads', token, {
-    method: 'POST',
-    body: formData,
+  return new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest()
+    request.open('POST', `${API_BASE}/api/admin/uploads`)
+    request.setRequestHeader('Authorization', `Bearer ${token}`)
+
+    request.upload.onprogress = (event) => {
+      if (!event.lengthComputable || !onProgress) return
+      onProgress(Math.round((event.loaded / event.total) * 100))
+    }
+
+    request.onload = () => {
+      let payload = {}
+      try {
+        payload = JSON.parse(request.responseText || '{}')
+      } catch {
+        payload = {}
+      }
+
+      if (request.status >= 200 && request.status < 300) {
+        resolve(payload)
+      } else {
+        reject(new Error(payload.error || 'Upload failed'))
+      }
+    }
+
+    request.onerror = () => reject(new Error('Upload failed'))
+    request.send(formData)
   })
 }
 

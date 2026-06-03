@@ -8,6 +8,7 @@ import { createContactMessagesStore } from './contactMessagesStore.js'
 import { experience, profile, projects as staticProjects, skills } from './content.js'
 import { createDownloadRequestsStore } from './downloadRequestsStore.js'
 import { createInteractionsStore } from './interactionsStore.js'
+import { convertModelToGlb } from './modelConverter.js'
 import { createPostgresStores } from './postgresStores.js'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -16,6 +17,7 @@ const rootDir = path.resolve(__dirname, '..')
 const dataDir = path.join(rootDir, 'data')
 const distDir = path.join(rootDir, 'dist')
 const uploadRoot = path.join(rootDir, 'public', 'uploads')
+const modelConverterScript = path.join(rootDir, 'scripts', 'convert-model-to-glb.py')
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 const imageExtensions = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif'])
@@ -275,7 +277,7 @@ app.get('/api/admin/projects', requireAdmin, async (_request, response) => {
   response.json({ projects: await adminStore.listProjects(staticProjects) })
 })
 
-app.post('/api/admin/uploads', requireAdmin, upload.single('file'), (request, response) => {
+app.post('/api/admin/uploads', requireAdmin, upload.single('file'), async (request, response) => {
   if (!request.file) {
     return response.status(400).json({
       error: 'Upload file is required.',
@@ -294,14 +296,37 @@ app.post('/api/admin/uploads', requireAdmin, upload.single('file'), (request, re
   }
 
   const folder = type === 'image' ? 'images' : 'models'
+  let conversion = {
+    status: type === 'model' ? 'not-needed' : 'not-applicable',
+    message: type === 'model' ? 'Model is already web-ready.' : 'Images do not need conversion.',
+  }
+  let url = `/uploads/${folder}/${request.file.filename}`
+
+  if (type === 'model') {
+    const originalExtension = path.extname(request.file.filename).toLowerCase()
+    const outputFilename = request.file.filename.replace(originalExtension, '.glb')
+    const outputPath = path.join(uploadRoot, 'models', outputFilename)
+
+    conversion = await convertModelToGlb({
+      inputPath: request.file.path,
+      outputPath,
+      scriptPath: modelConverterScript,
+    })
+
+    if (conversion.status === 'converted') {
+      url = `/uploads/models/${outputFilename}`
+      conversion.url = url
+    }
+  }
 
   return response.status(201).json({
     file: {
       name: request.file.originalname,
       size: request.file.size,
       type,
-      url: `/uploads/${folder}/${request.file.filename}`,
+      url,
     },
+    conversion,
   })
 })
 
