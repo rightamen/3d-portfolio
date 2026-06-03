@@ -1,21 +1,28 @@
 import cors from 'cors'
 import express from 'express'
-import { appendFile, mkdir } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { createContactMessagesStore } from './contactMessagesStore.js'
 import { experience, profile, projects, skills } from './content.js'
 import { createDownloadRequestsStore } from './downloadRequestsStore.js'
 import { createInteractionsStore } from './interactionsStore.js'
+import { createPostgresStores } from './postgresStores.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const rootDir = path.resolve(__dirname, '..')
 const dataDir = path.join(rootDir, 'data')
-const messagesFile = path.join(dataDir, 'messages.jsonl')
 const distDir = path.join(rootDir, 'dist')
-const downloadRequestsStore = createDownloadRequestsStore(dataDir)
-const interactionsStore = createInteractionsStore(dataDir)
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const stores = process.env.DATABASE_URL
+  ? await createPostgresStores(process.env.DATABASE_URL)
+  : {
+      contactMessagesStore: createContactMessagesStore(dataDir),
+      downloadRequestsStore: createDownloadRequestsStore(dataDir),
+      interactionsStore: createInteractionsStore(dataDir),
+    }
+
+const { contactMessagesStore, downloadRequestsStore, interactionsStore } = stores
 
 const app = express()
 const port = process.env.PORT || 4173
@@ -164,8 +171,7 @@ app.post('/api/contact', async (request, response) => {
     })
   }
 
-  await mkdir(dataDir, { recursive: true })
-  await appendFile(messagesFile, `${JSON.stringify(normalized)}\n`, 'utf8')
+  await contactMessagesStore.addMessage(normalized)
 
   return response.status(201).json({ ok: true })
 })
