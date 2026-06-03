@@ -400,6 +400,22 @@ html {
   @apply grid gap-4 rounded-lg border border-white/10 bg-[#101321]/80 p-4;
 }
 
+.admin-editor-tools {
+  @apply grid gap-4 rounded-lg border border-white/10 bg-black/20 p-4 md:grid-cols-2;
+}
+
+.admin-editor-tools strong {
+  @apply mb-3 block text-sm font-semibold text-white;
+}
+
+.admin-chip-grid {
+  @apply flex flex-wrap gap-2;
+}
+
+.admin-chip {
+  @apply inline-flex min-h-9 items-center justify-center rounded-full border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-neutral-300 transition hover:border-aqua/40 hover:text-white;
+}
+
 .admin-toggle {
   @apply inline-flex items-center gap-3 text-sm font-semibold text-neutral-300;
 }
@@ -498,4 +514,8 @@ html {
   @apply focus-visible:outline-none
          focus-visible:ring-2
          focus-visible:ring-white/20;
+}
+
+.field-hint {
+  @apply mt-2 block text-xs leading-relaxed text-neutral-500;
 }

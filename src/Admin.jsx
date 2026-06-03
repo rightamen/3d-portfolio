@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   createAdminProject,
   deleteAdminComment,
@@ -39,11 +39,105 @@ const textToList = (value) =>
     .map((item) => item.trim())
     .filter(Boolean)
 
+const createSlug = (value) =>
+  value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '')
+    .slice(0, 64)
+
+const toTitle = (value) =>
+  value
+    .replace(/\.[^.]+$/, '')
+    .replace(/[-_]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, (letter) => letter.toUpperCase())
+
+const getExtension = (fileName) => fileName.split('.').pop()?.toUpperCase() || ''
+
+const formatFileSize = (size) => {
+  if (!Number.isFinite(size) || size <= 0) return ''
+  if (size < 1024 * 1024) return `${Math.max(1, Math.round(size / 1024))} KB`
+  return `${(size / 1024 / 1024).toFixed(size > 20 * 1024 * 1024 ? 0 : 1)} MB`
+}
+
 const searchInItem = (item, query) =>
   !query ||
   JSON.stringify(item)
     .toLowerCase()
     .includes(query.toLowerCase())
+
+const projectPresets = [
+  {
+    key: 'game-prop',
+    label: 'Game Prop',
+    values: {
+      downloadPolicy: 'Request-only source files',
+      format: 'Realtime 3D asset',
+      modelSize: 'Auto-detected after upload',
+      stackText: '3ds Max, FBX, PBR, GLB',
+      summary: 'A production-ready realtime prop with optimized topology, PBR materials, and web delivery.',
+      viewerFeaturesText: 'Orbit, Zoom, Pan, Texture view, Clay view, Wireframe',
+      workflow:
+        'Modeled and UV prepared for a realtime workflow, then converted into a compressed web preview with PBR texture maps preserved.',
+    },
+  },
+  {
+    key: 'environment',
+    label: 'Environment',
+    values: {
+      downloadPolicy: 'Portfolio preview only',
+      format: 'Environment scene',
+      modelSize: 'Auto-detected after upload',
+      stackText: 'Environment Art, Lighting, PBR, Optimization',
+      summary: 'A compact environment showcase focused on composition, lighting, materials, and web performance.',
+      viewerFeaturesText: 'Orbit, Zoom, Pan, Lighting preview, Wireframe',
+      workflow:
+        'Built as a scene presentation with optimized geometry, compressed textures, and a browser-friendly model export.',
+    },
+  },
+  {
+    key: 'character',
+    label: 'Character',
+    values: {
+      downloadPolicy: 'Private review only',
+      format: 'Character model',
+      modelSize: 'Auto-detected after upload',
+      stackText: 'Character Art, Retopology, UV, PBR',
+      summary: 'A character-focused 3D study presenting silhouette, material response, and realtime model preparation.',
+      viewerFeaturesText: 'Orbit, Zoom, Pan, Texture view, Clay view',
+      workflow:
+        'Prepared from high-level sculpt/modeling work into a clean presentation asset with readable materials and optimized preview settings.',
+    },
+  },
+  {
+    key: 'case-study',
+    label: 'Case Study',
+    values: {
+      downloadPolicy: 'Unavailable',
+      format: 'Image case study',
+      modelSize: 'Static showcase',
+      stackText: '3D, Rendering, Portfolio',
+      summary: 'A visual case study documenting the project result, production choices, and final presentation.',
+      viewerFeaturesText: 'Case study',
+      workflow:
+        'Presented as a still-image breakdown with concise production notes and portfolio-ready context.',
+    },
+  },
+]
+
+const keywordPresets = [
+  '3ds Max',
+  'FBX',
+  'PBR',
+  'GLB',
+  'Realtime',
+  'Game Asset',
+  'Hard Surface',
+  'Texture Baking',
+  'Optimization',
+]
 
 const emptyProjectForm = () => ({
   downloadPolicy: 'Unavailable',
@@ -62,7 +156,14 @@ const emptyProjectForm = () => ({
   year: String(new Date().getFullYear()),
 })
 
+const appendKeyword = (text, keyword) => {
+  const values = new Set(textToList(text))
+  values.add(keyword)
+  return Array.from(values).join(', ')
+}
+
 const Admin = () => {
+  const editorRef = useRef(null)
   const [token, setToken] = useState('')
   const [tokenInput, setTokenInput] = useState(() => window.localStorage.getItem(tokenKey) || '')
   const [status, setStatus] = useState('locked')
@@ -76,9 +177,18 @@ const Admin = () => {
   })
   const [editingProject, setEditingProject] = useState(null)
   const [activeSection, setActiveSection] = useState('projects')
+  const [editorScrollKey, setEditorScrollKey] = useState(0)
   const [projectStatus, setProjectStatus] = useState('idle')
   const [searchQuery, setSearchQuery] = useState('')
   const [uploadStatus, setUploadStatus] = useState('idle')
+
+  useEffect(() => {
+    if (!editorScrollKey) return
+
+    window.setTimeout(() => {
+      editorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, 80)
+  }, [editorScrollKey])
 
   const loadAdminData = async (activeToken = token) => {
     if (!activeToken) {
@@ -164,16 +274,57 @@ const Admin = () => {
     }
   }
 
+  const applyProjectPreset = (preset) => {
+    setEditingProject((current) => ({
+      ...current,
+      ...preset.values,
+    }))
+  }
+
+  const addKeyword = (keyword) => {
+    setEditingProject((current) => ({
+      ...current,
+      stackText: appendKeyword(current.stackText, keyword),
+    }))
+  }
+
   const uploadAsset = async (file, targetField) => {
     if (!file) return
 
     setUploadStatus('uploading')
     try {
       const payload = await uploadAdminAsset(token, file)
-      setEditingProject((current) => ({
-        ...current,
-        [targetField]: payload.file.url,
-      }))
+      const extension = getExtension(payload.file.name)
+      const size = formatFileSize(payload.file.size)
+      const title = toTitle(payload.file.name)
+
+      setEditingProject((current) => {
+        const next = {
+          ...current,
+          [targetField]: payload.file.url,
+        }
+
+        if (targetField === 'modelUrl') {
+          next.format = extension ? `${extension} model` : next.format
+          next.modelSize = size || next.modelSize
+          next.stackText = appendKeyword(next.stackText, extension || '3D')
+          if (!next.title) next.title = title
+          if (next.isNew && !next.slug) next.slug = createSlug(title)
+          if (!next.summary) {
+            next.summary = `A realtime 3D asset preview for ${title || 'this project'}.`
+          }
+        }
+
+        if (targetField === 'image') {
+          if (!next.title) next.title = title
+          if (next.isNew && !next.slug) next.slug = createSlug(title)
+          if (!next.format || next.format === 'Image case study') {
+            next.format = extension ? `${extension} preview image` : next.format
+          }
+        }
+
+        return next
+      })
       setUploadStatus('done')
     } catch {
       setUploadStatus('error')
@@ -190,13 +341,18 @@ const Admin = () => {
       stackText: listToText(project.stack),
       viewerFeaturesText: listToText(project.viewerFeatures),
     })
+    setEditorScrollKey((current) => current + 1)
   }
 
   const startCreatingProject = () => {
     setActiveSection('projects')
     setProjectStatus('idle')
     setUploadStatus('idle')
-    setEditingProject(emptyProjectForm())
+    setEditingProject({
+      ...emptyProjectForm(),
+      ...projectPresets[0].values,
+    })
+    setEditorScrollKey((current) => current + 1)
   }
 
   const deleteItem = async (label, action) => {
@@ -387,12 +543,44 @@ const Admin = () => {
           )}
 
           {activeSection === 'projects' && editingProject && (
-            <section className="admin-section">
+            <section className="admin-section" ref={editorRef}>
               <div className="admin-section-header">
                 <h2>{editingProject.isNew ? 'New Project' : 'Edit Project'}</h2>
                 <span>{editingProject.slug}</span>
               </div>
               <form className="admin-editor" onSubmit={saveProject}>
+                <div className="admin-editor-tools">
+                  <div>
+                    <strong>Project presets</strong>
+                    <div className="admin-chip-grid">
+                      {projectPresets.map((preset) => (
+                        <button
+                          key={preset.key}
+                          type="button"
+                          className="admin-chip"
+                          onClick={() => applyProjectPreset(preset)}
+                        >
+                          {preset.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <strong>Keywords</strong>
+                    <div className="admin-chip-grid">
+                      {keywordPresets.map((keyword) => (
+                        <button
+                          key={keyword}
+                          type="button"
+                          className="admin-chip"
+                          onClick={() => addKeyword(keyword)}
+                        >
+                          {keyword}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
                 <label className="field-label">
                   Slug
                   <input
@@ -500,6 +688,9 @@ const Admin = () => {
                       accept=".jpg,.jpeg,.png,.webp,.gif"
                       onChange={(event) => uploadAsset(event.target.files?.[0], 'image')}
                     />
+                    <span className="field-hint">
+                      Auto-fills the preview path and can create title/slug from the file name.
+                    </span>
                   </label>
                   <label className="field-label">
                     Model URL
@@ -522,6 +713,9 @@ const Admin = () => {
                       accept=".glb,.gltf,.fbx,.obj,.zip"
                       onChange={(event) => uploadAsset(event.target.files?.[0], 'modelUrl')}
                     />
+                    <span className="field-hint">
+                      Auto-fills path, format, model size, title, slug, and related keywords.
+                    </span>
                   </label>
                   <label className="field-label">
                     Model Size
