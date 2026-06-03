@@ -68,12 +68,18 @@ const searchInItem = (item, query) =>
     .toLowerCase()
     .includes(query.toLowerCase())
 
+const downloadPolicyPresets = [
+  { label: 'Open Download', value: 'Open download' },
+  { label: 'Member Download', value: 'Member download' },
+  { label: 'Approved Download', value: 'Approved download' },
+]
+
 const projectPresets = [
   {
     key: 'game-prop',
     label: 'Game Prop',
     values: {
-      downloadPolicy: 'Request-only source files',
+      downloadPolicy: downloadPolicyPresets[2].value,
       format: 'Realtime 3D asset',
       modelSize: 'Auto-detected after upload',
       stackText: '3ds Max, FBX, PBR, GLB',
@@ -87,7 +93,7 @@ const projectPresets = [
     key: 'environment',
     label: 'Environment',
     values: {
-      downloadPolicy: 'Portfolio preview only',
+      downloadPolicy: downloadPolicyPresets[1].value,
       format: 'Environment scene',
       modelSize: 'Auto-detected after upload',
       stackText: 'Environment Art, Lighting, PBR, Optimization',
@@ -101,7 +107,7 @@ const projectPresets = [
     key: 'character',
     label: 'Character',
     values: {
-      downloadPolicy: 'Private review only',
+      downloadPolicy: downloadPolicyPresets[2].value,
       format: 'Character model',
       modelSize: 'Auto-detected after upload',
       stackText: 'Character Art, Retopology, UV, PBR',
@@ -115,7 +121,7 @@ const projectPresets = [
     key: 'case-study',
     label: 'Case Study',
     values: {
-      downloadPolicy: 'Unavailable',
+      downloadPolicy: downloadPolicyPresets[0].value,
       format: 'Image case study',
       modelSize: 'Static showcase',
       stackText: '3D, Rendering, Portfolio',
@@ -127,7 +133,26 @@ const projectPresets = [
   },
 ]
 
-const keywordPresets = [
+const formatPresets = [
+  'Realtime 3D asset',
+  'GLB model',
+  'FBX model',
+  'OBJ model',
+  'Environment scene',
+  'Character model',
+  'Image case study',
+]
+
+const modelSizePresets = [
+  'Auto-detected after upload',
+  'Static showcase',
+  'Under 10 MB',
+  '10-50 MB',
+  '50-120 MB',
+  'Source package',
+]
+
+const stackKeywordPresets = [
   '3ds Max',
   'FBX',
   'PBR',
@@ -139,8 +164,20 @@ const keywordPresets = [
   'Optimization',
 ]
 
+const viewerFeaturePresets = [
+  'Orbit',
+  'Zoom',
+  'Pan',
+  'Texture view',
+  'Clay view',
+  'Wireframe',
+  'Auto rotate',
+  'Grid floor',
+  'Case study',
+]
+
 const emptyProjectForm = () => ({
-  downloadPolicy: 'Unavailable',
+  downloadPolicy: downloadPolicyPresets[2].value,
   format: 'Image case study',
   image: '/assets/projects/accessories.jpg',
   isNew: true,
@@ -274,17 +311,27 @@ const Admin = () => {
     }
   }
 
-  const applyProjectPreset = (preset) => {
+  const applyProjectPreset = (presetKey) => {
+    const preset = projectPresets.find((item) => item.key === presetKey)
+    if (!preset) return
+
     setEditingProject((current) => ({
       ...current,
       ...preset.values,
     }))
   }
 
-  const addKeyword = (keyword) => {
+  const addStackKeyword = (keyword) => {
     setEditingProject((current) => ({
       ...current,
       stackText: appendKeyword(current.stackText, keyword),
+    }))
+  }
+
+  const addViewerFeature = (feature) => {
+    setEditingProject((current) => ({
+      ...current,
+      viewerFeaturesText: appendKeyword(current.viewerFeaturesText, feature),
     }))
   }
 
@@ -326,6 +373,7 @@ const Admin = () => {
         return next
       })
       setUploadStatus('done')
+      window.setTimeout(() => setUploadStatus('idle'), 1600)
     } catch {
       setUploadStatus('error')
     }
@@ -351,6 +399,7 @@ const Admin = () => {
     setEditingProject({
       ...emptyProjectForm(),
       ...projectPresets[0].values,
+      downloadPolicy: downloadPolicyPresets[2].value,
     })
     setEditorScrollKey((current) => current + 1)
   }
@@ -549,38 +598,26 @@ const Admin = () => {
                 <span>{editingProject.slug}</span>
               </div>
               <form className="admin-editor" onSubmit={saveProject}>
-                <div className="admin-editor-tools">
-                  <div>
-                    <strong>Project presets</strong>
-                    <div className="admin-chip-grid">
-                      {projectPresets.map((preset) => (
-                        <button
-                          key={preset.key}
-                          type="button"
-                          className="admin-chip"
-                          onClick={() => applyProjectPreset(preset)}
-                        >
-                          {preset.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <div>
-                    <strong>Keywords</strong>
-                    <div className="admin-chip-grid">
-                      {keywordPresets.map((keyword) => (
-                        <button
-                          key={keyword}
-                          type="button"
-                          className="admin-chip"
-                          onClick={() => addKeyword(keyword)}
-                        >
-                          {keyword}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
+                <label className="field-label">
+                  Project Type Preset
+                  <select
+                    className="field-input field-input-focus"
+                    defaultValue=""
+                    onChange={(event) => {
+                      applyProjectPreset(event.target.value)
+                      event.target.value = ''
+                    }}
+                  >
+                    <option value="" disabled>
+                      Apply a project type...
+                    </option>
+                    {projectPresets.map((preset) => (
+                      <option key={preset.key} value={preset.key}>
+                        {preset.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
                 <label className="field-label">
                   Slug
                   <input
@@ -655,6 +692,25 @@ const Admin = () => {
                   </label>
                   <label className="field-label">
                     Format
+                    <select
+                      className="field-input field-input-focus"
+                      value=""
+                      onChange={(event) =>
+                        setEditingProject((current) => ({
+                          ...current,
+                          format: event.target.value,
+                        }))
+                      }
+                    >
+                      <option value="" disabled>
+                        Choose a format preset...
+                      </option>
+                      {formatPresets.map((format) => (
+                        <option key={format} value={format}>
+                          {format}
+                        </option>
+                      ))}
+                    </select>
                     <input
                       className="field-input field-input-focus"
                       value={editingProject.format || ''}
@@ -688,9 +744,6 @@ const Admin = () => {
                       accept=".jpg,.jpeg,.png,.webp,.gif"
                       onChange={(event) => uploadAsset(event.target.files?.[0], 'image')}
                     />
-                    <span className="field-hint">
-                      Auto-fills the preview path and can create title/slug from the file name.
-                    </span>
                   </label>
                   <label className="field-label">
                     Model URL
@@ -713,12 +766,28 @@ const Admin = () => {
                       accept=".glb,.gltf,.fbx,.obj,.zip"
                       onChange={(event) => uploadAsset(event.target.files?.[0], 'modelUrl')}
                     />
-                    <span className="field-hint">
-                      Auto-fills path, format, model size, title, slug, and related keywords.
-                    </span>
                   </label>
                   <label className="field-label">
                     Model Size
+                    <select
+                      className="field-input field-input-focus"
+                      value=""
+                      onChange={(event) =>
+                        setEditingProject((current) => ({
+                          ...current,
+                          modelSize: event.target.value,
+                        }))
+                      }
+                    >
+                      <option value="" disabled>
+                        Choose a size preset...
+                      </option>
+                      {modelSizePresets.map((size) => (
+                        <option key={size} value={size}>
+                          {size}
+                        </option>
+                      ))}
+                    </select>
                     <input
                       className="field-input field-input-focus"
                       value={editingProject.modelSize || ''}
@@ -732,7 +801,7 @@ const Admin = () => {
                   </label>
                   <label className="field-label">
                     Download Policy
-                    <input
+                    <select
                       className="field-input field-input-focus"
                       value={editingProject.downloadPolicy || ''}
                       onChange={(event) =>
@@ -741,11 +810,34 @@ const Admin = () => {
                           downloadPolicy: event.target.value,
                         }))
                       }
-                    />
+                    >
+                      {downloadPolicyPresets.map((policy) => (
+                        <option key={policy.value} value={policy.value}>
+                          {policy.label}
+                        </option>
+                      ))}
+                    </select>
                   </label>
                 </div>
                 <label className="field-label">
                   Stack
+                  <select
+                    className="field-input field-input-focus"
+                    value=""
+                    onChange={(event) => {
+                      addStackKeyword(event.target.value)
+                      event.target.value = ''
+                    }}
+                  >
+                    <option value="" disabled>
+                      Add a keyword...
+                    </option>
+                    {stackKeywordPresets.map((keyword) => (
+                      <option key={keyword} value={keyword}>
+                        {keyword}
+                      </option>
+                    ))}
+                  </select>
                   <input
                     className="field-input field-input-focus"
                     value={editingProject.stackText}
@@ -759,6 +851,23 @@ const Admin = () => {
                 </label>
                 <label className="field-label">
                   Viewer Features
+                  <select
+                    className="field-input field-input-focus"
+                    value=""
+                    onChange={(event) => {
+                      addViewerFeature(event.target.value)
+                      event.target.value = ''
+                    }}
+                  >
+                    <option value="" disabled>
+                      Add a viewer feature...
+                    </option>
+                    {viewerFeaturePresets.map((feature) => (
+                      <option key={feature} value={feature}>
+                        {feature}
+                      </option>
+                    ))}
+                  </select>
                   <input
                     className="field-input field-input-focus"
                     value={editingProject.viewerFeaturesText}
@@ -804,9 +913,6 @@ const Admin = () => {
                 )}
                 {uploadStatus === 'uploading' && (
                   <p className="text-sm text-neutral-400">Uploading asset...</p>
-                )}
-                {uploadStatus === 'done' && (
-                  <p className="text-sm text-mint">Asset uploaded and URL filled in.</p>
                 )}
                 {uploadStatus === 'error' && (
                   <p className="text-sm text-coral">
