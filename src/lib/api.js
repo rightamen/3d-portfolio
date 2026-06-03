@@ -65,6 +65,21 @@ export const updateAdminDownloadRequest = (token, id, status) =>
     body: JSON.stringify({ status }),
   })
 
+export const deleteAdminComment = (token, id) =>
+  adminRequest(`/api/admin/comments/${id}`, token, {
+    method: 'DELETE',
+  })
+
+export const deleteAdminContactMessage = (token, id) =>
+  adminRequest(`/api/admin/contact-messages/${id}`, token, {
+    method: 'DELETE',
+  })
+
+export const deleteAdminDownloadRequest = (token, id) =>
+  adminRequest(`/api/admin/download-requests/${id}`, token, {
+    method: 'DELETE',
+  })
+
 export const sendMessage = (payload) =>
   request('/api/contact', {
     method: 'POST',

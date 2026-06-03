@@ -232,6 +232,42 @@ app.patch('/api/admin/download-requests/:id', requireAdmin, async (request, resp
   return response.json({ request: updated })
 })
 
+app.delete('/api/admin/comments/:id', requireAdmin, async (request, response) => {
+  const deleted = await adminStore.deleteComment(request.params.id)
+
+  if (!deleted) {
+    return response.status(404).json({
+      error: 'Comment not found.',
+    })
+  }
+
+  return response.json({ ok: true })
+})
+
+app.delete('/api/admin/contact-messages/:id', requireAdmin, async (request, response) => {
+  const deleted = await adminStore.deleteContactMessage(request.params.id)
+
+  if (!deleted) {
+    return response.status(404).json({
+      error: 'Contact message not found.',
+    })
+  }
+
+  return response.json({ ok: true })
+})
+
+app.delete('/api/admin/download-requests/:id', requireAdmin, async (request, response) => {
+  const deleted = await adminStore.deleteDownloadRequest(request.params.id)
+
+  if (!deleted) {
+    return response.status(404).json({
+      error: 'Download request not found.',
+    })
+  }
+
+  return response.json({ ok: true })
+})
+
 app.use(express.static(distDir))
 
 app.get(/.*/, (_request, response) => {

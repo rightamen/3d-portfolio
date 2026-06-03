@@ -148,6 +148,10 @@ html {
   @apply inline-flex min-h-11 items-center justify-center rounded-full border border-white/15 bg-white/5 px-6 py-3 text-sm font-semibold text-white transition duration-200 hover:-translate-y-0.5 hover:border-white/30 hover:bg-white/10;
 }
 
+.danger-action {
+  @apply inline-flex min-h-11 items-center justify-center rounded-full border border-coral/30 bg-coral/10 px-6 py-3 text-sm font-semibold text-coral transition duration-200 hover:-translate-y-0.5 hover:border-coral/50 hover:bg-coral/20;
+}
+
 .skill-pill {
   @apply inline-flex items-center rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-neutral-300;
 }

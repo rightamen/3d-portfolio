@@ -1,5 +1,8 @@
 import { useState } from 'react'
 import {
+  deleteAdminComment,
+  deleteAdminContactMessage,
+  deleteAdminDownloadRequest,
   getAdminComments,
   getAdminContactMessages,
   getAdminDownloadRequests,
@@ -71,6 +74,13 @@ const Admin = () => {
 
   const updateRequestStatus = async (id, nextStatus) => {
     await updateAdminDownloadRequest(token, id, nextStatus)
+    await loadAdminData(token)
+  }
+
+  const deleteItem = async (label, action) => {
+    if (!window.confirm(`Delete this ${label}? This cannot be undone.`)) return
+
+    await action()
     await loadAdminData(token)
   }
 
@@ -171,6 +181,17 @@ const Admin = () => {
                     >
                       Reject
                     </button>
+                    <button
+                      type="button"
+                      className="danger-action"
+                      onClick={() =>
+                        deleteItem('download request', () =>
+                          deleteAdminDownloadRequest(token, request.id),
+                        )
+                      }
+                    >
+                      Delete
+                    </button>
                   </div>
                 </article>
               ))}
@@ -191,6 +212,17 @@ const Admin = () => {
                     <p>{comment.message}</p>
                     <small>{formatDate(comment.createdAt)}</small>
                   </div>
+                  <div className="admin-actions">
+                    <button
+                      type="button"
+                      className="danger-action"
+                      onClick={() =>
+                        deleteItem('comment', () => deleteAdminComment(token, comment.id))
+                      }
+                    >
+                      Delete
+                    </button>
+                  </div>
                 </article>
               ))}
             </div>
@@ -209,6 +241,19 @@ const Admin = () => {
                     <span>{message.email}</span>
                     <p>{message.message}</p>
                     <small>{formatDate(message.createdAt)}</small>
+                  </div>
+                  <div className="admin-actions">
+                    <button
+                      type="button"
+                      className="danger-action"
+                      onClick={() =>
+                        deleteItem('contact message', () =>
+                          deleteAdminContactMessage(token, message.id),
+                        )
+                      }
+                    >
+                      Delete
+                    </button>
                   </div>
                 </article>
               ))}

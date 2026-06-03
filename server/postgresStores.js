@@ -277,6 +277,45 @@ export const createPostgresStores = async (databaseUrl) => {
 
       return result.rows[0] || null
     },
+
+    deleteComment: async (id) => {
+      const result = await pool.query(
+        `
+          DELETE FROM project_comments
+          WHERE id = $1
+          RETURNING id
+        `,
+        [id],
+      )
+
+      return result.rows[0] || null
+    },
+
+    deleteContactMessage: async (id) => {
+      const result = await pool.query(
+        `
+          DELETE FROM contact_messages
+          WHERE id = $1
+          RETURNING id
+        `,
+        [id],
+      )
+
+      return result.rows[0] || null
+    },
+
+    deleteDownloadRequest: async (id) => {
+      const result = await pool.query(
+        `
+          DELETE FROM download_requests
+          WHERE id = $1
+          RETURNING id
+        `,
+        [id],
+      )
+
+      return result.rows[0] || null
+    },
   }
 
   return {
