@@ -134,6 +134,11 @@ const ensureSchema = async (pool) => {
       created_at timestamptz NOT NULL DEFAULT now(),
       updated_at timestamptz NOT NULL DEFAULT now()
     );
+
+    CREATE TABLE IF NOT EXISTS deleted_projects (
+      slug text PRIMARY KEY,
+      deleted_at timestamptz NOT NULL DEFAULT now()
+    );
   `)
 }
 
@@ -160,6 +165,8 @@ export const createPostgresStores = async (databaseUrl) => {
         FROM custom_projects
         ORDER BY created_at DESC
       `)
+      const deletedResult = await pool.query('SELECT slug FROM deleted_projects')
+      const deletedSlugs = new Set(deletedResult.rows.map((row) => row.slug))
       const overrides = new Map(
         result.rows.map((row) => [row.slug, toProjectOverride(row)]),
       )
@@ -169,6 +176,7 @@ export const createPostgresStores = async (databaseUrl) => {
         ...customProjects,
         ...baseProjects.map((project) => mergeProject(project, overrides.get(project.slug))),
       ]
+        .filter((project) => !deletedSlugs.has(project.slug))
         .filter((project) => includeHidden || project.isPublic !== false)
     },
 
@@ -508,8 +516,8 @@ export const createPostgresStores = async (databaseUrl) => {
       return result.rows[0] || null
     },
 
-    deleteCustomProject: async (slug) => {
-      const result = await pool.query(
+    deleteProject: async (slug) => {
+      const customResult = await pool.query(
         `
           DELETE FROM custom_projects
           WHERE slug = $1
@@ -518,7 +526,19 @@ export const createPostgresStores = async (databaseUrl) => {
         [slug],
       )
 
-      return result.rows[0] || null
+      if (customResult.rows[0]) return customResult.rows[0]
+
+      const deletedResult = await pool.query(
+        `
+          INSERT INTO deleted_projects (slug)
+          VALUES ($1)
+          ON CONFLICT (slug) DO UPDATE SET deleted_at = now()
+          RETURNING slug
+        `,
+        [slug],
+      )
+
+      return deletedResult.rows[0] || null
     },
 
     deleteComment: async (id) => {

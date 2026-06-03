@@ -318,13 +318,17 @@ app.patch('/api/admin/projects/:slug', requireAdmin, async (request, response) =
 })
 
 app.delete('/api/admin/projects/:slug', requireAdmin, async (request, response) => {
-  if (staticProjects.some((project) => project.slug === request.params.slug)) {
-    return response.status(400).json({
-      error: 'Seed projects can be hidden, but not deleted.',
+  const existingProject = await projectStore.getProject(staticProjects, request.params.slug, {
+    includeHidden: true,
+  })
+
+  if (!existingProject) {
+    return response.status(404).json({
+      error: 'Project not found.',
     })
   }
 
-  const deleted = await adminStore.deleteCustomProject(request.params.slug)
+  const deleted = await adminStore.deleteProject(request.params.slug)
 
   if (!deleted) {
     return response.status(404).json({

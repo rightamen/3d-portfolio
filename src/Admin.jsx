@@ -15,13 +15,12 @@ import {
 } from './lib/api'
 
 const tokenKey = 'mrright-admin-token'
-const seedProjectSlugs = new Set([
-  'fire-extinguisher-next-gen',
-  'creature-accessories',
-  'realtime-game-prototype',
-  'product-interface-system',
-  'learning-visual-system',
-])
+const sections = [
+  { key: 'projects', label: 'Projects' },
+  { key: 'comments', label: 'Comments' },
+  { key: 'downloads', label: 'Downloads' },
+  { key: 'messages', label: 'Messages' },
+]
 
 const formatDate = (value) =>
   new Intl.DateTimeFormat('en-US', {
@@ -66,6 +65,7 @@ const Admin = () => {
     summary: null,
   })
   const [editingProject, setEditingProject] = useState(null)
+  const [activeSection, setActiveSection] = useState('projects')
   const [projectStatus, setProjectStatus] = useState('idle')
 
   const loadAdminData = async (activeToken = token) => {
@@ -150,6 +150,7 @@ const Admin = () => {
   }
 
   const startEditingProject = (project) => {
+    setActiveSection('projects')
     setProjectStatus('idle')
     setEditingProject({
       ...project,
@@ -160,6 +161,7 @@ const Admin = () => {
   }
 
   const startCreatingProject = () => {
+    setActiveSection('projects')
     setProjectStatus('idle')
     setEditingProject(emptyProjectForm())
   }
@@ -221,20 +223,43 @@ const Admin = () => {
         <>
           <section className="admin-metrics">
             {[
-              ['Comments', data.summary.comments],
-              ['Likes', data.summary.likes],
-              ['Projects', data.projects.length],
-              ['Downloads', data.summary.download_requests],
-              ['Pending', data.summary.pending_downloads],
-              ['Messages', data.summary.contact_messages],
-            ].map(([label, value]) => (
-              <div key={label} className="admin-metric">
+              ['projects', 'Projects', data.projects.length],
+              ['comments', 'Comments', data.summary.comments],
+              ['downloads', 'Downloads', data.summary.download_requests],
+              ['messages', 'Messages', data.summary.contact_messages],
+            ].map(([key, label, value]) => (
+              <button
+                key={key}
+                type="button"
+                className={`admin-metric ${activeSection === key ? 'admin-metric-active' : ''}`}
+                onClick={() => {
+                  setActiveSection(key)
+                  setEditingProject(null)
+                }}
+              >
                 <span>{label}</span>
                 <strong>{value}</strong>
-              </div>
+              </button>
             ))}
           </section>
 
+          <nav className="admin-tabs">
+            {sections.map((section) => (
+              <button
+                key={section.key}
+                type="button"
+                className={activeSection === section.key ? 'admin-tab-active' : 'admin-tab'}
+                onClick={() => {
+                  setActiveSection(section.key)
+                  setEditingProject(null)
+                }}
+              >
+                {section.label}
+              </button>
+            ))}
+          </nav>
+
+          {activeSection === 'projects' && (
           <section className="admin-section">
             <div className="admin-section-header">
               <h2>Projects</h2>
@@ -276,24 +301,23 @@ const Admin = () => {
                     >
                       Edit
                     </button>
-                    {!seedProjectSlugs.has(project.slug) && (
-                      <button
-                        type="button"
-                        className="danger-action"
-                        onClick={() =>
-                          deleteItem('project', () => deleteAdminProject(token, project.slug))
-                        }
-                      >
-                        Delete
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      className="danger-action"
+                      onClick={() =>
+                        deleteItem('project', () => deleteAdminProject(token, project.slug))
+                      }
+                    >
+                      Delete
+                    </button>
                   </div>
                 </article>
               ))}
             </div>
           </section>
+          )}
 
-          {editingProject && (
+          {activeSection === 'projects' && editingProject && (
             <section className="admin-section">
               <div className="admin-section-header">
                 <h2>{editingProject.isNew ? 'New Project' : 'Edit Project'}</h2>
@@ -501,6 +525,7 @@ const Admin = () => {
             </section>
           )}
 
+          {activeSection === 'downloads' && (
           <section className="admin-section">
             <div className="admin-section-header">
               <h2>Download Requests</h2>
@@ -551,7 +576,9 @@ const Admin = () => {
               ))}
             </div>
           </section>
+          )}
 
+          {activeSection === 'comments' && (
           <section className="admin-section">
             <div className="admin-section-header">
               <h2>Comments</h2>
@@ -581,7 +608,9 @@ const Admin = () => {
               ))}
             </div>
           </section>
+          )}
 
+          {activeSection === 'messages' && (
           <section className="admin-section">
             <div className="admin-section-header">
               <h2>Contact Messages</h2>
@@ -613,6 +642,7 @@ const Admin = () => {
               ))}
             </div>
           </section>
+          )}
         </>
       )}
     </main>

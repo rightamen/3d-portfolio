@@ -313,11 +313,15 @@ html {
 }
 
 .admin-metrics {
-  @apply grid gap-3 sm:grid-cols-2 lg:grid-cols-5;
+  @apply grid gap-3 sm:grid-cols-2 lg:grid-cols-4;
 }
 
 .admin-metric {
-  @apply rounded-lg border border-white/10 bg-[#101321]/80 p-4;
+  @apply rounded-lg border border-white/10 bg-[#101321]/80 p-4 text-left transition duration-200 hover:-translate-y-0.5 hover:border-aqua/30;
+}
+
+.admin-metric-active {
+  @apply border-aqua/50 bg-aqua/10;
 }
 
 .admin-metric span {
@@ -326,6 +330,18 @@ html {
 
 .admin-metric strong {
   @apply mt-2 block text-3xl font-semibold text-white;
+}
+
+.admin-tabs {
+  @apply flex flex-wrap gap-2 border-b border-white/10 pb-3;
+}
+
+.admin-tab {
+  @apply inline-flex min-h-10 items-center justify-center rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-neutral-300 transition hover:border-aqua/40 hover:text-white;
+}
+
+.admin-tab-active {
+  @apply inline-flex min-h-10 items-center justify-center rounded-full border border-aqua/50 bg-aqua px-4 py-2 text-sm font-semibold text-[#031014];
 }
 
 .admin-section {
