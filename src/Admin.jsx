@@ -379,6 +379,11 @@ const Admin = () => {
     }
   }
 
+  const selectAsset = async (event, targetField) => {
+    await uploadAsset(event.target.files?.[0], targetField)
+    event.target.value = ''
+  }
+
   const startEditingProject = (project) => {
     setActiveSection('projects')
     setProjectStatus('idle')
@@ -738,12 +743,14 @@ const Admin = () => {
                   </label>
                   <label className="field-label">
                     Upload Image
-                    <input
-                      className="field-input field-input-focus"
-                      type="file"
-                      accept=".jpg,.jpeg,.png,.webp,.gif"
-                      onChange={(event) => uploadAsset(event.target.files?.[0], 'image')}
-                    />
+                    <span className="asset-upload-control">
+                      Choose image file
+                      <input
+                        type="file"
+                        accept=".jpg,.jpeg,.png,.webp,.gif"
+                        onChange={(event) => selectAsset(event, 'image')}
+                      />
+                    </span>
                   </label>
                   <label className="field-label">
                     Model URL
@@ -760,12 +767,14 @@ const Admin = () => {
                   </label>
                   <label className="field-label">
                     Upload Model
-                    <input
-                      className="field-input field-input-focus"
-                      type="file"
-                      accept=".glb,.gltf,.fbx,.obj,.zip"
-                      onChange={(event) => uploadAsset(event.target.files?.[0], 'modelUrl')}
-                    />
+                    <span className="asset-upload-control">
+                      Choose model file
+                      <input
+                        type="file"
+                        accept=".glb,.gltf,.fbx,.obj,.zip"
+                        onChange={(event) => selectAsset(event, 'modelUrl')}
+                      />
+                    </span>
                   </label>
                   <label className="field-label">
                     Model Size
