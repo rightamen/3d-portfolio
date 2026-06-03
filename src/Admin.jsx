@@ -13,6 +13,7 @@ import {
   getAdminSummary,
   updateAdminDownloadRequest,
   updateAdminProject,
+  uploadAdminAsset,
 } from './lib/api'
 
 const tokenKey = 'mrright-admin-token'
@@ -77,6 +78,7 @@ const Admin = () => {
   const [activeSection, setActiveSection] = useState('projects')
   const [projectStatus, setProjectStatus] = useState('idle')
   const [searchQuery, setSearchQuery] = useState('')
+  const [uploadStatus, setUploadStatus] = useState('idle')
 
   const loadAdminData = async (activeToken = token) => {
     if (!activeToken) {
@@ -162,9 +164,26 @@ const Admin = () => {
     }
   }
 
+  const uploadAsset = async (file, targetField) => {
+    if (!file) return
+
+    setUploadStatus('uploading')
+    try {
+      const payload = await uploadAdminAsset(token, file)
+      setEditingProject((current) => ({
+        ...current,
+        [targetField]: payload.file.url,
+      }))
+      setUploadStatus('done')
+    } catch {
+      setUploadStatus('error')
+    }
+  }
+
   const startEditingProject = (project) => {
     setActiveSection('projects')
     setProjectStatus('idle')
+    setUploadStatus('idle')
     setEditingProject({
       ...project,
       isNew: false,
@@ -176,6 +195,7 @@ const Admin = () => {
   const startCreatingProject = () => {
     setActiveSection('projects')
     setProjectStatus('idle')
+    setUploadStatus('idle')
     setEditingProject(emptyProjectForm())
   }
 
@@ -473,6 +493,15 @@ const Admin = () => {
                     />
                   </label>
                   <label className="field-label">
+                    Upload Image
+                    <input
+                      className="field-input field-input-focus"
+                      type="file"
+                      accept=".jpg,.jpeg,.png,.webp,.gif"
+                      onChange={(event) => uploadAsset(event.target.files?.[0], 'image')}
+                    />
+                  </label>
+                  <label className="field-label">
                     Model URL
                     <input
                       className="field-input field-input-focus"
@@ -483,6 +512,15 @@ const Admin = () => {
                           modelUrl: event.target.value,
                         }))
                       }
+                    />
+                  </label>
+                  <label className="field-label">
+                    Upload Model
+                    <input
+                      className="field-input field-input-focus"
+                      type="file"
+                      accept=".glb,.gltf,.fbx,.obj,.zip"
+                      onChange={(event) => uploadAsset(event.target.files?.[0], 'modelUrl')}
                     />
                   </label>
                   <label className="field-label">
@@ -569,6 +607,17 @@ const Admin = () => {
                 </div>
                 {projectStatus === 'error' && (
                   <p className="text-sm text-coral">Could not save this project.</p>
+                )}
+                {uploadStatus === 'uploading' && (
+                  <p className="text-sm text-neutral-400">Uploading asset...</p>
+                )}
+                {uploadStatus === 'done' && (
+                  <p className="text-sm text-mint">Asset uploaded and URL filled in.</p>
+                )}
+                {uploadStatus === 'error' && (
+                  <p className="text-sm text-coral">
+                    Upload failed. Check the file type and size.
+                  </p>
                 )}
               </form>
             </section>

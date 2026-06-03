@@ -1,5 +1,7 @@
 import cors from 'cors'
 import express from 'express'
+import multer from 'multer'
+import { mkdir, unlink } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createContactMessagesStore } from './contactMessagesStore.js'
@@ -13,8 +15,11 @@ const __dirname = path.dirname(__filename)
 const rootDir = path.resolve(__dirname, '..')
 const dataDir = path.join(rootDir, 'data')
 const distDir = path.join(rootDir, 'dist')
+const uploadRoot = path.join(rootDir, 'public', 'uploads')
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
+const imageExtensions = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif'])
+const modelExtensions = new Set(['.glb', '.gltf', '.fbx', '.obj', '.zip'])
 const stores = process.env.DATABASE_URL
   ? await createPostgresStores(process.env.DATABASE_URL)
   : {
@@ -42,6 +47,38 @@ const port = process.env.PORT || 4173
 
 app.use(cors({ origin: process.env.CORS_ORIGIN || true }))
 app.use(express.json({ limit: '32kb' }))
+app.use('/uploads', express.static(path.join(rootDir, 'public', 'uploads')))
+
+const upload = multer({
+  limits: { fileSize: 120 * 1024 * 1024 },
+  storage: multer.diskStorage({
+    destination: (_request, file, callback) => {
+      const extension = path.extname(file.originalname).toLowerCase()
+      const folder = imageExtensions.has(extension) ? 'images' : 'models'
+      const destination = path.join(uploadRoot, folder)
+
+      mkdir(destination, { recursive: true })
+        .then(() => callback(null, destination))
+        .catch(callback)
+    },
+    filename: (_request, file, callback) => {
+      const extension = path.extname(file.originalname).toLowerCase()
+      const baseName = path
+        .basename(file.originalname, extension)
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/(^-|-$)/g, '')
+        .slice(0, 60)
+      callback(null, `${Date.now()}-${baseName || 'asset'}${extension}`)
+    },
+  }),
+  fileFilter: (_request, file, callback) => {
+    const extension = path.extname(file.originalname).toLowerCase()
+    const allowed = imageExtensions.has(extension) || modelExtensions.has(extension)
+
+    callback(allowed ? null : new Error('Unsupported file type.'), allowed)
+  },
+})
 
 app.get('/api/health', (_request, response) => {
   response.json({ ok: true, service: 'mrright-portfolio' })
@@ -237,6 +274,36 @@ app.get('/api/admin/projects', requireAdmin, async (_request, response) => {
   response.json({ projects: await adminStore.listProjects(staticProjects) })
 })
 
+app.post('/api/admin/uploads', requireAdmin, upload.single('file'), (request, response) => {
+  if (!request.file) {
+    return response.status(400).json({
+      error: 'Upload file is required.',
+    })
+  }
+
+  const extension = path.extname(request.file.originalname).toLowerCase()
+  const type = imageExtensions.has(extension) ? 'image' : 'model'
+
+  if (type === 'image' && request.file.size > 8 * 1024 * 1024) {
+    unlink(request.file.path).catch((error) => console.error(error))
+
+    return response.status(400).json({
+      error: 'Image uploads must be 8 MB or smaller.',
+    })
+  }
+
+  const folder = type === 'image' ? 'images' : 'models'
+
+  return response.status(201).json({
+    file: {
+      name: request.file.originalname,
+      size: request.file.size,
+      type,
+      url: `/uploads/${folder}/${request.file.filename}`,
+    },
+  })
+})
+
 const normalizeProjectPayload = (body) => {
   const normalized = {
     downloadPolicy: String(body?.downloadPolicy ?? '').trim().slice(0, 120),
@@ -398,6 +465,18 @@ app.delete('/api/admin/download-requests/:id', requireAdmin, async (request, res
   }
 
   return response.json({ ok: true })
+})
+
+app.use((error, _request, response, next) => {
+  if (!error) return next()
+
+  if (error instanceof multer.MulterError || error.message === 'Unsupported file type.') {
+    return response.status(400).json({
+      error: error.message,
+    })
+  }
+
+  return next(error)
 })
 
 app.use(express.static(distDir))

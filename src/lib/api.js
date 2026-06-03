@@ -88,6 +88,16 @@ export const deleteAdminProject = (token, slug) =>
     method: 'DELETE',
   })
 
+export const uploadAdminAsset = (token, file) => {
+  const formData = new FormData()
+  formData.append('file', file)
+
+  return adminRequest('/api/admin/uploads', token, {
+    method: 'POST',
+    body: formData,
+  })
+}
+
 export const deleteAdminComment = (token, id) =>
   adminRequest(`/api/admin/comments/${id}`, token, {
     method: 'DELETE',
