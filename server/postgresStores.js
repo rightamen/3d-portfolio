@@ -345,6 +345,21 @@ export const createPostgresStores = async (databaseUrl) => {
       return result.rows.map(toComment)
     },
 
+    listLikes: async () => {
+      const result = await pool.query(`
+        SELECT project_slug, visitor_id, created_at
+        FROM project_likes
+        ORDER BY created_at DESC
+        LIMIT 200
+      `)
+
+      return result.rows.map((row) => ({
+        projectSlug: row.project_slug,
+        visitorId: row.visitor_id,
+        createdAt: row.created_at.toISOString(),
+      }))
+    },
+
     listContactMessages: async () => {
       const result = await pool.query(`
         SELECT id, name, email, message, created_at

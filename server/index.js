@@ -221,6 +221,10 @@ app.get('/api/admin/comments', requireAdmin, async (_request, response) => {
   response.json({ comments: await adminStore.listComments() })
 })
 
+app.get('/api/admin/likes', requireAdmin, async (_request, response) => {
+  response.json({ likes: await adminStore.listLikes() })
+})
+
 app.get('/api/admin/contact-messages', requireAdmin, async (_request, response) => {
   response.json({ messages: await adminStore.listContactMessages() })
 })

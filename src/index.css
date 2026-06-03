@@ -344,6 +344,14 @@ html {
   @apply inline-flex min-h-10 items-center justify-center rounded-full border border-aqua/50 bg-aqua px-4 py-2 text-sm font-semibold text-[#031014];
 }
 
+.admin-search {
+  @apply flex flex-col gap-3 rounded-lg border border-white/10 bg-[#101321]/60 p-3 md:flex-row md:items-center;
+}
+
+.admin-search .field-input {
+  @apply mt-0;
+}
+
 .admin-section {
   @apply grid gap-3;
 }

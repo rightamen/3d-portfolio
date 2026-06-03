@@ -8,6 +8,7 @@ import {
   getAdminComments,
   getAdminContactMessages,
   getAdminDownloadRequests,
+  getAdminLikes,
   getAdminProjects,
   getAdminSummary,
   updateAdminDownloadRequest,
@@ -18,6 +19,7 @@ const tokenKey = 'mrright-admin-token'
 const sections = [
   { key: 'projects', label: 'Projects' },
   { key: 'comments', label: 'Comments' },
+  { key: 'likes', label: 'Likes' },
   { key: 'downloads', label: 'Downloads' },
   { key: 'messages', label: 'Messages' },
 ]
@@ -35,6 +37,12 @@ const textToList = (value) =>
     .split(',')
     .map((item) => item.trim())
     .filter(Boolean)
+
+const searchInItem = (item, query) =>
+  !query ||
+  JSON.stringify(item)
+    .toLowerCase()
+    .includes(query.toLowerCase())
 
 const emptyProjectForm = () => ({
   downloadPolicy: 'Unavailable',
@@ -59,6 +67,7 @@ const Admin = () => {
   const [status, setStatus] = useState('locked')
   const [data, setData] = useState({
     comments: [],
+    likes: [],
     messages: [],
     projects: [],
     requests: [],
@@ -67,6 +76,7 @@ const Admin = () => {
   const [editingProject, setEditingProject] = useState(null)
   const [activeSection, setActiveSection] = useState('projects')
   const [projectStatus, setProjectStatus] = useState('idle')
+  const [searchQuery, setSearchQuery] = useState('')
 
   const loadAdminData = async (activeToken = token) => {
     if (!activeToken) {
@@ -79,6 +89,7 @@ const Admin = () => {
       const [
         summaryPayload,
         commentsPayload,
+        likesPayload,
         messagesPayload,
         requestsPayload,
         projectsPayload,
@@ -86,6 +97,7 @@ const Admin = () => {
         await Promise.all([
           getAdminSummary(activeToken),
           getAdminComments(activeToken),
+          getAdminLikes(activeToken),
           getAdminContactMessages(activeToken),
           getAdminDownloadRequests(activeToken),
           getAdminProjects(activeToken),
@@ -93,6 +105,7 @@ const Admin = () => {
 
       setData({
         comments: commentsPayload.comments,
+        likes: likesPayload.likes,
         messages: messagesPayload.messages,
         projects: projectsPayload.projects,
         requests: requestsPayload.requests,
@@ -173,6 +186,20 @@ const Admin = () => {
     await loadAdminData(token)
   }
 
+  const visibleProjects = data.projects.filter((project) =>
+    searchInItem(project, searchQuery),
+  )
+  const visibleComments = data.comments.filter((comment) =>
+    searchInItem(comment, searchQuery),
+  )
+  const visibleLikes = data.likes.filter((like) => searchInItem(like, searchQuery))
+  const visibleRequests = data.requests.filter((request) =>
+    searchInItem(request, searchQuery),
+  )
+  const visibleMessages = data.messages.filter((message) =>
+    searchInItem(message, searchQuery),
+  )
+
   if (!token || status === 'locked') {
     return (
       <main className="admin-shell">
@@ -225,6 +252,7 @@ const Admin = () => {
             {[
               ['projects', 'Projects', data.projects.length],
               ['comments', 'Comments', data.summary.comments],
+              ['likes', 'Likes', data.summary.likes],
               ['downloads', 'Downloads', data.summary.download_requests],
               ['messages', 'Messages', data.summary.contact_messages],
             ].map(([key, label, value]) => (
@@ -259,12 +287,30 @@ const Admin = () => {
             ))}
           </nav>
 
+          <div className="admin-search">
+            <input
+              className="field-input field-input-focus"
+              placeholder="Search by project, visitor, author, email, status..."
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                className="secondary-action"
+                onClick={() => setSearchQuery('')}
+              >
+                Clear
+              </button>
+            )}
+          </div>
+
           {activeSection === 'projects' && (
           <section className="admin-section">
             <div className="admin-section-header">
               <h2>Projects</h2>
               <div className="flex items-center gap-3">
-                <span>{data.projects.length}</span>
+              <span>{visibleProjects.length}</span>
                 <button
                   type="button"
                   className="secondary-action"
@@ -275,7 +321,7 @@ const Admin = () => {
               </div>
             </div>
             <div className="admin-table">
-              {data.projects.map((project) => (
+              {visibleProjects.map((project) => (
                 <article key={project.slug} className="admin-row">
                   <div>
                     <strong>{project.title}</strong>
@@ -313,6 +359,9 @@ const Admin = () => {
                   </div>
                 </article>
               ))}
+              {visibleProjects.length === 0 && (
+                <p className="text-sm text-neutral-500">No projects match this search.</p>
+              )}
             </div>
           </section>
           )}
@@ -529,10 +578,10 @@ const Admin = () => {
           <section className="admin-section">
             <div className="admin-section-header">
               <h2>Download Requests</h2>
-              <span>{data.requests.length}</span>
+              <span>{visibleRequests.length}</span>
             </div>
             <div className="admin-table">
-              {data.requests.map((request) => (
+              {visibleRequests.map((request) => (
                 <article key={request.id} className="admin-row">
                   <div>
                     <strong>{request.name}</strong>
@@ -574,6 +623,11 @@ const Admin = () => {
                   </div>
                 </article>
               ))}
+              {visibleRequests.length === 0 && (
+                <p className="text-sm text-neutral-500">
+                  No download requests match this search.
+                </p>
+              )}
             </div>
           </section>
           )}
@@ -582,10 +636,10 @@ const Admin = () => {
           <section className="admin-section">
             <div className="admin-section-header">
               <h2>Comments</h2>
-              <span>{data.comments.length}</span>
+              <span>{visibleComments.length}</span>
             </div>
             <div className="admin-table">
-              {data.comments.map((comment) => (
+              {visibleComments.map((comment) => (
                 <article key={comment.id} className="admin-row">
                   <div>
                     <strong>{comment.author}</strong>
@@ -606,6 +660,36 @@ const Admin = () => {
                   </div>
                 </article>
               ))}
+              {visibleComments.length === 0 && (
+                <p className="text-sm text-neutral-500">No comments match this search.</p>
+              )}
+            </div>
+          </section>
+          )}
+
+          {activeSection === 'likes' && (
+          <section className="admin-section">
+            <div className="admin-section-header">
+              <h2>Likes</h2>
+              <span>{visibleLikes.length}</span>
+            </div>
+            <div className="admin-table">
+              {visibleLikes.map((like) => (
+                <article
+                  key={`${like.projectSlug}-${like.visitorId}`}
+                  className="admin-row"
+                >
+                  <div>
+                    <strong>{like.projectSlug}</strong>
+                    <span>{like.visitorId}</span>
+                    <p>Visitor liked this project.</p>
+                    <small>{formatDate(like.createdAt)}</small>
+                  </div>
+                </article>
+              ))}
+              {visibleLikes.length === 0 && (
+                <p className="text-sm text-neutral-500">No likes match this search.</p>
+              )}
             </div>
           </section>
           )}
@@ -614,10 +698,10 @@ const Admin = () => {
           <section className="admin-section">
             <div className="admin-section-header">
               <h2>Contact Messages</h2>
-              <span>{data.messages.length}</span>
+              <span>{visibleMessages.length}</span>
             </div>
             <div className="admin-table">
-              {data.messages.map((message) => (
+              {visibleMessages.map((message) => (
                 <article key={message.id} className="admin-row">
                   <div>
                     <strong>{message.name}</strong>
@@ -640,6 +724,11 @@ const Admin = () => {
                   </div>
                 </article>
               ))}
+              {visibleMessages.length === 0 && (
+                <p className="text-sm text-neutral-500">
+                  No contact messages match this search.
+                </p>
+              )}
             </div>
           </section>
           )}

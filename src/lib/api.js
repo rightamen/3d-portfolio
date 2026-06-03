@@ -52,6 +52,8 @@ export const getAdminSummary = (token) => adminRequest('/api/admin/summary', tok
 
 export const getAdminComments = (token) => adminRequest('/api/admin/comments', token)
 
+export const getAdminLikes = (token) => adminRequest('/api/admin/likes', token)
+
 export const getAdminContactMessages = (token) =>
   adminRequest('/api/admin/contact-messages', token)
 
