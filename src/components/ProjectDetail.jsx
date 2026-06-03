@@ -3,6 +3,7 @@ import {
   addProjectComment,
   getProject,
   getProjectInteractions,
+  requestProjectDownload,
   toggleProjectLike,
 } from '../lib/api'
 
@@ -23,9 +24,12 @@ const ProjectDetail = ({ slug, onClose }) => {
   const [project, setProject] = useState(null)
   const [interactions, setInteractions] = useState({ comments: [], likeCount: 0 })
   const [commentForm, setCommentForm] = useState({ author: '', message: '' })
+  const [downloadForm, setDownloadForm] = useState({ name: '', email: '', purpose: '' })
   const [status, setStatus] = useState('loading')
+  const [downloadStatus, setDownloadStatus] = useState('idle')
   const [interactionStatus, setInteractionStatus] = useState('idle')
   const [isPreviewOpen, setIsPreviewOpen] = useState(false)
+  const [isRequestOpen, setIsRequestOpen] = useState(false)
   const [liked, setLiked] = useState(false)
 
   useEffect(() => {
@@ -78,6 +82,19 @@ const ProjectDetail = ({ slug, onClose }) => {
       setInteractionStatus('idle')
     } catch {
       setInteractionStatus('error')
+    }
+  }
+
+  const submitDownloadRequest = async (event) => {
+    event.preventDefault()
+    setDownloadStatus('saving')
+
+    try {
+      await requestProjectDownload(slug, downloadForm)
+      setDownloadForm({ name: '', email: '', purpose: '' })
+      setDownloadStatus('sent')
+    } catch {
+      setDownloadStatus('error')
     }
   }
 
@@ -181,10 +198,89 @@ const ProjectDetail = ({ slug, onClose }) => {
                     Open 3D Viewer
                   </button>
                 )}
-                <button type="button" className="secondary-action flex-1" disabled>
+                <button
+                  type="button"
+                  className="secondary-action flex-1"
+                  onClick={() => setIsRequestOpen((current) => !current)}
+                >
                   Request Download
                 </button>
               </div>
+
+              {isRequestOpen && (
+                <section className="download-request-panel">
+                  <div>
+                    <h4 className="detail-subtitle mb-1">Download Request</h4>
+                    <p className="text-sm leading-relaxed text-neutral-400">
+                      Share your intended use. Approved requests can receive a time
+                      limited download link later.
+                    </p>
+                  </div>
+
+                  <form className="comment-form" onSubmit={submitDownloadRequest}>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <input
+                        className="field-input field-input-focus"
+                        name="name"
+                        placeholder="Name"
+                        value={downloadForm.name}
+                        onChange={(event) =>
+                          setDownloadForm((current) => ({
+                            ...current,
+                            name: event.target.value,
+                          }))
+                        }
+                        required
+                      />
+                      <input
+                        className="field-input field-input-focus"
+                        name="email"
+                        placeholder="Email"
+                        type="email"
+                        value={downloadForm.email}
+                        onChange={(event) =>
+                          setDownloadForm((current) => ({
+                            ...current,
+                            email: event.target.value,
+                          }))
+                        }
+                        required
+                      />
+                    </div>
+                    <textarea
+                      className="field-input field-input-focus min-h-28 resize-none"
+                      name="purpose"
+                      placeholder="Usage purpose"
+                      value={downloadForm.purpose}
+                      onChange={(event) =>
+                        setDownloadForm((current) => ({
+                          ...current,
+                          purpose: event.target.value,
+                        }))
+                      }
+                      required
+                    />
+                    <button
+                      type="submit"
+                      className="primary-action"
+                      disabled={downloadStatus === 'saving'}
+                    >
+                      {downloadStatus === 'saving' ? 'Submitting...' : 'Submit Request'}
+                    </button>
+                    {downloadStatus === 'sent' && (
+                      <p className="text-sm text-mint">
+                        Request received. I will review the usage details before sharing
+                        a download link.
+                      </p>
+                    )}
+                    {downloadStatus === 'error' && (
+                      <p className="text-sm text-coral">
+                        Request failed. Check the fields and try again.
+                      </p>
+                    )}
+                  </form>
+                </section>
+              )}
 
               <section className="interaction-panel">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

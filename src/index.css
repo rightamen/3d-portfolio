@@ -268,6 +268,10 @@ html {
   @apply grid gap-5 rounded-lg border border-white/10 bg-black/20 p-4;
 }
 
+.download-request-panel {
+  @apply grid gap-4 rounded-lg border border-aqua/20 bg-aqua/5 p-4;
+}
+
 .comment-form {
   @apply grid gap-3;
 }

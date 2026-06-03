@@ -4,6 +4,7 @@ import { appendFile, mkdir } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { experience, profile, projects, skills } from './content.js'
+import { createDownloadRequestsStore } from './downloadRequestsStore.js'
 import { createInteractionsStore } from './interactionsStore.js'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -12,7 +13,9 @@ const rootDir = path.resolve(__dirname, '..')
 const dataDir = path.join(rootDir, 'data')
 const messagesFile = path.join(dataDir, 'messages.jsonl')
 const distDir = path.join(rootDir, 'dist')
+const downloadRequestsStore = createDownloadRequestsStore(dataDir)
 const interactionsStore = createInteractionsStore(dataDir)
+const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 const app = express()
 const port = process.env.PORT || 4173
@@ -102,6 +105,43 @@ app.post('/api/projects/:slug/comments', async (request, response) => {
     message,
   })
   return response.status(201).json({ comment })
+})
+
+app.post('/api/projects/:slug/download-requests', async (request, response) => {
+  const project = projects.find((item) => item.slug === request.params.slug)
+  const name = String(request.body?.name ?? '').trim().slice(0, 120)
+  const email = String(request.body?.email ?? '').trim().slice(0, 180)
+  const purpose = String(request.body?.purpose ?? '').trim().slice(0, 1200)
+
+  if (!project) {
+    return response.status(404).json({
+      error: 'Project not found.',
+    })
+  }
+
+  if (!name || !emailPattern.test(email) || !purpose) {
+    return response.status(400).json({
+      error: 'Please provide a valid name, email, and usage purpose.',
+    })
+  }
+
+  const downloadRequest = await downloadRequestsStore.addRequest({
+    projectSlug: project.slug,
+    projectTitle: project.title,
+    name,
+    email,
+    purpose,
+    ip: request.ip,
+  })
+
+  return response.status(201).json({
+    ok: true,
+    request: {
+      id: downloadRequest.id,
+      status: downloadRequest.status,
+      createdAt: downloadRequest.createdAt,
+    },
+  })
 })
 
 app.get('/api/experience', (_request, response) => {

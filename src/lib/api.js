@@ -32,6 +32,13 @@ export const addProjectComment = (slug, payload) =>
     body: JSON.stringify(payload),
   })
 
+export const requestProjectDownload = (slug, payload) =>
+  request(`/api/projects/${slug}/download-requests`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+
 export const sendMessage = (payload) =>
   request('/api/contact', {
     method: 'POST',
