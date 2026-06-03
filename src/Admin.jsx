@@ -1,8 +1,10 @@
 import { useState } from 'react'
 import {
+  createAdminProject,
   deleteAdminComment,
   deleteAdminContactMessage,
   deleteAdminDownloadRequest,
+  deleteAdminProject,
   getAdminComments,
   getAdminContactMessages,
   getAdminDownloadRequests,
@@ -13,6 +15,13 @@ import {
 } from './lib/api'
 
 const tokenKey = 'mrright-admin-token'
+const seedProjectSlugs = new Set([
+  'fire-extinguisher-next-gen',
+  'creature-accessories',
+  'realtime-game-prototype',
+  'product-interface-system',
+  'learning-visual-system',
+])
 
 const formatDate = (value) =>
   new Intl.DateTimeFormat('en-US', {
@@ -27,6 +36,23 @@ const textToList = (value) =>
     .split(',')
     .map((item) => item.trim())
     .filter(Boolean)
+
+const emptyProjectForm = () => ({
+  downloadPolicy: 'Unavailable',
+  format: 'Image case study',
+  image: '/assets/projects/accessories.jpg',
+  isNew: true,
+  isPublic: true,
+  modelSize: 'Static showcase',
+  modelUrl: '',
+  slug: '',
+  stackText: '3D, Web',
+  summary: '',
+  title: '',
+  viewerFeaturesText: 'Case study',
+  workflow: '',
+  year: String(new Date().getFullYear()),
+})
 
 const Admin = () => {
   const [token, setToken] = useState('')
@@ -103,11 +129,18 @@ const Admin = () => {
     setProjectStatus('saving')
 
     try {
-      await updateAdminProject(token, editingProject.slug, {
+      const payload = {
         ...editingProject,
         stack: textToList(editingProject.stackText),
         viewerFeatures: textToList(editingProject.viewerFeaturesText),
-      })
+      }
+
+      if (editingProject.isNew) {
+        await createAdminProject(token, payload)
+      } else {
+        await updateAdminProject(token, editingProject.slug, payload)
+      }
+
       setEditingProject(null)
       setProjectStatus('saved')
       await loadAdminData(token)
@@ -120,9 +153,15 @@ const Admin = () => {
     setProjectStatus('idle')
     setEditingProject({
       ...project,
+      isNew: false,
       stackText: listToText(project.stack),
       viewerFeaturesText: listToText(project.viewerFeatures),
     })
+  }
+
+  const startCreatingProject = () => {
+    setProjectStatus('idle')
+    setEditingProject(emptyProjectForm())
   }
 
   const deleteItem = async (label, action) => {
@@ -199,7 +238,16 @@ const Admin = () => {
           <section className="admin-section">
             <div className="admin-section-header">
               <h2>Projects</h2>
-              <span>{data.projects.length}</span>
+              <div className="flex items-center gap-3">
+                <span>{data.projects.length}</span>
+                <button
+                  type="button"
+                  className="secondary-action"
+                  onClick={startCreatingProject}
+                >
+                  New Project
+                </button>
+              </div>
             </div>
             <div className="admin-table">
               {data.projects.map((project) => (
@@ -228,6 +276,17 @@ const Admin = () => {
                     >
                       Edit
                     </button>
+                    {!seedProjectSlugs.has(project.slug) && (
+                      <button
+                        type="button"
+                        className="danger-action"
+                        onClick={() =>
+                          deleteItem('project', () => deleteAdminProject(token, project.slug))
+                        }
+                      >
+                        Delete
+                      </button>
+                    )}
                   </div>
                 </article>
               ))}
@@ -237,10 +296,26 @@ const Admin = () => {
           {editingProject && (
             <section className="admin-section">
               <div className="admin-section-header">
-                <h2>Edit Project</h2>
+                <h2>{editingProject.isNew ? 'New Project' : 'Edit Project'}</h2>
                 <span>{editingProject.slug}</span>
               </div>
               <form className="admin-editor" onSubmit={saveProject}>
+                <label className="field-label">
+                  Slug
+                  <input
+                    className="field-input field-input-focus"
+                    value={editingProject.slug}
+                    disabled={!editingProject.isNew}
+                    placeholder="new-project-slug"
+                    onChange={(event) =>
+                      setEditingProject((current) => ({
+                        ...current,
+                        slug: event.target.value.toLowerCase(),
+                      }))
+                    }
+                    required
+                  />
+                </label>
                 <label className="field-label">
                   Title
                   <input

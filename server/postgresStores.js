@@ -28,6 +28,22 @@ const toProjectOverride = (row) => ({
   year: row.year,
 })
 
+const toCustomProject = (row) => ({
+  downloadPolicy: row.download_policy,
+  format: row.format,
+  image: row.image,
+  isPublic: row.is_public,
+  modelSize: row.model_size,
+  modelUrl: row.model_url,
+  slug: row.slug,
+  stack: row.stack || [],
+  summary: row.summary,
+  title: row.title,
+  viewerFeatures: row.viewer_features || [],
+  workflow: row.workflow,
+  year: row.year,
+})
+
 const mergeProject = (project, override) => {
   if (!override) return { ...project, isPublic: true }
 
@@ -100,6 +116,24 @@ const ensureSchema = async (pool) => {
       is_public boolean NOT NULL DEFAULT true,
       updated_at timestamptz NOT NULL DEFAULT now()
     );
+
+    CREATE TABLE IF NOT EXISTS custom_projects (
+      slug text PRIMARY KEY,
+      title text NOT NULL,
+      summary text NOT NULL,
+      workflow text,
+      year text NOT NULL,
+      image text NOT NULL,
+      model_url text,
+      format text,
+      model_size text,
+      download_policy text,
+      stack jsonb NOT NULL DEFAULT '[]'::jsonb,
+      viewer_features jsonb NOT NULL DEFAULT '[]'::jsonb,
+      is_public boolean NOT NULL DEFAULT true,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    );
   `)
 }
 
@@ -120,12 +154,21 @@ export const createPostgresStores = async (databaseUrl) => {
           model_size, download_policy, stack, viewer_features, is_public
         FROM project_overrides
       `)
+      const customResult = await pool.query(`
+        SELECT slug, title, summary, workflow, year, image, model_url, format,
+          model_size, download_policy, stack, viewer_features, is_public
+        FROM custom_projects
+        ORDER BY created_at DESC
+      `)
       const overrides = new Map(
         result.rows.map((row) => [row.slug, toProjectOverride(row)]),
       )
+      const customProjects = customResult.rows.map(toCustomProject)
 
-      return baseProjects
-        .map((project) => mergeProject(project, overrides.get(project.slug)))
+      return [
+        ...customProjects,
+        ...baseProjects.map((project) => mergeProject(project, overrides.get(project.slug))),
+      ]
         .filter((project) => includeHidden || project.isPublic !== false)
     },
 
@@ -350,6 +393,50 @@ export const createPostgresStores = async (databaseUrl) => {
       projectStore.listProjects(baseProjects, { includeHidden: true }),
 
     updateProject: async (slug, project) => {
+      const customProject = await pool.query('SELECT slug FROM custom_projects WHERE slug = $1', [
+        slug,
+      ])
+
+      if (customProject.rowCount > 0) {
+        const result = await pool.query(
+          `
+            UPDATE custom_projects SET
+              title = $2,
+              summary = $3,
+              workflow = $4,
+              year = $5,
+              image = $6,
+              model_url = $7,
+              format = $8,
+              model_size = $9,
+              download_policy = $10,
+              stack = $11::jsonb,
+              viewer_features = $12::jsonb,
+              is_public = $13,
+              updated_at = now()
+            WHERE slug = $1
+            RETURNING slug
+          `,
+          [
+            slug,
+            project.title,
+            project.summary,
+            project.workflow,
+            project.year,
+            project.image,
+            project.modelUrl || null,
+            project.format,
+            project.modelSize,
+            project.downloadPolicy,
+            JSON.stringify(project.stack || []),
+            JSON.stringify(project.viewerFeatures || []),
+            project.isPublic !== false,
+          ],
+        )
+
+        return result.rows[0] || null
+      }
+
       const result = await pool.query(
         `
           INSERT INTO project_overrides
@@ -387,6 +474,48 @@ export const createPostgresStores = async (databaseUrl) => {
           JSON.stringify(project.viewerFeatures || []),
           project.isPublic !== false,
         ],
+      )
+
+      return result.rows[0] || null
+    },
+
+    createProject: async (project) => {
+      const result = await pool.query(
+        `
+          INSERT INTO custom_projects
+            (slug, title, summary, workflow, year, image, model_url, format,
+             model_size, download_policy, stack, viewer_features, is_public)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12::jsonb, $13)
+          RETURNING slug
+        `,
+        [
+          project.slug,
+          project.title,
+          project.summary,
+          project.workflow,
+          project.year,
+          project.image,
+          project.modelUrl || null,
+          project.format,
+          project.modelSize,
+          project.downloadPolicy,
+          JSON.stringify(project.stack || []),
+          JSON.stringify(project.viewerFeatures || []),
+          project.isPublic !== false,
+        ],
+      )
+
+      return result.rows[0] || null
+    },
+
+    deleteCustomProject: async (slug) => {
+      const result = await pool.query(
+        `
+          DELETE FROM custom_projects
+          WHERE slug = $1
+          RETURNING slug
+        `,
+        [slug],
       )
 
       return result.rows[0] || null

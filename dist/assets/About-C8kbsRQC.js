@@ -1,4 +1,4 @@
-import{j as e,w as c,r as n}from"./index-D1b-4Awn.js";const t=({style:a,text:i,image:s,rotate:r=0,containerRef:l})=>{const o="absolute cursor-grab select-none";return s?e.jsx(c.img,{src:s,alt:"",draggable:!1,drag:!0,dragConstraints:l,className:`${o} w-14`,style:a,animate:{rotate:r},whileHover:{scale:1.08},whileTap:{scale:.95},transition:{type:"spring",stiffness:300,damping:20}}):e.jsx(c.div,{className:`${o}
+import{j as e,w as c,r as n}from"./index-BQaKPWPw.js";const t=({style:a,text:i,image:s,rotate:r=0,containerRef:l})=>{const o="absolute cursor-grab select-none";return s?e.jsx(c.img,{src:s,alt:"",draggable:!1,drag:!0,dragConstraints:l,className:`${o} w-14`,style:a,animate:{rotate:r},whileHover:{scale:1.08},whileTap:{scale:.95},transition:{type:"spring",stiffness:300,damping:20}}):e.jsx(c.div,{className:`${o}
         px-4 py-2
         text-sm
         text-center

@@ -60,6 +60,13 @@ export const getAdminDownloadRequests = (token) =>
 
 export const getAdminProjects = (token) => adminRequest('/api/admin/projects', token)
 
+export const createAdminProject = (token, payload) =>
+  adminRequest('/api/admin/projects', token, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+
 export const updateAdminDownloadRequest = (token, id, status) =>
   adminRequest(`/api/admin/download-requests/${id}`, token, {
     method: 'PATCH',
@@ -72,6 +79,11 @@ export const updateAdminProject = (token, slug, payload) =>
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
+  })
+
+export const deleteAdminProject = (token, slug) =>
+  adminRequest(`/api/admin/projects/${slug}`, token, {
+    method: 'DELETE',
   })
 
 export const deleteAdminComment = (token, id) =>

@@ -14,6 +14,7 @@ const rootDir = path.resolve(__dirname, '..')
 const dataDir = path.join(rootDir, 'data')
 const distDir = path.join(rootDir, 'dist')
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 const stores = process.env.DATABASE_URL
   ? await createPostgresStores(process.env.DATABASE_URL)
   : {
@@ -232,33 +233,75 @@ app.get('/api/admin/projects', requireAdmin, async (_request, response) => {
   response.json({ projects: await adminStore.listProjects(staticProjects) })
 })
 
-app.patch('/api/admin/projects/:slug', requireAdmin, async (request, response) => {
-  const baseProject = staticProjects.find((project) => project.slug === request.params.slug)
+const normalizeProjectPayload = (body) => {
+  const normalized = {
+    downloadPolicy: String(body?.downloadPolicy ?? '').trim().slice(0, 120),
+    format: String(body?.format ?? '').trim().slice(0, 120),
+    image: String(body?.image ?? '').trim().slice(0, 500),
+    isPublic: body?.isPublic !== false,
+    modelSize: String(body?.modelSize ?? '').trim().slice(0, 120),
+    modelUrl: String(body?.modelUrl ?? '').trim().slice(0, 500),
+    stack: Array.isArray(body?.stack)
+      ? body.stack.map((item) => String(item).trim()).filter(Boolean).slice(0, 20)
+      : [],
+    summary: String(body?.summary ?? '').trim().slice(0, 1000),
+    title: String(body?.title ?? '').trim().slice(0, 180),
+    viewerFeatures: Array.isArray(body?.viewerFeatures)
+      ? body.viewerFeatures.map((item) => String(item).trim()).filter(Boolean).slice(0, 20)
+      : [],
+    workflow: String(body?.workflow ?? '').trim().slice(0, 2000),
+    year: String(body?.year ?? '').trim().slice(0, 20),
+  }
 
-  if (!baseProject) {
+  return normalized
+}
+
+app.post('/api/admin/projects', requireAdmin, async (request, response) => {
+  const slug = String(request.body?.slug ?? '').trim().slice(0, 120)
+  const normalized = normalizeProjectPayload(request.body)
+
+  if (!slugPattern.test(slug)) {
+    return response.status(400).json({
+      error: 'Slug must use lowercase letters, numbers, and hyphens.',
+    })
+  }
+
+  const existingProject = await projectStore.getProject(staticProjects, slug, {
+    includeHidden: true,
+  })
+
+  if (existingProject) {
+    return response.status(409).json({
+      error: 'Project slug already exists.',
+    })
+  }
+
+  if (!normalized.title || !normalized.summary || !normalized.image || !normalized.year) {
+    return response.status(400).json({
+      error: 'Title, summary, image, and year are required.',
+    })
+  }
+
+  await adminStore.createProject({ slug, ...normalized })
+  const project = await projectStore.getProject(staticProjects, slug, {
+    includeHidden: true,
+  })
+
+  return response.status(201).json({ project })
+})
+
+app.patch('/api/admin/projects/:slug', requireAdmin, async (request, response) => {
+  const existingProject = await projectStore.getProject(staticProjects, request.params.slug, {
+    includeHidden: true,
+  })
+
+  if (!existingProject) {
     return response.status(404).json({
       error: 'Project not found.',
     })
   }
 
-  const normalized = {
-    downloadPolicy: String(request.body?.downloadPolicy ?? '').trim().slice(0, 120),
-    format: String(request.body?.format ?? '').trim().slice(0, 120),
-    image: String(request.body?.image ?? '').trim().slice(0, 500),
-    isPublic: request.body?.isPublic !== false,
-    modelSize: String(request.body?.modelSize ?? '').trim().slice(0, 120),
-    modelUrl: String(request.body?.modelUrl ?? '').trim().slice(0, 500),
-    stack: Array.isArray(request.body?.stack)
-      ? request.body.stack.map((item) => String(item).trim()).filter(Boolean).slice(0, 20)
-      : [],
-    summary: String(request.body?.summary ?? '').trim().slice(0, 1000),
-    title: String(request.body?.title ?? '').trim().slice(0, 180),
-    viewerFeatures: Array.isArray(request.body?.viewerFeatures)
-      ? request.body.viewerFeatures.map((item) => String(item).trim()).filter(Boolean).slice(0, 20)
-      : [],
-    workflow: String(request.body?.workflow ?? '').trim().slice(0, 2000),
-    year: String(request.body?.year ?? '').trim().slice(0, 20),
-  }
+  const normalized = normalizeProjectPayload(request.body)
 
   if (!normalized.title || !normalized.summary || !normalized.image || !normalized.year) {
     return response.status(400).json({
@@ -272,6 +315,24 @@ app.patch('/api/admin/projects/:slug', requireAdmin, async (request, response) =
   })
 
   return response.json({ project })
+})
+
+app.delete('/api/admin/projects/:slug', requireAdmin, async (request, response) => {
+  if (staticProjects.some((project) => project.slug === request.params.slug)) {
+    return response.status(400).json({
+      error: 'Seed projects can be hidden, but not deleted.',
+    })
+  }
+
+  const deleted = await adminStore.deleteCustomProject(request.params.slug)
+
+  if (!deleted) {
+    return response.status(404).json({
+      error: 'Project not found.',
+    })
+  }
+
+  return response.json({ ok: true })
 })
 
 app.patch('/api/admin/download-requests/:id', requireAdmin, async (request, response) => {
