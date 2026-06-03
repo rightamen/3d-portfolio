@@ -130,7 +130,7 @@ try {
       '    listen 80;',
       `    server_name ${domain} www.${domain};`,
       '',
-      '    client_max_body_size 1m;',
+      '    client_max_body_size 130m;',
       '',
       '    location / {',
       '        proxy_pass http://127.0.0.1:4173;',

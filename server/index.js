@@ -19,6 +19,7 @@ const uploadRoot = path.join(rootDir, 'public', 'uploads')
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 const imageExtensions = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif'])
+const imageUploadLimit = 16 * 1024 * 1024
 const modelExtensions = new Set(['.glb', '.gltf', '.fbx', '.obj', '.zip'])
 const stores = process.env.DATABASE_URL
   ? await createPostgresStores(process.env.DATABASE_URL)
@@ -284,11 +285,11 @@ app.post('/api/admin/uploads', requireAdmin, upload.single('file'), (request, re
   const extension = path.extname(request.file.originalname).toLowerCase()
   const type = imageExtensions.has(extension) ? 'image' : 'model'
 
-  if (type === 'image' && request.file.size > 8 * 1024 * 1024) {
+  if (type === 'image' && request.file.size > imageUploadLimit) {
     unlink(request.file.path).catch((error) => console.error(error))
 
     return response.status(400).json({
-      error: 'Image uploads must be 8 MB or smaller.',
+      error: 'Image uploads must be 16 MB or smaller.',
     })
   }
 
