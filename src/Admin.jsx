@@ -263,6 +263,57 @@ const exportGlb = (object, GLTFExporter) =>
     )
   })
 
+const waitForTexture = (texture) =>
+  new Promise((resolve, reject) => {
+    const image = texture?.image
+    if (!image) {
+      resolve()
+      return
+    }
+
+    if (image.complete || image.width > 0 || image.data) {
+      resolve()
+      return
+    }
+
+    if (!image.addEventListener) {
+      resolve()
+      return
+    }
+
+    image.addEventListener('load', resolve, { once: true })
+    image.addEventListener('error', () => reject(new Error('A texture image failed to load.')), {
+      once: true,
+    })
+  })
+
+const waitForObjectTextures = async (object) => {
+  const textures = new Set()
+  const textureKeys = [
+    'map',
+    'normalMap',
+    'roughnessMap',
+    'metalnessMap',
+    'aoMap',
+    'alphaMap',
+    'emissiveMap',
+    'bumpMap',
+    'specularMap',
+  ]
+
+  object.traverse((item) => {
+    const materials = Array.isArray(item.material) ? item.material : [item.material]
+    materials.filter(Boolean).forEach((material) => {
+      textureKeys.forEach((key) => {
+        if (material[key]) textures.add(material[key])
+      })
+    })
+  })
+
+  await Promise.all(Array.from(textures).map(waitForTexture))
+  return textures.size
+}
+
 const findPrimaryModelFile = (files) =>
   files.find((file) => ['.fbx', '.obj'].includes(getFileExtension(file.name))) ||
   files.find((file) => modelFileExtensions.has(getFileExtension(file.name))) ||
@@ -310,13 +361,17 @@ const convertModelInBrowser = async (files) => {
       object = objLoader.parse(await file.text())
     }
 
+    const embeddedTextureCount = await waitForObjectTextures(object)
     const glbBuffer = await exportGlb(object, GLTFExporter)
 
     return {
       converted: true,
       file: new File([glbBuffer], `${baseName}.glb`, { type: 'model/gltf-binary' }),
       originalExtension: getExtension(file.name),
-      textureCount: fileList.filter((item) => textureFileExtensions.has(getFileExtension(item.name))).length,
+      textureCount: Math.max(
+        embeddedTextureCount,
+        fileList.filter((item) => textureFileExtensions.has(getFileExtension(item.name))).length,
+      ),
     }
   } finally {
     assetManager.revoke()
@@ -493,10 +548,11 @@ const Admin = () => {
         try {
           localConversion = await convertModelInBrowser(selectedFiles)
           uploadFile = localConversion.file
-        } catch {
+        } catch (error) {
           localConversion = {
             converted: false,
             failed: true,
+            message: error.message,
             originalExtension: getExtension(file.name),
           }
           uploadFile = file
@@ -558,7 +614,7 @@ const Admin = () => {
             ? 'Uploaded and converted to GLB'
           : targetField === 'modelUrl' && conversionStatus === 'skipped'
             ? localConversion.failed
-              ? 'Uploaded, local conversion failed'
+              ? `Uploaded, local conversion failed: ${localConversion.message || 'check assets'}`
               : 'Uploaded, converter unavailable'
             : targetField === 'modelUrl' && conversionStatus === 'failed'
               ? 'Uploaded, conversion failed'
