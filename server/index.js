@@ -4,6 +4,7 @@ import { appendFile, mkdir } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { experience, profile, projects, skills } from './content.js'
+import { createInteractionsStore } from './interactionsStore.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -11,6 +12,7 @@ const rootDir = path.resolve(__dirname, '..')
 const dataDir = path.join(rootDir, 'data')
 const messagesFile = path.join(dataDir, 'messages.jsonl')
 const distDir = path.join(rootDir, 'dist')
+const interactionsStore = createInteractionsStore(dataDir)
 
 const app = express()
 const port = process.env.PORT || 4173
@@ -40,6 +42,66 @@ app.get('/api/projects/:slug', (request, response) => {
   }
 
   return response.json({ project })
+})
+
+app.get('/api/projects/:slug/interactions', async (request, response) => {
+  const project = projects.find((item) => item.slug === request.params.slug)
+
+  if (!project) {
+    return response.status(404).json({
+      error: 'Project not found.',
+    })
+  }
+
+  const state = await interactionsStore.getProjectState(project.slug)
+  return response.json({
+    comments: state.comments,
+    likeCount: state.likes.length,
+  })
+})
+
+app.post('/api/projects/:slug/like', async (request, response) => {
+  const project = projects.find((item) => item.slug === request.params.slug)
+  const visitorId = String(request.body?.visitorId ?? '').trim().slice(0, 120)
+
+  if (!project) {
+    return response.status(404).json({
+      error: 'Project not found.',
+    })
+  }
+
+  if (!visitorId) {
+    return response.status(400).json({
+      error: 'Visitor id is required.',
+    })
+  }
+
+  const result = await interactionsStore.toggleLike(project.slug, visitorId)
+  return response.json(result)
+})
+
+app.post('/api/projects/:slug/comments', async (request, response) => {
+  const project = projects.find((item) => item.slug === request.params.slug)
+  const author = String(request.body?.author ?? '').trim().slice(0, 80)
+  const message = String(request.body?.message ?? '').trim().slice(0, 1000)
+
+  if (!project) {
+    return response.status(404).json({
+      error: 'Project not found.',
+    })
+  }
+
+  if (!author || !message) {
+    return response.status(400).json({
+      error: 'Author and message are required.',
+    })
+  }
+
+  const comment = await interactionsStore.addComment(project.slug, {
+    author,
+    message,
+  })
+  return response.status(201).json({ comment })
 })
 
 app.get('/api/experience', (_request, response) => {

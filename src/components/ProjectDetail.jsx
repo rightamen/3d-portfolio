@@ -1,20 +1,42 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
-import { getProject } from '../lib/api'
+import {
+  addProjectComment,
+  getProject,
+  getProjectInteractions,
+  toggleProjectLike,
+} from '../lib/api'
 
 const ModelPreview = lazy(() => import('./ModelPreview'))
 
+const getVisitorId = () => {
+  const key = 'mrright-visitor-id'
+  const existing = window.localStorage.getItem(key)
+  if (existing) return existing
+
+  const created =
+    window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`
+  window.localStorage.setItem(key, created)
+  return created
+}
+
 const ProjectDetail = ({ slug, onClose }) => {
   const [project, setProject] = useState(null)
+  const [interactions, setInteractions] = useState({ comments: [], likeCount: 0 })
+  const [commentForm, setCommentForm] = useState({ author: '', message: '' })
   const [status, setStatus] = useState('loading')
+  const [interactionStatus, setInteractionStatus] = useState('idle')
   const [isPreviewOpen, setIsPreviewOpen] = useState(false)
+  const [liked, setLiked] = useState(false)
 
   useEffect(() => {
     let isMounted = true
 
-    getProject(slug)
-      .then((payload) => {
+    Promise.all([getProject(slug), getProjectInteractions(slug)])
+      .then(([projectPayload, interactionPayload]) => {
         if (!isMounted) return
-        setProject(payload.project)
+        setProject(projectPayload.project)
+        setInteractions(interactionPayload)
+        setLiked(window.localStorage.getItem(`mrright-liked-${slug}`) === 'true')
         setStatus('ready')
       })
       .catch(() => {
@@ -25,6 +47,39 @@ const ProjectDetail = ({ slug, onClose }) => {
       isMounted = false
     }
   }, [slug])
+
+  const submitLike = async () => {
+    setInteractionStatus('saving')
+    try {
+      const result = await toggleProjectLike(slug, getVisitorId())
+      setLiked(result.liked)
+      setInteractions((current) => ({
+        ...current,
+        likeCount: result.likeCount,
+      }))
+      window.localStorage.setItem(`mrright-liked-${slug}`, String(result.liked))
+      setInteractionStatus('idle')
+    } catch {
+      setInteractionStatus('error')
+    }
+  }
+
+  const submitComment = async (event) => {
+    event.preventDefault()
+    setInteractionStatus('saving')
+
+    try {
+      const payload = await addProjectComment(slug, commentForm)
+      setInteractions((current) => ({
+        ...current,
+        comments: [...current.comments, payload.comment],
+      }))
+      setCommentForm((current) => ({ ...current, message: '' }))
+      setInteractionStatus('idle')
+    } catch {
+      setInteractionStatus('error')
+    }
+  }
 
   useEffect(() => {
     const onKeyDown = (event) => {
@@ -130,6 +185,84 @@ const ProjectDetail = ({ slug, onClose }) => {
                   Request Download
                 </button>
               </div>
+
+              <section className="interaction-panel">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <h4 className="detail-subtitle mb-1">Community</h4>
+                    <p className="text-sm text-neutral-400">
+                      {interactions.likeCount} likes · {interactions.comments.length}{' '}
+                      comments
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className={liked ? 'primary-action' : 'secondary-action'}
+                    onClick={submitLike}
+                    disabled={interactionStatus === 'saving'}
+                  >
+                    {liked ? 'Liked' : 'Like'}
+                  </button>
+                </div>
+
+                <form className="comment-form" onSubmit={submitComment}>
+                  <input
+                    className="field-input field-input-focus"
+                    name="author"
+                    placeholder="Name"
+                    value={commentForm.author}
+                    onChange={(event) =>
+                      setCommentForm((current) => ({
+                        ...current,
+                        author: event.target.value,
+                      }))
+                    }
+                    required
+                  />
+                  <textarea
+                    className="field-input field-input-focus min-h-24 resize-none"
+                    name="message"
+                    placeholder="Comment"
+                    value={commentForm.message}
+                    onChange={(event) =>
+                      setCommentForm((current) => ({
+                        ...current,
+                        message: event.target.value,
+                      }))
+                    }
+                    required
+                  />
+                  <button
+                    type="submit"
+                    className="primary-action"
+                    disabled={interactionStatus === 'saving'}
+                  >
+                    {interactionStatus === 'saving' ? 'Saving...' : 'Post Comment'}
+                  </button>
+                  {interactionStatus === 'error' && (
+                    <p className="text-sm text-coral">Interaction failed. Try again.</p>
+                  )}
+                </form>
+
+                <div className="comment-list">
+                  {interactions.comments.length === 0 && (
+                    <p className="text-sm text-neutral-500">
+                      No comments yet. Start the first note.
+                    </p>
+                  )}
+                  {interactions.comments.map((comment) => (
+                    <article key={comment.id} className="comment-item">
+                      <div className="flex items-center justify-between gap-3">
+                        <strong>{comment.author}</strong>
+                        <span>
+                          {new Date(comment.createdAt).toLocaleDateString('en-US')}
+                        </span>
+                      </div>
+                      <p>{comment.message}</p>
+                    </article>
+                  ))}
+                </div>
+              </section>
             </div>
           </div>
         )}

@@ -260,6 +260,34 @@ html {
   @apply mb-3 text-sm font-semibold uppercase tracking-[0.18em] text-aqua;
 }
 
+.interaction-panel {
+  @apply grid gap-5 rounded-lg border border-white/10 bg-black/20 p-4;
+}
+
+.comment-form {
+  @apply grid gap-3;
+}
+
+.comment-list {
+  @apply grid gap-3;
+}
+
+.comment-item {
+  @apply rounded-lg border border-white/10 bg-white/5 p-4;
+}
+
+.comment-item strong {
+  @apply text-sm text-white;
+}
+
+.comment-item span {
+  @apply text-xs text-neutral-500;
+}
+
+.comment-item p {
+  @apply mt-2 text-sm leading-relaxed text-neutral-300;
+}
+
 /* Navigation Bar */
 .nav-ul {
   @apply flex flex-col items-center gap-4 sm:flex-row md:gap-6 relative z-20;
