@@ -533,3 +533,7 @@ select.field-input option:disabled {
          focus-visible:ring-2
          focus-visible:ring-white/20;
 }
+
+.field-hint {
+  @apply mt-2 block text-xs leading-relaxed text-neutral-500;
+}

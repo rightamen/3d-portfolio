@@ -58,6 +58,10 @@ const getExtension = (fileName) => fileName.split('.').pop()?.toUpperCase() || '
 
 const getFileExtension = (fileName) => `.${fileName.split('.').pop()?.toLowerCase() || ''}`
 
+const modelFileExtensions = new Set(['.glb', '.gltf', '.fbx', '.obj'])
+const materialFileExtensions = new Set(['.mtl'])
+const textureFileExtensions = new Set(['.jpg', '.jpeg', '.png', '.webp'])
+
 const formatFileSize = (size) => {
   if (!Number.isFinite(size) || size <= 0) return ''
   if (size < 1024 * 1024) return `${Math.max(1, Math.round(size / 1024))} KB`
@@ -206,6 +210,36 @@ const appendKeyword = (text, keyword) => {
   return Array.from(values).join(', ')
 }
 
+const createLocalAssetManager = (files) => {
+  const objectUrls = []
+  const urlByName = new Map()
+
+  files.forEach((file) => {
+    const url = URL.createObjectURL(file)
+    objectUrls.push(url)
+    urlByName.set(file.name.toLowerCase(), url)
+  })
+
+  return {
+    manager: {
+      setURLModifier(callback) {
+        this.urlModifier = callback
+      },
+      resolve(url) {
+        return this.urlModifier ? this.urlModifier(url) : url
+      },
+    },
+    resolve(url) {
+      const normalized = decodeURIComponent(url).replace(/\\/g, '/').toLowerCase()
+      const basename = normalized.split('/').pop()
+      return urlByName.get(normalized) || urlByName.get(basename) || url
+    },
+    revoke() {
+      objectUrls.forEach((url) => URL.revokeObjectURL(url))
+    },
+  }
+}
+
 const exportGlb = (object, GLTFExporter) =>
   new Promise((resolve, reject) => {
     const exporter = new GLTFExporter()
@@ -229,7 +263,14 @@ const exportGlb = (object, GLTFExporter) =>
     )
   })
 
-const convertModelInBrowser = async (file) => {
+const findPrimaryModelFile = (files) =>
+  files.find((file) => ['.fbx', '.obj'].includes(getFileExtension(file.name))) ||
+  files.find((file) => modelFileExtensions.has(getFileExtension(file.name))) ||
+  files[0]
+
+const convertModelInBrowser = async (files) => {
+  const fileList = Array.isArray(files) ? files : [files]
+  const file = findPrimaryModelFile(fileList)
   const extension = getFileExtension(file.name)
   if (!['.fbx', '.obj'].includes(extension)) {
     return {
@@ -240,21 +281,45 @@ const convertModelInBrowser = async (file) => {
   }
 
   const baseName = file.name.replace(/\.[^.]+$/, '')
-  const [{ GLTFExporter }, { FBXLoader }, { OBJLoader }] = await Promise.all([
+  const [{ GLTFExporter }, { FBXLoader }, { OBJLoader }, { MTLLoader }, { LoadingManager }] =
+    await Promise.all([
     import('three/examples/jsm/exporters/GLTFExporter.js'),
     import('three/examples/jsm/loaders/FBXLoader.js'),
     import('three/examples/jsm/loaders/OBJLoader.js'),
+    import('three/examples/jsm/loaders/MTLLoader.js'),
+    import('three'),
   ])
-  const object =
-    extension === '.fbx'
-      ? new FBXLoader().parse(await file.arrayBuffer(), '')
-      : new OBJLoader().parse(await file.text())
-  const glbBuffer = await exportGlb(object, GLTFExporter)
+  const assetManager = createLocalAssetManager(fileList)
+  const loadingManager = new LoadingManager()
+  loadingManager.setURLModifier((url) => assetManager.resolve(url))
 
-  return {
-    converted: true,
-    file: new File([glbBuffer], `${baseName}.glb`, { type: 'model/gltf-binary' }),
-    originalExtension: getExtension(file.name),
+  let object
+  try {
+    if (extension === '.fbx') {
+      object = new FBXLoader(loadingManager).parse(await file.arrayBuffer(), '')
+    } else {
+      const objLoader = new OBJLoader(loadingManager)
+      const materialFile = fileList.find((item) => materialFileExtensions.has(getFileExtension(item.name)))
+
+      if (materialFile) {
+        const materials = new MTLLoader(loadingManager).parse(await materialFile.text(), '')
+        materials.preload()
+        objLoader.setMaterials(materials)
+      }
+
+      object = objLoader.parse(await file.text())
+    }
+
+    const glbBuffer = await exportGlb(object, GLTFExporter)
+
+    return {
+      converted: true,
+      file: new File([glbBuffer], `${baseName}.glb`, { type: 'model/gltf-binary' }),
+      originalExtension: getExtension(file.name),
+      textureCount: fileList.filter((item) => textureFileExtensions.has(getFileExtension(item.name))).length,
+    }
+  } finally {
+    assetManager.revoke()
   }
 }
 
@@ -394,8 +459,11 @@ const Admin = () => {
     }))
   }
 
-  const uploadAsset = async (file, targetField) => {
-    if (!file) return
+  const uploadAsset = async (files, targetField) => {
+    const selectedFiles = Array.isArray(files) ? files.filter(Boolean) : [files].filter(Boolean)
+    if (selectedFiles.length === 0) return
+
+    const file = targetField === 'modelUrl' ? findPrimaryModelFile(selectedFiles) : selectedFiles[0]
 
     let uploadFile = file
     let localConversion = {
@@ -423,7 +491,7 @@ const Admin = () => {
         }))
 
         try {
-          localConversion = await convertModelInBrowser(file)
+          localConversion = await convertModelInBrowser(selectedFiles)
           uploadFile = localConversion.file
         } catch {
           localConversion = {
@@ -482,8 +550,10 @@ const Admin = () => {
       })
       const conversionStatus = payload.conversion?.status
       const uploadMessage =
-        targetField === 'modelUrl' && localConversion.converted
-          ? 'Converted locally and uploaded'
+        targetField === 'modelUrl' && localConversion.converted && localConversion.textureCount > 0
+          ? 'Converted with textures and uploaded'
+          : targetField === 'modelUrl' && localConversion.converted
+            ? 'Converted locally and uploaded'
           : targetField === 'modelUrl' && conversionStatus === 'converted'
             ? 'Uploaded and converted to GLB'
           : targetField === 'modelUrl' && conversionStatus === 'skipped'
@@ -510,7 +580,7 @@ const Admin = () => {
   }
 
   const selectAsset = async (event, targetField) => {
-    await uploadAsset(event.target.files?.[0], targetField)
+    await uploadAsset(Array.from(event.target.files || []), targetField)
     event.target.value = ''
   }
 
@@ -918,10 +988,11 @@ const Admin = () => {
                       {uploadStatus.modelUrl.phase === 'processing' && uploadStatus.modelUrl.message}
                       {uploadStatus.modelUrl.phase === 'done' && uploadStatus.modelUrl.message}
                       {uploadStatus.modelUrl.phase === 'error' && uploadStatus.modelUrl.message}
-                      {uploadStatus.modelUrl.phase === 'idle' && 'Choose model file'}
+                      {uploadStatus.modelUrl.phase === 'idle' && 'Choose model and texture files'}
                       <input
                         type="file"
-                        accept=".glb,.gltf,.fbx,.obj,.zip"
+                        accept=".glb,.gltf,.fbx,.obj,.mtl,.jpg,.jpeg,.png,.webp"
+                        multiple
                         onChange={(event) => selectAsset(event, 'modelUrl')}
                       />
                     </span>
@@ -930,6 +1001,9 @@ const Admin = () => {
                         <span style={{ width: `${uploadStatus.modelUrl.progress}%` }} />
                       </span>
                     )}
+                    <span className="field-hint">
+                      OBJ textures need the .obj, .mtl, and image files selected together.
+                    </span>
                   </label>
                   <label className="field-label">
                     Model Size
