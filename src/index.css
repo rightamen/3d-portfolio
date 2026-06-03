@@ -296,6 +296,94 @@ html {
   @apply mt-2 text-sm leading-relaxed text-neutral-300;
 }
 
+.admin-shell {
+  @apply mx-auto grid min-h-screen w-full max-w-7xl gap-6 px-4 py-6 md:px-8;
+}
+
+.admin-login {
+  @apply m-auto grid w-full max-w-md gap-5 rounded-lg border border-white/10 bg-[#101321]/90 p-6;
+}
+
+.admin-header {
+  @apply flex flex-col justify-between gap-4 border-b border-white/10 pb-5 md:flex-row md:items-end;
+}
+
+.admin-metrics {
+  @apply grid gap-3 sm:grid-cols-2 lg:grid-cols-5;
+}
+
+.admin-metric {
+  @apply rounded-lg border border-white/10 bg-[#101321]/80 p-4;
+}
+
+.admin-metric span {
+  @apply text-xs uppercase tracking-[0.16em] text-neutral-500;
+}
+
+.admin-metric strong {
+  @apply mt-2 block text-3xl font-semibold text-white;
+}
+
+.admin-section {
+  @apply grid gap-3;
+}
+
+.admin-section-header {
+  @apply flex items-center justify-between border-b border-white/10 pb-2;
+}
+
+.admin-section-header h2 {
+  @apply text-xl font-semibold text-white;
+}
+
+.admin-section-header span {
+  @apply rounded-full border border-white/10 px-3 py-1 text-xs text-neutral-400;
+}
+
+.admin-table {
+  @apply grid gap-3;
+}
+
+.admin-row {
+  @apply grid gap-4 rounded-lg border border-white/10 bg-[#101321]/80 p-4 lg:grid-cols-[1fr_auto] lg:items-start;
+}
+
+.admin-row strong {
+  @apply block text-sm text-white;
+}
+
+.admin-row span {
+  @apply mt-1 block text-xs text-neutral-500;
+}
+
+.admin-row p {
+  @apply mt-3 text-sm leading-relaxed text-neutral-300;
+}
+
+.admin-row small {
+  @apply mt-3 block text-xs text-neutral-500;
+}
+
+.admin-actions {
+  @apply flex flex-wrap gap-2 lg:justify-end;
+}
+
+.status-pill {
+  @apply inline-flex min-h-10 items-center rounded-full border px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em];
+}
+
+.status-pending {
+  @apply border-sand/30 bg-sand/10 text-sand;
+}
+
+.status-approved {
+  @apply border-mint/30 bg-mint/10 text-mint;
+}
+
+.status-rejected {
+  @apply border-coral/30 bg-coral/10 text-coral;
+}
+
 /* Navigation Bar */
 .nav-ul {
   @apply flex flex-col items-center gap-4 sm:flex-row md:gap-6 relative z-20;

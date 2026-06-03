@@ -17,12 +17,13 @@ const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const stores = process.env.DATABASE_URL
   ? await createPostgresStores(process.env.DATABASE_URL)
   : {
+      adminStore: null,
       contactMessagesStore: createContactMessagesStore(dataDir),
       downloadRequestsStore: createDownloadRequestsStore(dataDir),
       interactionsStore: createInteractionsStore(dataDir),
     }
 
-const { contactMessagesStore, downloadRequestsStore, interactionsStore } = stores
+const { adminStore, contactMessagesStore, downloadRequestsStore, interactionsStore } = stores
 
 const app = express()
 const port = process.env.PORT || 4173
@@ -33,6 +34,24 @@ app.use(express.json({ limit: '32kb' }))
 app.get('/api/health', (_request, response) => {
   response.json({ ok: true, service: 'mrright-portfolio' })
 })
+
+const requireAdmin = (request, response, next) => {
+  const token = request.get('Authorization')?.replace(/^Bearer\s+/i, '')
+
+  if (!process.env.ADMIN_TOKEN || token !== process.env.ADMIN_TOKEN) {
+    return response.status(401).json({
+      error: 'Admin authorization is required.',
+    })
+  }
+
+  if (!adminStore) {
+    return response.status(503).json({
+      error: 'Admin data store is not configured.',
+    })
+  }
+
+  return next()
+}
 
 app.get('/api/profile', (_request, response) => {
   response.json({ profile, skills })
@@ -174,6 +193,43 @@ app.post('/api/contact', async (request, response) => {
   await contactMessagesStore.addMessage(normalized)
 
   return response.status(201).json({ ok: true })
+})
+
+app.get('/api/admin/summary', requireAdmin, async (_request, response) => {
+  response.json({ summary: await adminStore.getSummary() })
+})
+
+app.get('/api/admin/comments', requireAdmin, async (_request, response) => {
+  response.json({ comments: await adminStore.listComments() })
+})
+
+app.get('/api/admin/contact-messages', requireAdmin, async (_request, response) => {
+  response.json({ messages: await adminStore.listContactMessages() })
+})
+
+app.get('/api/admin/download-requests', requireAdmin, async (_request, response) => {
+  response.json({ requests: await adminStore.listDownloadRequests() })
+})
+
+app.patch('/api/admin/download-requests/:id', requireAdmin, async (request, response) => {
+  const status = String(request.body?.status ?? '').trim()
+  const allowedStatuses = new Set(['pending', 'approved', 'rejected'])
+
+  if (!allowedStatuses.has(status)) {
+    return response.status(400).json({
+      error: 'Invalid request status.',
+    })
+  }
+
+  const updated = await adminStore.updateDownloadRequestStatus(request.params.id, status)
+
+  if (!updated) {
+    return response.status(404).json({
+      error: 'Download request not found.',
+    })
+  }
+
+  return response.json({ request: updated })
 })
 
 app.use(express.static(distDir))

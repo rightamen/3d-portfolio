@@ -6,6 +6,7 @@ const createId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 
 const toComment = (row) => ({
   id: row.id,
+  projectSlug: row.project_slug,
   author: row.author,
   message: row.message,
   createdAt: row.created_at.toISOString(),
@@ -200,7 +201,86 @@ export const createPostgresStores = async (databaseUrl) => {
     },
   }
 
+  const adminStore = {
+    getSummary: async () => {
+      const result = await pool.query(`
+        SELECT
+          (SELECT count(*)::int FROM project_comments) AS comments,
+          (SELECT count(*)::int FROM project_likes) AS likes,
+          (SELECT count(*)::int FROM download_requests) AS download_requests,
+          (SELECT count(*)::int FROM download_requests WHERE status = 'pending') AS pending_downloads,
+          (SELECT count(*)::int FROM contact_messages) AS contact_messages
+      `)
+
+      return result.rows[0]
+    },
+
+    listComments: async () => {
+      const result = await pool.query(`
+        SELECT id, project_slug, author, message, created_at
+        FROM project_comments
+        ORDER BY created_at DESC
+        LIMIT 100
+      `)
+
+      return result.rows.map(toComment)
+    },
+
+    listContactMessages: async () => {
+      const result = await pool.query(`
+        SELECT id, name, email, message, created_at
+        FROM contact_messages
+        ORDER BY created_at DESC
+        LIMIT 100
+      `)
+
+      return result.rows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        email: row.email,
+        message: row.message,
+        createdAt: row.created_at.toISOString(),
+      }))
+    },
+
+    listDownloadRequests: async () => {
+      const result = await pool.query(`
+        SELECT id, status, project_slug, project_title, name, email, purpose, ip, created_at
+        FROM download_requests
+        ORDER BY created_at DESC
+        LIMIT 100
+      `)
+
+      return result.rows.map((row) => ({
+        id: row.id,
+        status: row.status,
+        projectSlug: row.project_slug,
+        projectTitle: row.project_title,
+        name: row.name,
+        email: row.email,
+        purpose: row.purpose,
+        ip: row.ip,
+        createdAt: row.created_at.toISOString(),
+      }))
+    },
+
+    updateDownloadRequestStatus: async (id, status) => {
+      const result = await pool.query(
+        `
+          UPDATE download_requests
+          SET status = $2
+          WHERE id = $1
+          RETURNING id, status
+        `,
+        [id, status],
+      )
+
+      return result.rows[0] || null
+    },
+  }
+
   return {
+    adminStore,
     close: () => pool.end(),
     contactMessagesStore,
     downloadRequestsStore,

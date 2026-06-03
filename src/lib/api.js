@@ -11,6 +11,15 @@ const request = async (path, options) => {
   return response.json()
 }
 
+const adminRequest = (path, token, options = {}) =>
+  request(path, {
+    ...options,
+    headers: {
+      ...(options.headers || {}),
+      Authorization: `Bearer ${token}`,
+    },
+  })
+
 export const getProfile = () => request('/api/profile')
 export const getProjects = () => request('/api/projects')
 export const getProject = (slug) => request(`/api/projects/${slug}`)
@@ -37,6 +46,23 @@ export const requestProjectDownload = (slug, payload) =>
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
+  })
+
+export const getAdminSummary = (token) => adminRequest('/api/admin/summary', token)
+
+export const getAdminComments = (token) => adminRequest('/api/admin/comments', token)
+
+export const getAdminContactMessages = (token) =>
+  adminRequest('/api/admin/contact-messages', token)
+
+export const getAdminDownloadRequests = (token) =>
+  adminRequest('/api/admin/download-requests', token)
+
+export const updateAdminDownloadRequest = (token, id, status) =>
+  adminRequest(`/api/admin/download-requests/${id}`, token, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status }),
   })
 
 export const sendMessage = (payload) =>
