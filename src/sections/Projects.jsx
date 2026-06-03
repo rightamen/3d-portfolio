@@ -2,9 +2,11 @@ import { motion as Motion } from 'motion/react'
 import { lazy, Suspense, useState } from 'react'
 
 const ModelPreview = lazy(() => import('../components/ModelPreview'))
+const ProjectDetail = lazy(() => import('../components/ProjectDetail'))
 
 const Projects = ({ projects = [] }) => {
   const [previewProject, setPreviewProject] = useState(null)
+  const [detailSlug, setDetailSlug] = useState(null)
 
   return (
     <section id="projects" className="c-space section-space">
@@ -56,6 +58,13 @@ const Projects = ({ projects = [] }) => {
                   Open 3D Preview
                 </button>
               )}
+              <button
+                type="button"
+                className="primary-action w-full"
+                onClick={() => setDetailSlug(project.slug)}
+              >
+                View Details
+              </button>
             </div>
           </Motion.article>
         ))}
@@ -66,6 +75,16 @@ const Projects = ({ projects = [] }) => {
           <ModelPreview
             project={previewProject}
             onClose={() => setPreviewProject(null)}
+          />
+        </Suspense>
+      )}
+
+      {detailSlug && (
+        <Suspense fallback={null}>
+          <ProjectDetail
+            key={detailSlug}
+            slug={detailSlug}
+            onClose={() => setDetailSlug(null)}
           />
         </Suspense>
       )}

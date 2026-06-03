@@ -13,6 +13,7 @@ const request = async (path, options) => {
 
 export const getProfile = () => request('/api/profile')
 export const getProjects = () => request('/api/projects')
+export const getProject = (slug) => request(`/api/projects/${slug}`)
 export const getExperience = () => request('/api/experience')
 
 export const sendMessage = (payload) =>

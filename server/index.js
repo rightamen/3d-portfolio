@@ -30,6 +30,18 @@ app.get('/api/projects', (_request, response) => {
   response.json({ projects })
 })
 
+app.get('/api/projects/:slug', (request, response) => {
+  const project = projects.find((item) => item.slug === request.params.slug)
+
+  if (!project) {
+    return response.status(404).json({
+      error: 'Project not found.',
+    })
+  }
+
+  return response.json({ project })
+})
+
 app.get('/api/experience', (_request, response) => {
   response.json({ experience })
 })
