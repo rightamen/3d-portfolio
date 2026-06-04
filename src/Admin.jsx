@@ -302,31 +302,67 @@ const exportGlb = (object, GLTFExporter) =>
     )
   })
 
-const waitForTexture = (texture) =>
-  new Promise((resolve, reject) => {
-    const image = texture?.image
-    if (!image) {
-      resolve()
-      return
-    }
+const waitForTexture = async (texture) => {
+  const image = texture?.image
+  if (!image) return
 
-    if (image.complete || image.width > 0 || image.data) {
-      resolve()
-      return
+  if (image.complete || image.width > 0 || image.data) {
+    if (image.decode) {
+      await image.decode().catch(() => {})
     }
+    return
+  }
 
-    if (!image.addEventListener) {
-      resolve()
-      return
-    }
+  if (!image.addEventListener) return
 
+  await new Promise((resolve, reject) => {
     image.addEventListener('load', resolve, { once: true })
     image.addEventListener('error', () => reject(new Error('A texture image failed to load.')), {
       once: true,
     })
   })
 
-const waitForObjectTextures = async (object) => {
+  if (image.decode) {
+    await image.decode().catch(() => {})
+  }
+}
+
+const normalizeTextureForGlbExport = (texture) => {
+  const image = texture?.image
+  if (!image || image.data || image instanceof HTMLCanvasElement) {
+    return
+  }
+
+  const width = image.naturalWidth || image.videoWidth || image.width
+  const height = image.naturalHeight || image.videoHeight || image.height
+
+  if (!width || !height) {
+    throw new Error('Texture image loaded without readable dimensions.')
+  }
+
+  const canvas = document.createElement('canvas')
+  canvas.width = width
+  canvas.height = height
+  const context = canvas.getContext('2d')
+
+  if (!context) {
+    throw new Error('Unable to prepare texture canvas for GLB export.')
+  }
+
+  try {
+    context.drawImage(image, 0, 0, width, height)
+  } catch {
+    throw new Error('Unable to read selected texture image for GLB export.')
+  }
+
+  texture.image = canvas
+  if (texture.source) {
+    texture.source.data = canvas
+  }
+  texture.needsUpdate = true
+}
+
+const collectObjectTextures = (object) => {
   const textures = new Set()
   const textureKeys = [
     'map',
@@ -349,7 +385,14 @@ const waitForObjectTextures = async (object) => {
     })
   })
 
+  return textures
+}
+
+const waitForObjectTextures = async (object) => {
+  const textures = collectObjectTextures(object)
+
   await Promise.all(Array.from(textures).map(waitForTexture))
+  textures.forEach(normalizeTextureForGlbExport)
   return textures.size
 }
 
