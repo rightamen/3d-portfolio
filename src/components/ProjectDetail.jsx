@@ -6,6 +6,7 @@ import {
   requestProjectDownload,
   toggleProjectLike,
 } from '../lib/api'
+import { getAssetCategoryProfile } from '../lib/assetCategories'
 
 const ModelPreview = lazy(() => import('./ModelPreview'))
 
@@ -137,6 +138,14 @@ const ProjectDetail = ({ slug, onClose }) => {
             </div>
 
             <div className="detail-content">
+              <div
+                className="detail-category-banner"
+                style={{ '--category-accent': getAssetCategoryProfile(project).accent }}
+              >
+                <span>{getAssetCategoryProfile(project).label}</span>
+                <p>{getAssetCategoryProfile(project).description}</p>
+              </div>
+
               <p className="leading-relaxed text-neutral-300">{project.summary}</p>
 
               <div className="detail-stat-grid">

@@ -15,6 +15,7 @@ import {
   updateAdminProject,
   uploadAdminAsset,
 } from './lib/api'
+import { getAssetCategoryProfile } from './lib/assetCategories'
 
 const tokenKey = 'mrright-admin-token'
 const sections = [
@@ -1035,9 +1036,16 @@ const Admin = () => {
             </div>
             <div className="admin-table">
               {visibleProjects.map((project) => (
-                <article key={project.slug} className="admin-row">
+                <article
+                  key={project.slug}
+                  className="admin-row"
+                  style={{ '--category-accent': getAssetCategoryProfile(project).accent }}
+                >
                   <div>
-                    <strong>{project.title}</strong>
+                    <div className="admin-row-title">
+                      <strong>{project.title}</strong>
+                      <span>{getAssetCategoryProfile(project).label}</span>
+                    </div>
                     <span>
                       {project.slug} · {project.year} ·{' '}
                       {project.isPublic === false ? 'hidden' : 'public'}
@@ -1124,6 +1132,29 @@ const Admin = () => {
                       </option>
                     ))}
                   </select>
+                  <span
+                    className="asset-editor-note"
+                    style={{
+                      '--category-accent': getAssetCategoryProfile({
+                        assetCategory: editingProject.assetCategory,
+                      }).accent,
+                    }}
+                  >
+                    <strong>
+                      {
+                        getAssetCategoryProfile({
+                          assetCategory: editingProject.assetCategory,
+                        }).label
+                      }
+                    </strong>
+                    <span>
+                      {
+                        getAssetCategoryProfile({
+                          assetCategory: editingProject.assetCategory,
+                        }).description
+                      }
+                    </span>
+                  </span>
                 </label>
                 <label className="field-label">
                   Slug

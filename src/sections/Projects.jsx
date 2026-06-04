@@ -1,5 +1,6 @@
 import { motion as Motion } from 'motion/react'
-import { lazy, Suspense, useState } from 'react'
+import { lazy, Suspense, useMemo, useState } from 'react'
+import { assetCategoryProfiles, getAssetCategoryProfile } from '../lib/assetCategories'
 
 const ModelPreview = lazy(() => import('../components/ModelPreview'))
 const ProjectDetail = lazy(() => import('../components/ProjectDetail'))
@@ -7,6 +8,24 @@ const ProjectDetail = lazy(() => import('../components/ProjectDetail'))
 const Projects = ({ projects = [] }) => {
   const [previewProject, setPreviewProject] = useState(null)
   const [detailSlug, setDetailSlug] = useState(null)
+  const [activeCategory, setActiveCategory] = useState('all')
+  const categoryCounts = useMemo(() => {
+    const counts = new Map(assetCategoryProfiles.map((category) => [category.value, 0]))
+
+    projects.forEach((project) => {
+      const category = getAssetCategoryProfile(project)
+      counts.set(category.value, (counts.get(category.value) || 0) + 1)
+    })
+
+    return counts
+  }, [projects])
+  const visibleProjects = useMemo(
+    () =>
+      activeCategory === 'all'
+        ? projects
+        : projects.filter((project) => getAssetCategoryProfile(project).value === activeCategory),
+    [activeCategory, projects],
+  )
 
   return (
     <section id="projects" className="c-space section-space">
@@ -19,11 +38,59 @@ const Projects = ({ projects = [] }) => {
         </p>
       </div>
 
-      <div className="mt-10 grid grid-cols-1 gap-4 md:grid-cols-2">
-        {projects.map((project, index) => (
+      <div className="asset-filter-panel">
+        <button
+          type="button"
+          className={activeCategory === 'all' ? 'asset-filter-active' : 'asset-filter'}
+          onClick={() => setActiveCategory('all')}
+        >
+          <span>All Work</span>
+          <strong>{projects.length}</strong>
+        </button>
+        {assetCategoryProfiles.map((category) => {
+          const count = categoryCounts.get(category.value) || 0
+          if (count === 0) return null
+
+          return (
+            <button
+              key={category.value}
+              type="button"
+              className={activeCategory === category.value ? 'asset-filter-active' : 'asset-filter'}
+              style={{ '--category-accent': category.accent }}
+              onClick={() => setActiveCategory(category.value)}
+            >
+              <span>{category.shortLabel}</span>
+              <strong>{count}</strong>
+            </button>
+          )
+        })}
+      </div>
+
+      <div className="asset-category-strip">
+        {(activeCategory === 'all'
+          ? assetCategoryProfiles.filter((category) => (categoryCounts.get(category.value) || 0) > 0)
+          : assetCategoryProfiles.filter((category) => category.value === activeCategory)
+        ).map((category) => (
+          <div
+            key={category.value}
+            className="asset-category-summary"
+            style={{ '--category-accent': category.accent }}
+          >
+            <span>{category.label}</span>
+            <p>{category.description}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-8 grid grid-cols-1 gap-4 md:grid-cols-2">
+        {visibleProjects.map((project, index) => {
+          const category = getAssetCategoryProfile(project)
+
+          return (
           <Motion.article
             key={project.slug}
             className="project-card group"
+            style={{ '--category-accent': category.accent }}
             initial={{ opacity: 0, y: 28 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true, margin: '-80px' }}
@@ -31,10 +98,14 @@ const Projects = ({ projects = [] }) => {
           >
             <div className="project-media">
               <img src={project.image} alt="" className="h-full w-full object-cover" />
+              <span className="project-category-badge">{category.label}</span>
             </div>
             <div className="flex flex-1 flex-col gap-4 p-5">
               <div>
-                <div className="text-sm text-aqua">{project.year}</div>
+                <div className="project-card-meta">
+                  <span>{project.year}</span>
+                  <span>{project.format || category.shortLabel}</span>
+                </div>
                 <h3 className="mt-2 text-2xl font-semibold text-white">
                   {project.title}
                 </h3>
@@ -67,7 +138,8 @@ const Projects = ({ projects = [] }) => {
               </button>
             </div>
           </Motion.article>
-        ))}
+          )
+        })}
       </div>
 
       {previewProject && (
