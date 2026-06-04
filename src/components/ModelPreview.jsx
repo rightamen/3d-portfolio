@@ -1,13 +1,72 @@
 import { ContactShadows, Grid, Html, OrbitControls, useGLTF, useProgress } from '@react-three/drei'
 import { Canvas } from '@react-three/fiber'
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
-import { ACESFilmicToneMapping, Box3, Color, MeshStandardMaterial, Vector3 } from 'three'
+import {
+  ACESFilmicToneMapping,
+  Box3,
+  Color,
+  MeshBasicMaterial,
+  MeshStandardMaterial,
+  SRGBColorSpace,
+  Vector3,
+} from 'three'
 
 const modes = [
   { id: 'textured', label: 'Texture' },
+  { id: 'studio', label: 'Studio' },
   { id: 'clay', label: 'Clay' },
   { id: 'wireframe', label: 'Wireframe' },
 ]
+
+const materialKeys = [
+  'map',
+  'alphaMap',
+  'aoMap',
+  'bumpMap',
+  'displacementMap',
+  'emissiveMap',
+  'envMap',
+  'lightMap',
+  'metalnessMap',
+  'normalMap',
+  'roughnessMap',
+  'specularMap',
+]
+
+const cloneTextureMaterial = (material) => {
+  if (!material) return material
+
+  const displayMaterial = new MeshBasicMaterial({
+    alphaMap: material.alphaMap || null,
+    color: material.color ? material.color.clone() : new Color('#ffffff'),
+    map: material.map || material.emissiveMap || null,
+    name: material.name,
+    opacity: material.opacity ?? 1,
+    side: material.side,
+    transparent: material.transparent || (material.opacity ?? 1) < 1 || Boolean(material.alphaMap),
+  })
+
+  if (displayMaterial.map) {
+    displayMaterial.map.colorSpace = SRGBColorSpace
+  }
+
+  return displayMaterial
+}
+
+const prepareStudioMaterial = (material) => {
+  if (!material) return
+
+  materialKeys.forEach((key) => {
+    if (material[key]) material[key].needsUpdate = true
+  })
+
+  if (material.map) {
+    material.map.colorSpace = SRGBColorSpace
+  }
+
+  material.envMapIntensity = material.envMapIntensity ?? 1.2
+  material.needsUpdate = true
+}
 
 const ModelScene = ({ url, mode }) => {
   const { scene } = useGLTF(url)
@@ -67,20 +126,21 @@ const ModelScene = ({ url, mode }) => {
 
       if (!object.userData.originalMaterial) {
         object.userData.originalMaterial = object.material
+        object.userData.textureMaterial = Array.isArray(object.material)
+          ? object.material.map(cloneTextureMaterial)
+          : cloneTextureMaterial(object.material)
       }
 
       const materials = Array.isArray(object.userData.originalMaterial)
         ? object.userData.originalMaterial
         : [object.userData.originalMaterial]
 
-      materials.filter(Boolean).forEach((material) => {
-        material.envMapIntensity = material.envMapIntensity ?? 1.2
-        material.needsUpdate = true
-      })
+      materials.filter(Boolean).forEach(prepareStudioMaterial)
 
       if (mode === 'clay') object.material = clayMaterial
       if (mode === 'wireframe') object.material = wireMaterial
-      if (mode === 'textured') object.material = object.userData.originalMaterial
+      if (mode === 'studio') object.material = object.userData.originalMaterial
+      if (mode === 'textured') object.material = object.userData.textureMaterial
     })
   }, [clayMaterial, displayScene, mode, wireMaterial])
 
@@ -92,51 +152,55 @@ const ModelScene = ({ url, mode }) => {
         scale={transform.scale}
         rotation={[0, -0.35, 0]}
       />
-      <Grid
-        args={[8, 8]}
-        cellColor="#35495c"
-        sectionColor="#62d8e8"
-        fadeDistance={8}
-        fadeStrength={1.35}
-        position={[0, transform.gridY, 0]}
-      />
-      <ContactShadows
-        position={[0, transform.gridY + 0.02, 0]}
-        opacity={0.42}
-        scale={6}
-        blur={2.4}
-        far={3.5}
-        color="#020617"
-      />
+      {mode !== 'textured' && (
+        <>
+          <Grid
+            args={[8, 8]}
+            cellColor="#35495c"
+            sectionColor="#62d8e8"
+            fadeDistance={8}
+            fadeStrength={1.35}
+            position={[0, transform.gridY, 0]}
+          />
+          <ContactShadows
+            position={[0, transform.gridY + 0.02, 0]}
+            opacity={0.42}
+            scale={6}
+            blur={2.4}
+            far={3.5}
+            color="#020617"
+          />
+        </>
+      )}
     </>
   )
 }
 
 const ShowcaseLights = () => (
   <>
-    <color attach="background" args={['#080c18']} />
+    <color attach="background" args={['#02030a']} />
     <hemisphereLight args={['#dbeafe', '#182033', 1.05]} />
-    <ambientLight intensity={0.38} />
+    <ambientLight intensity={0.92} />
     <directionalLight
       castShadow
       color="#ffffff"
-      intensity={2.4}
+      intensity={2.85}
       position={[3.5, 4.5, 4.5]}
       shadow-mapSize={[2048, 2048]}
       shadow-bias={-0.00025}
     />
-    <directionalLight color="#78f4ff" intensity={1.15} position={[-3.5, 2.2, 2.5]} />
+    <directionalLight color="#dff8ff" intensity={1.8} position={[-3.5, 2.2, 2.5]} />
     <spotLight
       castShadow
       color="#fff4df"
-      intensity={2.3}
+      intensity={3.2}
       position={[0, 4.5, 3.2]}
       angle={0.48}
       penumbra={0.65}
       distance={9}
     />
-    <pointLight color="#38d6ff" intensity={1.2} position={[-2.8, 1.4, -2.5]} />
-    <pointLight color="#ff7ad9" intensity={0.55} position={[2.8, 1.1, -2.8]} />
+    <pointLight color="#9eefff" intensity={1.55} position={[-2.8, 1.4, -2.5]} />
+    <pointLight color="#ff9fe2" intensity={0.75} position={[2.8, 1.1, -2.8]} />
   </>
 )
 
@@ -213,10 +277,10 @@ const ModelPreview = ({ project, onClose }) => {
               antialias: true,
               outputColorSpace: 'srgb',
               toneMapping: ACESFilmicToneMapping,
-              toneMappingExposure: 1.28,
+              toneMappingExposure: 1.55,
             }}
             onCreated={({ scene: canvasScene }) => {
-              canvasScene.background = new Color('#080c18')
+              canvasScene.background = new Color('#02030a')
             }}
           >
             <Suspense fallback={<CanvasLoader />}>
