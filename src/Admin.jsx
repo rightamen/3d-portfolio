@@ -302,9 +302,36 @@ const exportGlb = (object, GLTFExporter) =>
     )
   })
 
+const createLoadingManagerWaiter = (loadingManager) => {
+  let finish
+  const promise = new Promise((resolve, reject) => {
+    let settled = false
+
+    finish = () => {
+      if (settled) return
+      settled = true
+      resolve()
+    }
+
+    loadingManager.onLoad = finish
+    loadingManager.onError = (url) => {
+      if (settled) return
+      settled = true
+      reject(new Error(`Texture failed to load: ${getAssetBasename(url) || url}`))
+    }
+  })
+
+  return () => {
+    if (loadingManager.itemsTotal === loadingManager.itemsLoaded) finish()
+    return promise
+  }
+}
+
 const waitForTexture = async (texture) => {
   const image = texture?.image
-  if (!image) return
+  if (!image) {
+    throw new Error('Texture image was not loaded before GLB export.')
+  }
 
   if (image.complete || image.width > 0 || image.data) {
     if (image.decode) {
@@ -425,6 +452,7 @@ const convertModelInBrowser = async (files) => {
   const assetManager = createLocalAssetManager(fileList)
   const loadingManager = new LoadingManager()
   loadingManager.setURLModifier((url) => assetManager.resolve(url))
+  const waitForAssetLoads = createLoadingManagerWaiter(loadingManager)
 
   let object
   try {
@@ -445,6 +473,7 @@ const convertModelInBrowser = async (files) => {
       object = objLoader.parse(await file.text())
     }
 
+    await waitForAssetLoads()
     const embeddedTextureCount = await waitForObjectTextures(object)
     const glbBuffer = await exportGlb(object, GLTFExporter)
 
