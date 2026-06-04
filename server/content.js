@@ -22,6 +22,7 @@ export const profile = {
 
 export const projects = [
   {
+    assetCategory: 'next-gen-prop',
     slug: 'fire-extinguisher-next-gen',
     title: 'Next-Gen Fire Extinguisher',
     image: '/assets/projects/fire-extinguisher.png',
@@ -47,6 +48,7 @@ export const projects = [
     year: '2026',
   },
   {
+    assetCategory: 'generic',
     slug: 'creature-accessories',
     title: 'Creature Accessory Study',
     image: '/assets/projects/accessories.jpg',
@@ -62,6 +64,7 @@ export const projects = [
     year: '2026',
   },
   {
+    assetCategory: 'next-gen-scene',
     slug: 'realtime-game-prototype',
     title: 'Realtime Game Prototype',
     image: '/assets/projects/game-engine.jpg',
@@ -77,6 +80,7 @@ export const projects = [
     year: '2025',
   },
   {
+    assetCategory: 'generic',
     slug: 'product-interface-system',
     title: 'Product Interface System',
     image: '/assets/projects/blazor-app.jpg',
@@ -92,6 +96,7 @@ export const projects = [
     year: '2025',
   },
   {
+    assetCategory: 'generic',
     slug: 'learning-visual-system',
     title: 'Learning Visual System',
     image: '/assets/projects/elearning.jpg',

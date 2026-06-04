@@ -13,6 +13,7 @@ const toComment = (row) => ({
 })
 
 const toProjectOverride = (row) => ({
+  assetCategory: row.asset_category,
   downloadPolicy: row.download_policy,
   format: row.format,
   image: row.image,
@@ -29,6 +30,7 @@ const toProjectOverride = (row) => ({
 })
 
 const toCustomProject = (row) => ({
+  assetCategory: row.asset_category,
   downloadPolicy: row.download_policy,
   format: row.format,
   image: row.image,
@@ -110,6 +112,7 @@ const ensureSchema = async (pool) => {
       model_url text,
       format text,
       model_size text,
+      asset_category text,
       download_policy text,
       stack jsonb,
       viewer_features jsonb,
@@ -127,6 +130,7 @@ const ensureSchema = async (pool) => {
       model_url text,
       format text,
       model_size text,
+      asset_category text,
       download_policy text,
       stack jsonb NOT NULL DEFAULT '[]'::jsonb,
       viewer_features jsonb NOT NULL DEFAULT '[]'::jsonb,
@@ -139,6 +143,14 @@ const ensureSchema = async (pool) => {
       slug text PRIMARY KEY,
       deleted_at timestamptz NOT NULL DEFAULT now()
     );
+  `)
+
+  await pool.query(`
+    ALTER TABLE project_overrides
+      ADD COLUMN IF NOT EXISTS asset_category text;
+
+    ALTER TABLE custom_projects
+      ADD COLUMN IF NOT EXISTS asset_category text;
   `)
 }
 
@@ -156,12 +168,12 @@ export const createPostgresStores = async (databaseUrl) => {
     listProjects: async (baseProjects, { includeHidden = false } = {}) => {
       const result = await pool.query(`
         SELECT slug, title, summary, workflow, year, image, model_url, format,
-          model_size, download_policy, stack, viewer_features, is_public
+          model_size, asset_category, download_policy, stack, viewer_features, is_public
         FROM project_overrides
       `)
       const customResult = await pool.query(`
         SELECT slug, title, summary, workflow, year, image, model_url, format,
-          model_size, download_policy, stack, viewer_features, is_public
+          model_size, asset_category, download_policy, stack, viewer_features, is_public
         FROM custom_projects
         ORDER BY created_at DESC
       `)
@@ -432,10 +444,11 @@ export const createPostgresStores = async (databaseUrl) => {
               model_url = $7,
               format = $8,
               model_size = $9,
-              download_policy = $10,
-              stack = $11::jsonb,
-              viewer_features = $12::jsonb,
-              is_public = $13,
+              asset_category = $10,
+              download_policy = $11,
+              stack = $12::jsonb,
+              viewer_features = $13::jsonb,
+              is_public = $14,
               updated_at = now()
             WHERE slug = $1
             RETURNING slug
@@ -450,6 +463,7 @@ export const createPostgresStores = async (databaseUrl) => {
             project.modelUrl || null,
             project.format,
             project.modelSize,
+            project.assetCategory || null,
             project.downloadPolicy,
             JSON.stringify(project.stack || []),
             JSON.stringify(project.viewerFeatures || []),
@@ -464,8 +478,8 @@ export const createPostgresStores = async (databaseUrl) => {
         `
           INSERT INTO project_overrides
             (slug, title, summary, workflow, year, image, model_url, format,
-             model_size, download_policy, stack, viewer_features, is_public, updated_at)
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12::jsonb, $13, now())
+             model_size, asset_category, download_policy, stack, viewer_features, is_public, updated_at)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13::jsonb, $14, now())
           ON CONFLICT (slug) DO UPDATE SET
             title = EXCLUDED.title,
             summary = EXCLUDED.summary,
@@ -475,6 +489,7 @@ export const createPostgresStores = async (databaseUrl) => {
             model_url = EXCLUDED.model_url,
             format = EXCLUDED.format,
             model_size = EXCLUDED.model_size,
+            asset_category = EXCLUDED.asset_category,
             download_policy = EXCLUDED.download_policy,
             stack = EXCLUDED.stack,
             viewer_features = EXCLUDED.viewer_features,
@@ -492,6 +507,7 @@ export const createPostgresStores = async (databaseUrl) => {
           project.modelUrl || null,
           project.format,
           project.modelSize,
+          project.assetCategory || null,
           project.downloadPolicy,
           JSON.stringify(project.stack || []),
           JSON.stringify(project.viewerFeatures || []),
@@ -507,8 +523,8 @@ export const createPostgresStores = async (databaseUrl) => {
         `
           INSERT INTO custom_projects
             (slug, title, summary, workflow, year, image, model_url, format,
-             model_size, download_policy, stack, viewer_features, is_public)
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12::jsonb, $13)
+             model_size, asset_category, download_policy, stack, viewer_features, is_public)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13::jsonb, $14)
           RETURNING slug
         `,
         [
@@ -521,6 +537,7 @@ export const createPostgresStores = async (databaseUrl) => {
           project.modelUrl || null,
           project.format,
           project.modelSize,
+          project.assetCategory || null,
           project.downloadPolicy,
           JSON.stringify(project.stack || []),
           JSON.stringify(project.viewerFeatures || []),

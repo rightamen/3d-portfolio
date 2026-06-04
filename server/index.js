@@ -23,6 +23,13 @@ const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 const imageExtensions = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif'])
 const imageUploadLimit = 16 * 1024 * 1024
 const modelExtensions = new Set(['.glb', '.gltf', '.fbx', '.obj', '.zip'])
+const assetCategories = new Set([
+  'generic',
+  'next-gen-prop',
+  'next-gen-character',
+  'next-gen-scene',
+  'hand-painted',
+])
 const stores = process.env.DATABASE_URL
   ? await createPostgresStores(process.env.DATABASE_URL)
   : {
@@ -331,7 +338,9 @@ app.post('/api/admin/uploads', requireAdmin, upload.single('file'), async (reque
 })
 
 const normalizeProjectPayload = (body) => {
+  const assetCategory = String(body?.assetCategory ?? '').trim()
   const normalized = {
+    assetCategory: assetCategories.has(assetCategory) ? assetCategory : 'generic',
     downloadPolicy: String(body?.downloadPolicy ?? '').trim().slice(0, 120),
     format: String(body?.format ?? '').trim().slice(0, 120),
     image: String(body?.image ?? '').trim().slice(0, 500),

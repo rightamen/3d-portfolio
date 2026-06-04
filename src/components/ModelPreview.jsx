@@ -1,5 +1,5 @@
 import { ContactShadows, Grid, Html, OrbitControls, useGLTF, useProgress } from '@react-three/drei'
-import { Canvas } from '@react-three/fiber'
+import { Canvas, useThree } from '@react-three/fiber'
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ACESFilmicToneMapping,
@@ -7,9 +7,11 @@ import {
   Color,
   MeshBasicMaterial,
   MeshStandardMaterial,
+  PMREMGenerator,
   SRGBColorSpace,
   Vector3,
 } from 'three'
+import { EXRLoader } from 'three/examples/jsm/loaders/EXRLoader.js'
 
 const modes = [
   { id: 'textured', label: 'Texture' },
@@ -17,6 +19,97 @@ const modes = [
   { id: 'clay', label: 'Clay' },
   { id: 'wireframe', label: 'Wireframe' },
 ]
+
+const environmentUrl = '/assets/environments/studio-tomoco.exr'
+
+const viewerProfiles = {
+  generic: {
+    ambient: 0.78,
+    background: '#02030a',
+    defaultMode: 'studio',
+    envIntensity: 0.9,
+    exposure: 1.1,
+    fill: 1.15,
+    grid: true,
+    key: 2.15,
+    rim: 0.42,
+    spot: 1.8,
+    useEnvironment: true,
+  },
+  'hand-painted': {
+    ambient: 1.05,
+    background: '#02030a',
+    defaultMode: 'textured',
+    envIntensity: 0.35,
+    exposure: 1,
+    fill: 0.65,
+    grid: false,
+    key: 0.7,
+    rim: 0.15,
+    spot: 0.4,
+    useEnvironment: false,
+  },
+  'next-gen-prop': {
+    ambient: 0.42,
+    background: '#05070f',
+    defaultMode: 'studio',
+    envIntensity: 0.72,
+    exposure: 0.92,
+    fill: 0.7,
+    grid: true,
+    key: 1.45,
+    rim: 0.28,
+    spot: 1.15,
+    useEnvironment: true,
+  },
+  'next-gen-character': {
+    ambient: 0.55,
+    background: '#05070f',
+    defaultMode: 'studio',
+    envIntensity: 0.62,
+    exposure: 1,
+    fill: 0.85,
+    grid: true,
+    key: 1.55,
+    rim: 0.32,
+    spot: 1.25,
+    useEnvironment: true,
+  },
+  'next-gen-scene': {
+    ambient: 0.5,
+    background: '#05070f',
+    defaultMode: 'studio',
+    envIntensity: 0.78,
+    exposure: 0.88,
+    fill: 0.8,
+    grid: false,
+    key: 1.25,
+    rim: 0.24,
+    spot: 0.95,
+    useEnvironment: true,
+  },
+}
+
+const inferAssetCategory = (project) => {
+  if (project.assetCategory && viewerProfiles[project.assetCategory]) return project.assetCategory
+
+  const haystack = [
+    project.format,
+    project.modelSize,
+    project.title,
+    ...(project.stack || []),
+    ...(project.viewerFeatures || []),
+  ]
+    .join(' ')
+    .toLowerCase()
+
+  if (/hand.?paint|painted|obj/.test(haystack)) return 'hand-painted'
+  if (/environment|scene/.test(haystack)) return 'next-gen-scene'
+  if (/character/.test(haystack)) return 'next-gen-character'
+  if (/pbr|prop|fbx|glb|realtime/.test(haystack)) return 'next-gen-prop'
+
+  return 'generic'
+}
 
 const materialKeys = [
   'map',
@@ -53,7 +146,7 @@ const cloneTextureMaterial = (material) => {
   return displayMaterial
 }
 
-const prepareStudioMaterial = (material) => {
+const prepareStudioMaterial = (material, profile) => {
   if (!material) return
 
   materialKeys.forEach((key) => {
@@ -64,11 +157,13 @@ const prepareStudioMaterial = (material) => {
     material.map.colorSpace = SRGBColorSpace
   }
 
-  material.envMapIntensity = material.envMapIntensity ?? 1.2
+  material.envMapIntensity = profile.envIntensity
+  if (typeof material.metalness === 'number') material.metalness = Math.min(material.metalness, 0.95)
+  if (typeof material.roughness === 'number') material.roughness = Math.max(material.roughness, 0.38)
   material.needsUpdate = true
 }
 
-const ModelScene = ({ url, mode }) => {
+const ModelScene = ({ url, mode, profile }) => {
   const { scene } = useGLTF(url)
   const displayScene = useMemo(() => {
     const clonedScene = scene.clone(true)
@@ -135,14 +230,14 @@ const ModelScene = ({ url, mode }) => {
         ? object.userData.originalMaterial
         : [object.userData.originalMaterial]
 
-      materials.filter(Boolean).forEach(prepareStudioMaterial)
+      materials.filter(Boolean).forEach((material) => prepareStudioMaterial(material, profile))
 
       if (mode === 'clay') object.material = clayMaterial
       if (mode === 'wireframe') object.material = wireMaterial
       if (mode === 'studio') object.material = object.userData.originalMaterial
       if (mode === 'textured') object.material = object.userData.textureMaterial
     })
-  }, [clayMaterial, displayScene, mode, wireMaterial])
+  }, [clayMaterial, displayScene, mode, profile, wireMaterial])
 
   return (
     <>
@@ -152,7 +247,7 @@ const ModelScene = ({ url, mode }) => {
         scale={transform.scale}
         rotation={[0, -0.35, 0]}
       />
-      {mode !== 'textured' && (
+      {mode !== 'textured' && profile.grid && (
         <>
           <Grid
             args={[8, 8]}
@@ -164,7 +259,7 @@ const ModelScene = ({ url, mode }) => {
           />
           <ContactShadows
             position={[0, transform.gridY + 0.02, 0]}
-            opacity={0.42}
+            opacity={profile.envIntensity * 0.34}
             scale={6}
             blur={2.4}
             far={3.5}
@@ -176,31 +271,72 @@ const ModelScene = ({ url, mode }) => {
   )
 }
 
-const ShowcaseLights = () => (
+const StudioEnvironment = () => {
+  const { gl } = useThree()
+  const [environment, setEnvironment] = useState(null)
+
+  useEffect(() => {
+    let disposed = false
+    let generatedEnvironment = null
+    const generator = new PMREMGenerator(gl)
+    generator.compileEquirectangularShader()
+
+    new EXRLoader().load(
+      environmentUrl,
+      (texture) => {
+        if (disposed) {
+          texture.dispose()
+          return
+        }
+
+        generatedEnvironment = generator.fromEquirectangular(texture).texture
+        setEnvironment(generatedEnvironment)
+        texture.dispose()
+        generator.dispose()
+      },
+      undefined,
+      () => {
+        generator.dispose()
+      },
+    )
+
+    return () => {
+      disposed = true
+      generatedEnvironment?.dispose()
+      generator.dispose()
+    }
+  }, [gl])
+
+  if (!environment) return null
+
+  return <primitive attach="environment" object={environment} />
+}
+
+const ShowcaseLights = ({ profile }) => (
   <>
-    <color attach="background" args={['#02030a']} />
-    <hemisphereLight args={['#dbeafe', '#182033', 1.05]} />
-    <ambientLight intensity={0.92} />
+    <color attach="background" args={[profile.background]} />
+    <hemisphereLight args={['#dbeafe', '#182033', profile.ambient * 0.9]} />
+    <ambientLight intensity={profile.ambient} />
     <directionalLight
       castShadow
       color="#ffffff"
-      intensity={2.85}
+      intensity={profile.key}
       position={[3.5, 4.5, 4.5]}
       shadow-mapSize={[2048, 2048]}
       shadow-bias={-0.00025}
     />
-    <directionalLight color="#dff8ff" intensity={1.8} position={[-3.5, 2.2, 2.5]} />
+    <directionalLight color="#dff8ff" intensity={profile.fill} position={[-3.5, 2.2, 2.5]} />
     <spotLight
       castShadow
       color="#fff4df"
-      intensity={3.2}
+      intensity={profile.spot}
       position={[0, 4.5, 3.2]}
       angle={0.48}
       penumbra={0.65}
       distance={9}
     />
-    <pointLight color="#9eefff" intensity={1.55} position={[-2.8, 1.4, -2.5]} />
-    <pointLight color="#ff9fe2" intensity={0.75} position={[2.8, 1.1, -2.8]} />
+    <pointLight color="#9eefff" intensity={profile.rim} position={[-2.8, 1.4, -2.5]} />
+    <pointLight color="#ff9fe2" intensity={profile.rim * 0.45} position={[2.8, 1.1, -2.8]} />
   </>
 )
 
@@ -215,9 +351,15 @@ const CanvasLoader = () => {
 }
 
 const ModelPreview = ({ project, onClose }) => {
-  const [mode, setMode] = useState('textured')
+  const assetCategory = useMemo(() => inferAssetCategory(project), [project])
+  const profile = viewerProfiles[assetCategory] || viewerProfiles.generic
+  const [mode, setMode] = useState(profile.defaultMode)
   const [autoRotate, setAutoRotate] = useState(false)
   const controlsRef = useRef(null)
+
+  useEffect(() => {
+    setMode(profile.defaultMode)
+  }, [profile.defaultMode, project.slug])
 
   useEffect(() => {
     const onKeyDown = (event) => {
@@ -277,15 +419,16 @@ const ModelPreview = ({ project, onClose }) => {
               antialias: true,
               outputColorSpace: 'srgb',
               toneMapping: ACESFilmicToneMapping,
-              toneMappingExposure: 1.55,
+              toneMappingExposure: profile.exposure,
             }}
             onCreated={({ scene: canvasScene }) => {
-              canvasScene.background = new Color('#02030a')
+              canvasScene.background = new Color(profile.background)
             }}
           >
             <Suspense fallback={<CanvasLoader />}>
-              <ShowcaseLights />
-              <ModelScene url={project.modelUrl} mode={mode} />
+              {profile.useEnvironment && mode !== 'textured' && <StudioEnvironment />}
+              <ShowcaseLights profile={profile} />
+              <ModelScene url={project.modelUrl} mode={mode} profile={profile} />
               <OrbitControls
                 ref={controlsRef}
                 enableDamping

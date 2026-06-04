@@ -88,11 +88,20 @@ const downloadPolicyPresets = [
   { label: 'Approved Download', value: 'Approved download' },
 ]
 
+const assetCategoryPresets = [
+  { label: 'Generic Asset', value: 'generic' },
+  { label: 'Next-Gen Prop', value: 'next-gen-prop' },
+  { label: 'Next-Gen Character', value: 'next-gen-character' },
+  { label: 'Next-Gen Scene', value: 'next-gen-scene' },
+  { label: 'Hand-Painted', value: 'hand-painted' },
+]
+
 const projectPresets = [
   {
     key: 'game-prop',
-    label: 'Game Prop',
+    label: 'Next-Gen Prop',
     values: {
+      assetCategory: 'next-gen-prop',
       downloadPolicy: downloadPolicyPresets[2].value,
       format: 'Realtime 3D asset',
       modelSize: 'Auto-detected after upload',
@@ -105,8 +114,9 @@ const projectPresets = [
   },
   {
     key: 'environment',
-    label: 'Environment',
+    label: 'Next-Gen Scene',
     values: {
+      assetCategory: 'next-gen-scene',
       downloadPolicy: downloadPolicyPresets[1].value,
       format: 'Environment scene',
       modelSize: 'Auto-detected after upload',
@@ -119,8 +129,9 @@ const projectPresets = [
   },
   {
     key: 'character',
-    label: 'Character',
+    label: 'Next-Gen Character',
     values: {
+      assetCategory: 'next-gen-character',
       downloadPolicy: downloadPolicyPresets[2].value,
       format: 'Character model',
       modelSize: 'Auto-detected after upload',
@@ -132,9 +143,25 @@ const projectPresets = [
     },
   },
   {
+    key: 'hand-painted',
+    label: 'Hand-Painted',
+    values: {
+      assetCategory: 'hand-painted',
+      downloadPolicy: downloadPolicyPresets[1].value,
+      format: 'Hand-painted character',
+      modelSize: 'Auto-detected after upload',
+      stackText: '3ds Max, OBJ, Hand-Painted, GLB',
+      summary: 'A hand-painted asset preview focused on clean texture color, silhouette, and readable shape language.',
+      viewerFeaturesText: 'Orbit, Zoom, Pan, Texture view, Clay view',
+      workflow:
+        'Built with painted texture presentation in mind, then converted into a web preview that preserves the authored color map.',
+    },
+  },
+  {
     key: 'case-study',
     label: 'Case Study',
     values: {
+      assetCategory: 'generic',
       downloadPolicy: downloadPolicyPresets[0].value,
       format: 'Image case study',
       modelSize: 'Static showcase',
@@ -196,6 +223,7 @@ const emptyUploadStatus = {
 }
 
 const emptyProjectForm = () => ({
+  assetCategory: 'generic',
   downloadPolicy: downloadPolicyPresets[2].value,
   format: 'Image case study',
   image: '/assets/projects/accessories.jpg',
@@ -1074,6 +1102,25 @@ const Admin = () => {
                     {projectPresets.map((preset) => (
                       <option key={preset.key} value={preset.key}>
                         {preset.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field-label">
+                  Asset Category
+                  <select
+                    className="field-input field-input-focus"
+                    value={editingProject.assetCategory || 'generic'}
+                    onChange={(event) =>
+                      setEditingProject((current) => ({
+                        ...current,
+                        assetCategory: event.target.value,
+                      }))
+                    }
+                  >
+                    {assetCategoryPresets.map((category) => (
+                      <option key={category.value} value={category.value}>
+                        {category.label}
                       </option>
                     ))}
                   </select>
