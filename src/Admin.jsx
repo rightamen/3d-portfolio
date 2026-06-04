@@ -61,6 +61,14 @@ const getFileExtension = (fileName) => `.${fileName.split('.').pop()?.toLowerCas
 const modelFileExtensions = new Set(['.glb', '.gltf', '.fbx', '.obj'])
 const materialFileExtensions = new Set(['.mtl'])
 const textureFileExtensions = new Set(['.jpg', '.jpeg', '.png', '.webp'])
+const mtlTextureReferenceExtensions = new Set([
+  ...textureFileExtensions,
+  '.bmp',
+  '.psd',
+  '.tga',
+  '.tif',
+  '.tiff',
+])
 
 const formatFileSize = (size) => {
   if (!Number.isFinite(size) || size <= 0) return ''
@@ -218,30 +226,60 @@ const normalizeAssetName = (value) =>
 
 const getAssetBasename = (value) => normalizeAssetName(value).split('/').pop()
 
+const getAssetStem = (value) => getAssetBasename(value).replace(/\.[^.]+$/, '')
+
 const createLocalAssetManager = (files) => {
   const objectUrls = []
   const urlByName = new Map()
+  const textureAssets = []
 
   files.forEach((file) => {
     const url = URL.createObjectURL(file)
     const filePath = file.webkitRelativePath || file.name
+    const extension = getFileExtension(file.name)
+    const basename = getAssetBasename(file.name)
 
     objectUrls.push(url)
     urlByName.set(normalizeAssetName(filePath), url)
     urlByName.set(normalizeAssetName(file.name), url)
-    urlByName.set(getAssetBasename(file.name), url)
+    urlByName.set(basename, url)
+
+    if (textureFileExtensions.has(extension)) {
+      textureAssets.push({
+        basename,
+        stem: getAssetStem(file.name),
+        url,
+      })
+    }
   })
+
+  const findTextureFallback = (assetUrl) => {
+    if (!mtlTextureReferenceExtensions.has(getFileExtension(assetUrl))) return null
+
+    const requestedStem = getAssetStem(assetUrl)
+    const directMatch = textureAssets.find(
+      (asset) => asset.stem === requestedStem || asset.stem.startsWith(`${requestedStem}_`),
+    )
+    if (directMatch) return directMatch.url
+
+    const looseMatch = textureAssets.find(
+      (asset) => requestedStem.includes(asset.stem) || asset.stem.includes(requestedStem),
+    )
+    if (looseMatch) return looseMatch.url
+
+    return textureAssets.length === 1 ? textureAssets[0].url : null
+  }
 
   return {
     resolve(url) {
       const normalized = normalizeAssetName(url)
       const basename = getAssetBasename(url)
-      return urlByName.get(normalized) || urlByName.get(basename) || url
+      return urlByName.get(normalized) || urlByName.get(basename) || findTextureFallback(url) || url
     },
     has(url) {
       const normalized = normalizeAssetName(url)
       const basename = getAssetBasename(url)
-      return urlByName.has(normalized) || urlByName.has(basename)
+      return urlByName.has(normalized) || urlByName.has(basename) || Boolean(findTextureFallback(url))
     },
     revoke() {
       objectUrls.forEach((url) => URL.revokeObjectURL(url))
@@ -260,7 +298,7 @@ const getMtlTextureReferences = (mtlText) =>
 
       for (let index = 1; index < parts.length; index += 1) {
         const candidate = parts.slice(index).join(' ')
-        if (textureFileExtensions.has(getFileExtension(candidate))) {
+        if (mtlTextureReferenceExtensions.has(getFileExtension(candidate))) {
           candidates.push(candidate)
         }
       }
@@ -1166,7 +1204,8 @@ const Admin = () => {
                       </span>
                     )}
                     <span className="field-hint">
-                      OBJ textures need the .obj, .mtl, and image files selected together.
+                      Select OBJ, MTL, and web textures together. PSD/TGA references can use a selected
+                      PNG/JPG/WebP replacement.
                     </span>
                   </label>
                   <label className="field-label">
