@@ -198,6 +198,18 @@ html {
   @apply mt-2 text-sm leading-relaxed text-neutral-400;
 }
 
+.asset-empty-state {
+  @apply mt-6 grid gap-1 rounded-lg border border-dashed border-white/15 bg-white/[0.03] p-6 text-center;
+}
+
+.asset-empty-state strong {
+  @apply text-white;
+}
+
+.asset-empty-state span {
+  @apply text-sm text-neutral-400;
+}
+
 .project-card {
   @apply flex min-h-[34rem] flex-col overflow-hidden rounded-lg border border-white/10 bg-[#101321]/80 transition duration-300 hover:-translate-y-1;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);

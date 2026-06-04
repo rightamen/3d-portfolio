@@ -22,9 +22,9 @@ export const assetCategoryProfiles = [
   },
   {
     accent: '#72b7ff',
-    description: 'Color-first assets shown with flat texture presentation.',
-    label: 'Hand-Painted',
-    shortLabel: 'Painted',
+    description: 'Color-first characters shown with flat texture presentation.',
+    label: 'Hand-Painted Characters',
+    shortLabel: 'Painted Characters',
     value: 'hand-painted',
   },
   {

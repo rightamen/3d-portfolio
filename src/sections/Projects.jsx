@@ -49,7 +49,6 @@ const Projects = ({ projects = [] }) => {
         </button>
         {assetCategoryProfiles.map((category) => {
           const count = categoryCounts.get(category.value) || 0
-          if (count === 0) return null
 
           return (
             <button
@@ -68,7 +67,7 @@ const Projects = ({ projects = [] }) => {
 
       <div className="asset-category-strip">
         {(activeCategory === 'all'
-          ? assetCategoryProfiles.filter((category) => (categoryCounts.get(category.value) || 0) > 0)
+          ? assetCategoryProfiles
           : assetCategoryProfiles.filter((category) => category.value === activeCategory)
         ).map((category) => (
           <div
@@ -81,6 +80,13 @@ const Projects = ({ projects = [] }) => {
           </div>
         ))}
       </div>
+
+      {visibleProjects.length === 0 && (
+        <div className="asset-empty-state">
+          <strong>No projects in this category yet.</strong>
+          <span>New uploads assigned to this asset category will appear here automatically.</span>
+        </div>
+      )}
 
       <div className="mt-8 grid grid-cols-1 gap-4 md:grid-cols-2">
         {visibleProjects.map((project, index) => {
