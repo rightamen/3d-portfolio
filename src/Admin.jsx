@@ -210,33 +210,72 @@ const appendKeyword = (text, keyword) => {
   return Array.from(values).join(', ')
 }
 
+const normalizeAssetName = (value) =>
+  decodeURIComponent(String(value || ''))
+    .replace(/\\/g, '/')
+    .replace(/^\.\//, '')
+    .toLowerCase()
+
+const getAssetBasename = (value) => normalizeAssetName(value).split('/').pop()
+
 const createLocalAssetManager = (files) => {
   const objectUrls = []
   const urlByName = new Map()
 
   files.forEach((file) => {
     const url = URL.createObjectURL(file)
+    const filePath = file.webkitRelativePath || file.name
+
     objectUrls.push(url)
-    urlByName.set(file.name.toLowerCase(), url)
+    urlByName.set(normalizeAssetName(filePath), url)
+    urlByName.set(normalizeAssetName(file.name), url)
+    urlByName.set(getAssetBasename(file.name), url)
   })
 
   return {
-    manager: {
-      setURLModifier(callback) {
-        this.urlModifier = callback
-      },
-      resolve(url) {
-        return this.urlModifier ? this.urlModifier(url) : url
-      },
-    },
     resolve(url) {
-      const normalized = decodeURIComponent(url).replace(/\\/g, '/').toLowerCase()
-      const basename = normalized.split('/').pop()
+      const normalized = normalizeAssetName(url)
+      const basename = getAssetBasename(url)
       return urlByName.get(normalized) || urlByName.get(basename) || url
+    },
+    has(url) {
+      const normalized = normalizeAssetName(url)
+      const basename = getAssetBasename(url)
+      return urlByName.has(normalized) || urlByName.has(basename)
     },
     revoke() {
       objectUrls.forEach((url) => URL.revokeObjectURL(url))
     },
+  }
+}
+
+const getMtlTextureReferences = (mtlText) =>
+  mtlText
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => /^(map_|bump|disp|decal|refl)\S*\s+/i.test(line))
+    .map((line) => {
+      const parts = line.split(/\s+/)
+      const candidates = []
+
+      for (let index = 1; index < parts.length; index += 1) {
+        const candidate = parts.slice(index).join(' ')
+        if (textureFileExtensions.has(getFileExtension(candidate))) {
+          candidates.push(candidate)
+        }
+      }
+
+      return candidates
+    })
+    .filter((candidates) => candidates.length > 0)
+
+const assertSelectedMtlTextures = (mtlText, assetManager) => {
+  const missing = getMtlTextureReferences(mtlText)
+    .filter((candidates) => !candidates.some((textureName) => assetManager.has(textureName)))
+    .map((candidates) => candidates.at(-1))
+
+  if (missing.length > 0) {
+    throw new Error(`Missing texture files: ${missing.slice(0, 3).join(', ')}`)
   }
 }
 
@@ -353,7 +392,9 @@ const convertModelInBrowser = async (files) => {
       const materialFile = fileList.find((item) => materialFileExtensions.has(getFileExtension(item.name)))
 
       if (materialFile) {
-        const materials = new MTLLoader(loadingManager).parse(await materialFile.text(), '')
+        const mtlText = await materialFile.text()
+        assertSelectedMtlTextures(mtlText, assetManager)
+        const materials = new MTLLoader(loadingManager).parse(mtlText, '')
         materials.preload()
         objLoader.setMaterials(materials)
       }
@@ -549,13 +590,7 @@ const Admin = () => {
           localConversion = await convertModelInBrowser(selectedFiles)
           uploadFile = localConversion.file
         } catch (error) {
-          localConversion = {
-            converted: false,
-            failed: true,
-            message: error.message,
-            originalExtension: getExtension(file.name),
-          }
-          uploadFile = file
+          throw new Error(error.message || 'Local model conversion failed.')
         }
       }
 
@@ -613,9 +648,7 @@ const Admin = () => {
           : targetField === 'modelUrl' && conversionStatus === 'converted'
             ? 'Uploaded and converted to GLB'
           : targetField === 'modelUrl' && conversionStatus === 'skipped'
-            ? localConversion.failed
-              ? `Uploaded, local conversion failed: ${localConversion.message || 'check assets'}`
-              : 'Uploaded, converter unavailable'
+            ? 'Uploaded, converter unavailable'
             : targetField === 'modelUrl' && conversionStatus === 'failed'
               ? 'Uploaded, conversion failed'
               : 'Uploaded successfully'
@@ -623,13 +656,16 @@ const Admin = () => {
         ...current,
         [targetField]: { phase: 'done', progress: 100, message: uploadMessage },
       }))
-    } catch {
+    } catch (error) {
       setUploadStatus((current) => ({
         ...current,
         [targetField]: {
           phase: 'error',
           progress: 0,
-          message: 'Upload failed. Check size and format.',
+          message:
+            targetField === 'modelUrl'
+              ? `Conversion failed: ${error.message || 'check OBJ, MTL, and texture files.'}`
+              : error.message || 'Upload failed. Check size and format.',
         },
       }))
     }

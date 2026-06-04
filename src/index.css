@@ -509,7 +509,7 @@ select.field-input option:disabled {
 }
 
 .asset-upload-control {
-  @apply mt-2 flex min-h-10 w-full cursor-pointer items-center rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm font-semibold text-neutral-300 transition duration-200 hover:border-aqua/40 hover:bg-aqua/10 hover:text-white;
+  @apply mt-2 flex min-h-10 w-full cursor-pointer items-center rounded-md border border-white/10 bg-white/5 px-3 py-2 text-left text-sm font-semibold leading-snug text-neutral-300 transition duration-200 hover:border-aqua/40 hover:bg-aqua/10 hover:text-white;
 }
 
 .asset-upload-control-done {
