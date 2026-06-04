@@ -398,11 +398,30 @@ const createLoadingManagerWaiter = (loadingManager) => {
   }
 }
 
+const waitForTextureImage = (texture, timeoutMs = 8000) =>
+  new Promise((resolve, reject) => {
+    const startedAt = performance.now()
+
+    const check = () => {
+      const image = texture?.image
+      if (image) {
+        resolve(image)
+        return
+      }
+
+      if (performance.now() - startedAt > timeoutMs) {
+        reject(new Error('Texture image was not loaded before GLB export.'))
+        return
+      }
+
+      requestAnimationFrame(check)
+    }
+
+    check()
+  })
+
 const waitForTexture = async (texture) => {
-  const image = texture?.image
-  if (!image) {
-    throw new Error('Texture image was not loaded before GLB export.')
-  }
+  const image = await waitForTextureImage(texture)
 
   if (image.complete || image.width > 0 || image.data) {
     if (image.decode) {
