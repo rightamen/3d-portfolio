@@ -1,7 +1,7 @@
-import { Grid, Html, OrbitControls, useGLTF, useProgress } from '@react-three/drei'
+import { ContactShadows, Grid, Html, OrbitControls, useGLTF, useProgress } from '@react-three/drei'
 import { Canvas } from '@react-three/fiber'
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
-import { Box3, MeshStandardMaterial, Vector3 } from 'three'
+import { ACESFilmicToneMapping, Box3, Color, MeshStandardMaterial, Vector3 } from 'three'
 
 const modes = [
   { id: 'textured', label: 'Texture' },
@@ -11,7 +11,24 @@ const modes = [
 
 const ModelScene = ({ url, mode }) => {
   const { scene } = useGLTF(url)
-  const displayScene = useMemo(() => scene.clone(true), [scene])
+  const displayScene = useMemo(() => {
+    const clonedScene = scene.clone(true)
+
+    clonedScene.traverse((object) => {
+      if (!object.isMesh) return
+
+      object.castShadow = true
+      object.receiveShadow = true
+
+      if (Array.isArray(object.material)) {
+        object.material = object.material.map((material) => material.clone())
+      } else if (object.material) {
+        object.material = object.material.clone()
+      }
+    })
+
+    return clonedScene
+  }, [scene])
   const transform = useMemo(() => {
     const box = new Box3().setFromObject(displayScene)
     const size = new Vector3()
@@ -52,6 +69,15 @@ const ModelScene = ({ url, mode }) => {
         object.userData.originalMaterial = object.material
       }
 
+      const materials = Array.isArray(object.userData.originalMaterial)
+        ? object.userData.originalMaterial
+        : [object.userData.originalMaterial]
+
+      materials.filter(Boolean).forEach((material) => {
+        material.envMapIntensity = material.envMapIntensity ?? 1.2
+        material.needsUpdate = true
+      })
+
       if (mode === 'clay') object.material = clayMaterial
       if (mode === 'wireframe') object.material = wireMaterial
       if (mode === 'textured') object.material = object.userData.originalMaterial
@@ -68,15 +94,51 @@ const ModelScene = ({ url, mode }) => {
       />
       <Grid
         args={[8, 8]}
-        cellColor="#2f4254"
-        sectionColor="#6ad8e6"
+        cellColor="#35495c"
+        sectionColor="#62d8e8"
         fadeDistance={8}
-        fadeStrength={1.6}
+        fadeStrength={1.35}
         position={[0, transform.gridY, 0]}
+      />
+      <ContactShadows
+        position={[0, transform.gridY + 0.02, 0]}
+        opacity={0.42}
+        scale={6}
+        blur={2.4}
+        far={3.5}
+        color="#020617"
       />
     </>
   )
 }
+
+const ShowcaseLights = () => (
+  <>
+    <color attach="background" args={['#080c18']} />
+    <hemisphereLight args={['#dbeafe', '#182033', 1.05]} />
+    <ambientLight intensity={0.38} />
+    <directionalLight
+      castShadow
+      color="#ffffff"
+      intensity={2.4}
+      position={[3.5, 4.5, 4.5]}
+      shadow-mapSize={[2048, 2048]}
+      shadow-bias={-0.00025}
+    />
+    <directionalLight color="#78f4ff" intensity={1.15} position={[-3.5, 2.2, 2.5]} />
+    <spotLight
+      castShadow
+      color="#fff4df"
+      intensity={2.3}
+      position={[0, 4.5, 3.2]}
+      angle={0.48}
+      penumbra={0.65}
+      distance={9}
+    />
+    <pointLight color="#38d6ff" intensity={1.2} position={[-2.8, 1.4, -2.5]} />
+    <pointLight color="#ff7ad9" intensity={0.55} position={[2.8, 1.1, -2.8]} />
+  </>
+)
 
 const CanvasLoader = () => {
   const { progress } = useProgress()
@@ -143,10 +205,22 @@ const ModelPreview = ({ project, onClose }) => {
         </div>
 
         <div className="model-canvas">
-          <Canvas camera={{ position: [0, 0.55, 4.8], fov: 42 }} dpr={[1, 1.75]}>
+          <Canvas
+            camera={{ position: [0, 0.55, 4.8], fov: 42 }}
+            dpr={[1, 1.75]}
+            shadows
+            gl={{
+              antialias: true,
+              outputColorSpace: 'srgb',
+              toneMapping: ACESFilmicToneMapping,
+              toneMappingExposure: 1.28,
+            }}
+            onCreated={({ scene: canvasScene }) => {
+              canvasScene.background = new Color('#080c18')
+            }}
+          >
             <Suspense fallback={<CanvasLoader />}>
-              <ambientLight intensity={0.65} />
-              <directionalLight position={[2.5, 3, 4]} intensity={1.8} />
+              <ShowcaseLights />
               <ModelScene url={project.modelUrl} mode={mode} />
               <OrbitControls
                 ref={controlsRef}
