@@ -260,26 +260,36 @@ const createLocalAssetManager = (files) => {
     const directMatch = textureAssets.find(
       (asset) => asset.stem === requestedStem || asset.stem.startsWith(`${requestedStem}_`),
     )
-    if (directMatch) return directMatch.url
+    if (directMatch) return directMatch
 
     const looseMatch = textureAssets.find(
       (asset) => requestedStem.includes(asset.stem) || asset.stem.includes(requestedStem),
     )
-    if (looseMatch) return looseMatch.url
+    if (looseMatch) return looseMatch
 
-    return textureAssets.length === 1 ? textureAssets[0].url : null
+    return textureAssets.length === 1 ? textureAssets[0] : null
   }
 
   return {
-    resolve(url) {
+    resolveTextureReference(url) {
       const normalized = normalizeAssetName(url)
       const basename = getAssetBasename(url)
-      return urlByName.get(normalized) || urlByName.get(basename) || findTextureFallback(url) || url
+      const exactUrl = urlByName.get(normalized) || urlByName.get(basename)
+
+      if (exactUrl) {
+        return { basename, replaced: false, url: exactUrl }
+      }
+
+      const fallback = findTextureFallback(url)
+      if (!fallback) return null
+
+      return { ...fallback, replaced: true }
+    },
+    resolve(url) {
+      return this.resolveTextureReference(url)?.url || url
     },
     has(url) {
-      const normalized = normalizeAssetName(url)
-      const basename = getAssetBasename(url)
-      return urlByName.has(normalized) || urlByName.has(basename) || Boolean(findTextureFallback(url))
+      return Boolean(this.resolveTextureReference(url))
     },
     revoke() {
       objectUrls.forEach((url) => URL.revokeObjectURL(url))
@@ -316,6 +326,29 @@ const assertSelectedMtlTextures = (mtlText, assetManager) => {
     throw new Error(`Missing texture files: ${missing.slice(0, 3).join(', ')}`)
   }
 }
+
+const rewriteMtlTextureReferences = (mtlText, assetManager) =>
+  mtlText
+    .split(/\r?\n/)
+    .map((line) => {
+      if (!/^\s*(map_|bump|disp|decal|refl)\S*\s+/i.test(line)) return line
+
+      const trimmed = line.trim()
+      const parts = trimmed.split(/\s+/)
+
+      for (let index = 1; index < parts.length; index += 1) {
+        const candidate = parts.slice(index).join(' ')
+        if (!mtlTextureReferenceExtensions.has(getFileExtension(candidate))) continue
+
+        const resolved = assetManager.resolveTextureReference(candidate)
+        if (!resolved?.replaced) return line
+
+        return line.replace(candidate, resolved.basename)
+      }
+
+      return line
+    })
+    .join('\n')
 
 const exportGlb = (object, GLTFExporter) =>
   new Promise((resolve, reject) => {
@@ -502,8 +535,9 @@ const convertModelInBrowser = async (files) => {
 
       if (materialFile) {
         const mtlText = await materialFile.text()
-        assertSelectedMtlTextures(mtlText, assetManager)
-        const materials = new MTLLoader(loadingManager).parse(mtlText, '')
+        const rewrittenMtlText = rewriteMtlTextureReferences(mtlText, assetManager)
+        assertSelectedMtlTextures(rewrittenMtlText, assetManager)
+        const materials = new MTLLoader(loadingManager).parse(rewrittenMtlText, '')
         materials.preload()
         objLoader.setMaterials(materials)
       }
