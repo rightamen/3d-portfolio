@@ -141,9 +141,9 @@ const Projects = ({ projects = [], language, copy }) => {
                 </p>
               </div>
               <div className="mt-auto flex flex-wrap gap-2">
-                {project.stack.map((tag) => (
+                {(project.stack || []).map((tag) => (
                   <span key={tag} className="skill-pill">
-                    {tag}
+                    {translateKnownLabel(tag, language)}
                   </span>
                 ))}
               </div>

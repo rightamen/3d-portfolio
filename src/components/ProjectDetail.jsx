@@ -210,9 +210,9 @@ const ProjectDetail = ({ slug, onClose, language, copy }) => {
               <section>
                 <h4 className="detail-subtitle">{copy.productionTags}</h4>
                 <div className="flex flex-wrap gap-2">
-                  {project.stack.map((tag) => (
+                  {(project.stack || []).map((tag) => (
                     <span key={tag} className="skill-pill">
-                      {tag}
+                      {translateKnownLabel(tag, language)}
                     </span>
                   ))}
                 </div>
@@ -395,6 +395,7 @@ const ProjectDetail = ({ slug, onClose, language, copy }) => {
       {project && isPreviewOpen && (
         <Suspense fallback={null}>
           <ModelPreview
+            key={`${project.slug}-${language}`}
             project={project}
             language={language}
             copy={copy}

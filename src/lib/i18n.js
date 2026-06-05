@@ -355,6 +355,14 @@ const labelTranslations = {
     ja: '承認後にダウンロード',
     zh: '授权后下载',
   },
+  'Approved Download': {
+    ja: '承認後にダウンロード',
+    zh: '授权后下载',
+  },
+  'Art And Form Fundamentals': {
+    ja: '美術と造形の基礎',
+    zh: '美术与造型基础',
+  },
   'Authorization required': {
     ja: '許可が必要',
     zh: '需要授权',
@@ -371,6 +379,10 @@ const labelTranslations = {
     ja: 'ケーススタディ',
     zh: '案例展示',
   },
+  'Character Art': {
+    ja: 'キャラクターアート',
+    zh: '角色美术',
+  },
   'Character model': {
     ja: 'キャラクターモデル',
     zh: '角色模型',
@@ -382,6 +394,10 @@ const labelTranslations = {
   'Environment scene': {
     ja: '背景シーン',
     zh: '场景资产',
+  },
+  'Environment Art': {
+    ja: '背景アート',
+    zh: '场景美术',
   },
   'FBX model': {
     ja: 'FBXモデル',
@@ -407,6 +423,14 @@ const labelTranslations = {
     ja: '手描き背景',
     zh: '手绘场景',
   },
+  'Hand-Painted': {
+    ja: '手描き',
+    zh: '手绘',
+  },
+  'Independent Model Creator': {
+    ja: '個人モデルクリエイター',
+    zh: '独立模型创作者',
+  },
   'Image case study': {
     ja: '画像ケーススタディ',
     zh: '图片案例',
@@ -415,7 +439,23 @@ const labelTranslations = {
     ja: 'ライティング確認',
     zh: '灯光预览',
   },
+  Lighting: {
+    ja: 'ライティング',
+    zh: '灯光',
+  },
+  'Material Study': {
+    ja: 'マテリアル習作',
+    zh: '材质练习',
+  },
+  'Material study': {
+    ja: 'マテリアル習作',
+    zh: '材质练习',
+  },
   'Member download': {
+    ja: 'メンバーダウンロード',
+    zh: '登录后下载',
+  },
+  'Member Download': {
     ja: 'メンバーダウンロード',
     zh: '登录后下载',
   },
@@ -423,11 +463,19 @@ const labelTranslations = {
     ja: 'OBJモデル',
     zh: 'OBJ 模型',
   },
+  Optimization: {
+    ja: '最適化',
+    zh: '优化',
+  },
   Orbit: {
     ja: '旋回',
     zh: '环绕',
   },
   'Open download': {
+    ja: '自由ダウンロード',
+    zh: '免登录下载',
+  },
+  'Open Download': {
     ja: '自由ダウンロード',
     zh: '免登录下载',
   },
@@ -447,6 +495,10 @@ const labelTranslations = {
     ja: '静止画展示',
     zh: '静态展示',
   },
+  'Scene study': {
+    ja: '背景習作',
+    zh: '场景练习',
+  },
   'Texture view': {
     ja: 'テクスチャ表示',
     zh: '贴图视图',
@@ -463,9 +515,34 @@ const labelTranslations = {
     ja: 'ズーム',
     zh: '缩放',
   },
+  '3D Asset Production Workflow': {
+    ja: '3Dアセット制作フロー',
+    zh: '三维资产制作流程',
+  },
 }
 
 export const translateKnownLabel = (value, language = defaultLanguage) => {
   if (!value || language === 'en') return value || ''
-  return labelTranslations[value]?.[language] || value
+  const direct = labelTranslations[value]?.[language]
+  if (direct) return direct
+
+  const normalized = String(value).trim()
+  const caseMatch = Object.entries(labelTranslations).find(
+    ([label]) => label.toLowerCase() === normalized.toLowerCase(),
+  )
+  if (caseMatch?.[1]?.[language]) return caseMatch[1][language]
+
+  const modelFormat = normalized.match(/^([a-z0-9]+)\s+model$/i)
+  if (modelFormat) {
+    const format = modelFormat[1].toUpperCase()
+    return language === 'ja' ? `${format}モデル` : `${format} 模型`
+  }
+
+  const previewImage = normalized.match(/^([a-z0-9]+)\s+preview image$/i)
+  if (previewImage) {
+    const format = previewImage[1].toUpperCase()
+    return language === 'ja' ? `${format}プレビュー画像` : `${format} 预览图`
+  }
+
+  return value
 }
