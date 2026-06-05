@@ -7,7 +7,7 @@ import {
   toggleProjectLike,
 } from '../lib/api'
 import { getAssetCategoryProfile } from '../lib/assetCategories'
-import { pickLocalized } from '../lib/i18n'
+import { pickLocalized, translateKnownLabel } from '../lib/i18n'
 
 const ModelPreview = lazy(() => import('./ModelPreview'))
 
@@ -162,18 +162,29 @@ const ProjectDetail = ({ slug, onClose, language, copy }) => {
                 </div>
                 <div className="detail-stat">
                   <span>{copy.format}</span>
-                  <strong>{pickLocalized(project, 'format', language) || copy.modelPreviewFallback}</strong>
+                  <strong>
+                    {translateKnownLabel(
+                      pickLocalized(project, 'format', language) || copy.modelPreviewFallback,
+                      language,
+                    )}
+                  </strong>
                 </div>
                 <div className="detail-stat">
                   <span>{copy.modelSize}</span>
                   <strong>
-                    {pickLocalized(project, 'modelSize', language) || copy.assetPreviewFallback}
+                    {translateKnownLabel(
+                      pickLocalized(project, 'modelSize', language) || copy.assetPreviewFallback,
+                      language,
+                    )}
                   </strong>
                 </div>
                 <div className="detail-stat">
                   <span>{copy.downloadPolicy}</span>
                   <strong>
-                    {pickLocalized(project, 'downloadPolicy', language) || copy.requestOnly}
+                    {translateKnownLabel(
+                      pickLocalized(project, 'downloadPolicy', language) || copy.requestOnly,
+                      language,
+                    )}
                   </strong>
                 </div>
               </div>
@@ -190,7 +201,7 @@ const ProjectDetail = ({ slug, onClose, language, copy }) => {
                 <div className="flex flex-wrap gap-2">
                   {(project.viewerFeatures || []).map((feature) => (
                     <span key={feature} className="skill-pill">
-                      {feature}
+                      {translateKnownLabel(feature, language)}
                     </span>
                   ))}
                 </div>

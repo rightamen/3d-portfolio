@@ -1,7 +1,7 @@
 import { motion as Motion } from 'motion/react'
 import { lazy, Suspense, useMemo, useState } from 'react'
 import { assetCategoryProfiles, getAssetCategoryProfile } from '../lib/assetCategories'
-import { pickLocalized } from '../lib/i18n'
+import { pickLocalized, translateKnownLabel } from '../lib/i18n'
 
 const ModelPreview = lazy(() => import('../components/ModelPreview'))
 const ProjectDetail = lazy(() => import('../components/ProjectDetail'))
@@ -126,7 +126,12 @@ const Projects = ({ projects = [], language, copy }) => {
               <div>
                 <div className="project-card-meta">
                   <span>{project.year}</span>
-                  <span>{pickLocalized(project, 'format', language) || category.shortLabel}</span>
+                  <span>
+                    {translateKnownLabel(
+                      pickLocalized(project, 'format', language) || category.shortLabel,
+                      language,
+                    )}
+                  </span>
                 </div>
                 <h3 className="mt-2 text-2xl font-semibold text-white">
                   {title}
@@ -167,6 +172,7 @@ const Projects = ({ projects = [], language, copy }) => {
       {previewProject && (
         <Suspense fallback={null}>
           <ModelPreview
+            key={`${previewProject.slug}-${language}`}
             project={previewProject}
             language={language}
             copy={copy}
@@ -178,7 +184,7 @@ const Projects = ({ projects = [], language, copy }) => {
       {detailSlug && (
         <Suspense fallback={null}>
           <ProjectDetail
-            key={detailSlug}
+            key={`${detailSlug}-${language}`}
             slug={detailSlug}
             language={language}
             copy={copy}

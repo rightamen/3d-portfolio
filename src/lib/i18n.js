@@ -341,3 +341,131 @@ export const pickLocalized = (item = {}, field, language = defaultLanguage) => {
   const suffix = language === 'zh' ? 'Zh' : language === 'ja' ? 'Ja' : 'En'
   return item[`${field}${suffix}`] || item[field] || ''
 }
+
+const labelTranslations = {
+  '10-50 MB': {
+    ja: '10-50 MB',
+    zh: '10-50 MB',
+  },
+  '50-120 MB': {
+    ja: '50-120 MB',
+    zh: '50-120 MB',
+  },
+  'Approved download': {
+    ja: '承認後にダウンロード',
+    zh: '授权后下载',
+  },
+  'Authorization required': {
+    ja: '許可が必要',
+    zh: '需要授权',
+  },
+  'Auto rotate': {
+    ja: '自動回転',
+    zh: '自动旋转',
+  },
+  'Auto-detected after upload': {
+    ja: 'アップロード後に自動検出',
+    zh: '上传后自动检测',
+  },
+  'Case study': {
+    ja: 'ケーススタディ',
+    zh: '案例展示',
+  },
+  'Character model': {
+    ja: 'キャラクターモデル',
+    zh: '角色模型',
+  },
+  'Clay view': {
+    ja: '素体表示',
+    zh: '素模视图',
+  },
+  'Environment scene': {
+    ja: '背景シーン',
+    zh: '场景资产',
+  },
+  'FBX model': {
+    ja: 'FBXモデル',
+    zh: 'FBX 模型',
+  },
+  'GLB model': {
+    ja: 'GLBモデル',
+    zh: 'GLB 模型',
+  },
+  'GLB / PBR': {
+    ja: 'GLB / PBR',
+    zh: 'GLB / PBR',
+  },
+  'Grid floor': {
+    ja: 'グリッド床',
+    zh: '网格地面',
+  },
+  'Hand-painted character': {
+    ja: '手描きキャラクター',
+    zh: '手绘角色',
+  },
+  'Hand-painted scene': {
+    ja: '手描き背景',
+    zh: '手绘场景',
+  },
+  'Image case study': {
+    ja: '画像ケーススタディ',
+    zh: '图片案例',
+  },
+  'Lighting preview': {
+    ja: 'ライティング確認',
+    zh: '灯光预览',
+  },
+  'Member download': {
+    ja: 'メンバーダウンロード',
+    zh: '登录后下载',
+  },
+  'OBJ model': {
+    ja: 'OBJモデル',
+    zh: 'OBJ 模型',
+  },
+  Orbit: {
+    ja: '旋回',
+    zh: '环绕',
+  },
+  'Open download': {
+    ja: '自由ダウンロード',
+    zh: '免登录下载',
+  },
+  Pan: {
+    ja: 'パン',
+    zh: '平移',
+  },
+  'Realtime 3D asset': {
+    ja: 'リアルタイム3Dアセット',
+    zh: '实时 3D 资产',
+  },
+  'Source package': {
+    ja: 'ソースパッケージ',
+    zh: '源文件包',
+  },
+  'Static showcase': {
+    ja: '静止画展示',
+    zh: '静态展示',
+  },
+  'Texture view': {
+    ja: 'テクスチャ表示',
+    zh: '贴图视图',
+  },
+  'Under 10 MB': {
+    ja: '10 MB未満',
+    zh: '10 MB 以下',
+  },
+  Wireframe: {
+    ja: 'ワイヤー',
+    zh: '线框',
+  },
+  Zoom: {
+    ja: 'ズーム',
+    zh: '缩放',
+  },
+}
+
+export const translateKnownLabel = (value, language = defaultLanguage) => {
+  if (!value || language === 'en') return value || ''
+  return labelTranslations[value]?.[language] || value
+}

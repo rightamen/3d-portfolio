@@ -44,7 +44,7 @@ const HeroText = ({ profile, status, language, copy }) => {
             animate="visible"
             transition={{ delay: 1.5 }}
           >
-            <FlipWords words={words} className="text-6xl font-black text-white" />
+            <FlipWords key={language} words={words} className="text-6xl font-black text-white" />
           </Motion.div>
 
           <Motion.p
@@ -101,7 +101,7 @@ const HeroText = ({ profile, status, language, copy }) => {
             animate="visible"
             transition={{ delay: 1.5 }}
           >
-            <FlipWords words={words} className="text-4xl font-bold text-white" />
+            <FlipWords key={language} words={words} className="text-4xl font-bold text-white" />
           </Motion.div>
 
           <Motion.p
