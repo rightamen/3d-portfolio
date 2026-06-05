@@ -15,7 +15,7 @@ import {
   updateAdminProject,
   uploadAdminAsset,
 } from './lib/api'
-import { getAssetCategoryProfile } from './lib/assetCategories'
+import { assetCategoryProfiles, getAssetCategoryProfile } from './lib/assetCategories'
 
 const tokenKey = 'mrright-admin-token'
 const sections = [
@@ -89,13 +89,10 @@ const downloadPolicyPresets = [
   { label: 'Approved Download', value: 'Approved download' },
 ]
 
-const assetCategoryPresets = [
-  { label: 'Generic Asset', value: 'generic' },
-  { label: 'Next-Gen Prop', value: 'next-gen-prop' },
-  { label: 'Next-Gen Character', value: 'next-gen-character' },
-  { label: 'Next-Gen Scene', value: 'next-gen-scene' },
-  { label: 'Hand-Painted', value: 'hand-painted' },
-]
+const assetCategoryPresets = assetCategoryProfiles.map((category) => ({
+  label: category.label,
+  value: category.value,
+}))
 
 const projectPresets = [
   {
@@ -145,7 +142,7 @@ const projectPresets = [
   },
   {
     key: 'hand-painted',
-    label: 'Hand-Painted',
+    label: 'Hand-Painted Character',
     values: {
       assetCategory: 'hand-painted',
       downloadPolicy: downloadPolicyPresets[1].value,

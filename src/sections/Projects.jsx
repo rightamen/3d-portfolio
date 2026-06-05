@@ -72,10 +72,19 @@ const Projects = ({ projects = [] }) => {
         ).map((category) => (
           <div
             key={category.value}
-            className="asset-category-summary"
+            className={`asset-category-summary ${
+              (categoryCounts.get(category.value) || 0) === 0 ? 'asset-category-empty' : ''
+            }`}
             style={{ '--category-accent': category.accent }}
           >
-            <span>{category.label}</span>
+            <div className="asset-category-heading">
+              <span>{category.label}</span>
+              <strong>
+                {(categoryCounts.get(category.value) || 0) > 0
+                  ? `${categoryCounts.get(category.value)} live`
+                  : 'Ready for upload'}
+              </strong>
+            </div>
             <p>{category.description}</p>
           </div>
         ))}

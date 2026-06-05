@@ -189,9 +189,25 @@ html {
   box-shadow: inset 3px 0 0 var(--category-accent, #36c7d4);
 }
 
-.asset-category-summary span {
+.asset-category-empty {
+  @apply border-dashed bg-white/[0.025];
+}
+
+.asset-category-heading {
+  @apply flex flex-wrap items-center justify-between gap-2;
+}
+
+.asset-category-heading span {
   color: var(--category-accent, #36c7d4);
   @apply text-xs font-bold uppercase tracking-[0.18em];
+}
+
+.asset-category-heading strong {
+  @apply rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-neutral-400;
+}
+
+.asset-category-empty .asset-category-heading strong {
+  @apply border-dashed text-neutral-500;
 }
 
 .asset-category-summary p {
