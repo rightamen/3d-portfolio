@@ -7,13 +7,13 @@ import HeroText from '../components/HeroText'
 import { Astronaut } from '../three/objects/Astronaut'
 import ParallaxBackground from '../three/scenes/ParallaxBackground'
 
-const Hero = ({ profile, status }) => {
+const Hero = ({ profile, status, language, copy }) => {
   const [dpr, setDpr] = useState(1.5)
   const isMobile = useMediaQuery({ maxWidth: 853 })
 
   return (
     <section className="c-space relative flex min-h-screen items-start justify-center overflow-hidden md:justify-start">
-      <HeroText profile={profile} status={status} />
+      <HeroText profile={profile} status={status} language={language} copy={copy} />
       <ParallaxBackground />
       <figure
         className="pointer-events-none absolute inset-0"

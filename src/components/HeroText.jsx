@@ -1,15 +1,11 @@
 import { motion as Motion } from 'motion/react'
 import { FlipWords } from './FlipWords'
+import { pickLocalized } from '../lib/i18n'
 
-const HeroText = ({ profile, status }) => {
-  const words = [
-    '角色模型',
-    '次世代道具',
-    '手绘贴图',
-    '场景资产',
-  ]
+const HeroText = ({ profile, status, language, copy }) => {
+  const words = copy.heroWords
   const name = profile?.name || 'Right'
-  const title = profile?.title || '三维模型与游戏美术资产创作者'
+  const title = pickLocalized(profile, 'title', language) || copy.heroTitle
 
   const variants = {
     hidden: { opacity: 0, x: -50 },
@@ -26,7 +22,7 @@ const HeroText = ({ profile, status }) => {
           animate="visible"
           transition={{ delay: 1 }}
         >
-          你好，我是 {name}
+          {copy.heroGreeting} {name}
         </Motion.h1>
 
         <div className="flex flex-col items-start">
@@ -37,9 +33,9 @@ const HeroText = ({ profile, status }) => {
             animate="visible"
             transition={{ delay: 1.2 }}
           >
-            专注模型创作
+            {copy.heroLine1}
             <br />
-            角色、道具与场景
+            {copy.heroLine2}
           </Motion.p>
 
           <Motion.div
@@ -68,10 +64,10 @@ const HeroText = ({ profile, status }) => {
             transition={{ delay: 2 }}
           >
             <a href="#projects" className="primary-action">
-              查看作品
+              {copy.heroProjects}
             </a>
             <a href="#contact" className="secondary-action">
-              联系我
+              {copy.heroContact}
             </a>
           </Motion.div>
         </div>
@@ -85,7 +81,7 @@ const HeroText = ({ profile, status }) => {
           animate="visible"
           transition={{ delay: 1 }}
         >
-          你好，我是 {name}
+          {copy.heroGreeting} {name}
         </Motion.p>
 
         <div>
@@ -96,7 +92,7 @@ const HeroText = ({ profile, status }) => {
             animate="visible"
             transition={{ delay: 1.2 }}
           >
-            正在创作
+            {copy.heroMobileLine}
           </Motion.p>
 
           <Motion.div
@@ -115,12 +111,12 @@ const HeroText = ({ profile, status }) => {
             animate="visible"
             transition={{ delay: 1.8 }}
           >
-            角色、道具与场景资产
+            {copy.heroMobileSubtitle}
           </Motion.p>
         </div>
         <p className="mx-auto max-w-xs text-sm leading-relaxed text-neutral-200">
           {status === 'error'
-            ? '作品数据正在加载，模型展示仍可继续浏览。'
+            ? copy.heroError
             : title}
         </p>
       </div>

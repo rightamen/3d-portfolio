@@ -12,12 +12,13 @@ import {
   Vector3,
 } from 'three'
 import { EXRLoader } from 'three/examples/jsm/loaders/EXRLoader.js'
+import { pickLocalized } from '../lib/i18n'
 
 const modes = [
-  { id: 'textured', label: '贴图' },
-  { id: 'studio', label: '棚拍' },
-  { id: 'clay', label: '素模' },
-  { id: 'wireframe', label: '线框' },
+  { id: 'textured', labelKey: 'modeTextured' },
+  { id: 'studio', labelKey: 'modeStudio' },
+  { id: 'clay', labelKey: 'modeClay' },
+  { id: 'wireframe', labelKey: 'modeWireframe' },
 ]
 
 const environmentUrl = '/assets/environments/studio-tomoco.exr'
@@ -371,7 +372,7 @@ const CanvasLoader = () => {
   )
 }
 
-const ModelPreview = ({ project, onClose }) => {
+const ModelPreview = ({ project, onClose, language = 'zh', copy }) => {
   const assetCategory = useMemo(() => inferAssetCategory(project), [project])
   const profile = viewerProfiles[assetCategory] || viewerProfiles.generic
   const [mode, setMode] = useState(profile.defaultMode)
@@ -400,11 +401,13 @@ const ModelPreview = ({ project, onClose }) => {
       <div className="model-panel">
         <div className="model-toolbar">
           <div>
-            <div className="section-kicker mb-1">模型预览</div>
-            <h3 className="text-xl font-semibold text-white">{project.title}</h3>
+            <div className="section-kicker mb-1">{copy.modelPreview}</div>
+            <h3 className="text-xl font-semibold text-white">
+              {pickLocalized(project, 'title', language)}
+            </h3>
           </div>
           <button type="button" className="secondary-action" onClick={onClose}>
-            关闭
+            {copy.close}
           </button>
         </div>
 
@@ -416,18 +419,18 @@ const ModelPreview = ({ project, onClose }) => {
               className={mode === item.id ? 'mode-button-active' : 'mode-button'}
               onClick={() => setMode(item.id)}
             >
-              {item.label}
+              {copy[item.labelKey]}
             </button>
           ))}
           <button type="button" className="mode-button" onClick={resetView}>
-            重置
+            {copy.reset}
           </button>
           <button
             type="button"
             className={autoRotate ? 'mode-button-active' : 'mode-button'}
             onClick={() => setAutoRotate((current) => !current)}
           >
-            自动旋转
+            {copy.autoRotate}
           </button>
         </div>
 

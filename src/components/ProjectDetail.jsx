@@ -7,6 +7,7 @@ import {
   toggleProjectLike,
 } from '../lib/api'
 import { getAssetCategoryProfile } from '../lib/assetCategories'
+import { pickLocalized } from '../lib/i18n'
 
 const ModelPreview = lazy(() => import('./ModelPreview'))
 
@@ -21,7 +22,7 @@ const getVisitorId = () => {
   return created
 }
 
-const ProjectDetail = ({ slug, onClose }) => {
+const ProjectDetail = ({ slug, onClose, language, copy }) => {
   const [project, setProject] = useState(null)
   const [interactions, setInteractions] = useState({ comments: [], likeCount: 0 })
   const [commentForm, setCommentForm] = useState({ author: '', message: '' })
@@ -108,27 +109,33 @@ const ProjectDetail = ({ slug, onClose }) => {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [onClose])
 
+  const category = project ? getAssetCategoryProfile(project, language) : null
+  const projectTitle = project ? pickLocalized(project, 'title', language) : ''
+  const projectSummary = project ? pickLocalized(project, 'summary', language) : ''
+  const projectWorkflow = project ? pickLocalized(project, 'workflow', language) : ''
+  const dateLocale = language === 'zh' ? 'zh-CN' : language === 'ja' ? 'ja-JP' : 'en-US'
+
   return (
     <div className="detail-overlay" role="dialog" aria-modal="true">
       <article className="detail-panel">
         <div className="detail-header">
           <div>
-            <div className="section-kicker mb-1">作品详情</div>
+            <div className="section-kicker mb-1">{copy.detailKicker}</div>
             <h3 className="text-2xl font-semibold text-white">
-              {project?.title || '正在加载作品'}
+              {projectTitle || copy.loadingProject}
             </h3>
           </div>
           <button type="button" className="secondary-action" onClick={onClose}>
-            关闭
+            {copy.close}
           </button>
         </div>
 
         {status === 'loading' && (
-          <div className="p-6 text-neutral-400">正在加载作品详情...</div>
+          <div className="p-6 text-neutral-400">{copy.loadingProjectDetails}</div>
         )}
 
         {status === 'error' && (
-          <div className="p-6 text-coral">作品详情加载失败。</div>
+          <div className="p-6 text-coral">{copy.projectLoadError}</div>
         )}
 
         {project && (
@@ -140,43 +147,46 @@ const ProjectDetail = ({ slug, onClose }) => {
             <div className="detail-content">
               <div
                 className="detail-category-banner"
-                style={{ '--category-accent': getAssetCategoryProfile(project).accent }}
+                style={{ '--category-accent': category.accent }}
               >
-                <span>{getAssetCategoryProfile(project).label}</span>
-                <p>{getAssetCategoryProfile(project).description}</p>
+                <span>{category.label}</span>
+                <p>{category.description}</p>
               </div>
 
-              <p className="leading-relaxed text-neutral-300">{project.summary}</p>
+              <p className="leading-relaxed text-neutral-300">{projectSummary}</p>
 
               <div className="detail-stat-grid">
                 <div className="detail-stat">
-                  <span>年份</span>
+                  <span>{copy.year}</span>
                   <strong>{project.year}</strong>
                 </div>
                 <div className="detail-stat">
-                  <span>格式</span>
-                  <strong>{project.format || '模型预览'}</strong>
+                  <span>{copy.format}</span>
+                  <strong>{pickLocalized(project, 'format', language) || copy.modelPreviewFallback}</strong>
                 </div>
                 <div className="detail-stat">
-                  <span>模型大小</span>
-                  <strong>{project.modelSize || '预览资产'}</strong>
+                  <span>{copy.modelSize}</span>
+                  <strong>
+                    {pickLocalized(project, 'modelSize', language) || copy.assetPreviewFallback}
+                  </strong>
                 </div>
                 <div className="detail-stat">
-                  <span>下载权限</span>
-                  <strong>{project.downloadPolicy || '按申请开放'}</strong>
+                  <span>{copy.downloadPolicy}</span>
+                  <strong>
+                    {pickLocalized(project, 'downloadPolicy', language) || copy.requestOnly}
+                  </strong>
                 </div>
               </div>
 
               <section>
-                <h4 className="detail-subtitle">制作流程</h4>
+                <h4 className="detail-subtitle">{copy.workflow}</h4>
                 <p className="leading-relaxed text-neutral-400">
-                  {project.workflow ||
-                    '该作品围绕模型结构、材质贴图和展示效果进行整理。'}
+                  {projectWorkflow || copy.workflowFallback}
                 </p>
               </section>
 
               <section>
-                <h4 className="detail-subtitle">预览功能</h4>
+                <h4 className="detail-subtitle">{copy.viewerFeatures}</h4>
                 <div className="flex flex-wrap gap-2">
                   {(project.viewerFeatures || []).map((feature) => (
                     <span key={feature} className="skill-pill">
@@ -187,7 +197,7 @@ const ProjectDetail = ({ slug, onClose }) => {
               </section>
 
               <section>
-                <h4 className="detail-subtitle">制作标签</h4>
+                <h4 className="detail-subtitle">{copy.productionTags}</h4>
                 <div className="flex flex-wrap gap-2">
                   {project.stack.map((tag) => (
                     <span key={tag} className="skill-pill">
@@ -204,7 +214,7 @@ const ProjectDetail = ({ slug, onClose }) => {
                     className="primary-action flex-1"
                     onClick={() => setIsPreviewOpen(true)}
                   >
-                    打开模型查看器
+                    {copy.openModelViewer}
                   </button>
                 )}
                 <button
@@ -212,16 +222,16 @@ const ProjectDetail = ({ slug, onClose }) => {
                   className="secondary-action flex-1"
                   onClick={() => setIsRequestOpen((current) => !current)}
                 >
-                  申请下载
+                  {copy.requestDownload}
                 </button>
               </div>
 
               {isRequestOpen && (
                 <section className="download-request-panel">
                   <div>
-                    <h4 className="detail-subtitle mb-1">下载申请</h4>
+                    <h4 className="detail-subtitle mb-1">{copy.downloadRequest}</h4>
                     <p className="text-sm leading-relaxed text-neutral-400">
-                      请简单说明用途。通过审核后，我会再开放对应的下载链接。
+                      {copy.downloadRequestHint}
                     </p>
                   </div>
 
@@ -230,7 +240,7 @@ const ProjectDetail = ({ slug, onClose }) => {
                       <input
                         className="field-input field-input-focus"
                         name="name"
-                        placeholder="名称"
+                        placeholder={copy.name}
                         value={downloadForm.name}
                         onChange={(event) =>
                           setDownloadForm((current) => ({
@@ -243,7 +253,7 @@ const ProjectDetail = ({ slug, onClose }) => {
                       <input
                         className="field-input field-input-focus"
                         name="email"
-                        placeholder="邮箱"
+                        placeholder={copy.email}
                         type="email"
                         value={downloadForm.email}
                         onChange={(event) =>
@@ -258,7 +268,7 @@ const ProjectDetail = ({ slug, onClose }) => {
                     <textarea
                       className="field-input field-input-focus min-h-28 resize-none"
                       name="purpose"
-                      placeholder="用途说明"
+                      placeholder={copy.purpose}
                       value={downloadForm.purpose}
                       onChange={(event) =>
                         setDownloadForm((current) => ({
@@ -273,16 +283,16 @@ const ProjectDetail = ({ slug, onClose }) => {
                       className="primary-action"
                       disabled={downloadStatus === 'saving'}
                     >
-                      {downloadStatus === 'saving' ? '提交中...' : '提交申请'}
+                      {downloadStatus === 'saving' ? copy.submitting : copy.submitRequest}
                     </button>
                     {downloadStatus === 'sent' && (
                       <p className="text-sm text-mint">
-                        申请已收到。我会先查看用途说明，再决定是否开放下载。
+                        {copy.requestSent}
                       </p>
                     )}
                     {downloadStatus === 'error' && (
                       <p className="text-sm text-coral">
-                        申请提交失败，请检查内容后重试。
+                        {copy.requestError}
                       </p>
                     )}
                   </form>
@@ -292,9 +302,10 @@ const ProjectDetail = ({ slug, onClose }) => {
               <section className="interaction-panel">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div>
-                    <h4 className="detail-subtitle mb-1">互动</h4>
+                    <h4 className="detail-subtitle mb-1">{copy.interaction}</h4>
                     <p className="text-sm text-neutral-400">
-                      {interactions.likeCount} 个赞 / {interactions.comments.length} 条评论
+                      {interactions.likeCount} {copy.likes} / {interactions.comments.length}{' '}
+                      {copy.comments}
                     </p>
                   </div>
                   <button
@@ -303,7 +314,7 @@ const ProjectDetail = ({ slug, onClose }) => {
                     onClick={submitLike}
                     disabled={interactionStatus === 'saving'}
                   >
-                    {liked ? '已点赞' : '点赞'}
+                    {liked ? copy.liked : copy.like}
                   </button>
                 </div>
 
@@ -311,7 +322,7 @@ const ProjectDetail = ({ slug, onClose }) => {
                   <input
                     className="field-input field-input-focus"
                     name="author"
-                    placeholder="名称"
+                    placeholder={copy.name}
                     value={commentForm.author}
                     onChange={(event) =>
                       setCommentForm((current) => ({
@@ -324,7 +335,7 @@ const ProjectDetail = ({ slug, onClose }) => {
                   <textarea
                     className="field-input field-input-focus min-h-24 resize-none"
                     name="message"
-                    placeholder="评论"
+                    placeholder={copy.comment}
                     value={commentForm.message}
                     onChange={(event) =>
                       setCommentForm((current) => ({
@@ -339,17 +350,17 @@ const ProjectDetail = ({ slug, onClose }) => {
                     className="primary-action"
                     disabled={interactionStatus === 'saving'}
                   >
-                    {interactionStatus === 'saving' ? '保存中...' : '发布评论'}
+                    {interactionStatus === 'saving' ? copy.saving : copy.postComment}
                   </button>
                   {interactionStatus === 'error' && (
-                    <p className="text-sm text-coral">互动保存失败，请重试。</p>
+                    <p className="text-sm text-coral">{copy.interactionError}</p>
                   )}
                 </form>
 
                 <div className="comment-list">
                   {interactions.comments.length === 0 && (
                     <p className="text-sm text-neutral-500">
-                      暂无评论，欢迎留下第一条反馈。
+                      {copy.noComments}
                     </p>
                   )}
                   {interactions.comments.map((comment) => (
@@ -357,7 +368,7 @@ const ProjectDetail = ({ slug, onClose }) => {
                       <div className="flex items-center justify-between gap-3">
                         <strong>{comment.author}</strong>
                         <span>
-                          {new Date(comment.createdAt).toLocaleDateString('zh-CN')}
+                          {new Date(comment.createdAt).toLocaleDateString(dateLocale)}
                         </span>
                       </div>
                       <p>{comment.message}</p>
@@ -372,7 +383,12 @@ const ProjectDetail = ({ slug, onClose }) => {
 
       {project && isPreviewOpen && (
         <Suspense fallback={null}>
-          <ModelPreview project={project} onClose={() => setIsPreviewOpen(false)} />
+          <ModelPreview
+            project={project}
+            language={language}
+            copy={copy}
+            onClose={() => setIsPreviewOpen(false)}
+          />
         </Suspense>
       )}
     </div>

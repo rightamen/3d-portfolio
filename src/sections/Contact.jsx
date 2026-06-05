@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { sendMessage } from '../lib/api'
 
-const Contact = ({ profile }) => {
+const Contact = ({ profile, copy }) => {
   const [form, setForm] = useState({ name: '', email: '', message: '' })
   const [status, setStatus] = useState('idle')
 
@@ -29,11 +29,10 @@ const Contact = ({ profile }) => {
     <section id="contact" className="c-space section-space pb-20">
       <div className="contact-panel">
         <div>
-          <div className="section-kicker">联系我</div>
-          <h2 className="text-heading">让下一个作品开始成形</h2>
+          <div className="section-kicker">{copy.contactKicker}</div>
+          <h2 className="text-heading">{copy.contactTitle}</h2>
           <p className="mt-5 max-w-2xl leading-relaxed text-neutral-400">
-            如果你想交流模型作品、申请资产下载，或讨论角色、道具、场景制作合作，
-            可以在这里留下信息。
+            {copy.contactIntro}
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
             {(profile?.socials || []).map((link) => (
@@ -52,7 +51,7 @@ const Contact = ({ profile }) => {
 
         <form className="contact-form" onSubmit={onSubmit}>
           <label className="field-label" htmlFor="name">
-            名称
+            {copy.name}
           </label>
           <input
             id="name"
@@ -65,7 +64,7 @@ const Contact = ({ profile }) => {
           />
 
           <label className="field-label" htmlFor="email">
-            邮箱
+            {copy.email}
           </label>
           <input
             id="email"
@@ -79,7 +78,7 @@ const Contact = ({ profile }) => {
           />
 
           <label className="field-label" htmlFor="message">
-            留言
+            {copy.message}
           </label>
           <textarea
             id="message"
@@ -91,13 +90,13 @@ const Contact = ({ profile }) => {
           />
 
           <button type="submit" className="primary-action w-full" disabled={status === 'sending'}>
-            {status === 'sending' ? '发送中...' : '发送留言'}
+            {status === 'sending' ? copy.sending : copy.sendMessage}
           </button>
           {status === 'sent' && (
-            <p className="text-sm text-mint">留言已保存，我会通过邮箱回复。</p>
+            <p className="text-sm text-mint">{copy.messageSent}</p>
           )}
           {status === 'error' && (
-            <p className="text-sm text-coral">发送失败，请稍后再试或直接通过邮箱联系。</p>
+            <p className="text-sm text-coral">{copy.messageError}</p>
           )}
         </form>
       </div>

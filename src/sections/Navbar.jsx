@@ -1,13 +1,14 @@
 import { useState } from 'react'
 import { motion as Motion } from 'motion/react'
+import { languages } from '../lib/i18n'
 
-function Navigation({ onNavigate }) {
+function Navigation({ onNavigate, copy }) {
   const navItems = [
-    { label: '首页', href: '#home' },
-    { label: '关于', href: '#about' },
-    { label: '作品', href: '#projects' },
-    { label: '经历', href: '#experience' },
-    { label: '联系', href: '#contact' },
+    { label: copy.navHome, href: '#home' },
+    { label: copy.navAbout, href: '#about' },
+    { label: copy.navProjects, href: '#projects' },
+    { label: copy.navExperience, href: '#experience' },
+    { label: copy.navContact, href: '#contact' },
   ]
 
   return (
@@ -23,7 +24,23 @@ function Navigation({ onNavigate }) {
   )
 }
 
-const Navbar = () => {
+const LanguageSwitch = ({ language, onLanguageChange, copy }) => (
+  <div className="language-switch" aria-label={copy.toggleLanguage}>
+    {languages.map((item) => (
+      <button
+        key={item.code}
+        type="button"
+        className={language === item.code ? 'language-switch-active' : 'language-switch-button'}
+        onClick={() => onLanguageChange(item.code)}
+        title={item.label}
+      >
+        {item.shortLabel}
+      </button>
+    ))}
+  </div>
+)
+
+const Navbar = ({ language, onLanguageChange, copy }) => {
   const [isOpen, setIsOpen] = useState(false)
 
   return (
@@ -37,11 +54,25 @@ const Navbar = () => {
             mrright.blog
           </a>
 
+          <div className="hidden items-center gap-5 sm:flex">
+            <nav>
+              <Navigation copy={copy} />
+            </nav>
+
+            <div className="hidden sm:block">
+              <LanguageSwitch
+                language={language}
+                onLanguageChange={onLanguageChange}
+                copy={copy}
+              />
+            </div>
+          </div>
+
           <button
             type="button"
             onClick={() => setIsOpen((prev) => !prev)}
             className="flex cursor-pointer text-neutral-400 hover:text-white focus:outline-none sm:hidden"
-            aria-label="Toggle menu"
+            aria-label={copy.toggleMenu}
           >
             <img
               src={isOpen ? '/assets/close.svg' : '/assets/menu.svg'}
@@ -49,10 +80,6 @@ const Navbar = () => {
               alt=""
             />
           </button>
-
-          <nav className="hidden sm:flex">
-            <Navigation />
-          </nav>
         </div>
       </div>
 
@@ -64,8 +91,15 @@ const Navbar = () => {
           transition={{ duration: 0.3 }}
           style={{ maxHeight: '100vh' }}
         >
-          <nav className="pb-5">
-            <Navigation onNavigate={() => setIsOpen(false)} />
+          <nav className="grid gap-4 pb-5">
+            <Navigation copy={copy} onNavigate={() => setIsOpen(false)} />
+            <div className="mx-auto">
+              <LanguageSwitch
+                language={language}
+                onLanguageChange={onLanguageChange}
+                copy={copy}
+              />
+            </div>
           </nav>
         </Motion.div>
       )}

@@ -1,11 +1,12 @@
 import { motion as Motion } from 'motion/react'
 import { lazy, Suspense, useMemo, useState } from 'react'
 import { assetCategoryProfiles, getAssetCategoryProfile } from '../lib/assetCategories'
+import { pickLocalized } from '../lib/i18n'
 
 const ModelPreview = lazy(() => import('../components/ModelPreview'))
 const ProjectDetail = lazy(() => import('../components/ProjectDetail'))
 
-const Projects = ({ projects = [] }) => {
+const Projects = ({ projects = [], language, copy }) => {
   const [previewProject, setPreviewProject] = useState(null)
   const [detailSlug, setDetailSlug] = useState(null)
   const [activeCategory, setActiveCategory] = useState('all')
@@ -13,28 +14,27 @@ const Projects = ({ projects = [] }) => {
     const counts = new Map(assetCategoryProfiles.map((category) => [category.value, 0]))
 
     projects.forEach((project) => {
-      const category = getAssetCategoryProfile(project)
+      const category = getAssetCategoryProfile(project, language)
       counts.set(category.value, (counts.get(category.value) || 0) + 1)
     })
 
     return counts
-  }, [projects])
+  }, [language, projects])
   const visibleProjects = useMemo(
     () =>
       activeCategory === 'all'
         ? projects
-        : projects.filter((project) => getAssetCategoryProfile(project).value === activeCategory),
-    [activeCategory, projects],
+        : projects.filter((project) => getAssetCategoryProfile(project, language).value === activeCategory),
+    [activeCategory, language, projects],
   )
 
   return (
     <section id="projects" className="c-space section-space">
-      <div className="section-kicker">作品展示</div>
+      <div className="section-kicker">{copy.projectsKicker}</div>
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-        <h2 className="text-heading">按资产类别整理的三维作品</h2>
+        <h2 className="text-heading">{copy.projectsTitle}</h2>
         <p className="max-w-xl text-neutral-400">
-          集中展示次世代道具、角色、场景，以及手绘资产的模型预览、
-          纹理表现和项目说明。
+          {copy.projectsIntro}
         </p>
       </div>
 
@@ -44,10 +44,11 @@ const Projects = ({ projects = [] }) => {
           className={activeCategory === 'all' ? 'asset-filter-active' : 'asset-filter'}
           onClick={() => setActiveCategory('all')}
         >
-          <span>全部作品</span>
+          <span>{copy.allWork}</span>
           <strong>{projects.length}</strong>
         </button>
-        {assetCategoryProfiles.map((category) => {
+        {assetCategoryProfiles.map((categoryBase) => {
+          const category = getAssetCategoryProfile({ assetCategory: categoryBase.value }, language)
           const count = categoryCounts.get(category.value) || 0
 
           return (
@@ -69,7 +70,10 @@ const Projects = ({ projects = [] }) => {
         {(activeCategory === 'all'
           ? assetCategoryProfiles
           : assetCategoryProfiles.filter((category) => category.value === activeCategory)
-        ).map((category) => (
+        ).map((categoryBase) => {
+          const category = getAssetCategoryProfile({ assetCategory: categoryBase.value }, language)
+
+          return (
           <div
             key={category.value}
             className={`asset-category-summary ${
@@ -81,25 +85,28 @@ const Projects = ({ projects = [] }) => {
               <span>{category.label}</span>
               <strong>
                 {(categoryCounts.get(category.value) || 0) > 0
-                  ? `${categoryCounts.get(category.value)} 个作品`
-                  : '等待上传'}
+                  ? `${categoryCounts.get(category.value)} ${copy.workCount}`
+                  : copy.waitingUpload}
               </strong>
             </div>
             <p>{category.description}</p>
           </div>
-        ))}
+          )
+        })}
       </div>
 
       {visibleProjects.length === 0 && (
         <div className="asset-empty-state">
-          <strong>这个分类还没有作品。</strong>
-          <span>后续上传并分配到该分类的模型会自动显示在这里。</span>
+          <strong>{copy.emptyCategoryTitle}</strong>
+          <span>{copy.emptyCategoryBody}</span>
         </div>
       )}
 
       <div className="mt-8 grid grid-cols-1 gap-4 md:grid-cols-2">
         {visibleProjects.map((project, index) => {
-          const category = getAssetCategoryProfile(project)
+          const category = getAssetCategoryProfile(project, language)
+          const title = pickLocalized(project, 'title', language)
+          const summary = pickLocalized(project, 'summary', language)
 
           return (
           <Motion.article
@@ -119,13 +126,13 @@ const Projects = ({ projects = [] }) => {
               <div>
                 <div className="project-card-meta">
                   <span>{project.year}</span>
-                  <span>{project.format || category.shortLabel}</span>
+                  <span>{pickLocalized(project, 'format', language) || category.shortLabel}</span>
                 </div>
                 <h3 className="mt-2 text-2xl font-semibold text-white">
-                  {project.title}
+                  {title}
                 </h3>
                 <p className="mt-3 leading-relaxed text-neutral-400">
-                  {project.summary}
+                  {summary}
                 </p>
               </div>
               <div className="mt-auto flex flex-wrap gap-2">
@@ -141,7 +148,7 @@ const Projects = ({ projects = [] }) => {
                   className="secondary-action mt-2 w-full"
                   onClick={() => setPreviewProject(project)}
                 >
-                  打开模型预览
+                  {copy.openModelPreview}
                 </button>
               )}
               <button
@@ -149,7 +156,7 @@ const Projects = ({ projects = [] }) => {
                 className="primary-action w-full"
                 onClick={() => setDetailSlug(project.slug)}
               >
-                查看详情
+                {copy.viewDetails}
               </button>
             </div>
           </Motion.article>
@@ -161,6 +168,8 @@ const Projects = ({ projects = [] }) => {
         <Suspense fallback={null}>
           <ModelPreview
             project={previewProject}
+            language={language}
+            copy={copy}
             onClose={() => setPreviewProject(null)}
           />
         </Suspense>
@@ -171,6 +180,8 @@ const Projects = ({ projects = [] }) => {
           <ProjectDetail
             key={detailSlug}
             slug={detailSlug}
+            language={language}
+            copy={copy}
             onClose={() => setDetailSlug(null)}
           />
         </Suspense>

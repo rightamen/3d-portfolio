@@ -156,6 +156,23 @@ html {
   @apply inline-flex items-center rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-neutral-300;
 }
 
+.language-switch {
+  @apply inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] p-1;
+}
+
+.language-switch-button,
+.language-switch-active {
+  @apply inline-flex h-8 min-w-8 items-center justify-center rounded-full px-2 text-xs font-bold transition duration-200;
+}
+
+.language-switch-button {
+  @apply text-neutral-400 hover:bg-white/10 hover:text-white;
+}
+
+.language-switch-active {
+  @apply bg-aqua text-[#031014] shadow-[0_0_22px_rgba(51,194,204,0.28)];
+}
+
 .asset-filter-panel {
   @apply mt-8 flex gap-2 overflow-x-auto rounded-lg border border-white/10 bg-white/[0.03] p-2;
 }
