@@ -41,6 +41,14 @@ const localizedEditorFields = [
   { key: 'downloadPolicy', label: 'Download Policy' },
 ]
 
+const coreTranslationFields = ['title', 'summary', 'workflow']
+const translationFilters = [
+  { label: 'All translation states', value: 'all' },
+  { label: 'Missing English', value: 'missing-En' },
+  { label: 'Missing Japanese', value: 'missing-Ja' },
+  { label: 'Missing Any Region', value: 'missing-any' },
+]
+
 const formatDate = (value) =>
   new Intl.DateTimeFormat('en-US', {
     dateStyle: 'medium',
@@ -97,6 +105,37 @@ const searchInItem = (item, query) =>
   JSON.stringify(item)
     .toLowerCase()
     .includes(query.toLowerCase())
+
+const getTranslationState = (project, suffix) => {
+  const filledCount = coreTranslationFields.filter((field) =>
+    String(project?.[`${field}${suffix}`] || '').trim(),
+  ).length
+
+  if (filledCount === coreTranslationFields.length) return 'ready'
+  if (filledCount > 0) return 'partial'
+  return 'fallback'
+}
+
+const getTranslationStates = (project) =>
+  localizedEditorLanguages.map((language) => ({
+    ...language,
+    state: getTranslationState(project, language.suffix),
+  }))
+
+const isMissingTranslation = (project, suffix) =>
+  getTranslationState(project, suffix) !== 'ready'
+
+const matchesTranslationFilter = (project, filter) => {
+  if (filter === 'missing-En') return isMissingTranslation(project, 'En')
+  if (filter === 'missing-Ja') return isMissingTranslation(project, 'Ja')
+  if (filter === 'missing-any') {
+    return localizedEditorLanguages.some((language) =>
+      isMissingTranslation(project, language.suffix),
+    )
+  }
+
+  return true
+}
 
 const downloadPolicyPresets = [
   { label: 'Open Download', value: 'Open download' },
@@ -663,6 +702,7 @@ const Admin = () => {
   const [editorScrollKey, setEditorScrollKey] = useState(0)
   const [projectStatus, setProjectStatus] = useState('idle')
   const [searchQuery, setSearchQuery] = useState('')
+  const [translationFilter, setTranslationFilter] = useState('all')
   const [uploadStatus, setUploadStatus] = useState(() => ({ ...emptyUploadStatus }))
 
   useEffect(() => {
@@ -944,8 +984,9 @@ const Admin = () => {
     await loadAdminData(token)
   }
 
-  const visibleProjects = data.projects.filter((project) =>
-    searchInItem(project, searchQuery),
+  const visibleProjects = data.projects.filter(
+    (project) =>
+      searchInItem(project, searchQuery) && matchesTranslationFilter(project, translationFilter),
   )
   const visibleComments = data.comments.filter((comment) =>
     searchInItem(comment, searchQuery),
@@ -1052,6 +1093,19 @@ const Admin = () => {
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
             />
+            {activeSection === 'projects' && (
+              <select
+                className="field-input field-input-focus"
+                value={translationFilter}
+                onChange={(event) => setTranslationFilter(event.target.value)}
+              >
+                {translationFilters.map((filter) => (
+                  <option key={filter.value} value={filter.value}>
+                    {filter.label}
+                  </option>
+                ))}
+              </select>
+            )}
             {searchQuery && (
               <button
                 type="button"
@@ -1079,7 +1133,10 @@ const Admin = () => {
               </div>
             </div>
             <div className="admin-table">
-              {visibleProjects.map((project) => (
+              {visibleProjects.map((project) => {
+                const translationStates = getTranslationStates(project)
+
+                return (
                 <article
                   key={project.slug}
                   className="admin-row"
@@ -1096,6 +1153,14 @@ const Admin = () => {
                     </span>
                     <p>{project.summary}</p>
                     <small>{project.stack?.join(', ')}</small>
+                    <div className="translation-status-row">
+                      {translationStates.map((item) => (
+                        <span key={item.suffix} className={`translation-status-${item.state}`}>
+                          {item.suffix.replace('Zh', 'ZH').replace('En', 'EN').replace('Ja', 'JA')}
+                          <strong>{item.state}</strong>
+                        </span>
+                      ))}
+                    </div>
                   </div>
                   <div className="admin-actions">
                     <span
@@ -1123,7 +1188,8 @@ const Admin = () => {
                     </button>
                   </div>
                 </article>
-              ))}
+                )
+              })}
               {visibleProjects.length === 0 && (
                 <p className="text-sm text-neutral-500">No projects match this search.</p>
               )}
@@ -1138,6 +1204,17 @@ const Admin = () => {
                 <span>{editingProject.slug}</span>
               </div>
               <form className="admin-editor" onSubmit={saveProject}>
+                <div className="translation-editor-summary">
+                  <strong>Translation Coverage</strong>
+                  <div className="translation-status-row">
+                    {getTranslationStates(editingProject).map((item) => (
+                      <span key={item.suffix} className={`translation-status-${item.state}`}>
+                        {item.suffix.replace('Zh', 'ZH').replace('En', 'EN').replace('Ja', 'JA')}
+                        <strong>{item.state}</strong>
+                      </span>
+                    ))}
+                  </div>
+                </div>
                 <label className="field-label">
                   Project Type Preset
                   <select

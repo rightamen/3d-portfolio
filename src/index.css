@@ -582,6 +582,46 @@ html {
   @apply min-h-8 px-3 py-1.5 text-xs;
 }
 
+.translation-editor-summary {
+  @apply flex flex-col justify-between gap-3 rounded-lg border border-aqua/20 bg-aqua/5 p-4 md:flex-row md:items-center;
+}
+
+.translation-editor-summary > strong {
+  @apply text-sm text-white;
+}
+
+.translation-status-row {
+  @apply mt-3 flex flex-wrap gap-2;
+}
+
+.translation-editor-summary .translation-status-row {
+  @apply mt-0;
+}
+
+.translation-status-ready,
+.translation-status-partial,
+.translation-status-fallback {
+  @apply inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-[0.68rem] font-bold uppercase tracking-[0.12em];
+}
+
+.translation-status-ready {
+  @apply border-mint/30 bg-mint/10 text-mint;
+}
+
+.translation-status-partial {
+  @apply border-sand/30 bg-sand/10 text-sand;
+}
+
+.translation-status-fallback {
+  @apply border-white/10 bg-white/5 text-neutral-500;
+}
+
+.translation-status-ready strong,
+.translation-status-partial strong,
+.translation-status-fallback strong {
+  @apply text-[0.62rem] font-semibold normal-case tracking-normal opacity-80;
+}
+
 .asset-editor-note {
   @apply mt-2 grid gap-1 rounded-md border border-white/10 bg-white/[0.03] p-3;
   box-shadow: inset 3px 0 0 var(--category-accent, #36c7d4);
