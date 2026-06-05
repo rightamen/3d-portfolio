@@ -26,6 +26,21 @@ const sections = [
   { key: 'messages', label: 'Messages' },
 ]
 
+const localizedEditorLanguages = [
+  { label: '中文', suffix: 'Zh' },
+  { label: 'English', suffix: 'En' },
+  { label: '日本語', suffix: 'Ja' },
+]
+
+const localizedEditorFields = [
+  { key: 'title', label: 'Title' },
+  { key: 'summary', label: 'Summary', multiline: true },
+  { key: 'workflow', label: 'Workflow', multiline: true },
+  { key: 'format', label: 'Format' },
+  { key: 'modelSize', label: 'Model Size' },
+  { key: 'downloadPolicy', label: 'Download Policy' },
+]
+
 const formatDate = (value) =>
   new Intl.DateTimeFormat('en-US', {
     dateStyle: 'medium',
@@ -253,6 +268,11 @@ const emptyProjectForm = () => ({
   viewerFeaturesText: 'Case study',
   workflow: '',
   year: String(new Date().getFullYear()),
+  ...Object.fromEntries(
+    localizedEditorFields.flatMap((field) =>
+      localizedEditorLanguages.map((language) => [`${field.key}${language.suffix}`, '']),
+    ),
+  ),
 })
 
 const appendKeyword = (text, keyword) => {
@@ -761,6 +781,16 @@ const Admin = () => {
     }))
   }
 
+  const copyBaseCopyToLanguage = (suffix) => {
+    setEditingProject((current) => {
+      const next = { ...current }
+      localizedEditorFields.forEach((field) => {
+        next[`${field.key}${suffix}`] = current[field.key] || ''
+      })
+      return next
+    })
+  }
+
   const uploadAsset = async (files, targetField) => {
     const selectedFiles = Array.isArray(files) ? files.filter(Boolean) : [files].filter(Boolean)
     if (selectedFiles.length === 0) return
@@ -1227,6 +1257,52 @@ const Admin = () => {
                     }
                   />
                 </label>
+                <details className="translation-panel">
+                  <summary>
+                    <span>
+                      Language Versions
+                      <small>Optional copy for Chinese, English, and Japanese visitors</small>
+                    </span>
+                  </summary>
+                  <div className="translation-grid">
+                    {localizedEditorLanguages.map((language) => (
+                      <section key={language.suffix} className="translation-card">
+                        <div className="translation-card-header">
+                          <strong>{language.label}</strong>
+                          <button
+                            type="button"
+                            className="secondary-action"
+                            onClick={() => copyBaseCopyToLanguage(language.suffix)}
+                          >
+                            Copy Base
+                          </button>
+                        </div>
+                        {localizedEditorFields.map((field) => {
+                          const fieldName = `${field.key}${language.suffix}`
+                          const Input = field.multiline ? 'textarea' : 'input'
+
+                          return (
+                            <label key={fieldName} className="field-label">
+                              {field.label}
+                              <Input
+                                className={`field-input field-input-focus ${
+                                  field.multiline ? 'min-h-24 resize-none' : ''
+                                }`}
+                                value={editingProject[fieldName] || ''}
+                                onChange={(event) =>
+                                  setEditingProject((current) => ({
+                                    ...current,
+                                    [fieldName]: event.target.value,
+                                  }))
+                                }
+                              />
+                            </label>
+                          )
+                        })}
+                      </section>
+                    ))}
+                  </div>
+                </details>
                 <div className="grid gap-3 md:grid-cols-2">
                   <label className="field-label">
                     Year

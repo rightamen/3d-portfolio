@@ -542,6 +542,46 @@ html {
   @apply grid gap-4 rounded-lg border border-white/10 bg-[#101321]/80 p-4;
 }
 
+.translation-panel {
+  @apply rounded-lg border border-white/10 bg-black/20 p-4;
+}
+
+.translation-panel summary {
+  @apply flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold text-white;
+}
+
+.translation-panel summary::-webkit-details-marker {
+  display: none;
+}
+
+.translation-panel summary span {
+  @apply grid gap-1;
+}
+
+.translation-panel summary small {
+  @apply text-xs font-normal leading-relaxed text-neutral-500;
+}
+
+.translation-grid {
+  @apply mt-4 grid gap-4 xl:grid-cols-3;
+}
+
+.translation-card {
+  @apply grid gap-3 rounded-lg border border-white/10 bg-white/[0.03] p-4;
+}
+
+.translation-card-header {
+  @apply flex items-center justify-between gap-3 border-b border-white/10 pb-3;
+}
+
+.translation-card-header strong {
+  @apply text-sm text-white;
+}
+
+.translation-card-header .secondary-action {
+  @apply min-h-8 px-3 py-1.5 text-xs;
+}
+
 .asset-editor-note {
   @apply mt-2 grid gap-1 rounded-md border border-white/10 bg-white/[0.03] p-3;
   box-shadow: inset 3px 0 0 var(--category-accent, #36c7d4);

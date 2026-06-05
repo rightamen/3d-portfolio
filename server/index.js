@@ -58,7 +58,7 @@ const app = express()
 const port = process.env.PORT || 4173
 
 app.use(cors({ origin: process.env.CORS_ORIGIN || true }))
-app.use(express.json({ limit: '32kb' }))
+app.use(express.json({ limit: '96kb' }))
 app.use('/uploads', express.static(path.join(rootDir, 'public', 'uploads')))
 
 const upload = multer({
@@ -342,6 +342,13 @@ app.post('/api/admin/uploads', requireAdmin, upload.single('file'), async (reque
 const normalizeProjectPayload = (body) => {
   const assetCategory = String(body?.assetCategory ?? '').trim()
   const normalizedAssetCategory = legacyAssetCategoryAliases.get(assetCategory) || assetCategory
+  const localizedText = (field, maxLength) =>
+    Object.fromEntries(
+      ['Zh', 'En', 'Ja'].map((suffix) => [
+        `${field}${suffix}`,
+        String(body?.[`${field}${suffix}`] ?? '').trim().slice(0, maxLength),
+      ]),
+    )
   const normalized = {
     assetCategory: assetCategories.has(normalizedAssetCategory) ? normalizedAssetCategory : 'generic',
     downloadPolicy: String(body?.downloadPolicy ?? '').trim().slice(0, 120),
@@ -360,6 +367,12 @@ const normalizeProjectPayload = (body) => {
       : [],
     workflow: String(body?.workflow ?? '').trim().slice(0, 2000),
     year: String(body?.year ?? '').trim().slice(0, 20),
+    ...localizedText('downloadPolicy', 120),
+    ...localizedText('format', 120),
+    ...localizedText('modelSize', 120),
+    ...localizedText('summary', 1000),
+    ...localizedText('title', 180),
+    ...localizedText('workflow', 2000),
   }
 
   return normalized

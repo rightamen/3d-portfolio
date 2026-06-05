@@ -15,34 +15,70 @@ const toComment = (row) => ({
 const toProjectOverride = (row) => ({
   assetCategory: row.asset_category,
   downloadPolicy: row.download_policy,
+  downloadPolicyEn: row.download_policy_en,
+  downloadPolicyJa: row.download_policy_ja,
+  downloadPolicyZh: row.download_policy_zh,
   format: row.format,
+  formatEn: row.format_en,
+  formatJa: row.format_ja,
+  formatZh: row.format_zh,
   image: row.image,
   isPublic: row.is_public,
   modelSize: row.model_size,
+  modelSizeEn: row.model_size_en,
+  modelSizeJa: row.model_size_ja,
+  modelSizeZh: row.model_size_zh,
   modelUrl: row.model_url,
   slug: row.slug,
   stack: row.stack,
   summary: row.summary,
+  summaryEn: row.summary_en,
+  summaryJa: row.summary_ja,
+  summaryZh: row.summary_zh,
   title: row.title,
+  titleEn: row.title_en,
+  titleJa: row.title_ja,
+  titleZh: row.title_zh,
   viewerFeatures: row.viewer_features,
   workflow: row.workflow,
+  workflowEn: row.workflow_en,
+  workflowJa: row.workflow_ja,
+  workflowZh: row.workflow_zh,
   year: row.year,
 })
 
 const toCustomProject = (row) => ({
   assetCategory: row.asset_category,
   downloadPolicy: row.download_policy,
+  downloadPolicyEn: row.download_policy_en,
+  downloadPolicyJa: row.download_policy_ja,
+  downloadPolicyZh: row.download_policy_zh,
   format: row.format,
+  formatEn: row.format_en,
+  formatJa: row.format_ja,
+  formatZh: row.format_zh,
   image: row.image,
   isPublic: row.is_public,
   modelSize: row.model_size,
+  modelSizeEn: row.model_size_en,
+  modelSizeJa: row.model_size_ja,
+  modelSizeZh: row.model_size_zh,
   modelUrl: row.model_url,
   slug: row.slug,
   stack: row.stack || [],
   summary: row.summary,
+  summaryEn: row.summary_en,
+  summaryJa: row.summary_ja,
+  summaryZh: row.summary_zh,
   title: row.title,
+  titleEn: row.title_en,
+  titleJa: row.title_ja,
+  titleZh: row.title_zh,
   viewerFeatures: row.viewer_features || [],
   workflow: row.workflow,
+  workflowEn: row.workflow_en,
+  workflowJa: row.workflow_ja,
+  workflowZh: row.workflow_zh,
   year: row.year,
 })
 
@@ -58,6 +94,30 @@ const mergeProject = (project, override) => {
     ),
   }
 }
+
+const localizedProjectFields = [
+  'titleZh',
+  'titleEn',
+  'titleJa',
+  'summaryZh',
+  'summaryEn',
+  'summaryJa',
+  'workflowZh',
+  'workflowEn',
+  'workflowJa',
+  'formatZh',
+  'formatEn',
+  'formatJa',
+  'modelSizeZh',
+  'modelSizeEn',
+  'modelSizeJa',
+  'downloadPolicyZh',
+  'downloadPolicyEn',
+  'downloadPolicyJa',
+]
+
+const getLocalizedProjectValues = (project) =>
+  localizedProjectFields.map((field) => project[field] || null)
 
 const ensureSchema = async (pool) => {
   await pool.query(`
@@ -151,6 +211,46 @@ const ensureSchema = async (pool) => {
 
     ALTER TABLE custom_projects
       ADD COLUMN IF NOT EXISTS asset_category text;
+
+    ALTER TABLE project_overrides
+      ADD COLUMN IF NOT EXISTS title_zh text,
+      ADD COLUMN IF NOT EXISTS title_en text,
+      ADD COLUMN IF NOT EXISTS title_ja text,
+      ADD COLUMN IF NOT EXISTS summary_zh text,
+      ADD COLUMN IF NOT EXISTS summary_en text,
+      ADD COLUMN IF NOT EXISTS summary_ja text,
+      ADD COLUMN IF NOT EXISTS workflow_zh text,
+      ADD COLUMN IF NOT EXISTS workflow_en text,
+      ADD COLUMN IF NOT EXISTS workflow_ja text,
+      ADD COLUMN IF NOT EXISTS format_zh text,
+      ADD COLUMN IF NOT EXISTS format_en text,
+      ADD COLUMN IF NOT EXISTS format_ja text,
+      ADD COLUMN IF NOT EXISTS model_size_zh text,
+      ADD COLUMN IF NOT EXISTS model_size_en text,
+      ADD COLUMN IF NOT EXISTS model_size_ja text,
+      ADD COLUMN IF NOT EXISTS download_policy_zh text,
+      ADD COLUMN IF NOT EXISTS download_policy_en text,
+      ADD COLUMN IF NOT EXISTS download_policy_ja text;
+
+    ALTER TABLE custom_projects
+      ADD COLUMN IF NOT EXISTS title_zh text,
+      ADD COLUMN IF NOT EXISTS title_en text,
+      ADD COLUMN IF NOT EXISTS title_ja text,
+      ADD COLUMN IF NOT EXISTS summary_zh text,
+      ADD COLUMN IF NOT EXISTS summary_en text,
+      ADD COLUMN IF NOT EXISTS summary_ja text,
+      ADD COLUMN IF NOT EXISTS workflow_zh text,
+      ADD COLUMN IF NOT EXISTS workflow_en text,
+      ADD COLUMN IF NOT EXISTS workflow_ja text,
+      ADD COLUMN IF NOT EXISTS format_zh text,
+      ADD COLUMN IF NOT EXISTS format_en text,
+      ADD COLUMN IF NOT EXISTS format_ja text,
+      ADD COLUMN IF NOT EXISTS model_size_zh text,
+      ADD COLUMN IF NOT EXISTS model_size_en text,
+      ADD COLUMN IF NOT EXISTS model_size_ja text,
+      ADD COLUMN IF NOT EXISTS download_policy_zh text,
+      ADD COLUMN IF NOT EXISTS download_policy_en text,
+      ADD COLUMN IF NOT EXISTS download_policy_ja text;
   `)
 }
 
@@ -167,13 +267,19 @@ export const createPostgresStores = async (databaseUrl) => {
   const projectStore = {
     listProjects: async (baseProjects, { includeHidden = false } = {}) => {
       const result = await pool.query(`
-        SELECT slug, title, summary, workflow, year, image, model_url, format,
-          model_size, asset_category, download_policy, stack, viewer_features, is_public
+        SELECT slug, title, title_zh, title_en, title_ja, summary, summary_zh, summary_en,
+          summary_ja, workflow, workflow_zh, workflow_en, workflow_ja, year, image, model_url,
+          format, format_zh, format_en, format_ja, model_size, model_size_zh, model_size_en,
+          model_size_ja, asset_category, download_policy, download_policy_zh, download_policy_en,
+          download_policy_ja, stack, viewer_features, is_public
         FROM project_overrides
       `)
       const customResult = await pool.query(`
-        SELECT slug, title, summary, workflow, year, image, model_url, format,
-          model_size, asset_category, download_policy, stack, viewer_features, is_public
+        SELECT slug, title, title_zh, title_en, title_ja, summary, summary_zh, summary_en,
+          summary_ja, workflow, workflow_zh, workflow_en, workflow_ja, year, image, model_url,
+          format, format_zh, format_en, format_ja, model_size, model_size_zh, model_size_en,
+          model_size_ja, asset_category, download_policy, download_policy_zh, download_policy_en,
+          download_policy_ja, stack, viewer_features, is_public
         FROM custom_projects
         ORDER BY created_at DESC
       `)
@@ -449,6 +555,24 @@ export const createPostgresStores = async (databaseUrl) => {
               stack = $12::jsonb,
               viewer_features = $13::jsonb,
               is_public = $14,
+              title_zh = $15,
+              title_en = $16,
+              title_ja = $17,
+              summary_zh = $18,
+              summary_en = $19,
+              summary_ja = $20,
+              workflow_zh = $21,
+              workflow_en = $22,
+              workflow_ja = $23,
+              format_zh = $24,
+              format_en = $25,
+              format_ja = $26,
+              model_size_zh = $27,
+              model_size_en = $28,
+              model_size_ja = $29,
+              download_policy_zh = $30,
+              download_policy_en = $31,
+              download_policy_ja = $32,
               updated_at = now()
             WHERE slug = $1
             RETURNING slug
@@ -468,6 +592,7 @@ export const createPostgresStores = async (databaseUrl) => {
             JSON.stringify(project.stack || []),
             JSON.stringify(project.viewerFeatures || []),
             project.isPublic !== false,
+            ...getLocalizedProjectValues(project),
           ],
         )
 
@@ -478,19 +603,42 @@ export const createPostgresStores = async (databaseUrl) => {
         `
           INSERT INTO project_overrides
             (slug, title, summary, workflow, year, image, model_url, format,
-             model_size, asset_category, download_policy, stack, viewer_features, is_public, updated_at)
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13::jsonb, $14, now())
+             model_size, asset_category, download_policy, stack, viewer_features, is_public,
+             title_zh, title_en, title_ja, summary_zh, summary_en, summary_ja,
+             workflow_zh, workflow_en, workflow_ja, format_zh, format_en, format_ja,
+             model_size_zh, model_size_en, model_size_ja, download_policy_zh,
+             download_policy_en, download_policy_ja, updated_at)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13::jsonb, $14,
+            $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, now())
           ON CONFLICT (slug) DO UPDATE SET
             title = EXCLUDED.title,
+            title_zh = EXCLUDED.title_zh,
+            title_en = EXCLUDED.title_en,
+            title_ja = EXCLUDED.title_ja,
             summary = EXCLUDED.summary,
+            summary_zh = EXCLUDED.summary_zh,
+            summary_en = EXCLUDED.summary_en,
+            summary_ja = EXCLUDED.summary_ja,
             workflow = EXCLUDED.workflow,
+            workflow_zh = EXCLUDED.workflow_zh,
+            workflow_en = EXCLUDED.workflow_en,
+            workflow_ja = EXCLUDED.workflow_ja,
             year = EXCLUDED.year,
             image = EXCLUDED.image,
             model_url = EXCLUDED.model_url,
             format = EXCLUDED.format,
+            format_zh = EXCLUDED.format_zh,
+            format_en = EXCLUDED.format_en,
+            format_ja = EXCLUDED.format_ja,
             model_size = EXCLUDED.model_size,
+            model_size_zh = EXCLUDED.model_size_zh,
+            model_size_en = EXCLUDED.model_size_en,
+            model_size_ja = EXCLUDED.model_size_ja,
             asset_category = EXCLUDED.asset_category,
             download_policy = EXCLUDED.download_policy,
+            download_policy_zh = EXCLUDED.download_policy_zh,
+            download_policy_en = EXCLUDED.download_policy_en,
+            download_policy_ja = EXCLUDED.download_policy_ja,
             stack = EXCLUDED.stack,
             viewer_features = EXCLUDED.viewer_features,
             is_public = EXCLUDED.is_public,
@@ -512,6 +660,7 @@ export const createPostgresStores = async (databaseUrl) => {
           JSON.stringify(project.stack || []),
           JSON.stringify(project.viewerFeatures || []),
           project.isPublic !== false,
+          ...getLocalizedProjectValues(project),
         ],
       )
 
@@ -523,8 +672,13 @@ export const createPostgresStores = async (databaseUrl) => {
         `
           INSERT INTO custom_projects
             (slug, title, summary, workflow, year, image, model_url, format,
-             model_size, asset_category, download_policy, stack, viewer_features, is_public)
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13::jsonb, $14)
+             model_size, asset_category, download_policy, stack, viewer_features, is_public,
+             title_zh, title_en, title_ja, summary_zh, summary_en, summary_ja,
+             workflow_zh, workflow_en, workflow_ja, format_zh, format_en, format_ja,
+             model_size_zh, model_size_en, model_size_ja, download_policy_zh,
+             download_policy_en, download_policy_ja)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13::jsonb, $14,
+            $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32)
           RETURNING slug
         `,
         [
@@ -542,6 +696,7 @@ export const createPostgresStores = async (databaseUrl) => {
           JSON.stringify(project.stack || []),
           JSON.stringify(project.viewerFeatures || []),
           project.isPublic !== false,
+          ...getLocalizedProjectValues(project),
         ],
       )
 
