@@ -7,8 +7,8 @@ const About = ({ profile, skills = [] }) => {
 
   return (
     <section id="about" className="c-space section-space">
-      <div className="section-kicker">About</div>
-      <h2 className="text-heading">About Me</h2>
+      <div className="section-kicker">关于我</div>
+      <h2 className="text-heading">三维创作与网页展示</h2>
 
       <div className="mt-12 grid grid-cols-1 gap-4 auto-rows-auto md:grid-cols-6 md:auto-rows-[18rem]">
         <div className="relative grid-default-color grid-1 overflow-hidden">
@@ -22,7 +22,7 @@ const About = ({ profile, skills = [] }) => {
             className="relative z-10 h-full space-y-4 overflow-y-auto overscroll-contain p-6"
             style={{ WebkitOverflowScrolling: 'touch' }}
           >
-            <p className="text-lg font-semibold tracking-wide">Hi, I&apos;m Right</p>
+            <p className="text-lg font-semibold tracking-wide">你好，我是 Right</p>
 
             <p className="text-[clamp(0.9rem,1.5vw,1rem)] leading-relaxed opacity-90">
               {profile?.aboutZh ||
@@ -59,23 +59,22 @@ const About = ({ profile, skills = [] }) => {
         </div>
 
         <div className="grid-black-color grid-3">
-          <p className="headtext">Deployment-ready</p>
+          <p className="headtext">可在线发布</p>
           <p className="subtext">
-            A Node API, production static hosting, and contact capture are now
-            part of the portfolio.
+            作品集已经接入 Node API、静态资源托管、数据库和联系表单，
+            可以持续扩展。
           </p>
         </div>
 
         <div className="grid-special-color grid-4">
-          <p className="headtext">Focus</p>
+          <p className="headtext">创作重点</p>
           <p className="subtext">
-            Sculptural clarity, realtime presentation, material rhythm, and a
-            memorable first screen.
+            造型清晰度、实时展示、材质节奏，以及第一屏就能被记住的视觉印象。
           </p>
         </div>
 
         <div className="grid-default-color grid-5">
-          <p className="headtext">Toolbox</p>
+          <p className="headtext">工具箱</p>
           <div className="mt-4 flex flex-wrap gap-2">
             {visibleSkills.map((skill) => (
               <span key={skill} className="skill-pill">

@@ -3,11 +3,11 @@ import { motion as Motion } from 'motion/react'
 
 function Navigation({ onNavigate }) {
   const navItems = [
-    { label: 'Home', href: '#home' },
-    { label: 'About', href: '#about' },
-    { label: 'Work', href: '#projects' },
-    { label: 'Experience', href: '#experience' },
-    { label: 'Contact', href: '#contact' },
+    { label: '首页', href: '#home' },
+    { label: '关于', href: '#about' },
+    { label: '作品', href: '#projects' },
+    { label: '经历', href: '#experience' },
+    { label: '联系', href: '#contact' },
   ]
 
   return (

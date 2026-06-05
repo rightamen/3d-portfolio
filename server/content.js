@@ -4,15 +4,15 @@ export const profile = {
   domain: 'mrright.blog',
   email: 'adieb623@gmail.com',
   location: 'China',
-  title: '3D Artist and realtime portfolio creator',
+  title: '三维资产与实时网页展示创作者',
   intro:
-    'I create sculptural digital forms, realtime presentation scenes, and portfolio systems that make 3D work feel clear, crafted, and alive on the web.',
+    '我专注于三维资产、实时预览和作品集系统，让模型、材质与灯光在网页端保持清晰、可交互、可展示。',
   aboutZh:
     '我是一名以三维空间为主要媒介的数字艺术创作者，专注于形体语言、视觉结构、材质与光影之间的表达。',
   highlights: [
-    'Character and prop modeling',
-    'Realtime 3D web presentation',
-    'Material, light, and visual storytelling',
+    '角色与道具建模',
+    '实时三维网页展示',
+    '材质、灯光与视觉叙事',
   ],
   socials: [
     { label: 'GitHub', href: 'https://github.com/rightamen' },
@@ -116,21 +116,21 @@ export const projects = [
 export const experience = [
   {
     period: '2025 - Now',
-    title: 'Independent 3D Artist',
+    title: '独立三维创作者',
     body:
-      'Creating character accessories, sculptural studies, and web-ready portfolio pieces with a focus on presentation polish.',
+      '持续制作角色、道具、场景与网页端可预览作品，重点打磨模型展示、材质表现和交互体验。',
   },
   {
     period: '2024 - 2025',
-    title: 'Realtime Asset Workflow',
+    title: '实时资产流程',
     body:
-      'Built a practical pipeline across ZBrush, Maya, Blender, and browser-based 3D previews for faster iteration.',
+      '建立从 3ds Max、ZBrush、Maya、Blender 到浏览器三维预览的资产处理流程，提升测试和展示效率。',
   },
   {
     period: '2023 - 2024',
-    title: 'Digital Design Foundations',
+    title: '数字设计基础',
     body:
-      'Combined frontend development and visual design practice to present technical work through responsive interfaces.',
+      '结合前端开发与视觉设计经验，用响应式界面呈现技术项目、三维作品和创作过程。',
   },
 ]
 

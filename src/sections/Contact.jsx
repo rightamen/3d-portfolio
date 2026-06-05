@@ -29,11 +29,11 @@ const Contact = ({ profile }) => {
     <section id="contact" className="c-space section-space pb-20">
       <div className="contact-panel">
         <div>
-          <div className="section-kicker">Contact</div>
-          <h2 className="text-heading">Let the next object take shape</h2>
+          <div className="section-kicker">联系我</div>
+          <h2 className="text-heading">让下一个作品开始成形</h2>
           <p className="mt-5 max-w-2xl leading-relaxed text-neutral-400">
-            Open to portfolio reviews, 3D asset collaborations, and visual
-            systems that need a stronger spatial identity.
+            如果你想交流作品、申请模型下载，或讨论三维资产与网页展示合作，
+            可以在这里留下信息。
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
             {(profile?.socials || []).map((link) => (
@@ -52,7 +52,7 @@ const Contact = ({ profile }) => {
 
         <form className="contact-form" onSubmit={onSubmit}>
           <label className="field-label" htmlFor="name">
-            Name
+            名称
           </label>
           <input
             id="name"
@@ -65,7 +65,7 @@ const Contact = ({ profile }) => {
           />
 
           <label className="field-label" htmlFor="email">
-            Email
+            邮箱
           </label>
           <input
             id="email"
@@ -79,7 +79,7 @@ const Contact = ({ profile }) => {
           />
 
           <label className="field-label" htmlFor="message">
-            Message
+            留言
           </label>
           <textarea
             id="message"
@@ -91,13 +91,13 @@ const Contact = ({ profile }) => {
           />
 
           <button type="submit" className="primary-action w-full" disabled={status === 'sending'}>
-            {status === 'sending' ? 'Sending...' : 'Send Message'}
+            {status === 'sending' ? '发送中...' : '发送留言'}
           </button>
           {status === 'sent' && (
-            <p className="text-sm text-mint">Message saved. I will reply by email.</p>
+            <p className="text-sm text-mint">留言已保存，我会通过邮箱回复。</p>
           )}
           {status === 'error' && (
-            <p className="text-sm text-coral">Something went wrong. Please try email directly.</p>
+            <p className="text-sm text-coral">发送失败，请稍后再试或直接通过邮箱联系。</p>
           )}
         </form>
       </div>

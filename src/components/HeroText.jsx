@@ -3,13 +3,13 @@ import { FlipWords } from './FlipWords'
 
 const HeroText = ({ profile, status }) => {
   const words = [
-    'Sculpted 3D Forms',
-    'Realtime Web Scenes',
-    'Material Studies',
-    'Portfolio Systems',
+    '三维造型',
+    '实时网页展示',
+    '材质研究',
+    '作品集系统',
   ]
   const name = profile?.name || 'Right'
-  const title = profile?.title || '3D Artist and realtime portfolio creator'
+  const title = profile?.title || '三维资产与实时网页展示创作者'
 
   const variants = {
     hidden: { opacity: 0, x: -50 },
@@ -26,7 +26,7 @@ const HeroText = ({ profile, status }) => {
           animate="visible"
           transition={{ delay: 1 }}
         >
-          Hi, I&apos;m {name}
+          你好，我是 {name}
         </Motion.h1>
 
         <div className="flex flex-col items-start">
@@ -37,9 +37,9 @@ const HeroText = ({ profile, status }) => {
             animate="visible"
             transition={{ delay: 1.2 }}
           >
-            A 3D Artist
+            专注三维资产
             <br />
-            building
+            与网页展示
           </Motion.p>
 
           <Motion.div
@@ -68,10 +68,10 @@ const HeroText = ({ profile, status }) => {
             transition={{ delay: 2 }}
           >
             <a href="#projects" className="primary-action">
-              View Work
+              查看作品
             </a>
             <a href="#contact" className="secondary-action">
-              Contact
+              联系我
             </a>
           </Motion.div>
         </div>
@@ -85,7 +85,7 @@ const HeroText = ({ profile, status }) => {
           animate="visible"
           transition={{ delay: 1 }}
         >
-          Hi, I&apos;m {name}
+          你好，我是 {name}
         </Motion.p>
 
         <div>
@@ -96,7 +96,7 @@ const HeroText = ({ profile, status }) => {
             animate="visible"
             transition={{ delay: 1.2 }}
           >
-            Crafting
+            正在创作
           </Motion.p>
 
           <Motion.div
@@ -115,12 +115,12 @@ const HeroText = ({ profile, status }) => {
             animate="visible"
             transition={{ delay: 1.8 }}
           >
-            3D for the web
+            面向网页的三维作品
           </Motion.p>
         </div>
         <p className="mx-auto max-w-xs text-sm leading-relaxed text-neutral-200">
           {status === 'error'
-            ? 'Portfolio API is starting. The 3D scene is still available.'
+            ? '作品集服务正在启动，三维展示仍可继续浏览。'
             : title}
         </p>
       </div>

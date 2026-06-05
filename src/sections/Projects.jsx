@@ -29,12 +29,12 @@ const Projects = ({ projects = [] }) => {
 
   return (
     <section id="projects" className="c-space section-space">
-      <div className="section-kicker">Selected Work</div>
+      <div className="section-kicker">作品展示</div>
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-        <h2 className="text-heading">Projects shaped for screens and space</h2>
+        <h2 className="text-heading">按资产类别整理的三维作品</h2>
         <p className="max-w-xl text-neutral-400">
-          A compact look at 3D craft, realtime presentation, and visual systems
-          built with production-minded restraint.
+          集中展示次世代道具、角色、场景，以及手绘资产的模型预览、
+          纹理表现和项目说明。
         </p>
       </div>
 
@@ -44,7 +44,7 @@ const Projects = ({ projects = [] }) => {
           className={activeCategory === 'all' ? 'asset-filter-active' : 'asset-filter'}
           onClick={() => setActiveCategory('all')}
         >
-          <span>All Work</span>
+          <span>全部作品</span>
           <strong>{projects.length}</strong>
         </button>
         {assetCategoryProfiles.map((category) => {
