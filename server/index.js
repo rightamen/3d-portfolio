@@ -28,8 +28,10 @@ const assetCategories = new Set([
   'next-gen-prop',
   'next-gen-character',
   'next-gen-scene',
-  'hand-painted',
+  'hand-painted-character',
+  'hand-painted-scene',
 ])
+const legacyAssetCategoryAliases = new Map([['hand-painted', 'hand-painted-character']])
 const stores = process.env.DATABASE_URL
   ? await createPostgresStores(process.env.DATABASE_URL)
   : {
@@ -339,8 +341,9 @@ app.post('/api/admin/uploads', requireAdmin, upload.single('file'), async (reque
 
 const normalizeProjectPayload = (body) => {
   const assetCategory = String(body?.assetCategory ?? '').trim()
+  const normalizedAssetCategory = legacyAssetCategoryAliases.get(assetCategory) || assetCategory
   const normalized = {
-    assetCategory: assetCategories.has(assetCategory) ? assetCategory : 'generic',
+    assetCategory: assetCategories.has(normalizedAssetCategory) ? normalizedAssetCategory : 'generic',
     downloadPolicy: String(body?.downloadPolicy ?? '').trim().slice(0, 120),
     format: String(body?.format ?? '').trim().slice(0, 120),
     image: String(body?.image ?? '').trim().slice(0, 500),

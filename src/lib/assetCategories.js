@@ -25,7 +25,14 @@ export const assetCategoryProfiles = [
     description: 'Color-first characters shown with flat texture presentation.',
     label: 'Hand-Painted Characters',
     shortLabel: 'Painted Characters',
-    value: 'hand-painted',
+    value: 'hand-painted-character',
+  },
+  {
+    accent: '#f2c879',
+    description: 'Painted environments and scene studies with color-led atmosphere.',
+    label: 'Hand-Painted Scenes',
+    shortLabel: 'Painted Scenes',
+    value: 'hand-painted-scene',
   },
   {
     accent: '#a7adbd',
@@ -36,9 +43,15 @@ export const assetCategoryProfiles = [
   },
 ]
 
+const legacyAssetCategoryAliases = {
+  'hand-painted': 'hand-painted-character',
+}
+
 export const inferAssetCategory = (project = {}) => {
-  if (assetCategoryProfiles.some((category) => category.value === project.assetCategory)) {
-    return project.assetCategory
+  const explicitCategory = legacyAssetCategoryAliases[project.assetCategory] || project.assetCategory
+
+  if (assetCategoryProfiles.some((category) => category.value === explicitCategory)) {
+    return explicitCategory
   }
 
   const haystack = [
@@ -51,7 +64,10 @@ export const inferAssetCategory = (project = {}) => {
     .join(' ')
     .toLowerCase()
 
-  if (/hand.?paint|painted|obj/.test(haystack)) return 'hand-painted'
+  if (/hand.?paint|painted/.test(haystack) && /environment|scene|level|world/.test(haystack)) {
+    return 'hand-painted-scene'
+  }
+  if (/hand.?paint|painted|obj/.test(haystack)) return 'hand-painted-character'
   if (/environment|scene/.test(haystack)) return 'next-gen-scene'
   if (/character/.test(haystack)) return 'next-gen-character'
   if (/pbr|prop|fbx|glb|realtime/.test(haystack)) return 'next-gen-prop'

@@ -36,7 +36,7 @@ const viewerProfiles = {
     spot: 1.8,
     useEnvironment: true,
   },
-  'hand-painted': {
+  'hand-painted-character': {
     ambient: 1.05,
     background: '#02030a',
     defaultMode: 'textured',
@@ -47,6 +47,19 @@ const viewerProfiles = {
     key: 0.7,
     rim: 0.15,
     spot: 0.4,
+    useEnvironment: false,
+  },
+  'hand-painted-scene': {
+    ambient: 0.9,
+    background: '#02030a',
+    defaultMode: 'textured',
+    envIntensity: 0.42,
+    exposure: 1,
+    fill: 0.78,
+    grid: false,
+    key: 0.85,
+    rim: 0.2,
+    spot: 0.55,
     useEnvironment: false,
   },
   'next-gen-prop': {
@@ -90,8 +103,13 @@ const viewerProfiles = {
   },
 }
 
+const legacyAssetCategoryAliases = {
+  'hand-painted': 'hand-painted-character',
+}
+
 const inferAssetCategory = (project) => {
-  if (project.assetCategory && viewerProfiles[project.assetCategory]) return project.assetCategory
+  const explicitCategory = legacyAssetCategoryAliases[project.assetCategory] || project.assetCategory
+  if (explicitCategory && viewerProfiles[explicitCategory]) return explicitCategory
 
   const haystack = [
     project.format,
@@ -103,7 +121,10 @@ const inferAssetCategory = (project) => {
     .join(' ')
     .toLowerCase()
 
-  if (/hand.?paint|painted|obj/.test(haystack)) return 'hand-painted'
+  if (/hand.?paint|painted/.test(haystack) && /environment|scene|level|world/.test(haystack)) {
+    return 'hand-painted-scene'
+  }
+  if (/hand.?paint|painted|obj/.test(haystack)) return 'hand-painted-character'
   if (/environment|scene/.test(haystack)) return 'next-gen-scene'
   if (/character/.test(haystack)) return 'next-gen-character'
   if (/pbr|prop|fbx|glb|realtime/.test(haystack)) return 'next-gen-prop'

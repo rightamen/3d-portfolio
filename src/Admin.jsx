@@ -141,10 +141,10 @@ const projectPresets = [
     },
   },
   {
-    key: 'hand-painted',
+    key: 'hand-painted-character',
     label: 'Hand-Painted Character',
     values: {
-      assetCategory: 'hand-painted',
+      assetCategory: 'hand-painted-character',
       downloadPolicy: downloadPolicyPresets[1].value,
       format: 'Hand-painted character',
       modelSize: 'Auto-detected after upload',
@@ -153,6 +153,22 @@ const projectPresets = [
       viewerFeaturesText: 'Orbit, Zoom, Pan, Texture view, Clay view',
       workflow:
         'Built with painted texture presentation in mind, then converted into a web preview that preserves the authored color map.',
+    },
+  },
+  {
+    key: 'hand-painted-scene',
+    label: 'Hand-Painted Scene',
+    values: {
+      assetCategory: 'hand-painted-scene',
+      downloadPolicy: downloadPolicyPresets[1].value,
+      format: 'Hand-painted scene',
+      modelSize: 'Auto-detected after upload',
+      stackText: '3ds Max, OBJ, Hand-Painted, Environment, GLB',
+      summary:
+        'A hand-painted environment or scene study focused on color mood, readable composition, and stylized atmosphere.',
+      viewerFeaturesText: 'Orbit, Zoom, Pan, Texture view, Clay view',
+      workflow:
+        'Built with painted texture and composition-first presentation in mind, then converted into a web preview that preserves authored color and atmosphere.',
     },
   },
   {
@@ -179,6 +195,7 @@ const formatPresets = [
   'OBJ model',
   'Environment scene',
   'Character model',
+  'Hand-painted scene',
   'Image case study',
 ]
 
@@ -1115,7 +1132,7 @@ const Admin = () => {
                   Asset Category
                   <select
                     className="field-input field-input-focus"
-                    value={editingProject.assetCategory || 'generic'}
+                    value={getAssetCategoryProfile(editingProject).value}
                     onChange={(event) =>
                       setEditingProject((current) => ({
                         ...current,
