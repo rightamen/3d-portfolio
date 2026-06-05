@@ -81,8 +81,8 @@ const Projects = ({ projects = [] }) => {
               <span>{category.label}</span>
               <strong>
                 {(categoryCounts.get(category.value) || 0) > 0
-                  ? `${categoryCounts.get(category.value)} live`
-                  : 'Ready for upload'}
+                  ? `${categoryCounts.get(category.value)} 个作品`
+                  : '等待上传'}
               </strong>
             </div>
             <p>{category.description}</p>
@@ -92,8 +92,8 @@ const Projects = ({ projects = [] }) => {
 
       {visibleProjects.length === 0 && (
         <div className="asset-empty-state">
-          <strong>No projects in this category yet.</strong>
-          <span>New uploads assigned to this asset category will appear here automatically.</span>
+          <strong>这个分类还没有作品。</strong>
+          <span>后续上传并分配到该分类的模型会自动显示在这里。</span>
         </div>
       )}
 
@@ -141,7 +141,7 @@ const Projects = ({ projects = [] }) => {
                   className="secondary-action mt-2 w-full"
                   onClick={() => setPreviewProject(project)}
                 >
-                  Open 3D Preview
+                  打开模型预览
                 </button>
               )}
               <button
@@ -149,7 +149,7 @@ const Projects = ({ projects = [] }) => {
                 className="primary-action w-full"
                 onClick={() => setDetailSlug(project.slug)}
               >
-                View Details
+                查看详情
               </button>
             </div>
           </Motion.article>

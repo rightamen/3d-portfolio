@@ -4,15 +4,15 @@ export const profile = {
   domain: 'mrright.blog',
   email: 'adieb623@gmail.com',
   location: 'China',
-  title: '三维资产与实时网页展示创作者',
+  title: '三维模型与游戏美术资产创作者',
   intro:
-    '我专注于三维资产、实时预览和作品集系统，让模型、材质与灯光在网页端保持清晰、可交互、可展示。',
+    '我专注于角色、道具、场景等三维模型资产，重视造型、材质、贴图和最终画面表现。',
   aboutZh:
-    '我是一名以三维空间为主要媒介的数字艺术创作者，专注于形体语言、视觉结构、材质与光影之间的表达。',
+    '我是一名模型创作者，主要制作角色、道具与场景资产，关注形体语言、拓扑结构、材质贴图与光影表现。',
   highlights: [
     '角色与道具建模',
-    '实时三维网页展示',
-    '材质、灯光与视觉叙事',
+    '次世代与手绘资产',
+    '材质贴图与灯光表现',
   ],
   socials: [
     { label: 'GitHub', href: 'https://github.com/rightamen' },
@@ -28,11 +28,11 @@ export const projects = [
     image: '/assets/projects/fire-extinguisher.png',
     modelUrl: '/models/fire-extinguisher.glb',
     summary:
-      'A real FBX production asset converted into a web-ready GLB preview with embedded PBR texture maps for viewer testing.',
+      'A real FBX production asset converted into a GLB model preview with embedded PBR texture maps for asset presentation.',
     workflow:
-      'The original FBX asset was prepared from a 3ds Max workflow, paired with Substance-style PBR maps, downsampled to 2K for web delivery, then exported through Blender as a Draco-compressed GLB.',
+      'The original FBX asset was prepared from a 3ds Max workflow, paired with Substance-style PBR maps, downsampled to 2K for realtime preview, then exported through Blender as a Draco-compressed GLB.',
     format: 'GLB / PBR',
-    modelSize: '11.1 MB web preview',
+    modelSize: '11.1 MB GLB preview',
     downloadPolicy: 'Authorization required',
     viewerFeatures: [
       'Orbit',
@@ -48,19 +48,19 @@ export const projects = [
     year: '2026',
   },
   {
-    assetCategory: 'generic',
+    assetCategory: 'next-gen-character',
     slug: 'creature-accessories',
-    title: 'Creature Accessory Study',
+    title: 'Character Accessory Study',
     image: '/assets/projects/accessories.jpg',
     summary:
-      'A detail-focused sculptural pass balancing silhouette, ornament, and material contrast for character presentation.',
+      'A character accessory study focused on silhouette, ornament rhythm, and material contrast.',
     workflow:
-      'A focused visual study for accessory shape language and material contrast.',
-    format: 'Image case study',
+      'Modeled as a shape-language study for character decoration, material contrast, and readable detail.',
+    format: 'Accessory study',
     modelSize: 'Static showcase',
     downloadPolicy: 'Unavailable',
     viewerFeatures: ['Case study'],
-    stack: ['ZBrush', 'Maya', 'Substance'],
+    stack: ['ZBrush', 'Maya', 'Substance Painter'],
     year: '2026',
   },
   {
@@ -76,39 +76,39 @@ export const projects = [
     modelSize: 'Static showcase',
     downloadPolicy: 'Unavailable',
     viewerFeatures: ['Case study'],
-    stack: ['Three.js', 'Optimization', 'Lighting'],
+    stack: ['Environment Art', 'Optimization', 'Lighting'],
     year: '2025',
   },
   {
-    assetCategory: 'generic',
+    assetCategory: 'next-gen-character',
     slug: 'product-interface-system',
-    title: 'Product Interface System',
+    title: 'Character Material Study',
     image: '/assets/projects/blazor-app.jpg',
     summary:
-      'A structured interface concept for technical workflows, built around clean hierarchy and responsive behavior.',
+      'A character-focused material study exploring skin, fabric, hair, and readable surface separation.',
     workflow:
-      'Interface system exploration for technical products and workflow-heavy screens.',
-    format: 'UI case study',
+      'Prepared as a visual study for character material hierarchy, color grouping, and presentation polish.',
+    format: 'Material study',
     modelSize: 'Static showcase',
     downloadPolicy: 'Unavailable',
     viewerFeatures: ['Case study'],
-    stack: ['React', 'Blazor', 'Design Systems'],
+    stack: ['Character Art', 'Material Study', 'Lighting'],
     year: '2025',
   },
   {
-    assetCategory: 'generic',
+    assetCategory: 'hand-painted-scene',
     slug: 'learning-visual-system',
-    title: 'Learning Visual System',
+    title: 'Hand-Painted Scene Study',
     image: '/assets/projects/elearning.jpg',
     summary:
-      'A modular visual direction for long-form content, combining clean layouts with spatial image language.',
+      'A hand-painted scene study focused on color mood, spatial readability, and stylized atmosphere.',
     workflow:
-      'Visual design system for structured content and learning-oriented layouts.',
-    format: 'Visual case study',
+      'Built as an environment composition pass with emphasis on painted color, lighting mood, and shape clarity.',
+    format: 'Scene study',
     modelSize: 'Static showcase',
     downloadPolicy: 'Unavailable',
     viewerFeatures: ['Case study'],
-    stack: ['Composition', 'Branding', 'Web'],
+    stack: ['Hand-Painted', 'Environment Art', 'Composition'],
     year: '2024',
   },
 ]
@@ -116,21 +116,21 @@ export const projects = [
 export const experience = [
   {
     period: '2025 - Now',
-    title: '独立三维创作者',
+    title: '独立模型创作者',
     body:
-      '持续制作角色、道具、场景与网页端可预览作品，重点打磨模型展示、材质表现和交互体验。',
+      '持续制作角色、道具与场景资产，重点打磨模型结构、材质表现、贴图细节和展示效果。',
   },
   {
     period: '2024 - 2025',
-    title: '实时资产流程',
+    title: '三维资产制作流程',
     body:
-      '建立从 3ds Max、ZBrush、Maya、Blender 到浏览器三维预览的资产处理流程，提升测试和展示效率。',
+      '建立从高模、低模、拓扑、UV、贴图到最终展示的制作流程，提升资产完成度和表现稳定性。',
   },
   {
     period: '2023 - 2024',
-    title: '数字设计基础',
+    title: '美术与造型基础',
     body:
-      '结合前端开发与视觉设计经验，用响应式界面呈现技术项目、三维作品和创作过程。',
+      '围绕比例、轮廓、结构、色彩和材质关系积累基础能力，用于支撑角色、道具和场景创作。',
   },
 ]
 
@@ -139,8 +139,7 @@ export const skills = [
   'Maya',
   'Blender',
   '3ds Max',
-  'Three.js',
-  'React',
-  'Tailwind CSS',
-  'Node.js',
+  'Substance Painter',
+  'Photoshop',
+  'Marmoset Toolbag',
 ]

@@ -3,13 +3,13 @@ import { FlipWords } from './FlipWords'
 
 const HeroText = ({ profile, status }) => {
   const words = [
-    '三维造型',
-    '实时网页展示',
-    '材质研究',
-    '作品集系统',
+    '角色模型',
+    '次世代道具',
+    '手绘贴图',
+    '场景资产',
   ]
   const name = profile?.name || 'Right'
-  const title = profile?.title || '三维资产与实时网页展示创作者'
+  const title = profile?.title || '三维模型与游戏美术资产创作者'
 
   const variants = {
     hidden: { opacity: 0, x: -50 },
@@ -37,9 +37,9 @@ const HeroText = ({ profile, status }) => {
             animate="visible"
             transition={{ delay: 1.2 }}
           >
-            专注三维资产
+            专注模型创作
             <br />
-            与网页展示
+            角色、道具与场景
           </Motion.p>
 
           <Motion.div
@@ -115,12 +115,12 @@ const HeroText = ({ profile, status }) => {
             animate="visible"
             transition={{ delay: 1.8 }}
           >
-            面向网页的三维作品
+            角色、道具与场景资产
           </Motion.p>
         </div>
         <p className="mx-auto max-w-xs text-sm leading-relaxed text-neutral-200">
           {status === 'error'
-            ? '作品集服务正在启动，三维展示仍可继续浏览。'
+            ? '作品数据正在加载，模型展示仍可继续浏览。'
             : title}
         </p>
       </div>

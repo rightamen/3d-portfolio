@@ -32,7 +32,7 @@ const Contact = ({ profile }) => {
           <div className="section-kicker">联系我</div>
           <h2 className="text-heading">让下一个作品开始成形</h2>
           <p className="mt-5 max-w-2xl leading-relaxed text-neutral-400">
-            如果你想交流作品、申请模型下载，或讨论三维资产与网页展示合作，
+            如果你想交流模型作品、申请资产下载，或讨论角色、道具、场景制作合作，
             可以在这里留下信息。
           </p>
           <div className="mt-8 flex flex-wrap gap-3">

@@ -104,10 +104,10 @@ const projectPresets = [
       format: 'Realtime 3D asset',
       modelSize: 'Auto-detected after upload',
       stackText: '3ds Max, FBX, PBR, GLB',
-      summary: 'A production-ready realtime prop with optimized topology, PBR materials, and web delivery.',
+      summary: 'A production-ready realtime prop with optimized topology, PBR materials, and asset presentation.',
       viewerFeaturesText: 'Orbit, Zoom, Pan, Texture view, Clay view, Wireframe',
       workflow:
-        'Modeled and UV prepared for a realtime workflow, then converted into a compressed web preview with PBR texture maps preserved.',
+        'Modeled and UV prepared for a realtime workflow, then converted into a compressed model preview with PBR texture maps preserved.',
     },
   },
   {
@@ -152,7 +152,7 @@ const projectPresets = [
       summary: 'A hand-painted asset preview focused on clean texture color, silhouette, and readable shape language.',
       viewerFeaturesText: 'Orbit, Zoom, Pan, Texture view, Clay view',
       workflow:
-        'Built with painted texture presentation in mind, then converted into a web preview that preserves the authored color map.',
+        'Built with painted texture presentation in mind, then converted into a model preview that preserves the authored color map.',
     },
   },
   {
@@ -168,7 +168,7 @@ const projectPresets = [
         'A hand-painted environment or scene study focused on color mood, readable composition, and stylized atmosphere.',
       viewerFeaturesText: 'Orbit, Zoom, Pan, Texture view, Clay view',
       workflow:
-        'Built with painted texture and composition-first presentation in mind, then converted into a web preview that preserves authored color and atmosphere.',
+        'Built with painted texture and composition-first presentation in mind, then converted into a model preview that preserves authored color and atmosphere.',
     },
   },
   {

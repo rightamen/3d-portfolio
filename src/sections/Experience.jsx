@@ -5,11 +5,11 @@ const Experience = ({ experience = [], skills = [] }) => {
       <div className="grid gap-8 lg:grid-cols-[0.85fr_1.15fr]">
         <div>
           <h2 className="text-heading">
-            围绕造型、光影与交互建立的创作流程
+            围绕造型、材质与画面表现建立的创作流程
           </h2>
           <p className="mt-5 max-w-xl leading-relaxed text-neutral-400">
-            从建模、材质、灯光到网页端三维展示，持续打磨作品在浏览器中的
-            真实观看体验。
+            从模型结构、拓扑、UV、贴图到灯光展示，持续打磨每个资产的
+            形体语言和最终观感。
           </p>
 
           <div className="mt-8 flex flex-wrap gap-2">

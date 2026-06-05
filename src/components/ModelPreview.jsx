@@ -14,10 +14,10 @@ import {
 import { EXRLoader } from 'three/examples/jsm/loaders/EXRLoader.js'
 
 const modes = [
-  { id: 'textured', label: 'Texture' },
-  { id: 'studio', label: 'Studio' },
-  { id: 'clay', label: 'Clay' },
-  { id: 'wireframe', label: 'Wireframe' },
+  { id: 'textured', label: '贴图' },
+  { id: 'studio', label: '棚拍' },
+  { id: 'clay', label: '素模' },
+  { id: 'wireframe', label: '线框' },
 ]
 
 const environmentUrl = '/assets/environments/studio-tomoco.exr'
@@ -400,11 +400,11 @@ const ModelPreview = ({ project, onClose }) => {
       <div className="model-panel">
         <div className="model-toolbar">
           <div>
-            <div className="section-kicker mb-1">3D Preview</div>
+            <div className="section-kicker mb-1">模型预览</div>
             <h3 className="text-xl font-semibold text-white">{project.title}</h3>
           </div>
           <button type="button" className="secondary-action" onClick={onClose}>
-            Close
+            关闭
           </button>
         </div>
 
@@ -420,14 +420,14 @@ const ModelPreview = ({ project, onClose }) => {
             </button>
           ))}
           <button type="button" className="mode-button" onClick={resetView}>
-            Reset
+            重置
           </button>
           <button
             type="button"
             className={autoRotate ? 'mode-button-active' : 'mode-button'}
             onClick={() => setAutoRotate((current) => !current)}
           >
-            Auto Rotate
+            自动旋转
           </button>
         </div>
 

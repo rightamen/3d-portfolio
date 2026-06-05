@@ -113,22 +113,22 @@ const ProjectDetail = ({ slug, onClose }) => {
       <article className="detail-panel">
         <div className="detail-header">
           <div>
-            <div className="section-kicker mb-1">Project Detail</div>
+            <div className="section-kicker mb-1">作品详情</div>
             <h3 className="text-2xl font-semibold text-white">
-              {project?.title || 'Loading project'}
+              {project?.title || '正在加载作品'}
             </h3>
           </div>
           <button type="button" className="secondary-action" onClick={onClose}>
-            Close
+            关闭
           </button>
         </div>
 
         {status === 'loading' && (
-          <div className="p-6 text-neutral-400">Loading project details...</div>
+          <div className="p-6 text-neutral-400">正在加载作品详情...</div>
         )}
 
         {status === 'error' && (
-          <div className="p-6 text-coral">Could not load this project.</div>
+          <div className="p-6 text-coral">作品详情加载失败。</div>
         )}
 
         {project && (
@@ -150,33 +150,33 @@ const ProjectDetail = ({ slug, onClose }) => {
 
               <div className="detail-stat-grid">
                 <div className="detail-stat">
-                  <span>Year</span>
+                  <span>年份</span>
                   <strong>{project.year}</strong>
                 </div>
                 <div className="detail-stat">
-                  <span>Format</span>
-                  <strong>{project.format || 'Web preview'}</strong>
+                  <span>格式</span>
+                  <strong>{project.format || '模型预览'}</strong>
                 </div>
                 <div className="detail-stat">
-                  <span>Model Size</span>
-                  <strong>{project.modelSize || 'Preview asset'}</strong>
+                  <span>模型大小</span>
+                  <strong>{project.modelSize || '预览资产'}</strong>
                 </div>
                 <div className="detail-stat">
-                  <span>Download</span>
-                  <strong>{project.downloadPolicy || 'By request'}</strong>
+                  <span>下载权限</span>
+                  <strong>{project.downloadPolicy || '按申请开放'}</strong>
                 </div>
               </div>
 
               <section>
-                <h4 className="detail-subtitle">Workflow</h4>
+                <h4 className="detail-subtitle">制作流程</h4>
                 <p className="leading-relaxed text-neutral-400">
                   {project.workflow ||
-                    'Production asset prepared for realtime browser presentation.'}
+                    '该作品围绕模型结构、材质贴图和展示效果进行整理。'}
                 </p>
               </section>
 
               <section>
-                <h4 className="detail-subtitle">Viewer Features</h4>
+                <h4 className="detail-subtitle">预览功能</h4>
                 <div className="flex flex-wrap gap-2">
                   {(project.viewerFeatures || []).map((feature) => (
                     <span key={feature} className="skill-pill">
@@ -187,7 +187,7 @@ const ProjectDetail = ({ slug, onClose }) => {
               </section>
 
               <section>
-                <h4 className="detail-subtitle">Stack</h4>
+                <h4 className="detail-subtitle">制作标签</h4>
                 <div className="flex flex-wrap gap-2">
                   {project.stack.map((tag) => (
                     <span key={tag} className="skill-pill">
@@ -204,7 +204,7 @@ const ProjectDetail = ({ slug, onClose }) => {
                     className="primary-action flex-1"
                     onClick={() => setIsPreviewOpen(true)}
                   >
-                    Open 3D Viewer
+                    打开模型查看器
                   </button>
                 )}
                 <button
@@ -212,17 +212,16 @@ const ProjectDetail = ({ slug, onClose }) => {
                   className="secondary-action flex-1"
                   onClick={() => setIsRequestOpen((current) => !current)}
                 >
-                  Request Download
+                  申请下载
                 </button>
               </div>
 
               {isRequestOpen && (
                 <section className="download-request-panel">
                   <div>
-                    <h4 className="detail-subtitle mb-1">Download Request</h4>
+                    <h4 className="detail-subtitle mb-1">下载申请</h4>
                     <p className="text-sm leading-relaxed text-neutral-400">
-                      Share your intended use. Approved requests can receive a time
-                      limited download link later.
+                      请简单说明用途。通过审核后，我会再开放对应的下载链接。
                     </p>
                   </div>
 
@@ -231,7 +230,7 @@ const ProjectDetail = ({ slug, onClose }) => {
                       <input
                         className="field-input field-input-focus"
                         name="name"
-                        placeholder="Name"
+                        placeholder="名称"
                         value={downloadForm.name}
                         onChange={(event) =>
                           setDownloadForm((current) => ({
@@ -244,7 +243,7 @@ const ProjectDetail = ({ slug, onClose }) => {
                       <input
                         className="field-input field-input-focus"
                         name="email"
-                        placeholder="Email"
+                        placeholder="邮箱"
                         type="email"
                         value={downloadForm.email}
                         onChange={(event) =>
@@ -259,7 +258,7 @@ const ProjectDetail = ({ slug, onClose }) => {
                     <textarea
                       className="field-input field-input-focus min-h-28 resize-none"
                       name="purpose"
-                      placeholder="Usage purpose"
+                      placeholder="用途说明"
                       value={downloadForm.purpose}
                       onChange={(event) =>
                         setDownloadForm((current) => ({
@@ -274,17 +273,16 @@ const ProjectDetail = ({ slug, onClose }) => {
                       className="primary-action"
                       disabled={downloadStatus === 'saving'}
                     >
-                      {downloadStatus === 'saving' ? 'Submitting...' : 'Submit Request'}
+                      {downloadStatus === 'saving' ? '提交中...' : '提交申请'}
                     </button>
                     {downloadStatus === 'sent' && (
                       <p className="text-sm text-mint">
-                        Request received. I will review the usage details before sharing
-                        a download link.
+                        申请已收到。我会先查看用途说明，再决定是否开放下载。
                       </p>
                     )}
                     {downloadStatus === 'error' && (
                       <p className="text-sm text-coral">
-                        Request failed. Check the fields and try again.
+                        申请提交失败，请检查内容后重试。
                       </p>
                     )}
                   </form>
@@ -294,10 +292,9 @@ const ProjectDetail = ({ slug, onClose }) => {
               <section className="interaction-panel">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div>
-                    <h4 className="detail-subtitle mb-1">Community</h4>
+                    <h4 className="detail-subtitle mb-1">互动</h4>
                     <p className="text-sm text-neutral-400">
-                      {interactions.likeCount} likes · {interactions.comments.length}{' '}
-                      comments
+                      {interactions.likeCount} 个赞 / {interactions.comments.length} 条评论
                     </p>
                   </div>
                   <button
@@ -306,7 +303,7 @@ const ProjectDetail = ({ slug, onClose }) => {
                     onClick={submitLike}
                     disabled={interactionStatus === 'saving'}
                   >
-                    {liked ? 'Liked' : 'Like'}
+                    {liked ? '已点赞' : '点赞'}
                   </button>
                 </div>
 
@@ -314,7 +311,7 @@ const ProjectDetail = ({ slug, onClose }) => {
                   <input
                     className="field-input field-input-focus"
                     name="author"
-                    placeholder="Name"
+                    placeholder="名称"
                     value={commentForm.author}
                     onChange={(event) =>
                       setCommentForm((current) => ({
@@ -327,7 +324,7 @@ const ProjectDetail = ({ slug, onClose }) => {
                   <textarea
                     className="field-input field-input-focus min-h-24 resize-none"
                     name="message"
-                    placeholder="Comment"
+                    placeholder="评论"
                     value={commentForm.message}
                     onChange={(event) =>
                       setCommentForm((current) => ({
@@ -342,17 +339,17 @@ const ProjectDetail = ({ slug, onClose }) => {
                     className="primary-action"
                     disabled={interactionStatus === 'saving'}
                   >
-                    {interactionStatus === 'saving' ? 'Saving...' : 'Post Comment'}
+                    {interactionStatus === 'saving' ? '保存中...' : '发布评论'}
                   </button>
                   {interactionStatus === 'error' && (
-                    <p className="text-sm text-coral">Interaction failed. Try again.</p>
+                    <p className="text-sm text-coral">互动保存失败，请重试。</p>
                   )}
                 </form>
 
                 <div className="comment-list">
                   {interactions.comments.length === 0 && (
                     <p className="text-sm text-neutral-500">
-                      No comments yet. Start the first note.
+                      暂无评论，欢迎留下第一条反馈。
                     </p>
                   )}
                   {interactions.comments.map((comment) => (
@@ -360,7 +357,7 @@ const ProjectDetail = ({ slug, onClose }) => {
                       <div className="flex items-center justify-between gap-3">
                         <strong>{comment.author}</strong>
                         <span>
-                          {new Date(comment.createdAt).toLocaleDateString('en-US')}
+                          {new Date(comment.createdAt).toLocaleDateString('zh-CN')}
                         </span>
                       </div>
                       <p>{comment.message}</p>
