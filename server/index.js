@@ -1,6 +1,7 @@
 import cors from 'cors'
 import express from 'express'
 import multer from 'multer'
+import { createHash, pbkdf2Sync, randomBytes, timingSafeEqual } from 'node:crypto'
 import { mkdir, unlink } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -23,6 +24,8 @@ const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 const imageExtensions = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif'])
 const imageUploadLimit = 16 * 1024 * 1024
 const modelExtensions = new Set(['.glb', '.gltf', '.fbx', '.obj', '.zip'])
+const visitorAccessLevels = ['guest', 'member', 'approved']
+const accessRank = new Map(visitorAccessLevels.map((level, index) => [level, index]))
 const assetCategories = new Set([
   'generic',
   'next-gen-prop',
@@ -36,6 +39,7 @@ const stores = process.env.DATABASE_URL
   ? await createPostgresStores(process.env.DATABASE_URL)
   : {
       adminStore: null,
+      authStore: null,
       contactMessagesStore: createContactMessagesStore(dataDir),
       downloadRequestsStore: createDownloadRequestsStore(dataDir),
       interactionsStore: createInteractionsStore(dataDir),
@@ -48,6 +52,7 @@ const stores = process.env.DATABASE_URL
 
 const {
   adminStore,
+  authStore,
   contactMessagesStore,
   downloadRequestsStore,
   interactionsStore,
@@ -92,8 +97,149 @@ const upload = multer({
   },
 })
 
+const createId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+
+const hashToken = (token) => createHash('sha256').update(token).digest('hex')
+
+const hashPassword = (password) => {
+  const salt = randomBytes(16).toString('hex')
+  const hash = pbkdf2Sync(password, salt, 120000, 32, 'sha256').toString('hex')
+  return `pbkdf2_sha256$120000$${salt}$${hash}`
+}
+
+const verifyPassword = (password, storedHash = '') => {
+  const [algorithm, iterationsRaw, salt, expected] = storedHash.split('$')
+  if (algorithm !== 'pbkdf2_sha256' || !iterationsRaw || !salt || !expected) return false
+
+  const actual = pbkdf2Sync(
+    password,
+    salt,
+    Number(iterationsRaw),
+    Buffer.from(expected, 'hex').length,
+    'sha256',
+  )
+  const expectedBuffer = Buffer.from(expected, 'hex')
+  return actual.length === expectedBuffer.length && timingSafeEqual(actual, expectedBuffer)
+}
+
+const createSession = async (user) => {
+  const token = randomBytes(32).toString('base64url')
+  const expiresAt = new Date(Date.now() + 1000 * 60 * 60 * 24 * 30)
+  await authStore.createSession({
+    expiresAt,
+    tokenHash: hashToken(token),
+    userId: user.id,
+  })
+
+  return {
+    expiresAt: expiresAt.toISOString(),
+    token,
+  }
+}
+
+const normalizeAccessLevel = (value, fallback = 'member') => {
+  const normalized = String(value ?? '').trim()
+  return visitorAccessLevels.includes(normalized) ? normalized : fallback
+}
+
+const getPolicyAccessLevel = (policy = '') => {
+  const normalized = policy.toLowerCase()
+  if (/open|免登录|自由/.test(normalized)) return 'guest'
+  if (/member|login|登录|ログイン|メンバー/.test(normalized)) return 'member'
+  return 'approved'
+}
+
+const canAccess = (user, requiredAccessLevel) =>
+  (accessRank.get(user?.accessLevel || 'guest') ?? 0) >=
+  (accessRank.get(requiredAccessLevel) ?? accessRank.get('approved'))
+
+const getAuthToken = (request) => request.get('Authorization')?.replace(/^Bearer\s+/i, '').trim()
+
+const getOptionalUser = async (request) => {
+  if (!authStore) return null
+
+  const token = getAuthToken(request)
+  if (!token) return null
+
+  return authStore.getSessionUser(hashToken(token))
+}
+
+const requireAuthStore = (_request, response, next) => {
+  if (!authStore) {
+    return response.status(503).json({
+      error: 'Visitor accounts are not configured.',
+    })
+  }
+
+  return next()
+}
+
 app.get('/api/health', (_request, response) => {
   response.json({ ok: true, service: 'mrright-portfolio' })
+})
+
+app.get('/api/auth/me', async (request, response) => {
+  const user = await getOptionalUser(request)
+  response.json({ user })
+})
+
+app.post('/api/auth/register', requireAuthStore, async (request, response) => {
+  const displayName = String(request.body?.displayName ?? '').trim().slice(0, 80)
+  const email = String(request.body?.email ?? '').trim().toLowerCase().slice(0, 180)
+  const password = String(request.body?.password ?? '')
+
+  if (!displayName || !emailPattern.test(email) || password.length < 8) {
+    return response.status(400).json({
+      error: 'Please provide a display name, valid email, and password with at least 8 characters.',
+    })
+  }
+
+  const existingUser = await authStore.getUserByEmail(email)
+  if (existingUser) {
+    return response.status(409).json({
+      error: 'This email is already registered.',
+    })
+  }
+
+  const user = await authStore.createUser({
+    accessLevel: 'member',
+    displayName,
+    email,
+    id: createId(),
+    passwordHash: hashPassword(password),
+  })
+  const session = await createSession(user)
+
+  return response.status(201).json({ session, user })
+})
+
+app.post('/api/auth/login', requireAuthStore, async (request, response) => {
+  const email = String(request.body?.email ?? '').trim().toLowerCase().slice(0, 180)
+  const password = String(request.body?.password ?? '')
+  const user = await authStore.getUserByEmail(email)
+
+  if (!user || !verifyPassword(password, user.passwordHash)) {
+    return response.status(401).json({
+      error: 'Email or password is incorrect.',
+    })
+  }
+
+  const session = await createSession(user)
+  const publicUser = {
+    accessLevel: user.accessLevel,
+    createdAt: user.createdAt,
+    displayName: user.displayName,
+    email: user.email,
+    id: user.id,
+  }
+
+  return response.json({ session, user: publicUser })
+})
+
+app.post('/api/auth/logout', async (request, response) => {
+  const token = getAuthToken(request)
+  if (token && authStore) await authStore.deleteSession(hashToken(token))
+  response.json({ ok: true })
 })
 
 const requireAdmin = (request, response, next) => {
@@ -159,6 +305,7 @@ app.get('/api/projects/:slug/interactions', async (request, response) => {
 app.post('/api/projects/:slug/like', async (request, response) => {
   const project = await projectStore.getProject(staticProjects, request.params.slug)
   const visitorId = String(request.body?.visitorId ?? '').trim().slice(0, 120)
+  const user = await getOptionalUser(request)
 
   if (!project) {
     return response.status(404).json({
@@ -172,13 +319,14 @@ app.post('/api/projects/:slug/like', async (request, response) => {
     })
   }
 
-  const result = await interactionsStore.toggleLike(project.slug, visitorId)
+  const result = await interactionsStore.toggleLike(project.slug, visitorId, user?.id)
   return response.json(result)
 })
 
 app.post('/api/projects/:slug/comments', async (request, response) => {
   const project = await projectStore.getProject(staticProjects, request.params.slug)
-  const author = String(request.body?.author ?? '').trim().slice(0, 80)
+  const user = await getOptionalUser(request)
+  const author = String(request.body?.author || user?.displayName || '').trim().slice(0, 80)
   const message = String(request.body?.message ?? '').trim().slice(0, 1000)
 
   if (!project) {
@@ -196,15 +344,19 @@ app.post('/api/projects/:slug/comments', async (request, response) => {
   const comment = await interactionsStore.addComment(project.slug, {
     author,
     message,
+    userId: user?.id,
   })
   return response.status(201).json({ comment })
 })
 
 app.post('/api/projects/:slug/download-requests', async (request, response) => {
   const project = await projectStore.getProject(staticProjects, request.params.slug)
-  const name = String(request.body?.name ?? '').trim().slice(0, 120)
-  const email = String(request.body?.email ?? '').trim().slice(0, 180)
+  const user = await getOptionalUser(request)
+  const name = String(request.body?.name || user?.displayName || '').trim().slice(0, 120)
+  const email = String(request.body?.email || user?.email || '').trim().slice(0, 180)
   const purpose = String(request.body?.purpose ?? '').trim().slice(0, 1200)
+  const requiredAccessLevel = getPolicyAccessLevel(project.downloadPolicy || project.downloadPolicyEn)
+  const currentAccessLevel = user?.accessLevel || 'guest'
 
   if (!project) {
     return response.status(404).json({
@@ -219,11 +371,15 @@ app.post('/api/projects/:slug/download-requests', async (request, response) => {
   }
 
   const downloadRequest = await downloadRequestsStore.addRequest({
+    accessGranted: canAccess(user, requiredAccessLevel),
     projectSlug: project.slug,
     projectTitle: project.title,
     name,
     email,
     purpose,
+    requiredAccessLevel,
+    userId: user?.id,
+    visitorAccessLevel: currentAccessLevel,
     ip: request.ip,
   })
 
@@ -233,6 +389,11 @@ app.post('/api/projects/:slug/download-requests', async (request, response) => {
       id: downloadRequest.id,
       status: downloadRequest.status,
       createdAt: downloadRequest.createdAt,
+    },
+    access: {
+      allowed: canAccess(user, requiredAccessLevel),
+      current: currentAccessLevel,
+      required: requiredAccessLevel,
     },
   })
 })
@@ -284,6 +445,30 @@ app.get('/api/admin/download-requests', requireAdmin, async (_request, response)
 
 app.get('/api/admin/projects', requireAdmin, async (_request, response) => {
   response.json({ projects: await adminStore.listProjects(staticProjects) })
+})
+
+app.get('/api/admin/visitors', requireAdmin, async (_request, response) => {
+  response.json({ visitors: await adminStore.listVisitors() })
+})
+
+app.patch('/api/admin/visitors/:id', requireAdmin, async (request, response) => {
+  const accessLevel = normalizeAccessLevel(request.body?.accessLevel, '')
+
+  if (!accessLevel) {
+    return response.status(400).json({
+      error: 'Invalid visitor access level.',
+    })
+  }
+
+  const visitor = await adminStore.updateVisitorAccessLevel(request.params.id, accessLevel)
+
+  if (!visitor) {
+    return response.status(404).json({
+      error: 'Visitor not found.',
+    })
+  }
+
+  return response.json({ visitor })
 })
 
 app.post('/api/admin/uploads', requireAdmin, upload.single('file'), async (request, response) => {

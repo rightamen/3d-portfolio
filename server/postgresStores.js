@@ -9,8 +9,35 @@ const toComment = (row) => ({
   projectSlug: row.project_slug,
   author: row.author,
   message: row.message,
+  user: row.user_id
+    ? {
+        accessLevel: row.access_level,
+        displayName: row.display_name,
+        email: row.email,
+        id: row.user_id,
+      }
+    : null,
   createdAt: row.created_at.toISOString(),
 })
+
+const toPublicUser = (row) =>
+  row
+    ? {
+        accessLevel: row.access_level,
+        createdAt: row.created_at?.toISOString?.() || row.created_at,
+        displayName: row.display_name,
+        email: row.email,
+        id: row.id,
+      }
+    : null
+
+const toPrivateUser = (row) =>
+  row
+    ? {
+        ...toPublicUser(row),
+        passwordHash: row.password_hash,
+      }
+    : null
 
 const toProjectOverride = (row) => ({
   assetCategory: row.asset_category,
@@ -129,9 +156,30 @@ const ensureSchema = async (pool) => {
       created_at timestamptz NOT NULL DEFAULT now()
     );
 
+    CREATE TABLE IF NOT EXISTS visitor_users (
+      id text PRIMARY KEY,
+      email text NOT NULL UNIQUE,
+      display_name text NOT NULL,
+      password_hash text NOT NULL,
+      access_level text NOT NULL DEFAULT 'member',
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    );
+
+    CREATE TABLE IF NOT EXISTS visitor_sessions (
+      token_hash text PRIMARY KEY,
+      user_id text NOT NULL REFERENCES visitor_users(id) ON DELETE CASCADE,
+      expires_at timestamptz NOT NULL,
+      created_at timestamptz NOT NULL DEFAULT now()
+    );
+
+    CREATE INDEX IF NOT EXISTS visitor_sessions_user_idx
+      ON visitor_sessions (user_id, expires_at);
+
     CREATE TABLE IF NOT EXISTS project_likes (
       project_slug text NOT NULL,
       visitor_id text NOT NULL,
+      user_id text REFERENCES visitor_users(id) ON DELETE SET NULL,
       created_at timestamptz NOT NULL DEFAULT now(),
       PRIMARY KEY (project_slug, visitor_id)
     );
@@ -139,6 +187,7 @@ const ensureSchema = async (pool) => {
     CREATE TABLE IF NOT EXISTS project_comments (
       id text PRIMARY KEY,
       project_slug text NOT NULL,
+      user_id text REFERENCES visitor_users(id) ON DELETE SET NULL,
       author text NOT NULL,
       message text NOT NULL,
       created_at timestamptz NOT NULL DEFAULT now()
@@ -155,6 +204,8 @@ const ensureSchema = async (pool) => {
       name text NOT NULL,
       email text NOT NULL,
       purpose text NOT NULL,
+      user_id text REFERENCES visitor_users(id) ON DELETE SET NULL,
+      visitor_access_level text,
       ip text,
       created_at timestamptz NOT NULL DEFAULT now()
     );
@@ -211,6 +262,16 @@ const ensureSchema = async (pool) => {
 
     ALTER TABLE custom_projects
       ADD COLUMN IF NOT EXISTS asset_category text;
+
+    ALTER TABLE project_likes
+      ADD COLUMN IF NOT EXISTS user_id text REFERENCES visitor_users(id) ON DELETE SET NULL;
+
+    ALTER TABLE project_comments
+      ADD COLUMN IF NOT EXISTS user_id text REFERENCES visitor_users(id) ON DELETE SET NULL;
+
+    ALTER TABLE download_requests
+      ADD COLUMN IF NOT EXISTS user_id text REFERENCES visitor_users(id) ON DELETE SET NULL,
+      ADD COLUMN IF NOT EXISTS visitor_access_level text;
 
     ALTER TABLE project_overrides
       ADD COLUMN IF NOT EXISTS title_zh text,
@@ -324,6 +385,70 @@ export const createPostgresStores = async (databaseUrl) => {
     },
   }
 
+  const authStore = {
+    createUser: async (user) => {
+      const result = await pool.query(
+        `
+          INSERT INTO visitor_users (id, email, display_name, password_hash, access_level)
+          VALUES ($1, lower($2), $3, $4, $5)
+          RETURNING id, email, display_name, access_level, created_at
+        `,
+        [user.id, user.email, user.displayName, user.passwordHash, user.accessLevel],
+      )
+
+      return toPublicUser(result.rows[0])
+    },
+
+    createSession: async (session) => {
+      await pool.query(
+        `
+          INSERT INTO visitor_sessions (token_hash, user_id, expires_at)
+          VALUES ($1, $2, $3)
+        `,
+        [session.tokenHash, session.userId, session.expiresAt],
+      )
+    },
+
+    deleteSession: async (tokenHash) => {
+      await pool.query('DELETE FROM visitor_sessions WHERE token_hash = $1', [tokenHash])
+    },
+
+    getSessionUser: async (tokenHash) => {
+      const result = await pool.query(
+        `
+          SELECT
+            visitor_users.id,
+            visitor_users.email,
+            visitor_users.display_name,
+            visitor_users.access_level,
+            visitor_users.created_at
+          FROM visitor_sessions
+          JOIN visitor_users ON visitor_users.id = visitor_sessions.user_id
+          WHERE visitor_sessions.token_hash = $1
+            AND visitor_sessions.expires_at > now()
+          LIMIT 1
+        `,
+        [tokenHash],
+      )
+
+      return toPublicUser(result.rows[0])
+    },
+
+    getUserByEmail: async (email) => {
+      const result = await pool.query(
+        `
+          SELECT id, email, display_name, password_hash, access_level, created_at
+          FROM visitor_users
+          WHERE email = lower($1)
+          LIMIT 1
+        `,
+        [email],
+      )
+
+      return toPrivateUser(result.rows[0])
+    },
+  }
+
   const interactionsStore = {
     getProjectState: async (slug) => {
       const [likesResult, commentsResult] = await Promise.all([
@@ -332,10 +457,20 @@ export const createPostgresStores = async (databaseUrl) => {
         ]),
         pool.query(
           `
-            SELECT id, author, message, created_at
+            SELECT
+              project_comments.id,
+              project_comments.project_slug,
+              project_comments.author,
+              project_comments.message,
+              project_comments.created_at,
+              visitor_users.id AS user_id,
+              visitor_users.display_name,
+              visitor_users.email,
+              visitor_users.access_level
             FROM project_comments
-            WHERE project_slug = $1
-            ORDER BY created_at ASC
+            LEFT JOIN visitor_users ON visitor_users.id = project_comments.user_id
+            WHERE project_comments.project_slug = $1
+            ORDER BY project_comments.created_at ASC
             LIMIT 100
           `,
           [slug],
@@ -348,7 +483,7 @@ export const createPostgresStores = async (databaseUrl) => {
       }
     },
 
-    toggleLike: async (slug, visitorId) => {
+    toggleLike: async (slug, visitorId, userId = null) => {
       const client = await pool.connect()
 
       try {
@@ -373,6 +508,17 @@ export const createPostgresStores = async (databaseUrl) => {
             `,
             [slug, visitorId],
           )
+
+          if (userId) {
+            await client.query(
+              `
+                UPDATE project_likes
+                SET user_id = $3
+                WHERE project_slug = $1 AND visitor_id = $2
+              `,
+              [slug, visitorId, userId],
+            )
+          }
         }
 
         const countResult = await client.query(
@@ -397,14 +543,35 @@ export const createPostgresStores = async (databaseUrl) => {
       const id = createId()
       const result = await pool.query(
         `
-          INSERT INTO project_comments (id, project_slug, author, message)
-          VALUES ($1, $2, $3, $4)
-          RETURNING id, author, message, created_at
+          INSERT INTO project_comments (id, project_slug, user_id, author, message)
+          VALUES ($1, $2, $3, $4, $5)
+          RETURNING id, project_slug, author, message, created_at, user_id
         `,
-        [id, slug, comment.author, comment.message],
+        [id, slug, comment.userId || null, comment.author, comment.message],
       )
 
-      return toComment(result.rows[0])
+      if (!comment.userId) return toComment(result.rows[0])
+
+      const enriched = await pool.query(
+        `
+          SELECT
+            project_comments.id,
+            project_comments.project_slug,
+            project_comments.author,
+            project_comments.message,
+            project_comments.created_at,
+            visitor_users.id AS user_id,
+            visitor_users.display_name,
+            visitor_users.email,
+            visitor_users.access_level
+          FROM project_comments
+          LEFT JOIN visitor_users ON visitor_users.id = project_comments.user_id
+          WHERE project_comments.id = $1
+        `,
+        [id],
+      )
+
+      return toComment(enriched.rows[0])
     },
   }
 
@@ -414,8 +581,19 @@ export const createPostgresStores = async (databaseUrl) => {
       const result = await pool.query(
         `
           INSERT INTO download_requests
-            (id, status, project_slug, project_title, name, email, purpose, ip)
-          VALUES ($1, 'pending', $2, $3, $4, $5, $6, $7)
+            (
+              id,
+              status,
+              project_slug,
+              project_title,
+              name,
+              email,
+              purpose,
+              user_id,
+              visitor_access_level,
+              ip
+            )
+          VALUES ($1, 'pending', $2, $3, $4, $5, $6, $7, $8, $9)
           RETURNING id, status, created_at
         `,
         [
@@ -425,6 +603,8 @@ export const createPostgresStores = async (databaseUrl) => {
           request.name,
           request.email,
           request.purpose,
+          request.userId || null,
+          request.visitorAccessLevel || null,
           request.ip,
         ],
       )
@@ -446,7 +626,8 @@ export const createPostgresStores = async (databaseUrl) => {
           (SELECT count(*)::int FROM project_likes) AS likes,
           (SELECT count(*)::int FROM download_requests) AS download_requests,
           (SELECT count(*)::int FROM download_requests WHERE status = 'pending') AS pending_downloads,
-          (SELECT count(*)::int FROM contact_messages) AS contact_messages
+          (SELECT count(*)::int FROM contact_messages) AS contact_messages,
+          (SELECT count(*)::int FROM visitor_users) AS visitors
       `)
 
       return result.rows[0]
@@ -465,15 +646,31 @@ export const createPostgresStores = async (databaseUrl) => {
 
     listLikes: async () => {
       const result = await pool.query(`
-        SELECT project_slug, visitor_id, created_at
+        SELECT
+          project_likes.project_slug,
+          project_likes.visitor_id,
+          project_likes.created_at,
+          visitor_users.id AS user_id,
+          visitor_users.display_name,
+          visitor_users.email,
+          visitor_users.access_level
         FROM project_likes
-        ORDER BY created_at DESC
+        LEFT JOIN visitor_users ON visitor_users.id = project_likes.user_id
+        ORDER BY project_likes.created_at DESC
         LIMIT 200
       `)
 
       return result.rows.map((row) => ({
         projectSlug: row.project_slug,
         visitorId: row.visitor_id,
+        user: row.user_id
+          ? {
+              accessLevel: row.access_level,
+              displayName: row.display_name,
+              email: row.email,
+              id: row.user_id,
+            }
+          : null,
         createdAt: row.created_at.toISOString(),
       }))
     },
@@ -497,9 +694,24 @@ export const createPostgresStores = async (databaseUrl) => {
 
     listDownloadRequests: async () => {
       const result = await pool.query(`
-        SELECT id, status, project_slug, project_title, name, email, purpose, ip, created_at
+        SELECT
+          download_requests.id,
+          download_requests.status,
+          download_requests.project_slug,
+          download_requests.project_title,
+          download_requests.name,
+          download_requests.email,
+          download_requests.purpose,
+          download_requests.ip,
+          download_requests.visitor_access_level,
+          download_requests.created_at,
+          visitor_users.id AS user_id,
+          visitor_users.display_name,
+          visitor_users.email AS user_email,
+          visitor_users.access_level
         FROM download_requests
-        ORDER BY created_at DESC
+        LEFT JOIN visitor_users ON visitor_users.id = download_requests.user_id
+        ORDER BY download_requests.created_at DESC
         LIMIT 100
       `)
 
@@ -512,8 +724,62 @@ export const createPostgresStores = async (databaseUrl) => {
         email: row.email,
         purpose: row.purpose,
         ip: row.ip,
+        visitorAccessLevel: row.visitor_access_level,
+        user: row.user_id
+          ? {
+              accessLevel: row.access_level,
+              displayName: row.display_name,
+              email: row.user_email,
+              id: row.user_id,
+            }
+          : null,
         createdAt: row.created_at.toISOString(),
       }))
+    },
+
+    listVisitors: async () => {
+      const result = await pool.query(`
+        SELECT
+          visitor_users.id,
+          visitor_users.email,
+          visitor_users.display_name,
+          visitor_users.access_level,
+          visitor_users.created_at,
+          visitor_users.updated_at,
+          count(DISTINCT project_likes.project_slug) AS like_count,
+          count(DISTINCT project_comments.id) AS comment_count,
+          count(DISTINCT download_requests.id) AS download_request_count
+        FROM visitor_users
+        LEFT JOIN project_likes ON project_likes.user_id = visitor_users.id
+        LEFT JOIN project_comments ON project_comments.user_id = visitor_users.id
+        LEFT JOIN download_requests ON download_requests.user_id = visitor_users.id
+        GROUP BY visitor_users.id
+        ORDER BY visitor_users.created_at DESC
+        LIMIT 200
+      `)
+
+      return result.rows.map((row) => ({
+        ...toPublicUser(row),
+        commentCount: Number(row.comment_count),
+        downloadRequestCount: Number(row.download_request_count),
+        likeCount: Number(row.like_count),
+        updatedAt: row.updated_at.toISOString(),
+      }))
+    },
+
+    updateVisitorAccessLevel: async (id, accessLevel) => {
+      const result = await pool.query(
+        `
+          UPDATE visitor_users
+          SET access_level = $2,
+              updated_at = now()
+          WHERE id = $1
+          RETURNING id, email, display_name, access_level, created_at
+        `,
+        [id, accessLevel],
+      )
+
+      return toPublicUser(result.rows[0])
     },
 
     updateDownloadRequestStatus: async (id, status) => {
@@ -770,6 +1036,7 @@ export const createPostgresStores = async (databaseUrl) => {
 
   return {
     adminStore,
+    authStore,
     close: () => pool.end(),
     contactMessagesStore,
     downloadRequestsStore,

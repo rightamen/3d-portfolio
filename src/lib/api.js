@@ -20,31 +20,60 @@ const adminRequest = (path, token, options = {}) =>
     },
   })
 
+const authHeaders = (token, headers = {}) => ({
+  ...headers,
+  ...(token ? { Authorization: `Bearer ${token}` } : {}),
+})
+
 export const getProfile = () => request('/api/profile')
 export const getProjects = () => request('/api/projects')
 export const getProject = (slug) => request(`/api/projects/${slug}`)
 export const getProjectInteractions = (slug) =>
   request(`/api/projects/${slug}/interactions`)
 export const getExperience = () => request('/api/experience')
-
-export const toggleProjectLike = (slug, visitorId) =>
-  request(`/api/projects/${slug}/like`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ visitorId }),
+export const getCurrentVisitor = (token) =>
+  request('/api/auth/me', {
+    headers: authHeaders(token),
   })
 
-export const addProjectComment = (slug, payload) =>
-  request(`/api/projects/${slug}/comments`, {
+export const loginVisitor = (payload) =>
+  request('/api/auth/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   })
 
-export const requestProjectDownload = (slug, payload) =>
-  request(`/api/projects/${slug}/download-requests`, {
+export const logoutVisitor = (token) =>
+  request('/api/auth/logout', {
+    method: 'POST',
+    headers: authHeaders(token),
+  })
+
+export const registerVisitor = (payload) =>
+  request('/api/auth/register', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+
+export const toggleProjectLike = (slug, visitorId, token) =>
+  request(`/api/projects/${slug}/like`, {
+    method: 'POST',
+    headers: authHeaders(token, { 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ visitorId }),
+  })
+
+export const addProjectComment = (slug, payload, token) =>
+  request(`/api/projects/${slug}/comments`, {
+    method: 'POST',
+    headers: authHeaders(token, { 'Content-Type': 'application/json' }),
+    body: JSON.stringify(payload),
+  })
+
+export const requestProjectDownload = (slug, payload, token) =>
+  request(`/api/projects/${slug}/download-requests`, {
+    method: 'POST',
+    headers: authHeaders(token, { 'Content-Type': 'application/json' }),
     body: JSON.stringify(payload),
   })
 
@@ -61,6 +90,8 @@ export const getAdminDownloadRequests = (token) =>
   adminRequest('/api/admin/download-requests', token)
 
 export const getAdminProjects = (token) => adminRequest('/api/admin/projects', token)
+
+export const getAdminVisitors = (token) => adminRequest('/api/admin/visitors', token)
 
 export const createAdminProject = (token, payload) =>
   adminRequest('/api/admin/projects', token, {
@@ -81,6 +112,13 @@ export const updateAdminProject = (token, slug, payload) =>
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
+  })
+
+export const updateAdminVisitor = (token, id, accessLevel) =>
+  adminRequest(`/api/admin/visitors/${id}`, token, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ accessLevel }),
   })
 
 export const deleteAdminProject = (token, slug) =>

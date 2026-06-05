@@ -6,7 +6,7 @@ import { pickLocalized, translateKnownLabel } from '../lib/i18n'
 const ModelPreview = lazy(() => import('../components/ModelPreview'))
 const ProjectDetail = lazy(() => import('../components/ProjectDetail'))
 
-const Projects = ({ projects = [], language, copy }) => {
+const Projects = ({ authToken, copy, language, projects = [], visitorUser }) => {
   const [previewProject, setPreviewProject] = useState(null)
   const [detailSlug, setDetailSlug] = useState(null)
   const [activeCategory, setActiveCategory] = useState('all')
@@ -184,8 +184,10 @@ const Projects = ({ projects = [], language, copy }) => {
       {detailSlug && (
         <Suspense fallback={null}>
           <ProjectDetail
+            authToken={authToken}
             key={`${detailSlug}-${language}`}
             slug={detailSlug}
+            visitorUser={visitorUser}
             language={language}
             copy={copy}
             onClose={() => setDetailSlug(null)}

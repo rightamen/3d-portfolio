@@ -1,5 +1,13 @@
 import { Suspense, lazy, useEffect, useState } from 'react'
-import { getExperience, getProfile, getProjects } from './lib/api'
+import {
+  getCurrentVisitor,
+  getExperience,
+  getProfile,
+  getProjects,
+  loginVisitor,
+  logoutVisitor,
+  registerVisitor,
+} from './lib/api'
 import { getCopy, getInitialLanguage } from './lib/i18n'
 import Navbar from './sections/Navbar'
 
@@ -9,6 +17,7 @@ const Projects = lazy(() => import('./sections/Projects'))
 const Experience = lazy(() => import('./sections/Experience'))
 const Contact = lazy(() => import('./sections/Contact'))
 const Footer = lazy(() => import('./sections/Footer'))
+const visitorTokenKey = 'mrright-visitor-token'
 
 const SectionFallback = ({ title, copy }) => (
   <section className="c-space flex min-h-screen items-center">
@@ -26,6 +35,11 @@ const App = () => {
     experience: [],
   })
   const [status, setStatus] = useState('loading')
+  const [visitorToken, setVisitorToken] = useState(
+    () => window.localStorage.getItem(visitorTokenKey) || '',
+  )
+  const [visitorUser, setVisitorUser] = useState(null)
+  const [authStatus, setAuthStatus] = useState('idle')
 
   useEffect(() => {
     window.localStorage.setItem('mrright-language', language)
@@ -56,9 +70,86 @@ const App = () => {
     }
   }, [])
 
+  useEffect(() => {
+    let isMounted = true
+
+    if (!visitorToken) {
+      return () => {
+        isMounted = false
+      }
+    }
+
+    getCurrentVisitor(visitorToken)
+      .then((payload) => {
+        if (!isMounted) return
+        setVisitorUser(payload.user)
+        if (!payload.user) {
+          window.localStorage.removeItem(visitorTokenKey)
+          setVisitorToken('')
+        }
+      })
+      .catch(() => {
+        if (!isMounted) return
+        window.localStorage.removeItem(visitorTokenKey)
+        setVisitorToken('')
+        setVisitorUser(null)
+      })
+
+    return () => {
+      isMounted = false
+    }
+  }, [visitorToken])
+
+  const saveVisitorSession = (payload) => {
+    window.localStorage.setItem(visitorTokenKey, payload.session.token)
+    setVisitorToken(payload.session.token)
+    setVisitorUser(payload.user)
+  }
+
+  const handleVisitorLogin = async (payload) => {
+    setAuthStatus('saving')
+    try {
+      const result = await loginVisitor(payload)
+      saveVisitorSession(result)
+      setAuthStatus('idle')
+    } catch (error) {
+      setAuthStatus(error.message.includes('not configured') ? 'unavailable' : 'error')
+      throw error
+    }
+  }
+
+  const handleVisitorRegister = async (payload) => {
+    setAuthStatus('saving')
+    try {
+      const result = await registerVisitor(payload)
+      saveVisitorSession(result)
+      setAuthStatus('idle')
+    } catch (error) {
+      setAuthStatus(error.message.includes('not configured') ? 'unavailable' : 'error')
+      throw error
+    }
+  }
+
+  const handleVisitorLogout = async () => {
+    const token = visitorToken
+    window.localStorage.removeItem(visitorTokenKey)
+    setVisitorToken('')
+    setVisitorUser(null)
+    if (token) logoutVisitor(token).catch(() => {})
+  }
+
   return (
     <div id="home" className="min-h-screen overflow-hidden">
-      <Navbar language={language} onLanguageChange={setLanguage} copy={copy} />
+      <Navbar
+        authStatus={authStatus}
+        copy={copy}
+        language={language}
+        onLanguageChange={setLanguage}
+        onVisitorLogin={handleVisitorLogin}
+        onVisitorLogout={handleVisitorLogout}
+        onVisitorRegister={handleVisitorRegister}
+        visitorUser={visitorUser}
+      />
       <Suspense fallback={<SectionFallback title="Hero" copy={copy} />}>
         <Hero profile={siteData.profile} status={status} language={language} copy={copy} />
       </Suspense>
@@ -72,7 +163,13 @@ const App = () => {
           />
         </Suspense>
         <Suspense fallback={<SectionFallback title="Projects" copy={copy} />}>
-          <Projects projects={siteData.projects} language={language} copy={copy} />
+          <Projects
+            authToken={visitorToken}
+            copy={copy}
+            language={language}
+            projects={siteData.projects}
+            visitorUser={visitorUser}
+          />
         </Suspense>
         <Suspense fallback={<SectionFallback title="Experience" copy={copy} />}>
           <Experience

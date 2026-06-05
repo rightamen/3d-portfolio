@@ -11,8 +11,10 @@ import {
   getAdminLikes,
   getAdminProjects,
   getAdminSummary,
+  getAdminVisitors,
   updateAdminDownloadRequest,
   updateAdminProject,
+  updateAdminVisitor,
   uploadAdminAsset,
 } from './lib/api'
 import { assetCategoryProfiles, getAssetCategoryProfile } from './lib/assetCategories'
@@ -22,6 +24,7 @@ const sections = [
   { key: 'projects', label: 'Projects' },
   { key: 'comments', label: 'Comments' },
   { key: 'likes', label: 'Likes' },
+  { key: 'visitors', label: 'Visitors' },
   { key: 'downloads', label: 'Downloads' },
   { key: 'messages', label: 'Messages' },
 ]
@@ -141,6 +144,12 @@ const downloadPolicyPresets = [
   { label: 'Open Download', value: 'Open download' },
   { label: 'Member Download', value: 'Member download' },
   { label: 'Approved Download', value: 'Approved download' },
+]
+
+const visitorAccessPresets = [
+  { label: 'Open Access', value: 'guest' },
+  { label: 'Member', value: 'member' },
+  { label: 'Approved', value: 'approved' },
 ]
 
 const assetCategoryPresets = assetCategoryProfiles.map((category) => ({
@@ -695,6 +704,7 @@ const Admin = () => {
     messages: [],
     projects: [],
     requests: [],
+    visitors: [],
     summary: null,
   })
   const [editingProject, setEditingProject] = useState(null)
@@ -728,6 +738,7 @@ const Admin = () => {
         messagesPayload,
         requestsPayload,
         projectsPayload,
+        visitorsPayload,
       ] =
         await Promise.all([
           getAdminSummary(activeToken),
@@ -736,6 +747,7 @@ const Admin = () => {
           getAdminContactMessages(activeToken),
           getAdminDownloadRequests(activeToken),
           getAdminProjects(activeToken),
+          getAdminVisitors(activeToken),
         ])
 
       setData({
@@ -744,6 +756,7 @@ const Admin = () => {
         messages: messagesPayload.messages,
         projects: projectsPayload.projects,
         requests: requestsPayload.requests,
+        visitors: visitorsPayload.visitors,
         summary: summaryPayload.summary,
       })
       setStatus('ready')
@@ -769,6 +782,11 @@ const Admin = () => {
 
   const updateRequestStatus = async (id, nextStatus) => {
     await updateAdminDownloadRequest(token, id, nextStatus)
+    await loadAdminData(token)
+  }
+
+  const updateVisitorAccess = async (id, accessLevel) => {
+    await updateAdminVisitor(token, id, accessLevel)
     await loadAdminData(token)
   }
 
@@ -995,6 +1013,9 @@ const Admin = () => {
   const visibleRequests = data.requests.filter((request) =>
     searchInItem(request, searchQuery),
   )
+  const visibleVisitors = data.visitors.filter((visitor) =>
+    searchInItem(visitor, searchQuery),
+  )
   const visibleMessages = data.messages.filter((message) =>
     searchInItem(message, searchQuery),
   )
@@ -1052,6 +1073,7 @@ const Admin = () => {
               ['projects', 'Projects', data.projects.length],
               ['comments', 'Comments', data.summary.comments],
               ['likes', 'Likes', data.summary.likes],
+              ['visitors', 'Visitors', data.summary.visitors || data.visitors.length],
               ['downloads', 'Downloads', data.summary.download_requests],
               ['messages', 'Messages', data.summary.contact_messages],
             ].map(([key, label, value]) => (
@@ -1670,6 +1692,12 @@ const Admin = () => {
                     <small>
                       {request.projectTitle} · {formatDate(request.createdAt)}
                     </small>
+                    <small>
+                      {request.user
+                        ? `${request.user.displayName} · ${request.user.email} · ${request.user.accessLevel}`
+                        : 'Guest request'}{' '}
+                      · submitted as {request.visitorAccessLevel || 'guest'}
+                    </small>
                   </div>
                   <div className="admin-actions">
                     <span className={`status-pill status-${request.status}`}>
@@ -1725,6 +1753,11 @@ const Admin = () => {
                     <strong>{comment.author}</strong>
                     <span>{comment.projectSlug}</span>
                     <p>{comment.message}</p>
+                    {comment.user && (
+                      <small>
+                        {comment.user.displayName} · {comment.user.email} · {comment.user.accessLevel}
+                      </small>
+                    )}
                     <small>{formatDate(comment.createdAt)}</small>
                   </div>
                   <div className="admin-actions">
@@ -1762,13 +1795,60 @@ const Admin = () => {
                   <div>
                     <strong>{like.projectSlug}</strong>
                     <span>{like.visitorId}</span>
-                    <p>Visitor liked this project.</p>
+                    <p>
+                      {like.user
+                        ? `${like.user.displayName} (${like.user.email}) liked this project.`
+                        : 'Guest visitor liked this project.'}
+                    </p>
+                    {like.user && <small>Access level: {like.user.accessLevel}</small>}
                     <small>{formatDate(like.createdAt)}</small>
                   </div>
                 </article>
               ))}
               {visibleLikes.length === 0 && (
                 <p className="text-sm text-neutral-500">No likes match this search.</p>
+              )}
+            </div>
+          </section>
+          )}
+
+          {activeSection === 'visitors' && (
+          <section className="admin-section">
+            <div className="admin-section-header">
+              <h2>Visitors</h2>
+              <span>{visibleVisitors.length}</span>
+            </div>
+            <div className="admin-table">
+              {visibleVisitors.map((visitor) => (
+                <article key={visitor.id} className="admin-row">
+                  <div>
+                    <strong>{visitor.displayName}</strong>
+                    <span>{visitor.email}</span>
+                    <p>
+                      {visitor.likeCount} likes · {visitor.commentCount} comments ·{' '}
+                      {visitor.downloadRequestCount} download requests
+                    </p>
+                    <small>
+                      Joined {formatDate(visitor.createdAt)} · updated {formatDate(visitor.updatedAt)}
+                    </small>
+                  </div>
+                  <div className="admin-actions">
+                    <select
+                      className="field-input visitor-access-select"
+                      value={visitor.accessLevel}
+                      onChange={(event) => updateVisitorAccess(visitor.id, event.target.value)}
+                    >
+                      {visitorAccessPresets.map((level) => (
+                        <option key={level.value} value={level.value}>
+                          {level.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </article>
+              ))}
+              {visibleVisitors.length === 0 && (
+                <p className="text-sm text-neutral-500">No visitors match this search.</p>
               )}
             </div>
           </section>

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { motion as Motion } from 'motion/react'
+import AccountMenu from '../components/AccountMenu'
 import { languages } from '../lib/i18n'
 
 function Navigation({ onNavigate, copy }) {
@@ -40,7 +41,16 @@ const LanguageSwitch = ({ language, onLanguageChange, copy }) => (
   </div>
 )
 
-const Navbar = ({ language, onLanguageChange, copy }) => {
+const Navbar = ({
+  authStatus,
+  copy,
+  language,
+  onLanguageChange,
+  onVisitorLogin,
+  onVisitorLogout,
+  onVisitorRegister,
+  visitorUser,
+}) => {
   const [isOpen, setIsOpen] = useState(false)
 
   return (
@@ -66,6 +76,16 @@ const Navbar = ({ language, onLanguageChange, copy }) => {
                 copy={copy}
               />
             </div>
+
+            <AccountMenu
+              authStatus={authStatus}
+              copy={copy}
+              language={language}
+              onLogin={onVisitorLogin}
+              onLogout={onVisitorLogout}
+              onRegister={onVisitorRegister}
+              visitorUser={visitorUser}
+            />
           </div>
 
           <button
@@ -98,6 +118,17 @@ const Navbar = ({ language, onLanguageChange, copy }) => {
                 language={language}
                 onLanguageChange={onLanguageChange}
                 copy={copy}
+              />
+            </div>
+            <div className="mx-auto w-full max-w-sm px-5">
+              <AccountMenu
+                authStatus={authStatus}
+                copy={copy}
+                language={language}
+                onLogin={onVisitorLogin}
+                onLogout={onVisitorLogout}
+                onRegister={onVisitorRegister}
+                visitorUser={visitorUser}
               />
             </div>
           </nav>

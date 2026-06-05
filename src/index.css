@@ -173,6 +173,77 @@ html {
   @apply bg-aqua text-[#031014] shadow-[0_0_22px_rgba(51,194,204,0.28)];
 }
 
+.account-menu {
+  @apply relative;
+}
+
+.account-trigger,
+.account-trigger-active {
+  @apply inline-flex min-h-10 items-center gap-2 rounded-full border px-3 py-2 text-left text-xs transition duration-200;
+}
+
+.account-trigger {
+  @apply border-white/10 bg-white/[0.04] text-neutral-300 hover:border-aqua/40 hover:text-white;
+}
+
+.account-trigger-active {
+  @apply border-mint/30 bg-mint/10 text-mint hover:border-mint/50;
+}
+
+.account-trigger span,
+.account-trigger-active span {
+  @apply text-neutral-500;
+}
+
+.account-trigger strong,
+.account-trigger-active strong {
+  @apply max-w-28 truncate font-semibold;
+}
+
+.account-popover {
+  @apply absolute right-0 top-[calc(100%+0.75rem)] z-50 grid w-80 gap-4 rounded-lg border border-white/10 bg-[#101321] p-4 text-left shadow-2xl;
+}
+
+.account-profile,
+.account-access {
+  @apply grid gap-1 rounded-lg border border-white/10 bg-white/[0.03] p-3;
+}
+
+.account-profile span,
+.account-access span {
+  @apply text-xs uppercase tracking-[0.16em] text-neutral-500;
+}
+
+.account-profile strong,
+.account-access strong {
+  @apply text-sm text-white;
+}
+
+.account-profile small {
+  @apply text-xs text-neutral-500;
+}
+
+.auth-mode-switch {
+  @apply grid grid-cols-2 gap-2 rounded-full border border-white/10 bg-white/[0.03] p-1;
+}
+
+.auth-mode,
+.auth-mode-active {
+  @apply min-h-9 rounded-full px-3 py-2 text-xs font-semibold transition duration-200;
+}
+
+.auth-mode {
+  @apply text-neutral-400 hover:bg-white/10 hover:text-white;
+}
+
+.auth-mode-active {
+  @apply bg-aqua text-[#031014];
+}
+
+.account-form {
+  @apply grid gap-3;
+}
+
 .asset-filter-panel {
   @apply mt-8 flex gap-2 overflow-x-auto rounded-lg border border-white/10 bg-white/[0.03] p-2;
 }
@@ -403,6 +474,22 @@ html {
   @apply grid gap-4 rounded-lg border border-aqua/20 bg-aqua/5 p-4;
 }
 
+.access-note {
+  @apply mt-3 grid gap-1 rounded-lg border border-white/10 bg-black/20 p-3;
+}
+
+.access-note span {
+  @apply text-xs uppercase tracking-[0.16em] text-neutral-500;
+}
+
+.access-note strong {
+  @apply text-sm text-white;
+}
+
+.access-note p {
+  @apply text-xs leading-relaxed text-neutral-400;
+}
+
 .comment-form {
   @apply grid gap-3;
 }
@@ -536,6 +623,10 @@ html {
 
 .admin-actions {
   @apply flex flex-wrap gap-2 lg:justify-end;
+}
+
+.visitor-access-select {
+  @apply mt-0 min-w-44;
 }
 
 .admin-editor {

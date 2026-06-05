@@ -7,7 +7,7 @@ import {
   toggleProjectLike,
 } from '../lib/api'
 import { getAssetCategoryProfile } from '../lib/assetCategories'
-import { pickLocalized, translateKnownLabel } from '../lib/i18n'
+import { getAccessLevelLabel, pickLocalized, translateKnownLabel } from '../lib/i18n'
 
 const ModelPreview = lazy(() => import('./ModelPreview'))
 
@@ -22,7 +22,19 @@ const getVisitorId = () => {
   return created
 }
 
-const ProjectDetail = ({ slug, onClose, language, copy }) => {
+const accessOrder = ['guest', 'member', 'approved']
+
+const getPolicyAccessLevel = (policy = '') => {
+  const normalized = policy.toLowerCase()
+  if (/open|免登录|自由/.test(normalized)) return 'guest'
+  if (/member|login|登录|ログイン|メンバー/.test(normalized)) return 'member'
+  return 'approved'
+}
+
+const canAccess = (visitorUser, requiredAccessLevel) =>
+  accessOrder.indexOf(visitorUser?.accessLevel || 'guest') >= accessOrder.indexOf(requiredAccessLevel)
+
+const ProjectDetail = ({ authToken, slug, onClose, language, copy, visitorUser }) => {
   const [project, setProject] = useState(null)
   const [interactions, setInteractions] = useState({ comments: [], likeCount: 0 })
   const [commentForm, setCommentForm] = useState({ author: '', message: '' })
@@ -57,7 +69,7 @@ const ProjectDetail = ({ slug, onClose, language, copy }) => {
   const submitLike = async () => {
     setInteractionStatus('saving')
     try {
-      const result = await toggleProjectLike(slug, getVisitorId())
+      const result = await toggleProjectLike(slug, getVisitorId(), authToken)
       setLiked(result.liked)
       setInteractions((current) => ({
         ...current,
@@ -75,7 +87,14 @@ const ProjectDetail = ({ slug, onClose, language, copy }) => {
     setInteractionStatus('saving')
 
     try {
-      const payload = await addProjectComment(slug, commentForm)
+      const payload = await addProjectComment(
+        slug,
+        {
+          ...commentForm,
+          author: commentForm.author || visitorUser?.displayName || '',
+        },
+        authToken,
+      )
       setInteractions((current) => ({
         ...current,
         comments: [...current.comments, payload.comment],
@@ -92,7 +111,15 @@ const ProjectDetail = ({ slug, onClose, language, copy }) => {
     setDownloadStatus('saving')
 
     try {
-      await requestProjectDownload(slug, downloadForm)
+      await requestProjectDownload(
+        slug,
+        {
+          ...downloadForm,
+          email: downloadForm.email || visitorUser?.email || '',
+          name: downloadForm.name || visitorUser?.displayName || '',
+        },
+        authToken,
+      )
       setDownloadForm({ name: '', email: '', purpose: '' })
       setDownloadStatus('sent')
     } catch {
@@ -114,6 +141,14 @@ const ProjectDetail = ({ slug, onClose, language, copy }) => {
   const projectSummary = project ? pickLocalized(project, 'summary', language) : ''
   const projectWorkflow = project ? pickLocalized(project, 'workflow', language) : ''
   const dateLocale = language === 'zh' ? 'zh-CN' : language === 'ja' ? 'ja-JP' : 'en-US'
+  const requiredAccessLevel = project
+    ? getPolicyAccessLevel(pickLocalized(project, 'downloadPolicy', language) || project.downloadPolicy)
+    : 'approved'
+  const accessMessage = canAccess(visitorUser, requiredAccessLevel)
+    ? copy.accessAllowed
+    : requiredAccessLevel === 'member'
+      ? copy.accessLoginRequired
+      : copy.accessApprovalRequired
 
   return (
     <div className="detail-overlay" role="dialog" aria-modal="true">
@@ -244,6 +279,14 @@ const ProjectDetail = ({ slug, onClose, language, copy }) => {
                     <p className="text-sm leading-relaxed text-neutral-400">
                       {copy.downloadRequestHint}
                     </p>
+                    <div className="access-note">
+                      <span>{copy.accessLevel}</span>
+                      <strong>
+                        {getAccessLevelLabel(visitorUser?.accessLevel || 'guest', language)} /{' '}
+                        {getAccessLevelLabel(requiredAccessLevel, language)}
+                      </strong>
+                      <p>{accessMessage}</p>
+                    </div>
                   </div>
 
                   <form className="comment-form" onSubmit={submitDownloadRequest}>
@@ -259,7 +302,7 @@ const ProjectDetail = ({ slug, onClose, language, copy }) => {
                             name: event.target.value,
                           }))
                         }
-                        required
+                        required={!visitorUser}
                       />
                       <input
                         className="field-input field-input-focus"
@@ -273,7 +316,7 @@ const ProjectDetail = ({ slug, onClose, language, copy }) => {
                             email: event.target.value,
                           }))
                         }
-                        required
+                        required={!visitorUser}
                       />
                     </div>
                     <textarea
@@ -341,7 +384,7 @@ const ProjectDetail = ({ slug, onClose, language, copy }) => {
                         author: event.target.value,
                       }))
                     }
-                    required
+                    required={!visitorUser}
                   />
                   <textarea
                     className="field-input field-input-focus min-h-24 resize-none"
