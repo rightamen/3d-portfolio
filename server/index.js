@@ -34,6 +34,7 @@ const assetCategories = new Set([
   'hand-painted-character',
   'hand-painted-scene',
 ])
+const communityTopics = new Set(['general', 'showcase', 'help', 'feedback'])
 const legacyAssetCategoryAliases = new Map([['hand-painted', 'hand-painted-character']])
 const stores = process.env.DATABASE_URL
   ? await createPostgresStores(process.env.DATABASE_URL)
@@ -148,6 +149,11 @@ const normalizeAssetCategory = (value, fallback = 'generic') => {
   const normalized = String(value ?? '').trim()
   const aliased = legacyAssetCategoryAliases.get(normalized) || normalized
   return assetCategories.has(aliased) ? aliased : fallback
+}
+
+const normalizeCommunityTopic = (value, fallback = 'general') => {
+  const normalized = String(value ?? '').trim()
+  return communityTopics.has(normalized) ? normalized : fallback
 }
 
 const getPolicyAccessLevel = (policy = '') => {
@@ -314,6 +320,47 @@ app.get('/api/community/uploads', async (_request, response) => {
   if (!communityStore) return response.json({ uploads: [] })
 
   response.json({ uploads: await communityStore.listApprovedUploads() })
+})
+
+app.get('/api/community/posts', async (_request, response) => {
+  if (!communityStore) return response.json({ posts: [] })
+
+  response.json({ posts: await communityStore.listPosts() })
+})
+
+app.post('/api/community/posts', requireAuthStore, async (request, response) => {
+  if (!communityStore) {
+    return response.status(503).json({
+      error: 'Community posts are not configured.',
+    })
+  }
+
+  const user = await getOptionalUser(request)
+  if (!user) {
+    return response.status(401).json({
+      error: 'Please sign in before posting.',
+    })
+  }
+
+  const title = String(request.body?.title ?? '').trim().slice(0, 160)
+  const message = String(request.body?.message ?? '').trim().slice(0, 1800)
+
+  if (!title || !message) {
+    return response.status(400).json({
+      error: 'Title and message are required.',
+    })
+  }
+
+  const post = await communityStore.createPost({
+    id: createId(),
+    message,
+    title,
+    topic: normalizeCommunityTopic(request.body?.topic),
+    user,
+    userId: user.id,
+  })
+
+  return response.status(201).json({ post })
 })
 
 app.post('/api/community/uploads', requireAuthStore, upload.single('file'), async (request, response) => {
@@ -520,6 +567,10 @@ app.get('/api/admin/visitors', requireAdmin, async (_request, response) => {
 
 app.get('/api/admin/community-uploads', requireAdmin, async (_request, response) => {
   response.json({ uploads: await adminStore.listCommunityUploads() })
+})
+
+app.get('/api/admin/community-posts', requireAdmin, async (_request, response) => {
+  response.json({ posts: await adminStore.listCommunityPosts() })
 })
 
 app.patch('/api/admin/visitors/:id', requireAdmin, async (request, response) => {
@@ -807,6 +858,18 @@ app.delete('/api/admin/community-uploads/:id', requireAdmin, async (request, res
     if (localPath.startsWith(uploadRoot)) {
       unlink(localPath).catch((error) => console.error(error))
     }
+  }
+
+  return response.json({ ok: true })
+})
+
+app.delete('/api/admin/community-posts/:id', requireAdmin, async (request, response) => {
+  const deleted = await adminStore.deleteCommunityPost(request.params.id)
+
+  if (!deleted) {
+    return response.status(404).json({
+      error: 'Community post not found.',
+    })
   }
 
   return response.json({ ok: true })

@@ -34,6 +34,8 @@ export const getExperience = () => request('/api/experience')
 
 export const getCommunityUploads = () => request('/api/community/uploads')
 
+export const getCommunityPosts = () => request('/api/community/posts')
+
 export const getCurrentVisitor = (token) =>
   request('/api/auth/me', {
     headers: authHeaders(token),
@@ -117,6 +119,13 @@ export const uploadCommunityResource = (token, payload, file, onProgress) => {
   })
 }
 
+export const createCommunityPost = (token, payload) =>
+  request('/api/community/posts', {
+    method: 'POST',
+    headers: authHeaders(token, { 'Content-Type': 'application/json' }),
+    body: JSON.stringify(payload),
+  })
+
 export const getAdminSummary = (token) => adminRequest('/api/admin/summary', token)
 
 export const getAdminComments = (token) => adminRequest('/api/admin/comments', token)
@@ -135,6 +144,9 @@ export const getAdminVisitors = (token) => adminRequest('/api/admin/visitors', t
 
 export const getAdminCommunityUploads = (token) =>
   adminRequest('/api/admin/community-uploads', token)
+
+export const getAdminCommunityPosts = (token) =>
+  adminRequest('/api/admin/community-posts', token)
 
 export const createAdminProject = (token, payload) =>
   adminRequest('/api/admin/projects', token, {
@@ -227,6 +239,11 @@ export const deleteAdminDownloadRequest = (token, id) =>
 
 export const deleteAdminCommunityUpload = (token, id) =>
   adminRequest(`/api/admin/community-uploads/${id}`, token, {
+    method: 'DELETE',
+  })
+
+export const deleteAdminCommunityPost = (token, id) =>
+  adminRequest(`/api/admin/community-posts/${id}`, token, {
     method: 'DELETE',
   })
 

@@ -2,11 +2,13 @@ import { useEffect, useRef, useState } from 'react'
 import {
   createAdminProject,
   deleteAdminComment,
+  deleteAdminCommunityPost,
   deleteAdminCommunityUpload,
   deleteAdminContactMessage,
   deleteAdminDownloadRequest,
   deleteAdminProject,
   getAdminComments,
+  getAdminCommunityPosts,
   getAdminCommunityUploads,
   getAdminContactMessages,
   getAdminDownloadRequests,
@@ -704,6 +706,7 @@ const Admin = () => {
   const [status, setStatus] = useState('locked')
   const [data, setData] = useState({
     comments: [],
+    communityPosts: [],
     communityUploads: [],
     likes: [],
     messages: [],
@@ -739,6 +742,7 @@ const Admin = () => {
       const [
         summaryPayload,
         commentsPayload,
+        communityPostsPayload,
         communityUploadsPayload,
         likesPayload,
         messagesPayload,
@@ -749,6 +753,7 @@ const Admin = () => {
         await Promise.all([
           getAdminSummary(activeToken),
           getAdminComments(activeToken),
+          getAdminCommunityPosts(activeToken),
           getAdminCommunityUploads(activeToken),
           getAdminLikes(activeToken),
           getAdminContactMessages(activeToken),
@@ -759,6 +764,7 @@ const Admin = () => {
 
       setData({
         comments: commentsPayload.comments,
+        communityPosts: communityPostsPayload.posts,
         communityUploads: communityUploadsPayload.uploads,
         likes: likesPayload.likes,
         messages: messagesPayload.messages,
@@ -1025,6 +1031,9 @@ const Admin = () => {
   const visibleCommunityUploads = data.communityUploads.filter((upload) =>
     searchInItem(upload, searchQuery),
   )
+  const visibleCommunityPosts = data.communityPosts.filter((post) =>
+    searchInItem(post, searchQuery),
+  )
   const visibleLikes = data.likes.filter((like) => searchInItem(like, searchQuery))
   const visibleRequests = data.requests.filter((request) =>
     searchInItem(request, searchQuery),
@@ -1093,7 +1102,8 @@ const Admin = () => {
               [
                 'community',
                 'Community',
-                data.summary.pending_community_uploads || data.communityUploads.length,
+                (data.summary.community_posts || data.communityPosts.length) +
+                  (data.summary.pending_community_uploads || 0),
               ],
               ['downloads', 'Downloads', data.summary.download_requests],
               ['messages', 'Messages', data.summary.contact_messages],
@@ -1764,10 +1774,56 @@ const Admin = () => {
           {activeSection === 'community' && (
           <section className="admin-section">
             <div className="admin-section-header">
-              <h2>Community Uploads</h2>
-              <span>{visibleCommunityUploads.length}</span>
+              <h2>Community</h2>
+              <span>
+                {visibleCommunityPosts.length} posts · {visibleCommunityUploads.length} uploads
+              </span>
             </div>
             <div className="admin-table">
+              <div className="admin-subsection-title">
+                <strong>Discussion Posts</strong>
+                <span>{visibleCommunityPosts.length}</span>
+              </div>
+              {visibleCommunityPosts.map((post) => (
+                <article key={post.id} className="admin-row">
+                  <div>
+                    <div className="admin-row-title">
+                      <strong>{post.title}</strong>
+                      <span>{post.topic}</span>
+                    </div>
+                    <p>{post.message}</p>
+                    <small>
+                      {post.user
+                        ? `${post.user.displayName} · ${post.user.email} · ${post.user.accessLevel}`
+                        : 'Unknown visitor'}
+                    </small>
+                    <small>Posted {formatDate(post.createdAt)}</small>
+                  </div>
+                  <div className="admin-actions">
+                    <button
+                      type="button"
+                      className="danger-action"
+                      onClick={() =>
+                        deleteItem('community post', () =>
+                          deleteAdminCommunityPost(token, post.id),
+                        )
+                      }
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </article>
+              ))}
+              {visibleCommunityPosts.length === 0 && (
+                <p className="text-sm text-neutral-500">
+                  No community posts match this search.
+                </p>
+              )}
+
+              <div className="admin-subsection-title">
+                <strong>Resource Uploads</strong>
+                <span>{visibleCommunityUploads.length}</span>
+              </div>
               {visibleCommunityUploads.map((upload) => {
                 const category = getAssetCategoryProfile(
                   { assetCategory: upload.assetCategory },

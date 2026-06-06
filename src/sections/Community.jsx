@@ -1,12 +1,23 @@
 import { useEffect, useMemo, useState } from 'react'
 import { assetCategoryProfiles, getAssetCategoryProfile } from '../lib/assetCategories'
-import { getCommunityUploads, uploadCommunityResource } from '../lib/api'
+import {
+  createCommunityPost,
+  getCommunityPosts,
+  getCommunityUploads,
+  uploadCommunityResource,
+} from '../lib/api'
 
 const emptyForm = {
   assetCategory: 'generic',
   description: '',
   file: null,
   title: '',
+}
+
+const emptyPostForm = {
+  message: '',
+  title: '',
+  topic: 'general',
 }
 
 const formatFileSize = (size) => {
@@ -17,9 +28,12 @@ const formatFileSize = (size) => {
 
 const Community = ({ authToken, copy, language, visitorUser }) => {
   const [uploads, setUploads] = useState([])
+  const [posts, setPosts] = useState([])
   const [status, setStatus] = useState('loading')
   const [form, setForm] = useState(emptyForm)
+  const [postForm, setPostForm] = useState(emptyPostForm)
   const [submitState, setSubmitState] = useState({ phase: 'idle', progress: 0, message: '' })
+  const [postState, setPostState] = useState({ phase: 'idle', message: '' })
 
   const categories = useMemo(
     () =>
@@ -32,10 +46,11 @@ const Community = ({ authToken, copy, language, visitorUser }) => {
   useEffect(() => {
     let isMounted = true
 
-    getCommunityUploads()
-      .then((payload) => {
+    Promise.all([getCommunityUploads(), getCommunityPosts()])
+      .then(([uploadsPayload, postsPayload]) => {
         if (!isMounted) return
-        setUploads(payload.uploads || [])
+        setUploads(uploadsPayload.uploads || [])
+        setPosts(postsPayload.posts || [])
         setStatus('ready')
       })
       .catch(() => {
@@ -76,12 +91,125 @@ const Community = ({ authToken, copy, language, visitorUser }) => {
     }
   }
 
+  const submitPost = async (event) => {
+    event.preventDefault()
+    if (!authToken) return
+
+    setPostState({ phase: 'saving', message: copy.saving })
+
+    try {
+      const payload = await createCommunityPost(authToken, postForm)
+      setPosts((current) => [payload.post, ...current])
+      setPostForm(emptyPostForm)
+      setPostState({ phase: 'done', message: copy.communityPostSubmitted })
+    } catch (error) {
+      setPostState({
+        phase: 'error',
+        message: error.message || copy.communityPostError,
+      })
+    }
+  }
+
   return (
     <section id="community" className="c-space my-24 scroll-mt-24">
       <div className="section-heading">
         <p className="section-kicker">{copy.communityKicker}</p>
         <h2 className="text-heading">{copy.communityTitle}</h2>
         <p>{copy.communityIntro}</p>
+      </div>
+
+      <div className="community-discussion">
+        <div className="community-list-header">
+          <h3>{copy.communityDiscussionTitle}</h3>
+          <span>{status === 'ready' ? posts.length : copy.loading}</span>
+        </div>
+
+        {visitorUser ? (
+          <form className="community-post-form" onSubmit={submitPost}>
+            <label className="field-label">
+              {copy.communityPostTopic}
+              <select
+                className="field-input field-input-focus"
+                value={postForm.topic}
+                onChange={(event) =>
+                  setPostForm((current) => ({ ...current, topic: event.target.value }))
+                }
+              >
+                {['general', 'showcase', 'help', 'feedback'].map((topic) => (
+                  <option key={topic} value={topic}>
+                    {copy[`communityTopic${topic[0].toUpperCase()}${topic.slice(1)}`]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field-label">
+              {copy.communityPostTitle}
+              <input
+                className="field-input field-input-focus"
+                value={postForm.title}
+                onChange={(event) =>
+                  setPostForm((current) => ({ ...current, title: event.target.value }))
+                }
+                required
+              />
+            </label>
+            <label className="field-label md:col-span-2">
+              {copy.communityPostMessage}
+              <textarea
+                className="field-input field-input-focus min-h-24 resize-none"
+                value={postForm.message}
+                onChange={(event) =>
+                  setPostForm((current) => ({ ...current, message: event.target.value }))
+                }
+                required
+              />
+            </label>
+            <button
+              type="submit"
+              className="primary-action md:col-span-2"
+              disabled={postState.phase === 'saving'}
+            >
+              {postState.phase === 'saving' ? copy.saving : copy.communityPostSubmit}
+            </button>
+            {postState.phase !== 'idle' && (
+              <p
+                className={`community-submit-message ${
+                  postState.phase === 'error' ? 'text-coral' : 'text-neutral-300'
+                }`}
+              >
+                {postState.message}
+              </p>
+            )}
+          </form>
+        ) : (
+          <div className="community-login-required">
+            <strong>{copy.communityPostLoginTitle}</strong>
+            <p>{copy.communityPostLoginRequired}</p>
+          </div>
+        )}
+
+        <div className="community-post-list">
+          {posts.map((post) => (
+            <article key={post.id} className="community-post-card">
+              <div className="community-post-meta">
+                <span>
+                  {copy[`communityTopic${post.topic[0].toUpperCase()}${post.topic.slice(1)}`] ||
+                    post.topic}
+                </span>
+                <small>{new Date(post.createdAt).toLocaleDateString()}</small>
+              </div>
+              <h4>{post.title}</h4>
+              <p>{post.message}</p>
+              <small>{post.user?.displayName || copy.accountGuest}</small>
+            </article>
+          ))}
+          {status === 'ready' && posts.length === 0 && (
+            <div className="asset-empty-state">
+              <strong>{copy.communityNoPostsTitle}</strong>
+              <span>{copy.communityNoPostsBody}</span>
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="community-panel">

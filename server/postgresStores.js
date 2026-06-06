@@ -62,6 +62,23 @@ const toCommunityUpload = (row) => ({
     : null,
 })
 
+const toCommunityPost = (row) => ({
+  createdAt: row.created_at.toISOString(),
+  id: row.id,
+  message: row.message,
+  title: row.title,
+  topic: row.topic,
+  updatedAt: row.updated_at.toISOString(),
+  user: row.user_id
+    ? {
+        accessLevel: row.access_level,
+        displayName: row.display_name,
+        email: row.email,
+        id: row.user_id,
+      }
+    : null,
+})
+
 const toProjectOverride = (row) => ({
   assetCategory: row.asset_category,
   downloadPolicy: row.download_policy,
@@ -299,6 +316,22 @@ const ensureSchema = async (pool) => {
 
     CREATE INDEX IF NOT EXISTS community_uploads_user_idx
       ON community_uploads (user_id, created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS community_posts (
+      id text PRIMARY KEY,
+      user_id text REFERENCES visitor_users(id) ON DELETE SET NULL,
+      topic text NOT NULL DEFAULT 'general',
+      title text NOT NULL,
+      message text NOT NULL,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    );
+
+    CREATE INDEX IF NOT EXISTS community_posts_created_idx
+      ON community_posts (created_at DESC);
+
+    CREATE INDEX IF NOT EXISTS community_posts_user_idx
+      ON community_posts (user_id, created_at DESC);
   `)
 
   await pool.query(`
@@ -693,6 +726,28 @@ export const createPostgresStores = async (databaseUrl) => {
       return result.rows.map(toCommunityUpload)
     },
 
+    listPosts: async () => {
+      const result = await pool.query(`
+        SELECT
+          community_posts.id,
+          community_posts.topic,
+          community_posts.title,
+          community_posts.message,
+          community_posts.created_at,
+          community_posts.updated_at,
+          visitor_users.id AS user_id,
+          visitor_users.display_name,
+          visitor_users.email,
+          visitor_users.access_level
+        FROM community_posts
+        LEFT JOIN visitor_users ON visitor_users.id = community_posts.user_id
+        ORDER BY community_posts.created_at DESC
+        LIMIT 100
+      `)
+
+      return result.rows.map(toCommunityPost)
+    },
+
     createUpload: async (upload) => {
       const result = await pool.query(
         `
@@ -748,6 +803,25 @@ export const createPostgresStores = async (databaseUrl) => {
         user_id: upload.user.id,
       })
     },
+
+    createPost: async (post) => {
+      const result = await pool.query(
+        `
+          INSERT INTO community_posts (id, user_id, topic, title, message)
+          VALUES ($1, $2, $3, $4, $5)
+          RETURNING id, user_id, topic, title, message, created_at, updated_at
+        `,
+        [post.id, post.userId, post.topic, post.title, post.message],
+      )
+
+      return toCommunityPost({
+        ...result.rows[0],
+        access_level: post.user.accessLevel,
+        display_name: post.user.displayName,
+        email: post.user.email,
+        user_id: post.user.id,
+      })
+    },
   }
 
   const adminStore = {
@@ -760,6 +834,7 @@ export const createPostgresStores = async (databaseUrl) => {
           (SELECT count(*)::int FROM download_requests WHERE status = 'pending') AS pending_downloads,
           (SELECT count(*)::int FROM contact_messages) AS contact_messages,
           (SELECT count(*)::int FROM visitor_users) AS visitors,
+          (SELECT count(*)::int FROM community_posts) AS community_posts,
           (SELECT count(*)::int FROM community_uploads) AS community_uploads,
           (SELECT count(*)::int FROM community_uploads WHERE status = 'pending') AS pending_community_uploads
       `)
@@ -820,6 +895,28 @@ export const createPostgresStores = async (databaseUrl) => {
       `)
 
       return result.rows.map(toCommunityUpload)
+    },
+
+    listCommunityPosts: async () => {
+      const result = await pool.query(`
+        SELECT
+          community_posts.id,
+          community_posts.topic,
+          community_posts.title,
+          community_posts.message,
+          community_posts.created_at,
+          community_posts.updated_at,
+          visitor_users.id AS user_id,
+          visitor_users.display_name,
+          visitor_users.email,
+          visitor_users.access_level
+        FROM community_posts
+        LEFT JOIN visitor_users ON visitor_users.id = community_posts.user_id
+        ORDER BY community_posts.created_at DESC
+        LIMIT 200
+      `)
+
+      return result.rows.map(toCommunityPost)
     },
 
     listLikes: async () => {
@@ -1260,6 +1357,19 @@ export const createPostgresStores = async (databaseUrl) => {
           DELETE FROM community_uploads
           WHERE id = $1
           RETURNING id, file_url
+        `,
+        [id],
+      )
+
+      return result.rows[0] || null
+    },
+
+    deleteCommunityPost: async (id) => {
+      const result = await pool.query(
+        `
+          DELETE FROM community_posts
+          WHERE id = $1
+          RETURNING id
         `,
         [id],
       )
