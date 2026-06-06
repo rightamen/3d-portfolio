@@ -61,6 +61,13 @@ export const registerVisitor = (payload) =>
     body: JSON.stringify(payload),
   })
 
+export const verifyVisitorEmail = (payload) =>
+  request('/api/auth/verify-email', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+
 export const toggleProjectLike = (slug, visitorId, token) =>
   request(`/api/projects/${slug}/like`, {
     method: 'POST',
@@ -174,6 +181,13 @@ export const updateAdminVisitor = (token, id, accessLevel) =>
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ accessLevel }),
+  })
+
+export const updateAdminVisitorEmailVerification = (token, id, verified) =>
+  adminRequest(`/api/admin/visitors/${id}/email-verification`, token, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ verified }),
   })
 
 export const updateAdminCommunityUpload = (token, id, status) =>

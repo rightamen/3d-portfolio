@@ -20,6 +20,7 @@ import {
   updateAdminCommunityUpload,
   updateAdminProject,
   updateAdminVisitor,
+  updateAdminVisitorEmailVerification,
   uploadAdminAsset,
 } from './lib/api'
 import { assetCategoryProfiles, getAssetCategoryProfile } from './lib/assetCategories'
@@ -801,6 +802,11 @@ const Admin = () => {
 
   const updateVisitorAccess = async (id, accessLevel) => {
     await updateAdminVisitor(token, id, accessLevel)
+    await loadAdminData(token)
+  }
+
+  const updateVisitorVerification = async (id, verified) => {
+    await updateAdminVisitorEmailVerification(token, id, verified)
     await loadAdminData(token)
   }
 
@@ -1987,11 +1993,19 @@ const Admin = () => {
                       {visitor.likeCount} likes · {visitor.commentCount} comments ·{' '}
                       {visitor.downloadRequestCount} download requests
                     </p>
+                    <small>{visitor.emailVerified ? 'Email verified' : 'Email unverified'}</small>
                     <small>
                       Joined {formatDate(visitor.createdAt)} · updated {formatDate(visitor.updatedAt)}
                     </small>
                   </div>
                   <div className="admin-actions">
+                    <span
+                      className={`status-pill ${
+                        visitor.emailVerified ? 'status-approved' : 'status-pending'
+                      }`}
+                    >
+                      {visitor.emailVerified ? 'verified' : 'unverified'}
+                    </span>
                     <select
                       className="field-input visitor-access-select"
                       value={visitor.accessLevel}
@@ -2003,6 +2017,13 @@ const Admin = () => {
                         </option>
                       ))}
                     </select>
+                    <button
+                      type="button"
+                      className="secondary-action"
+                      onClick={() => updateVisitorVerification(visitor.id, !visitor.emailVerified)}
+                    >
+                      {visitor.emailVerified ? 'Mark Unverified' : 'Verify Email'}
+                    </button>
                   </div>
                 </article>
               ))}

@@ -104,6 +104,13 @@ const createId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 
 const hashToken = (token) => createHash('sha256').update(token).digest('hex')
 
+const createVerificationCode = () => String(randomBytes(4).readUInt32BE() % 1000000).padStart(6, '0')
+
+const hashVerificationCode = (email, code) =>
+  createHash('sha256')
+    .update(`${email.trim().toLowerCase()}:${String(code).trim()}`)
+    .digest('hex')
+
 const hashPassword = (password) => {
   const salt = randomBytes(16).toString('hex')
   const hash = pbkdf2Sync(password, salt, 120000, 32, 'sha256').toString('hex')
@@ -215,16 +222,27 @@ app.post('/api/auth/register', requireAuthStore, async (request, response) => {
     })
   }
 
+  const verificationCode = createVerificationCode()
+  const verificationExpiresAt = new Date(Date.now() + 1000 * 60 * 20)
   const user = await authStore.createUser({
     accessLevel: 'member',
     displayName,
     email,
     id: createId(),
     passwordHash: hashPassword(password),
+    verificationCodeHash: hashVerificationCode(email, verificationCode),
+    verificationExpiresAt,
   })
-  const session = await createSession(user)
 
-  return response.status(201).json({ session, user })
+  return response.status(201).json({
+    user,
+    verification: {
+      delivery: process.env.SMTP_HOST ? 'email' : 'manual',
+      expiresAt: verificationExpiresAt.toISOString(),
+      required: true,
+      ...(process.env.NODE_ENV === 'production' ? {} : { devCode: verificationCode }),
+    },
+  })
 })
 
 app.post('/api/auth/login', requireAuthStore, async (request, response) => {
@@ -238,16 +256,46 @@ app.post('/api/auth/login', requireAuthStore, async (request, response) => {
     })
   }
 
+  if (!user.emailVerified) {
+    return response.status(403).json({
+      code: 'EMAIL_NOT_VERIFIED',
+      error: 'Please verify your email before signing in.',
+    })
+  }
+
   const session = await createSession(user)
   const publicUser = {
     accessLevel: user.accessLevel,
     createdAt: user.createdAt,
     displayName: user.displayName,
     email: user.email,
+    emailVerified: user.emailVerified,
+    emailVerifiedAt: user.emailVerifiedAt,
     id: user.id,
   }
 
   return response.json({ session, user: publicUser })
+})
+
+app.post('/api/auth/verify-email', requireAuthStore, async (request, response) => {
+  const email = String(request.body?.email ?? '').trim().toLowerCase().slice(0, 180)
+  const code = String(request.body?.code ?? '').trim().slice(0, 12)
+
+  if (!emailPattern.test(email) || !code) {
+    return response.status(400).json({
+      error: 'Valid email and verification code are required.',
+    })
+  }
+
+  const user = await authStore.verifyEmail(email, hashVerificationCode(email, code))
+  if (!user) {
+    return response.status(400).json({
+      error: 'Verification code is invalid or expired.',
+    })
+  }
+
+  const session = await createSession(user)
+  return response.json({ session, user })
 })
 
 app.post('/api/auth/logout', async (request, response) => {
@@ -583,6 +631,19 @@ app.patch('/api/admin/visitors/:id', requireAdmin, async (request, response) => 
   }
 
   const visitor = await adminStore.updateVisitorAccessLevel(request.params.id, accessLevel)
+
+  if (!visitor) {
+    return response.status(404).json({
+      error: 'Visitor not found.',
+    })
+  }
+
+  return response.json({ visitor })
+})
+
+app.patch('/api/admin/visitors/:id/email-verification', requireAdmin, async (request, response) => {
+  const verified = Boolean(request.body?.verified)
+  const visitor = await adminStore.setVisitorEmailVerified(request.params.id, verified)
 
   if (!visitor) {
     return response.status(404).json({

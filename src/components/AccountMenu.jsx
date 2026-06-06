@@ -1,53 +1,13 @@
 import { useState } from 'react'
 import { getAccessLevelLabel } from '../lib/i18n'
 
-const emptyForm = {
-  displayName: '',
-  email: '',
-  password: '',
-}
-
 const AccountMenu = ({
-  authStatus,
   copy,
   language,
-  onLogin,
   onLogout,
-  onRegister,
   visitorUser,
 }) => {
   const [isOpen, setIsOpen] = useState(false)
-  const [mode, setMode] = useState('login')
-  const [form, setForm] = useState(emptyForm)
-  const [error, setError] = useState('')
-
-  const updateForm = (event) => {
-    setForm((current) => ({
-      ...current,
-      [event.target.name]: event.target.value,
-    }))
-  }
-
-  const submit = async (event) => {
-    event.preventDefault()
-    setError('')
-
-    try {
-      if (mode === 'register') {
-        await onRegister(form)
-      } else {
-        await onLogin({
-          email: form.email,
-          password: form.password,
-        })
-      }
-      setForm(emptyForm)
-      setIsOpen(false)
-    } catch {
-      setError(copy.authError)
-    }
-  }
-
   const accessLabel = getAccessLevelLabel(visitorUser?.accessLevel || 'guest', language)
 
   return (
@@ -74,6 +34,13 @@ const AccountMenu = ({
                 <span>{copy.accessLevel}</span>
                 <strong>{accessLabel}</strong>
               </div>
+              <div className="account-access">
+                <span>{copy.authEmailStatus}</span>
+                <strong>{visitorUser.emailVerified ? copy.authVerified : copy.authUnverified}</strong>
+              </div>
+              <a href="/account" className="primary-action w-full">
+                {copy.accountCenter}
+              </a>
               <button
                 type="button"
                 className="secondary-action w-full"
@@ -91,62 +58,12 @@ const AccountMenu = ({
                 <div className="section-kicker mb-1">{copy.account}</div>
                 <p className="text-sm leading-relaxed text-neutral-400">{copy.authHint}</p>
               </div>
-
-              <div className="auth-mode-switch">
-                <button
-                  type="button"
-                  className={mode === 'login' ? 'auth-mode-active' : 'auth-mode'}
-                  onClick={() => setMode('login')}
-                >
-                  {copy.authHaveAccount}
-                </button>
-                <button
-                  type="button"
-                  className={mode === 'register' ? 'auth-mode-active' : 'auth-mode'}
-                  onClick={() => setMode('register')}
-                >
-                  {copy.authNeedAccount}
-                </button>
-              </div>
-
-              <form className="account-form" onSubmit={submit}>
-                {mode === 'register' && (
-                  <input
-                    className="field-input field-input-focus"
-                    name="displayName"
-                    placeholder={copy.authDisplayName}
-                    value={form.displayName}
-                    onChange={updateForm}
-                    required
-                  />
-                )}
-                <input
-                  className="field-input field-input-focus"
-                  name="email"
-                  placeholder={copy.authEmail}
-                  type="email"
-                  value={form.email}
-                  onChange={updateForm}
-                  required
-                />
-                <input
-                  className="field-input field-input-focus"
-                  minLength={8}
-                  name="password"
-                  placeholder={copy.authPassword}
-                  type="password"
-                  value={form.password}
-                  onChange={updateForm}
-                  required
-                />
-                <button type="submit" className="primary-action w-full" disabled={authStatus === 'saving'}>
-                  {mode === 'register' ? copy.authRegister : copy.authLogin}
-                </button>
-                {error && <p className="text-sm text-coral">{error}</p>}
-                {authStatus === 'unavailable' && (
-                  <p className="text-sm text-coral">{copy.authUnavailable}</p>
-                )}
-              </form>
+              <a href="/login" className="primary-action w-full">
+                {copy.authLogin}
+              </a>
+              <a href="/login?mode=register" className="secondary-action w-full">
+                {copy.authRegister}
+              </a>
             </>
           )}
         </div>

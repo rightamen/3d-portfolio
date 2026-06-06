@@ -27,6 +27,8 @@ const toPublicUser = (row) =>
         createdAt: row.created_at?.toISOString?.() || row.created_at,
         displayName: row.display_name,
         email: row.email,
+        emailVerified: Boolean(row.email_verified_at),
+        emailVerifiedAt: row.email_verified_at?.toISOString?.() || row.email_verified_at || null,
         id: row.id,
       }
     : null
@@ -202,6 +204,9 @@ const ensureSchema = async (pool) => {
       display_name text NOT NULL,
       password_hash text NOT NULL,
       access_level text NOT NULL DEFAULT 'member',
+      email_verified_at timestamptz,
+      verification_code_hash text,
+      verification_expires_at timestamptz,
       created_at timestamptz NOT NULL DEFAULT now(),
       updated_at timestamptz NOT NULL DEFAULT now()
     );
@@ -351,6 +356,11 @@ const ensureSchema = async (pool) => {
       ADD COLUMN IF NOT EXISTS user_id text REFERENCES visitor_users(id) ON DELETE SET NULL,
       ADD COLUMN IF NOT EXISTS visitor_access_level text;
 
+    ALTER TABLE visitor_users
+      ADD COLUMN IF NOT EXISTS email_verified_at timestamptz,
+      ADD COLUMN IF NOT EXISTS verification_code_hash text,
+      ADD COLUMN IF NOT EXISTS verification_expires_at timestamptz;
+
     ALTER TABLE project_overrides
       ADD COLUMN IF NOT EXISTS title_zh text,
       ADD COLUMN IF NOT EXISTS title_en text,
@@ -467,11 +477,28 @@ export const createPostgresStores = async (databaseUrl) => {
     createUser: async (user) => {
       const result = await pool.query(
         `
-          INSERT INTO visitor_users (id, email, display_name, password_hash, access_level)
-          VALUES ($1, lower($2), $3, $4, $5)
-          RETURNING id, email, display_name, access_level, created_at
+          INSERT INTO visitor_users
+            (
+              id,
+              email,
+              display_name,
+              password_hash,
+              access_level,
+              verification_code_hash,
+              verification_expires_at
+            )
+          VALUES ($1, lower($2), $3, $4, $5, $6, $7)
+          RETURNING id, email, display_name, access_level, email_verified_at, created_at
         `,
-        [user.id, user.email, user.displayName, user.passwordHash, user.accessLevel],
+        [
+          user.id,
+          user.email,
+          user.displayName,
+          user.passwordHash,
+          user.accessLevel,
+          user.verificationCodeHash,
+          user.verificationExpiresAt,
+        ],
       )
 
       return toPublicUser(result.rows[0])
@@ -499,6 +526,7 @@ export const createPostgresStores = async (databaseUrl) => {
             visitor_users.email,
             visitor_users.display_name,
             visitor_users.access_level,
+            visitor_users.email_verified_at,
             visitor_users.created_at
           FROM visitor_sessions
           JOIN visitor_users ON visitor_users.id = visitor_sessions.user_id
@@ -516,6 +544,7 @@ export const createPostgresStores = async (databaseUrl) => {
       const result = await pool.query(
         `
           SELECT id, email, display_name, password_hash, access_level, created_at
+            , email_verified_at, verification_code_hash, verification_expires_at
           FROM visitor_users
           WHERE email = lower($1)
           LIMIT 1
@@ -524,6 +553,26 @@ export const createPostgresStores = async (databaseUrl) => {
       )
 
       return toPrivateUser(result.rows[0])
+    },
+
+    verifyEmail: async (email, verificationCodeHash) => {
+      const result = await pool.query(
+        `
+          UPDATE visitor_users
+          SET email_verified_at = now(),
+              verification_code_hash = null,
+              verification_expires_at = null,
+              updated_at = now()
+          WHERE email = lower($1)
+            AND verification_code_hash = $2
+            AND verification_expires_at > now()
+            AND email_verified_at IS NULL
+          RETURNING id, email, display_name, access_level, email_verified_at, created_at
+        `,
+        [email, verificationCodeHash],
+      )
+
+      return toPublicUser(result.rows[0])
     },
   }
 
@@ -1019,6 +1068,7 @@ export const createPostgresStores = async (databaseUrl) => {
           visitor_users.email,
           visitor_users.display_name,
           visitor_users.access_level,
+          visitor_users.email_verified_at,
           visitor_users.created_at,
           visitor_users.updated_at,
           count(DISTINCT project_likes.project_slug) AS like_count,
@@ -1049,9 +1099,26 @@ export const createPostgresStores = async (databaseUrl) => {
           SET access_level = $2,
               updated_at = now()
           WHERE id = $1
-          RETURNING id, email, display_name, access_level, created_at
+          RETURNING id, email, display_name, access_level, email_verified_at, created_at
         `,
         [id, accessLevel],
+      )
+
+      return toPublicUser(result.rows[0])
+    },
+
+    setVisitorEmailVerified: async (id, verified) => {
+      const result = await pool.query(
+        `
+          UPDATE visitor_users
+          SET email_verified_at = CASE WHEN $2 THEN COALESCE(email_verified_at, now()) ELSE null END,
+              verification_code_hash = CASE WHEN $2 THEN null ELSE verification_code_hash END,
+              verification_expires_at = CASE WHEN $2 THEN null ELSE verification_expires_at END,
+              updated_at = now()
+          WHERE id = $1
+          RETURNING id, email, display_name, access_level, email_verified_at, created_at
+        `,
+        [id, verified],
       )
 
       return toPublicUser(result.rows[0])

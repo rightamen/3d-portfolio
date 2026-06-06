@@ -244,6 +244,65 @@ html {
   @apply grid gap-3;
 }
 
+.auth-page {
+  @apply min-h-screen bg-[#050616] px-4 py-5 text-white md:px-8;
+}
+
+.auth-page::before {
+  @apply fixed inset-0 pointer-events-none content-[''];
+  background:
+    radial-gradient(circle at 20% 20%, rgba(54, 199, 212, 0.16), transparent 28rem),
+    radial-gradient(circle at 82% 0%, rgba(117, 226, 168, 0.11), transparent 24rem);
+}
+
+.auth-nav {
+  @apply relative z-10 mx-auto flex max-w-6xl items-center justify-between gap-4;
+}
+
+.auth-card {
+  @apply relative z-10 mx-auto mt-20 grid w-full max-w-xl gap-6 rounded-lg border border-white/10 bg-[#101321]/85 p-6 shadow-2xl md:p-8;
+}
+
+.auth-card h1 {
+  @apply mt-2 text-3xl font-semibold leading-tight text-white md:text-4xl;
+}
+
+.auth-card p {
+  @apply mt-3 leading-relaxed text-neutral-400;
+}
+
+.account-center {
+  @apply relative z-10 mx-auto mt-20 grid w-full max-w-5xl gap-6 rounded-lg border border-white/10 bg-[#101321]/85 p-6 shadow-2xl md:p-8;
+}
+
+.account-center-hero h1 {
+  @apply mt-2 text-3xl font-semibold leading-tight text-white md:text-4xl;
+}
+
+.account-center-hero p {
+  @apply mt-3 max-w-2xl leading-relaxed text-neutral-400;
+}
+
+.account-center-grid {
+  @apply grid gap-3 md:grid-cols-2;
+}
+
+.account-center-card {
+  @apply rounded-lg border border-white/10 bg-black/20 p-4;
+}
+
+.account-center-card span {
+  @apply block text-xs uppercase tracking-[0.16em] text-neutral-500;
+}
+
+.account-center-card strong {
+  @apply mt-2 block break-words text-lg font-semibold text-white;
+}
+
+.account-center-actions {
+  @apply flex flex-wrap gap-3;
+}
+
 .asset-filter-panel {
   @apply mt-8 flex gap-2 overflow-x-auto rounded-lg border border-white/10 bg-white/[0.03] p-2;
 }

@@ -7,10 +7,13 @@ import {
   loginVisitor,
   logoutVisitor,
   registerVisitor,
+  verifyVisitorEmail,
 } from './lib/api'
 import { getCopy, getInitialLanguage } from './lib/i18n'
 import Navbar from './sections/Navbar'
 
+const AuthPage = lazy(() => import('./pages/AuthPage'))
+const AccountPage = lazy(() => import('./pages/AccountPage'))
 const Hero = lazy(() => import('./sections/Hero'))
 const About = lazy(() => import('./sections/About'))
 const Projects = lazy(() => import('./sections/Projects'))
@@ -123,8 +126,21 @@ const App = () => {
     setAuthStatus('saving')
     try {
       const result = await registerVisitor(payload)
+      setAuthStatus('idle')
+      return result
+    } catch (error) {
+      setAuthStatus(error.message.includes('not configured') ? 'unavailable' : 'error')
+      throw error
+    }
+  }
+
+  const handleVisitorVerifyEmail = async (payload) => {
+    setAuthStatus('saving')
+    try {
+      const result = await verifyVisitorEmail(payload)
       saveVisitorSession(result)
       setAuthStatus('idle')
+      return result
     } catch (error) {
       setAuthStatus(error.message.includes('not configured') ? 'unavailable' : 'error')
       throw error
@@ -137,6 +153,39 @@ const App = () => {
     setVisitorToken('')
     setVisitorUser(null)
     if (token) logoutVisitor(token).catch(() => {})
+  }
+
+  const routePath = window.location.pathname
+
+  if (routePath.startsWith('/login')) {
+    return (
+      <Suspense fallback={<SectionFallback title="Login" copy={copy} />}>
+        <AuthPage
+          authStatus={authStatus}
+          copy={copy}
+          language={language}
+          onLanguageChange={setLanguage}
+          onLogin={handleVisitorLogin}
+          onRegister={handleVisitorRegister}
+          onVerifyEmail={handleVisitorVerifyEmail}
+          visitorUser={visitorUser}
+        />
+      </Suspense>
+    )
+  }
+
+  if (routePath.startsWith('/account')) {
+    return (
+      <Suspense fallback={<SectionFallback title="Account" copy={copy} />}>
+        <AccountPage
+          copy={copy}
+          language={language}
+          onLanguageChange={setLanguage}
+          onLogout={handleVisitorLogout}
+          visitorUser={visitorUser}
+        />
+      </Suspense>
+    )
   }
 
   return (
