@@ -40,6 +40,7 @@ const stores = process.env.DATABASE_URL
   : {
       adminStore: null,
       authStore: null,
+      communityStore: null,
       contactMessagesStore: createContactMessagesStore(dataDir),
       downloadRequestsStore: createDownloadRequestsStore(dataDir),
       interactionsStore: createInteractionsStore(dataDir),
@@ -53,6 +54,7 @@ const stores = process.env.DATABASE_URL
 const {
   adminStore,
   authStore,
+  communityStore,
   contactMessagesStore,
   downloadRequestsStore,
   interactionsStore,
@@ -140,6 +142,12 @@ const createSession = async (user) => {
 const normalizeAccessLevel = (value, fallback = 'member') => {
   const normalized = String(value ?? '').trim()
   return visitorAccessLevels.includes(normalized) ? normalized : fallback
+}
+
+const normalizeAssetCategory = (value, fallback = 'generic') => {
+  const normalized = String(value ?? '').trim()
+  const aliased = legacyAssetCategoryAliases.get(normalized) || normalized
+  return assetCategories.has(aliased) ? aliased : fallback
 }
 
 const getPolicyAccessLevel = (policy = '') => {
@@ -302,6 +310,65 @@ app.get('/api/projects/:slug/interactions', async (request, response) => {
   })
 })
 
+app.get('/api/community/uploads', async (_request, response) => {
+  if (!communityStore) return response.json({ uploads: [] })
+
+  response.json({ uploads: await communityStore.listApprovedUploads() })
+})
+
+app.post('/api/community/uploads', requireAuthStore, upload.single('file'), async (request, response) => {
+  if (!communityStore) {
+    return response.status(503).json({
+      error: 'Community uploads are not configured.',
+    })
+  }
+
+  const user = await getOptionalUser(request)
+  if (!user) {
+    if (request.file) unlink(request.file.path).catch((error) => console.error(error))
+    return response.status(401).json({
+      error: 'Please sign in before uploading community resources.',
+    })
+  }
+
+  if (!request.file) {
+    return response.status(400).json({
+      error: 'Upload file is required.',
+    })
+  }
+
+  const title = String(request.body?.title ?? '').trim().slice(0, 160)
+  const description = String(request.body?.description ?? '').trim().slice(0, 1200)
+  const extension = path.extname(request.file.originalname).toLowerCase()
+  const fileType = imageExtensions.has(extension) ? 'image' : 'model'
+
+  if (!title || !description) {
+    unlink(request.file.path).catch((error) => console.error(error))
+
+    return response.status(400).json({
+      error: 'Title and description are required.',
+    })
+  }
+
+  const folder = fileType === 'image' ? 'images' : 'models'
+  const fileUrl = `/uploads/${folder}/${request.file.filename}`
+  const uploadRecord = await communityStore.createUpload({
+    assetCategory: normalizeAssetCategory(request.body?.assetCategory),
+    description,
+    fileName: request.file.originalname,
+    fileSize: request.file.size,
+    fileType,
+    fileUrl,
+    id: createId(),
+    previewUrl: fileType === 'image' ? fileUrl : null,
+    title,
+    user,
+    userId: user.id,
+  })
+
+  return response.status(201).json({ upload: uploadRecord })
+})
+
 app.post('/api/projects/:slug/like', async (request, response) => {
   const project = await projectStore.getProject(staticProjects, request.params.slug)
   const visitorId = String(request.body?.visitorId ?? '').trim().slice(0, 120)
@@ -451,6 +518,10 @@ app.get('/api/admin/visitors', requireAdmin, async (_request, response) => {
   response.json({ visitors: await adminStore.listVisitors() })
 })
 
+app.get('/api/admin/community-uploads', requireAdmin, async (_request, response) => {
+  response.json({ uploads: await adminStore.listCommunityUploads() })
+})
+
 app.patch('/api/admin/visitors/:id', requireAdmin, async (request, response) => {
   const accessLevel = normalizeAccessLevel(request.body?.accessLevel, '')
 
@@ -469,6 +540,27 @@ app.patch('/api/admin/visitors/:id', requireAdmin, async (request, response) => 
   }
 
   return response.json({ visitor })
+})
+
+app.patch('/api/admin/community-uploads/:id', requireAdmin, async (request, response) => {
+  const status = String(request.body?.status ?? '').trim()
+  const allowedStatuses = new Set(['pending', 'approved', 'rejected'])
+
+  if (!allowedStatuses.has(status)) {
+    return response.status(400).json({
+      error: 'Invalid upload status.',
+    })
+  }
+
+  const uploadRecord = await adminStore.updateCommunityUploadStatus(request.params.id, status)
+
+  if (!uploadRecord) {
+    return response.status(404).json({
+      error: 'Community upload not found.',
+    })
+  }
+
+  return response.json({ upload: uploadRecord })
 })
 
 app.post('/api/admin/uploads', requireAdmin, upload.single('file'), async (request, response) => {
@@ -525,8 +617,6 @@ app.post('/api/admin/uploads', requireAdmin, upload.single('file'), async (reque
 })
 
 const normalizeProjectPayload = (body) => {
-  const assetCategory = String(body?.assetCategory ?? '').trim()
-  const normalizedAssetCategory = legacyAssetCategoryAliases.get(assetCategory) || assetCategory
   const localizedText = (field, maxLength) =>
     Object.fromEntries(
       ['Zh', 'En', 'Ja'].map((suffix) => [
@@ -535,7 +625,7 @@ const normalizeProjectPayload = (body) => {
       ]),
     )
   const normalized = {
-    assetCategory: assetCategories.has(normalizedAssetCategory) ? normalizedAssetCategory : 'generic',
+    assetCategory: normalizeAssetCategory(body?.assetCategory),
     downloadPolicy: String(body?.downloadPolicy ?? '').trim().slice(0, 120),
     format: String(body?.format ?? '').trim().slice(0, 120),
     image: String(body?.image ?? '').trim().slice(0, 500),
@@ -698,6 +788,25 @@ app.delete('/api/admin/download-requests/:id', requireAdmin, async (request, res
     return response.status(404).json({
       error: 'Download request not found.',
     })
+  }
+
+  return response.json({ ok: true })
+})
+
+app.delete('/api/admin/community-uploads/:id', requireAdmin, async (request, response) => {
+  const deleted = await adminStore.deleteCommunityUpload(request.params.id)
+
+  if (!deleted) {
+    return response.status(404).json({
+      error: 'Community upload not found.',
+    })
+  }
+
+  if (deleted.file_url?.startsWith('/uploads/')) {
+    const localPath = path.resolve(rootDir, 'public', deleted.file_url.replace(/^\//, ''))
+    if (localPath.startsWith(uploadRoot)) {
+      unlink(localPath).catch((error) => console.error(error))
+    }
   }
 
   return response.json({ ok: true })

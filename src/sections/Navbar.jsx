@@ -8,6 +8,7 @@ function Navigation({ onNavigate, copy }) {
     { label: copy.navHome, href: '#home' },
     { label: copy.navAbout, href: '#about' },
     { label: copy.navProjects, href: '#projects' },
+    { label: copy.navCommunity, href: '#community' },
     { label: copy.navExperience, href: '#experience' },
     { label: copy.navContact, href: '#contact' },
   ]

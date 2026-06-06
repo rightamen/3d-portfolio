@@ -14,6 +14,7 @@ import Navbar from './sections/Navbar'
 const Hero = lazy(() => import('./sections/Hero'))
 const About = lazy(() => import('./sections/About'))
 const Projects = lazy(() => import('./sections/Projects'))
+const Community = lazy(() => import('./sections/Community'))
 const Experience = lazy(() => import('./sections/Experience'))
 const Contact = lazy(() => import('./sections/Contact'))
 const Footer = lazy(() => import('./sections/Footer'))
@@ -168,6 +169,14 @@ const App = () => {
             copy={copy}
             language={language}
             projects={siteData.projects}
+            visitorUser={visitorUser}
+          />
+        </Suspense>
+        <Suspense fallback={<SectionFallback title="Community" copy={copy} />}>
+          <Community
+            authToken={visitorToken}
+            copy={copy}
+            language={language}
             visitorUser={visitorUser}
           />
         </Suspense>

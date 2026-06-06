@@ -2,10 +2,12 @@ import { useEffect, useRef, useState } from 'react'
 import {
   createAdminProject,
   deleteAdminComment,
+  deleteAdminCommunityUpload,
   deleteAdminContactMessage,
   deleteAdminDownloadRequest,
   deleteAdminProject,
   getAdminComments,
+  getAdminCommunityUploads,
   getAdminContactMessages,
   getAdminDownloadRequests,
   getAdminLikes,
@@ -13,6 +15,7 @@ import {
   getAdminSummary,
   getAdminVisitors,
   updateAdminDownloadRequest,
+  updateAdminCommunityUpload,
   updateAdminProject,
   updateAdminVisitor,
   uploadAdminAsset,
@@ -25,6 +28,7 @@ const sections = [
   { key: 'comments', label: 'Comments' },
   { key: 'likes', label: 'Likes' },
   { key: 'visitors', label: 'Visitors' },
+  { key: 'community', label: 'Community' },
   { key: 'downloads', label: 'Downloads' },
   { key: 'messages', label: 'Messages' },
 ]
@@ -700,6 +704,7 @@ const Admin = () => {
   const [status, setStatus] = useState('locked')
   const [data, setData] = useState({
     comments: [],
+    communityUploads: [],
     likes: [],
     messages: [],
     projects: [],
@@ -734,6 +739,7 @@ const Admin = () => {
       const [
         summaryPayload,
         commentsPayload,
+        communityUploadsPayload,
         likesPayload,
         messagesPayload,
         requestsPayload,
@@ -743,6 +749,7 @@ const Admin = () => {
         await Promise.all([
           getAdminSummary(activeToken),
           getAdminComments(activeToken),
+          getAdminCommunityUploads(activeToken),
           getAdminLikes(activeToken),
           getAdminContactMessages(activeToken),
           getAdminDownloadRequests(activeToken),
@@ -752,6 +759,7 @@ const Admin = () => {
 
       setData({
         comments: commentsPayload.comments,
+        communityUploads: communityUploadsPayload.uploads,
         likes: likesPayload.likes,
         messages: messagesPayload.messages,
         projects: projectsPayload.projects,
@@ -787,6 +795,11 @@ const Admin = () => {
 
   const updateVisitorAccess = async (id, accessLevel) => {
     await updateAdminVisitor(token, id, accessLevel)
+    await loadAdminData(token)
+  }
+
+  const updateCommunityUploadStatus = async (id, nextStatus) => {
+    await updateAdminCommunityUpload(token, id, nextStatus)
     await loadAdminData(token)
   }
 
@@ -1009,6 +1022,9 @@ const Admin = () => {
   const visibleComments = data.comments.filter((comment) =>
     searchInItem(comment, searchQuery),
   )
+  const visibleCommunityUploads = data.communityUploads.filter((upload) =>
+    searchInItem(upload, searchQuery),
+  )
   const visibleLikes = data.likes.filter((like) => searchInItem(like, searchQuery))
   const visibleRequests = data.requests.filter((request) =>
     searchInItem(request, searchQuery),
@@ -1074,6 +1090,11 @@ const Admin = () => {
               ['comments', 'Comments', data.summary.comments],
               ['likes', 'Likes', data.summary.likes],
               ['visitors', 'Visitors', data.summary.visitors || data.visitors.length],
+              [
+                'community',
+                'Community',
+                data.summary.pending_community_uploads || data.communityUploads.length,
+              ],
               ['downloads', 'Downloads', data.summary.download_requests],
               ['messages', 'Messages', data.summary.contact_messages],
             ].map(([key, label, value]) => (
@@ -1734,6 +1755,88 @@ const Admin = () => {
               {visibleRequests.length === 0 && (
                 <p className="text-sm text-neutral-500">
                   No download requests match this search.
+                </p>
+              )}
+            </div>
+          </section>
+          )}
+
+          {activeSection === 'community' && (
+          <section className="admin-section">
+            <div className="admin-section-header">
+              <h2>Community Uploads</h2>
+              <span>{visibleCommunityUploads.length}</span>
+            </div>
+            <div className="admin-table">
+              {visibleCommunityUploads.map((upload) => {
+                const category = getAssetCategoryProfile(
+                  { assetCategory: upload.assetCategory },
+                  'en',
+                )
+
+                return (
+                  <article
+                    key={upload.id}
+                    className="admin-row"
+                    style={{ '--category-accent': category.accent }}
+                  >
+                    <div>
+                      <div className="admin-row-title">
+                        <strong>{upload.title}</strong>
+                        <span>{category.label}</span>
+                      </div>
+                      <span>
+                        {upload.fileName} · {upload.fileType} · {formatFileSize(upload.fileSize)}
+                      </span>
+                      <p>{upload.description}</p>
+                      <small>
+                        {upload.user
+                          ? `${upload.user.displayName} · ${upload.user.email} · ${upload.user.accessLevel}`
+                          : 'Unknown visitor'}
+                      </small>
+                      <small>
+                        Submitted {formatDate(upload.createdAt)} · updated {formatDate(upload.updatedAt)}
+                      </small>
+                      <a href={upload.fileUrl} target="_blank" rel="noreferrer">
+                        {upload.fileUrl}
+                      </a>
+                    </div>
+                    <div className="admin-actions">
+                      <span className={`status-pill status-${upload.status}`}>
+                        {upload.status}
+                      </span>
+                      <button
+                        type="button"
+                        className="secondary-action"
+                        onClick={() => updateCommunityUploadStatus(upload.id, 'approved')}
+                      >
+                        Approve
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary-action"
+                        onClick={() => updateCommunityUploadStatus(upload.id, 'rejected')}
+                      >
+                        Reject
+                      </button>
+                      <button
+                        type="button"
+                        className="danger-action"
+                        onClick={() =>
+                          deleteItem('community upload', () =>
+                            deleteAdminCommunityUpload(token, upload.id),
+                          )
+                        }
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </article>
+                )
+              })}
+              {visibleCommunityUploads.length === 0 && (
+                <p className="text-sm text-neutral-500">
+                  No community uploads match this search.
                 </p>
               )}
             </div>
