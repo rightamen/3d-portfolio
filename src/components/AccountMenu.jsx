@@ -58,7 +58,7 @@ const AccountMenu = ({
                 <div className="section-kicker mb-1">{copy.account}</div>
                 <p className="text-sm leading-relaxed text-neutral-400">{copy.authHint}</p>
               </div>
-              <a href="/login" className="primary-action w-full">
+              <a href="/login?mode=login" className="primary-action w-full">
                 {copy.authLogin}
               </a>
               <a href="/login?mode=register" className="secondary-action w-full">

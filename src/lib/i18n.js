@@ -36,6 +36,12 @@ const copy = {
     authPageKicker: '访客认证',
     authPageTitle: '登录或创建你的访客账号',
     authPageIntro: '通过邮箱验证后，你可以参与社区交流、提交资源，并申请不同等级的下载权限。',
+    authLoginPageTitle: '登录访客账号',
+    authLoginPageIntro: '登录后可以进入个人中心，查看权限等级，并继续使用社区、资源提交和下载申请。',
+    authRegisterPageTitle: '创建访客账号',
+    authRegisterPageIntro: '注册并完成邮箱验证后，你可以参与社区交流、提交资源，并申请不同等级的下载权限。',
+    authVerifyPageTitle: '验证你的邮箱',
+    authVerifyPageIntro: '请输入邮件中的 6 位验证码。验证完成后会自动进入个人中心。',
     authVerifyEmail: '验证邮箱',
     authVerificationCode: '验证码',
     authVerificationSent: '验证码已发送，请检查邮箱后完成验证。',
@@ -220,6 +226,15 @@ const copy = {
     authPageTitle: 'Sign In Or Create Your Visitor Account',
     authPageIntro:
       'After email verification, you can join community discussions, submit resources, and request download access.',
+    authLoginPageTitle: 'Sign In To Your Visitor Account',
+    authLoginPageIntro:
+      'Sign in to open your account center, view your access level, and continue community actions.',
+    authRegisterPageTitle: 'Create A Visitor Account',
+    authRegisterPageIntro:
+      'After email verification, you can join community discussions, submit resources, and request download access.',
+    authVerifyPageTitle: 'Verify Your Email',
+    authVerifyPageIntro:
+      'Enter the 6-digit code from your email. After verification, you will enter your account center.',
     authVerifyEmail: 'Verify Email',
     authVerificationCode: 'Verification Code',
     authVerificationSent: 'Verification code sent. Check your email to finish verification.',
@@ -413,6 +428,15 @@ const copy = {
     authPageTitle: 'ログインまたは訪問者アカウント作成',
     authPageIntro:
       'メール確認後、コミュニティ交流、素材投稿、ダウンロード申請が利用できます。',
+    authLoginPageTitle: '訪問者アカウントにログイン',
+    authLoginPageIntro:
+      'ログインすると個人センター、権限レベル、コミュニティ機能を利用できます。',
+    authRegisterPageTitle: '訪問者アカウントを作成',
+    authRegisterPageIntro:
+      'メール確認後、コミュニティ交流、素材投稿、ダウンロード申請が利用できます。',
+    authVerifyPageTitle: 'メールを確認',
+    authVerifyPageIntro:
+      'メール内の6桁コードを入力してください。確認後、個人センターに移動します。',
     authVerifyEmail: 'メール確認',
     authVerificationCode: '確認コード',
     authVerificationSent: '確認コードを送信しました。メールを確認してください。',

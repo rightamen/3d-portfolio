@@ -30,7 +30,7 @@ const AccountPage = ({ copy, language, onLanguageChange, onLogout, visitorUser }
           <p className="section-kicker">{copy.account}</p>
           <h1>{copy.accountLoginRequiredTitle}</h1>
           <p>{copy.accountLoginRequired}</p>
-          <a href="/login" className="primary-action">
+          <a href="/login?mode=login" className="primary-action">
             {copy.authLogin}
           </a>
         </section>

@@ -8,6 +8,13 @@ const emptyForm = {
   password: '',
 }
 
+const authModes = ['login', 'register', 'verify']
+
+const getInitialMode = () => {
+  const mode = new URLSearchParams(window.location.search).get('mode')
+  return authModes.includes(mode) ? mode : 'login'
+}
+
 const LanguageSwitch = ({ language, onLanguageChange, copy }) => (
   <div className="language-switch" aria-label={copy.toggleLanguage}>
     {languages.map((item) => (
@@ -35,16 +42,39 @@ const AuthPage = ({
   onVerifyEmail,
   visitorUser,
 }) => {
-  const [mode, setMode] = useState(() =>
-    new URLSearchParams(window.location.search).get('mode') === 'register' ? 'register' : 'login',
-  )
+  const [mode, setMode] = useState(getInitialMode)
   const [form, setForm] = useState(emptyForm)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
 
+  const pageCopy = {
+    login: {
+      intro: copy.authLoginPageIntro || copy.authPageIntro,
+      title: copy.authLoginPageTitle || copy.authPageTitle,
+    },
+    register: {
+      intro: copy.authRegisterPageIntro || copy.authPageIntro,
+      title: copy.authRegisterPageTitle || copy.authPageTitle,
+    },
+    verify: {
+      intro: copy.authVerifyPageIntro || copy.authPageIntro,
+      title: copy.authVerifyPageTitle || copy.authPageTitle,
+    },
+  }[mode]
+
   useEffect(() => {
     if (visitorUser) window.location.replace('/account')
   }, [visitorUser])
+
+  const changeMode = (nextMode) => {
+    setMode(nextMode)
+    setError('')
+    setMessage('')
+
+    const url = new URL(window.location.href)
+    url.searchParams.set('mode', nextMode)
+    window.history.replaceState(null, '', url)
+  }
 
   const updateForm = (event) => {
     setForm((current) => ({
@@ -84,7 +114,7 @@ const AuthPage = ({
     try {
       if (mode === 'register') {
         const result = await onRegister(form)
-        setMode('verify')
+        changeMode('verify')
         setMessage(getVerificationMessage(result.verification))
         return
       }
@@ -99,7 +129,7 @@ const AuthPage = ({
       window.location.replace('/account')
     } catch (caughtError) {
       if (caughtError.message.includes('verify')) {
-        setMode('verify')
+        changeMode('verify')
         setError(copy.authEmailNotVerified)
         return
       }
@@ -119,29 +149,29 @@ const AuthPage = ({
       <section className="auth-card">
         <div>
           <p className="section-kicker">{copy.authPageKicker}</p>
-          <h1>{copy.authPageTitle}</h1>
-          <p>{copy.authPageIntro}</p>
+          <h1>{pageCopy.title}</h1>
+          <p>{pageCopy.intro}</p>
         </div>
 
         <div className="auth-mode-switch">
           <button
             type="button"
             className={mode === 'login' ? 'auth-mode-active' : 'auth-mode'}
-            onClick={() => setMode('login')}
+            onClick={() => changeMode('login')}
           >
             {copy.authLogin}
           </button>
           <button
             type="button"
             className={mode === 'register' ? 'auth-mode-active' : 'auth-mode'}
-            onClick={() => setMode('register')}
+            onClick={() => changeMode('register')}
           >
             {copy.authRegister}
           </button>
           <button
             type="button"
             className={mode === 'verify' ? 'auth-mode-active' : 'auth-mode'}
-            onClick={() => setMode('verify')}
+            onClick={() => changeMode('verify')}
           >
             {copy.authVerifyEmail}
           </button>
