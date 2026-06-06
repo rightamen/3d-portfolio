@@ -31,6 +31,7 @@ const AuthPage = ({
   onLanguageChange,
   onLogin,
   onRegister,
+  onResendVerification,
   onVerifyEmail,
   visitorUser,
 }) => {
@@ -52,6 +53,29 @@ const AuthPage = ({
     }))
   }
 
+  const getVerificationMessage = (verification) => {
+    if (verification?.delivery === 'manual') return copy.authVerificationManual
+    if (verification?.delivery === 'failed') return copy.authVerificationFailed
+    return copy.authVerificationSent
+  }
+
+  const resendVerification = async () => {
+    setError('')
+    setMessage('')
+
+    if (!form.email) {
+      setError(copy.authEmailRequired)
+      return
+    }
+
+    try {
+      const result = await onResendVerification({ email: form.email })
+      setMessage(getVerificationMessage(result.verification))
+    } catch (caughtError) {
+      setError(caughtError.message || copy.authError)
+    }
+  }
+
   const submit = async (event) => {
     event.preventDefault()
     setError('')
@@ -61,11 +85,7 @@ const AuthPage = ({
       if (mode === 'register') {
         const result = await onRegister(form)
         setMode('verify')
-        setMessage(
-          result.verification?.delivery === 'manual'
-            ? copy.authVerificationManual
-            : copy.authVerificationSent,
-        )
+        setMessage(getVerificationMessage(result.verification))
         return
       }
 
@@ -179,6 +199,16 @@ const AuthPage = ({
                   ? copy.authVerifyEmail
                   : copy.authLogin}
           </button>
+          {mode === 'verify' && (
+            <button
+              type="button"
+              className="secondary-action w-full"
+              disabled={authStatus === 'saving'}
+              onClick={resendVerification}
+            >
+              {copy.authResendVerification}
+            </button>
+          )}
           {message && <p className="text-sm leading-relaxed text-neutral-300">{message}</p>}
           {error && <p className="text-sm leading-relaxed text-coral">{error}</p>}
           {authStatus === 'unavailable' && (

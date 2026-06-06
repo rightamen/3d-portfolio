@@ -574,6 +574,23 @@ export const createPostgresStores = async (databaseUrl) => {
 
       return toPublicUser(result.rows[0])
     },
+
+    setVerificationCode: async (email, verificationCodeHash, verificationExpiresAt) => {
+      const result = await pool.query(
+        `
+          UPDATE visitor_users
+          SET verification_code_hash = $2,
+              verification_expires_at = $3,
+              updated_at = now()
+          WHERE email = lower($1)
+            AND email_verified_at IS NULL
+          RETURNING id
+        `,
+        [email, verificationCodeHash, verificationExpiresAt],
+      )
+
+      return Boolean(result.rows[0])
+    },
   }
 
   const interactionsStore = {

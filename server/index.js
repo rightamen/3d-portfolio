@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url'
 import { createContactMessagesStore } from './contactMessagesStore.js'
 import { experience, profile, projects as staticProjects, skills } from './content.js'
 import { createDownloadRequestsStore } from './downloadRequestsStore.js'
+import { sendVerificationEmail } from './emailDelivery.js'
 import { createInteractionsStore } from './interactionsStore.js'
 import { convertModelToGlb } from './modelConverter.js'
 import { createPostgresStores } from './postgresStores.js'
@@ -147,6 +148,31 @@ const createSession = async (user) => {
   }
 }
 
+const createEmailVerification = (email) => {
+  const code = createVerificationCode()
+  const expiresAt = new Date(Date.now() + 1000 * 60 * 20)
+
+  return {
+    code,
+    expiresAt,
+    hash: hashVerificationCode(email, code),
+  }
+}
+
+const sendVisitorVerification = async ({ code, displayName, email, expiresAt }) => {
+  try {
+    return await sendVerificationEmail({
+      code,
+      displayName,
+      email,
+      expiresAt,
+    })
+  } catch (error) {
+    console.error('Verification email delivery failed:', error.message)
+    return { delivery: 'failed', sent: false }
+  }
+}
+
 const normalizeAccessLevel = (value, fallback = 'member') => {
   const normalized = String(value ?? '').trim()
   return visitorAccessLevels.includes(normalized) ? normalized : fallback
@@ -222,25 +248,71 @@ app.post('/api/auth/register', requireAuthStore, async (request, response) => {
     })
   }
 
-  const verificationCode = createVerificationCode()
-  const verificationExpiresAt = new Date(Date.now() + 1000 * 60 * 20)
+  const verification = createEmailVerification(email)
   const user = await authStore.createUser({
     accessLevel: 'member',
     displayName,
     email,
     id: createId(),
     passwordHash: hashPassword(password),
-    verificationCodeHash: hashVerificationCode(email, verificationCode),
-    verificationExpiresAt,
+    verificationCodeHash: verification.hash,
+    verificationExpiresAt: verification.expiresAt,
+  })
+  const delivery = await sendVisitorVerification({
+    code: verification.code,
+    displayName,
+    email,
+    expiresAt: verification.expiresAt,
   })
 
   return response.status(201).json({
     user,
     verification: {
-      delivery: process.env.SMTP_HOST ? 'email' : 'manual',
-      expiresAt: verificationExpiresAt.toISOString(),
+      delivery: delivery.delivery,
+      expiresAt: verification.expiresAt.toISOString(),
       required: true,
-      ...(process.env.NODE_ENV === 'production' ? {} : { devCode: verificationCode }),
+      ...(process.env.NODE_ENV === 'production' ? {} : { devCode: verification.code }),
+    },
+  })
+})
+
+app.post('/api/auth/resend-verification', requireAuthStore, async (request, response) => {
+  const email = String(request.body?.email ?? '').trim().toLowerCase().slice(0, 180)
+
+  if (!emailPattern.test(email)) {
+    return response.status(400).json({
+      error: 'Valid email is required.',
+    })
+  }
+
+  const user = await authStore.getUserByEmail(email)
+  if (!user) {
+    return response.status(404).json({
+      error: 'This email is not registered.',
+    })
+  }
+
+  if (user.emailVerified) {
+    return response.status(409).json({
+      error: 'This email is already verified.',
+    })
+  }
+
+  const verification = createEmailVerification(email)
+  await authStore.setVerificationCode(email, verification.hash, verification.expiresAt)
+  const delivery = await sendVisitorVerification({
+    code: verification.code,
+    displayName: user.displayName,
+    email,
+    expiresAt: verification.expiresAt,
+  })
+
+  return response.json({
+    verification: {
+      delivery: delivery.delivery,
+      expiresAt: verification.expiresAt.toISOString(),
+      required: true,
+      ...(process.env.NODE_ENV === 'production' ? {} : { devCode: verification.code }),
     },
   })
 })

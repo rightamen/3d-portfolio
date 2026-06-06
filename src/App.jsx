@@ -7,6 +7,7 @@ import {
   loginVisitor,
   logoutVisitor,
   registerVisitor,
+  resendVisitorVerification,
   verifyVisitorEmail,
 } from './lib/api'
 import { getCopy, getInitialLanguage } from './lib/i18n'
@@ -147,6 +148,18 @@ const App = () => {
     }
   }
 
+  const handleVisitorResendVerification = async (payload) => {
+    setAuthStatus('saving')
+    try {
+      const result = await resendVisitorVerification(payload)
+      setAuthStatus('idle')
+      return result
+    } catch (error) {
+      setAuthStatus(error.message.includes('not configured') ? 'unavailable' : 'error')
+      throw error
+    }
+  }
+
   const handleVisitorLogout = async () => {
     const token = visitorToken
     window.localStorage.removeItem(visitorTokenKey)
@@ -167,6 +180,7 @@ const App = () => {
           onLanguageChange={setLanguage}
           onLogin={handleVisitorLogin}
           onRegister={handleVisitorRegister}
+          onResendVerification={handleVisitorResendVerification}
           onVerifyEmail={handleVisitorVerifyEmail}
           visitorUser={visitorUser}
         />

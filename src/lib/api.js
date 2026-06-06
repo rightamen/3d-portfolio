@@ -68,6 +68,13 @@ export const verifyVisitorEmail = (payload) =>
     body: JSON.stringify(payload),
   })
 
+export const resendVisitorVerification = (payload) =>
+  request('/api/auth/resend-verification', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+
 export const toggleProjectLike = (slug, visitorId, token) =>
   request(`/api/projects/${slug}/like`, {
     method: 'POST',

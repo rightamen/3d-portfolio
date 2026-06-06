@@ -40,6 +40,9 @@ const copy = {
     authVerificationCode: '验证码',
     authVerificationSent: '验证码已发送，请检查邮箱后完成验证。',
     authVerificationManual: '账号已创建。当前未配置邮件发送，请联系站点管理员完成邮箱验证。',
+    authVerificationFailed: '验证码已生成，但邮件发送失败。请稍后重发，或联系站点管理员手动验证。',
+    authResendVerification: '重新发送验证码',
+    authEmailRequired: '请先填写邮箱地址。',
     authEmailNotVerified: '该账号还未完成邮箱验证，请先输入验证码。',
     authEmailStatus: '邮箱状态',
     authVerified: '已验证',
@@ -222,6 +225,10 @@ const copy = {
     authVerificationSent: 'Verification code sent. Check your email to finish verification.',
     authVerificationManual:
       'Account created. Email delivery is not configured yet, so contact the site admin to verify this account.',
+    authVerificationFailed:
+      'Verification code was created, but email delivery failed. Try resending later or ask the site admin to verify this account.',
+    authResendVerification: 'Resend Verification Code',
+    authEmailRequired: 'Enter your email address first.',
     authEmailNotVerified: 'This account still needs email verification. Enter the code first.',
     authEmailStatus: 'Email Status',
     authVerified: 'Verified',
@@ -411,6 +418,10 @@ const copy = {
     authVerificationSent: '確認コードを送信しました。メールを確認してください。',
     authVerificationManual:
       'アカウントを作成しました。メール送信は未設定のため、管理者に確認を依頼してください。',
+    authVerificationFailed:
+      '確認コードは作成されましたが、メール送信に失敗しました。後でもう一度送信するか、管理者に確認を依頼してください。',
+    authResendVerification: '確認コードを再送信',
+    authEmailRequired: '先にメールアドレスを入力してください。',
     authEmailNotVerified: 'このアカウントはメール確認が必要です。コードを入力してください。',
     authEmailStatus: 'メール状態',
     authVerified: '確認済み',
