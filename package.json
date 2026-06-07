@@ -11,7 +11,8 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "start": "node server/index.js",
-    "deploy:vps": "npm run build && node scripts/deploy-vps.mjs"
+    "deploy:vps": "npm run build && node scripts/deploy-vps.mjs",
+    "release:vps": "npm run build && node scripts/package-vps-release.mjs"
   },
   "dependencies": {
     "cors": "^2.8.6",
