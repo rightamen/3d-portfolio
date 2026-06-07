@@ -7,6 +7,7 @@ import {
   deleteAdminContactMessage,
   deleteAdminDownloadRequest,
   deleteAdminProject,
+  deleteAdminVisitor,
   getAdminComments,
   getAdminCommunityPosts,
   getAdminCommunityUploads,
@@ -807,6 +808,11 @@ const Admin = () => {
 
   const updateVisitorVerification = async (id, verified) => {
     await updateAdminVisitorEmailVerification(token, id, verified)
+    await loadAdminData(token)
+  }
+
+  const deleteVisitor = async (id) => {
+    await deleteAdminVisitor(token, id)
     await loadAdminData(token)
   }
 
@@ -2023,6 +2029,15 @@ const Admin = () => {
                       onClick={() => updateVisitorVerification(visitor.id, !visitor.emailVerified)}
                     >
                       {visitor.emailVerified ? 'Mark Unverified' : 'Verify Email'}
+                    </button>
+                    <button
+                      type="button"
+                      className="danger-action"
+                      onClick={() =>
+                        deleteItem('visitor account', () => deleteVisitor(visitor.id))
+                      }
+                    >
+                      Delete Account
                     </button>
                   </div>
                 </article>

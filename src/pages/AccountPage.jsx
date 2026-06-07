@@ -16,7 +16,25 @@ const LanguageSwitch = ({ language, onLanguageChange, copy }) => (
   </div>
 )
 
-const AccountPage = ({ copy, language, onLanguageChange, onLogout, visitorUser }) => {
+const AccountPage = ({ copy, language, onLanguageChange, onLogout, visitorLoading, visitorUser }) => {
+  if (visitorLoading) {
+    return (
+      <main className="auth-page">
+        <nav className="auth-nav">
+          <a href="/" className="text-xl font-bold text-neutral-300 hover:text-white">
+            mrright.blog
+          </a>
+          <LanguageSwitch language={language} onLanguageChange={onLanguageChange} copy={copy} />
+        </nav>
+        <section className="auth-card">
+          <p className="section-kicker">{copy.account}</p>
+          <h1>{copy.accountCheckingTitle}</h1>
+          <p>{copy.accountChecking}</p>
+        </section>
+      </main>
+    )
+  }
+
   if (!visitorUser) {
     return (
       <main className="auth-page">

@@ -46,6 +46,7 @@ const AuthPage = ({
   const [form, setForm] = useState(emptyForm)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
+  const [completedSteps, setCompletedSteps] = useState([])
 
   const pageCopy = {
     login: {
@@ -114,6 +115,7 @@ const AuthPage = ({
     try {
       if (mode === 'register') {
         const result = await onRegister(form)
+        setCompletedSteps(['account'])
         changeMode('verify')
         setMessage(getVerificationMessage(result.verification))
         return
@@ -121,6 +123,7 @@ const AuthPage = ({
 
       if (mode === 'verify') {
         await onVerifyEmail({ code: form.code, email: form.email })
+        setCompletedSteps(['account', 'email'])
         window.location.replace('/account')
         return
       }
@@ -128,7 +131,8 @@ const AuthPage = ({
       await onLogin({ email: form.email, password: form.password })
       window.location.replace('/account')
     } catch (caughtError) {
-      if (caughtError.message.includes('verify')) {
+      if (caughtError.code === 'EMAIL_NOT_VERIFIED' || caughtError.message.includes('verify')) {
+        setCompletedSteps(['account'])
         changeMode('verify')
         setError(copy.authEmailNotVerified)
         return
@@ -153,29 +157,44 @@ const AuthPage = ({
           <p>{pageCopy.intro}</p>
         </div>
 
-        <div className="auth-mode-switch">
-          <button
-            type="button"
-            className={mode === 'login' ? 'auth-mode-active' : 'auth-mode'}
-            onClick={() => changeMode('login')}
-          >
-            {copy.authLogin}
-          </button>
-          <button
-            type="button"
-            className={mode === 'register' ? 'auth-mode-active' : 'auth-mode'}
-            onClick={() => changeMode('register')}
-          >
-            {copy.authRegister}
-          </button>
-          <button
-            type="button"
-            className={mode === 'verify' ? 'auth-mode-active' : 'auth-mode'}
-            onClick={() => changeMode('verify')}
-          >
-            {copy.authVerifyEmail}
-          </button>
-        </div>
+        {mode !== 'verify' ? (
+          <div className="auth-mode-switch">
+            <button
+              type="button"
+              className={mode === 'login' ? 'auth-mode-active' : 'auth-mode'}
+              onClick={() => changeMode('login')}
+            >
+              {copy.authLogin}
+            </button>
+            <button
+              type="button"
+              className={mode === 'register' ? 'auth-mode-active' : 'auth-mode'}
+              onClick={() => changeMode('register')}
+            >
+              {copy.authRegister}
+            </button>
+          </div>
+        ) : (
+          <div className="auth-flow">
+            {[
+              { key: 'account', label: copy.authFlowAccount },
+              { key: 'email', label: copy.authFlowEmail },
+              { key: 'done', label: copy.authFlowDone },
+            ].map((step, index) => (
+              <span
+                key={step.key}
+                className={
+                  completedSteps.includes(step.key) || (step.key === 'email' && mode === 'verify')
+                    ? 'auth-flow-step-active'
+                    : 'auth-flow-step'
+                }
+              >
+                <strong>{index + 1}</strong>
+                {step.label}
+              </span>
+            ))}
+          </div>
+        )}
 
         <form className="account-form" onSubmit={submit}>
           {mode === 'register' && (
@@ -237,6 +256,11 @@ const AuthPage = ({
               onClick={resendVerification}
             >
               {copy.authResendVerification}
+            </button>
+          )}
+          {mode === 'verify' && (
+            <button type="button" className="auth-text-action" onClick={() => changeMode('login')}>
+              {copy.authBackToLogin}
             </button>
           )}
           {message && <p className="text-sm leading-relaxed text-neutral-300">{message}</p>}

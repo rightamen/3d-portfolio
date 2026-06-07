@@ -5,7 +5,9 @@ const request = async (path, options) => {
 
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}))
-    throw new Error(payload.error || 'Request failed')
+    const error = new Error(payload.error || 'Request failed')
+    error.code = payload.code
+    throw error
   }
 
   return response.json()
@@ -195,6 +197,11 @@ export const updateAdminVisitorEmailVerification = (token, id, verified) =>
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ verified }),
+  })
+
+export const deleteAdminVisitor = (token, id) =>
+  adminRequest(`/api/admin/visitors/${id}`, token, {
+    method: 'DELETE',
   })
 
 export const updateAdminCommunityUpload = (token, id, status) =>

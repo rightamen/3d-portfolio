@@ -45,6 +45,7 @@ const App = () => {
   )
   const [visitorUser, setVisitorUser] = useState(null)
   const [authStatus, setAuthStatus] = useState('idle')
+  const visitorLoading = Boolean(visitorToken && !visitorUser)
 
   useEffect(() => {
     window.localStorage.setItem('mrright-language', language)
@@ -196,6 +197,7 @@ const App = () => {
           language={language}
           onLanguageChange={setLanguage}
           onLogout={handleVisitorLogout}
+          visitorLoading={visitorLoading}
           visitorUser={visitorUser}
         />
       </Suspense>

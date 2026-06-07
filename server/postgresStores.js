@@ -1141,6 +1141,19 @@ export const createPostgresStores = async (databaseUrl) => {
       return toPublicUser(result.rows[0])
     },
 
+    deleteVisitor: async (id) => {
+      const result = await pool.query(
+        `
+          DELETE FROM visitor_users
+          WHERE id = $1
+          RETURNING id, email, display_name, access_level, email_verified_at, created_at
+        `,
+        [id],
+      )
+
+      return toPublicUser(result.rows[0])
+    },
+
     updateDownloadRequestStatus: async (id, status) => {
       const result = await pool.query(
         `

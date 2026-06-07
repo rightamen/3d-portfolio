@@ -726,6 +726,18 @@ app.patch('/api/admin/visitors/:id/email-verification', requireAdmin, async (req
   return response.json({ visitor })
 })
 
+app.delete('/api/admin/visitors/:id', requireAdmin, async (request, response) => {
+  const deleted = await adminStore.deleteVisitor(request.params.id)
+
+  if (!deleted) {
+    return response.status(404).json({
+      error: 'Visitor not found.',
+    })
+  }
+
+  return response.json({ deleted })
+})
+
 app.patch('/api/admin/community-uploads/:id', requireAdmin, async (request, response) => {
   const status = String(request.body?.status ?? '').trim()
   const allowedStatuses = new Set(['pending', 'approved', 'rejected'])
