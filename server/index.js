@@ -18,6 +18,7 @@ const __dirname = path.dirname(__filename)
 const rootDir = path.resolve(__dirname, '..')
 const dataDir = path.join(rootDir, 'data')
 const distDir = path.join(rootDir, 'dist')
+const distIndexPath = path.join(distDir, 'index.html')
 const uploadRoot = path.join(rootDir, 'public', 'uploads')
 const modelConverterScript = path.join(rootDir, 'scripts', 'convert-model-to-glb.py')
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -62,6 +63,23 @@ const {
   interactionsStore,
   projectStore,
 } = stores
+
+const setNoStoreHeaders = (response) => {
+  response.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate')
+  response.setHeader('Pragma', 'no-cache')
+  response.setHeader('Expires', '0')
+}
+
+const setStaticCacheHeaders = (response, filePath) => {
+  if (path.basename(filePath) === 'index.html') {
+    setNoStoreHeaders(response)
+    return
+  }
+
+  if (filePath.includes(`${path.sep}assets${path.sep}`)) {
+    response.setHeader('Cache-Control', 'public, max-age=31536000, immutable')
+  }
+}
 
 const app = express()
 const port = process.env.PORT || 4173
@@ -1032,10 +1050,11 @@ app.use((error, _request, response, next) => {
   return next(error)
 })
 
-app.use(express.static(distDir))
+app.use(express.static(distDir, { setHeaders: setStaticCacheHeaders }))
 
 app.get(/.*/, (_request, response) => {
-  response.sendFile(path.join(distDir, 'index.html'))
+  setNoStoreHeaders(response)
+  response.sendFile(distIndexPath)
 })
 
 app.listen(port, () => {
