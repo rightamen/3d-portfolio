@@ -122,7 +122,11 @@ const AuthPage = ({
       }
 
       if (mode === 'verify') {
-        await onVerifyEmail({ code: form.code, email: form.email })
+        if (!form.code.trim() && form.password) {
+          await onLogin({ email: form.email, password: form.password })
+        } else {
+          await onVerifyEmail({ code: form.code, email: form.email })
+        }
         setCompletedSteps(['account', 'email'])
         window.location.replace('/account')
         return
@@ -236,7 +240,7 @@ const AuthPage = ({
               placeholder={copy.authVerificationCode}
               value={form.code}
               onChange={updateForm}
-              required
+              required={!form.password}
             />
           )}
           <button type="submit" className="primary-action w-full" disabled={authStatus === 'saving'}>

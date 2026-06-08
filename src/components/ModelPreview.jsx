@@ -12,6 +12,7 @@ import {
   Vector3,
 } from 'three'
 import { EXRLoader } from 'three/examples/jsm/loaders/EXRLoader.js'
+import { inferAssetCategory } from '../lib/assetCategories'
 import { pickLocalized } from '../lib/i18n'
 
 const modes = [
@@ -102,35 +103,6 @@ const viewerProfiles = {
     spot: 0.95,
     useEnvironment: true,
   },
-}
-
-const legacyAssetCategoryAliases = {
-  'hand-painted': 'hand-painted-character',
-}
-
-const inferAssetCategory = (project) => {
-  const explicitCategory = legacyAssetCategoryAliases[project.assetCategory] || project.assetCategory
-  if (explicitCategory && viewerProfiles[explicitCategory]) return explicitCategory
-
-  const haystack = [
-    project.format,
-    project.modelSize,
-    project.title,
-    ...(project.stack || []),
-    ...(project.viewerFeatures || []),
-  ]
-    .join(' ')
-    .toLowerCase()
-
-  if (/hand.?paint|painted/.test(haystack) && /environment|scene|level|world/.test(haystack)) {
-    return 'hand-painted-scene'
-  }
-  if (/hand.?paint|painted|obj/.test(haystack)) return 'hand-painted-character'
-  if (/environment|scene/.test(haystack)) return 'next-gen-scene'
-  if (/character/.test(haystack)) return 'next-gen-character'
-  if (/pbr|prop|fbx|glb|realtime/.test(haystack)) return 'next-gen-prop'
-
-  return 'generic'
 }
 
 const materialKeys = [

@@ -29,6 +29,7 @@ await execFileAsync('tar', [
   archivePath,
   'dist',
   'server',
+  'scripts',
   'package.json',
   'package-lock.json',
 ])
