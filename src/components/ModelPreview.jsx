@@ -120,24 +120,69 @@ const materialKeys = [
   'specularMap',
 ]
 
+const blendMaterialNamePattern = /(glass|clear|transparent|translucent|blend|water|visor|acrylic)/i
+
+const getTransparencyMode = (material) => {
+  if (!material) return 'opaque'
+
+  const hasAlphaMap = Boolean(material.alphaMap)
+  const hasPartialOpacity = (material.opacity ?? 1) < 0.999
+  const wantsBlendedTransparency =
+    hasPartialOpacity || (!hasAlphaMap && material.transparent) || blendMaterialNamePattern.test(material.name || '')
+
+  if (wantsBlendedTransparency) return 'blend'
+  if (hasAlphaMap || material.transparent) return 'cutout'
+  return 'opaque'
+}
+
+const materialUsesTransparency = (material) => getTransparencyMode(material) !== 'opaque'
+
+const configureTransparentMaterial = (material) => {
+  if (!material) return material
+
+  const transparencyMode = getTransparencyMode(material)
+  if (transparencyMode === 'opaque') return material
+
+  material.depthTest = true
+
+  if (transparencyMode === 'cutout') {
+    material.transparent = false
+    material.depthWrite = true
+    material.alphaTest = Math.max(material.alphaTest || 0, 0.45)
+  } else {
+    material.transparent = true
+    material.depthWrite = false
+    material.alphaTest = Math.max(material.alphaTest || 0, material.alphaMap ? 0.01 : 0)
+  }
+
+  material.needsUpdate = true
+
+  return material
+}
+
 const cloneTextureMaterial = (material) => {
   if (!material) return material
 
   const displayMaterial = new MeshBasicMaterial({
     alphaMap: material.alphaMap || null,
+    alphaTest: material.alphaTest || 0,
+    blending: material.blending,
     color: material.color ? material.color.clone() : new Color('#ffffff'),
+    depthTest: material.depthTest,
+    depthWrite: material.depthWrite,
     map: material.map || material.emissiveMap || null,
     name: material.name,
     opacity: material.opacity ?? 1,
+    premultipliedAlpha: material.premultipliedAlpha,
     side: material.side,
-    transparent: material.transparent || (material.opacity ?? 1) < 1 || Boolean(material.alphaMap),
+    transparent: getTransparencyMode(material) === 'blend',
   })
 
   if (displayMaterial.map) {
     displayMaterial.map.colorSpace = SRGBColorSpace
   }
 
-  return displayMaterial
+  return configureTransparentMaterial(displayMaterial)
 }
 
 const prepareStudioMaterial = (material, profile) => {
@@ -150,6 +195,8 @@ const prepareStudioMaterial = (material, profile) => {
   if (material.map) {
     material.map.colorSpace = SRGBColorSpace
   }
+
+  configureTransparentMaterial(material)
 
   material.envMapIntensity = profile.envIntensity
   if (typeof material.metalness === 'number') material.metalness = Math.min(material.metalness, 0.95)
@@ -225,6 +272,8 @@ const ModelScene = ({ url, mode, profile }) => {
         : [object.userData.originalMaterial]
 
       materials.filter(Boolean).forEach((material) => prepareStudioMaterial(material, profile))
+
+      object.renderOrder = materials.some(materialUsesTransparency) ? 10 : 0
 
       if (mode === 'clay') object.material = clayMaterial
       if (mode === 'wireframe') object.material = wireMaterial
@@ -417,7 +466,8 @@ const ModelPreview = ({ project, onClose, language = 'zh', copy }) => {
               toneMapping: ACESFilmicToneMapping,
               toneMappingExposure: profile.exposure,
             }}
-            onCreated={({ scene: canvasScene }) => {
+            onCreated={({ gl, scene: canvasScene }) => {
+              gl.sortObjects = true
               canvasScene.background = new Color(profile.background)
             }}
           >
