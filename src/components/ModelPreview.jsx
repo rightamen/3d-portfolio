@@ -5,6 +5,7 @@ import {
   ACESFilmicToneMapping,
   Box3,
   Color,
+  DoubleSide,
   MeshBasicMaterial,
   MeshStandardMaterial,
   PMREMGenerator,
@@ -141,7 +142,16 @@ const configureTransparentMaterial = (material) => {
   if (!material) return material
 
   const transparencyMode = getTransparencyMode(material)
-  if (transparencyMode === 'opaque') return material
+  material.side = DoubleSide
+
+  if ('forceSinglePass' in material) {
+    material.forceSinglePass = false
+  }
+
+  if (transparencyMode === 'opaque') {
+    material.needsUpdate = true
+    return material
+  }
 
   material.depthTest = true
 
@@ -174,7 +184,7 @@ const cloneTextureMaterial = (material) => {
     name: material.name,
     opacity: material.opacity ?? 1,
     premultipliedAlpha: material.premultipliedAlpha,
-    side: material.side,
+    side: DoubleSide,
     transparent: getTransparencyMode(material) === 'blend',
   })
 
@@ -243,7 +253,7 @@ const ModelScene = ({ url, mode, profile }) => {
     }
   }, [displayScene])
   const clayMaterial = useMemo(
-    () => new MeshStandardMaterial({ color: '#b8bdc7', roughness: 0.72 }),
+    () => new MeshStandardMaterial({ color: '#b8bdc7', roughness: 0.72, side: DoubleSide }),
     [],
   )
   const wireMaterial = useMemo(
@@ -251,6 +261,7 @@ const ModelScene = ({ url, mode, profile }) => {
       new MeshStandardMaterial({
         color: '#71f7ff',
         roughness: 0.6,
+        side: DoubleSide,
         wireframe: true,
       }),
     [],
