@@ -18,6 +18,7 @@ const __dirname = path.dirname(__filename)
 const rootDir = path.resolve(__dirname, '..')
 const dataDir = path.join(rootDir, 'data')
 const distDir = path.join(rootDir, 'dist')
+const distIndexPath = path.join(distDir, 'index.html')
 const uploadRoot = path.join(rootDir, 'public', 'uploads')
 const modelConverterScript = path.join(rootDir, 'scripts', 'convert-model-to-glb.py')
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -62,6 +63,23 @@ const {
   interactionsStore,
   projectStore,
 } = stores
+
+const setNoStoreHeaders = (response) => {
+  response.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate')
+  response.setHeader('Pragma', 'no-cache')
+  response.setHeader('Expires', '0')
+}
+
+const setStaticCacheHeaders = (response, filePath) => {
+  if (path.basename(filePath) === 'index.html') {
+    setNoStoreHeaders(response)
+    return
+  }
+
+  if (filePath.includes(`${path.sep}assets${path.sep}`)) {
+    response.setHeader('Cache-Control', 'public, max-age=31536000, immutable')
+  }
+}
 
 const app = express()
 const port = process.env.PORT || 4173
@@ -483,6 +501,83 @@ app.post('/api/community/posts', requireAuthStore, async (request, response) => 
   return response.status(201).json({ post })
 })
 
+app.get('/api/account/community', requireAuthStore, async (request, response) => {
+  if (!communityStore) {
+    return response.status(503).json({
+      error: 'Community features are not configured.',
+    })
+  }
+
+  const user = await getOptionalUser(request)
+  if (!user) {
+    return response.status(401).json({
+      error: 'Please sign in to manage your community resources.',
+    })
+  }
+
+  const [uploads, posts] = await Promise.all([
+    communityStore.listUserUploads(user.id),
+    communityStore.listUserPosts(user.id),
+  ])
+
+  return response.json({ posts, uploads })
+})
+
+app.delete('/api/account/community/uploads/:id', requireAuthStore, async (request, response) => {
+  if (!communityStore) {
+    return response.status(503).json({
+      error: 'Community features are not configured.',
+    })
+  }
+
+  const user = await getOptionalUser(request)
+  if (!user) {
+    return response.status(401).json({
+      error: 'Please sign in to manage your community resources.',
+    })
+  }
+
+  const deleted = await communityStore.deleteUserUpload(request.params.id, user.id)
+  if (!deleted) {
+    return response.status(404).json({
+      error: 'Community upload not found.',
+    })
+  }
+
+  if (deleted.file_url?.startsWith('/uploads/')) {
+    const localPath = path.resolve(rootDir, 'public', deleted.file_url.replace(/^\//, ''))
+    if (localPath.startsWith(uploadRoot)) {
+      unlink(localPath).catch((error) => console.error(error))
+    }
+  }
+
+  return response.json({ ok: true })
+})
+
+app.delete('/api/account/community/posts/:id', requireAuthStore, async (request, response) => {
+  if (!communityStore) {
+    return response.status(503).json({
+      error: 'Community features are not configured.',
+    })
+  }
+
+  const user = await getOptionalUser(request)
+  if (!user) {
+    return response.status(401).json({
+      error: 'Please sign in to manage your community posts.',
+    })
+  }
+
+  const deleted = await communityStore.deleteUserPost(request.params.id, user.id)
+  if (!deleted) {
+    return response.status(404).json({
+      error: 'Community post not found.',
+    })
+  }
+
+  return response.json({ ok: true })
+})
+
 app.post('/api/community/uploads', requireAuthStore, upload.single('file'), async (request, response) => {
   if (!communityStore) {
     return response.status(503).json({
@@ -585,18 +680,19 @@ app.post('/api/projects/:slug/comments', async (request, response) => {
 
 app.post('/api/projects/:slug/download-requests', async (request, response) => {
   const project = await projectStore.getProject(staticProjects, request.params.slug)
-  const user = await getOptionalUser(request)
-  const name = String(request.body?.name || user?.displayName || '').trim().slice(0, 120)
-  const email = String(request.body?.email || user?.email || '').trim().slice(0, 180)
-  const purpose = String(request.body?.purpose ?? '').trim().slice(0, 1200)
-  const requiredAccessLevel = getPolicyAccessLevel(project.downloadPolicy || project.downloadPolicyEn)
-  const currentAccessLevel = user?.accessLevel || 'guest'
 
   if (!project) {
     return response.status(404).json({
       error: 'Project not found.',
     })
   }
+
+  const user = await getOptionalUser(request)
+  const name = String(request.body?.name || user?.displayName || '').trim().slice(0, 120)
+  const email = String(request.body?.email || user?.email || '').trim().slice(0, 180)
+  const purpose = String(request.body?.purpose ?? '').trim().slice(0, 1200)
+  const requiredAccessLevel = getPolicyAccessLevel(project.downloadPolicy || project.downloadPolicyEn)
+  const currentAccessLevel = user?.accessLevel || 'guest'
 
   if (!name || !emailPattern.test(email) || !purpose) {
     return response.status(400).json({
@@ -1032,10 +1128,11 @@ app.use((error, _request, response, next) => {
   return next(error)
 })
 
-app.use(express.static(distDir))
+app.use(express.static(distDir, { setHeaders: setStaticCacheHeaders }))
 
 app.get(/.*/, (_request, response) => {
-  response.sendFile(path.join(distDir, 'index.html'))
+  setNoStoreHeaders(response)
+  response.sendFile(distIndexPath)
 })
 
 app.listen(port, () => {

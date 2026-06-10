@@ -814,6 +814,64 @@ export const createPostgresStores = async (databaseUrl) => {
       return result.rows.map(toCommunityPost)
     },
 
+    listUserUploads: async (userId) => {
+      const result = await pool.query(
+        `
+          SELECT
+            community_uploads.id,
+            community_uploads.status,
+            community_uploads.title,
+            community_uploads.description,
+            community_uploads.asset_category,
+            community_uploads.file_name,
+            community_uploads.file_type,
+            community_uploads.file_size,
+            community_uploads.file_url,
+            community_uploads.preview_url,
+            community_uploads.created_at,
+            community_uploads.updated_at,
+            visitor_users.id AS user_id,
+            visitor_users.display_name,
+            visitor_users.email,
+            visitor_users.access_level
+          FROM community_uploads
+          LEFT JOIN visitor_users ON visitor_users.id = community_uploads.user_id
+          WHERE community_uploads.user_id = $1
+          ORDER BY community_uploads.created_at DESC
+          LIMIT 100
+        `,
+        [userId],
+      )
+
+      return result.rows.map(toCommunityUpload)
+    },
+
+    listUserPosts: async (userId) => {
+      const result = await pool.query(
+        `
+          SELECT
+            community_posts.id,
+            community_posts.topic,
+            community_posts.title,
+            community_posts.message,
+            community_posts.created_at,
+            community_posts.updated_at,
+            visitor_users.id AS user_id,
+            visitor_users.display_name,
+            visitor_users.email,
+            visitor_users.access_level
+          FROM community_posts
+          LEFT JOIN visitor_users ON visitor_users.id = community_posts.user_id
+          WHERE community_posts.user_id = $1
+          ORDER BY community_posts.created_at DESC
+          LIMIT 100
+        `,
+        [userId],
+      )
+
+      return result.rows.map(toCommunityPost)
+    },
+
     createUpload: async (upload) => {
       const result = await pool.query(
         `
@@ -887,6 +945,32 @@ export const createPostgresStores = async (databaseUrl) => {
         email: post.user.email,
         user_id: post.user.id,
       })
+    },
+
+    deleteUserUpload: async (id, userId) => {
+      const result = await pool.query(
+        `
+          DELETE FROM community_uploads
+          WHERE id = $1 AND user_id = $2
+          RETURNING id, file_url
+        `,
+        [id, userId],
+      )
+
+      return result.rows[0] || null
+    },
+
+    deleteUserPost: async (id, userId) => {
+      const result = await pool.query(
+        `
+          DELETE FROM community_posts
+          WHERE id = $1 AND user_id = $2
+          RETURNING id
+        `,
+        [id, userId],
+      )
+
+      return result.rows[0] || null
     },
   }
 

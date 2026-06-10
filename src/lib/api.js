@@ -142,6 +142,23 @@ export const createCommunityPost = (token, payload) =>
     body: JSON.stringify(payload),
   })
 
+export const getAccountCommunity = (token) =>
+  request('/api/account/community', {
+    headers: authHeaders(token),
+  })
+
+export const deleteAccountCommunityUpload = (token, id) =>
+  request(`/api/account/community/uploads/${id}`, {
+    method: 'DELETE',
+    headers: authHeaders(token),
+  })
+
+export const deleteAccountCommunityPost = (token, id) =>
+  request(`/api/account/community/posts/${id}`, {
+    method: 'DELETE',
+    headers: authHeaders(token),
+  })
+
 export const getAdminSummary = (token) => adminRequest('/api/admin/summary', token)
 
 export const getAdminComments = (token) => adminRequest('/api/admin/comments', token)

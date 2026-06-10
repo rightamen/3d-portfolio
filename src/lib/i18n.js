@@ -65,6 +65,28 @@ const copy = {
     accountLoginRequired: '登录后才能查看个人中心和账号权限。',
     accountCheckingTitle: '正在确认登录状态',
     accountChecking: '正在读取你的访客会话，请稍候。',
+    accountStudioUploadNow: '上传资源',
+    accountStudioOpen: '进入资源后台',
+    accountStudioKicker: '访客后台',
+    accountStudioTitle: '资源与交流管理',
+    accountStudioIntro: '你可以在这里上传资源、发布交流、查看审核状态，并管理自己的提交内容。',
+    accountStudioRefresh: '刷新后台',
+    accountStudioResources: '资源',
+    accountStudioPosts: '帖子',
+    accountStudioPending: '待审核',
+    accountStudioApproved: '已公开',
+    accountStudioMyResources: '我的资源',
+    accountStudioMyPosts: '我的交流',
+    accountStudioDelete: '删除',
+    accountStudioStatuspending: '待审核',
+    accountStudioStatusapproved: '已公开',
+    accountStudioStatusrejected: '已驳回',
+    accountStudioLoadError: '个人资源后台加载失败，请稍后重试。',
+    accountStudioDeleteError: '删除失败，请刷新后重试。',
+    accountStudioNoResourcesTitle: '还没有提交资源。',
+    accountStudioNoResourcesBody: '使用上方表单上传你的模型、图片或资源包。',
+    accountStudioNoPostsTitle: '还没有发布交流。',
+    accountStudioNoPostsBody: '使用上方表单发布第一条模型交流内容。',
     toggleLanguage: '切换语言',
     toggleMenu: '打开菜单',
     heroGreeting: '你好，我是',
@@ -187,6 +209,13 @@ const copy = {
     modeWireframe: '线框',
     reset: '重置',
     autoRotate: '自动旋转',
+    doubleSidedOn: '双面显示',
+    doubleSidedOff: '单面显示',
+    alphaMode: '透明模式',
+    alphaAuto: '自动',
+    alphaOpaque: '不透明',
+    alphaCutout: '镂空',
+    alphaBlend: '半透明',
     experienceKicker: '创作经历',
     experienceTitle: '围绕造型、材质与画面表现建立的创作流程',
     experienceIntro:
@@ -267,6 +296,29 @@ const copy = {
     accountLoginRequired: 'Sign in to view your account center and access level.',
     accountCheckingTitle: 'Checking Your Session',
     accountChecking: 'Reading your visitor session. Please wait.',
+    accountStudioUploadNow: 'Upload Resource',
+    accountStudioOpen: 'Open Resource Studio',
+    accountStudioKicker: 'Visitor Studio',
+    accountStudioTitle: 'Resource & Discussion Management',
+    accountStudioIntro:
+      'Upload resources, publish discussions, track review status, and manage your own submissions here.',
+    accountStudioRefresh: 'Refresh Studio',
+    accountStudioResources: 'Resources',
+    accountStudioPosts: 'Posts',
+    accountStudioPending: 'Pending',
+    accountStudioApproved: 'Public',
+    accountStudioMyResources: 'My Resources',
+    accountStudioMyPosts: 'My Discussions',
+    accountStudioDelete: 'Delete',
+    accountStudioStatuspending: 'Pending',
+    accountStudioStatusapproved: 'Public',
+    accountStudioStatusrejected: 'Rejected',
+    accountStudioLoadError: 'Failed to load your resource studio. Try again later.',
+    accountStudioDeleteError: 'Delete failed. Refresh and try again.',
+    accountStudioNoResourcesTitle: 'No resources submitted yet.',
+    accountStudioNoResourcesBody: 'Use the form above to upload your model, image, or resource pack.',
+    accountStudioNoPostsTitle: 'No discussions posted yet.',
+    accountStudioNoPostsBody: 'Use the form above to publish your first modeling discussion.',
     toggleLanguage: 'Change language',
     toggleMenu: 'Toggle menu',
     heroGreeting: 'Hi, I am',
@@ -395,6 +447,13 @@ const copy = {
     modeWireframe: 'Wireframe',
     reset: 'Reset',
     autoRotate: 'Auto Rotate',
+    doubleSidedOn: 'Double Side',
+    doubleSidedOff: 'Single Side',
+    alphaMode: 'Alpha Mode',
+    alphaAuto: 'Auto',
+    alphaOpaque: 'Opaque',
+    alphaCutout: 'Cutout',
+    alphaBlend: 'Blend',
     experienceKicker: 'Experience',
     experienceTitle: 'A Process Built Around Form, Material, And Presentation',
     experienceIntro:
@@ -475,6 +534,28 @@ const copy = {
     accountLoginRequired: '個人センターと権限レベルを見るにはログインが必要です。',
     accountCheckingTitle: 'ログイン状態を確認中',
     accountChecking: '訪問者セッションを読み込んでいます。少しお待ちください。',
+    accountStudioUploadNow: '素材をアップロード',
+    accountStudioOpen: '素材管理へ',
+    accountStudioKicker: '訪問者スタジオ',
+    accountStudioTitle: '素材と投稿の管理',
+    accountStudioIntro: '素材をアップロードし、投稿を作成し、確認状態を見ながら自分の投稿を管理できます。',
+    accountStudioRefresh: '更新',
+    accountStudioResources: '素材',
+    accountStudioPosts: '投稿',
+    accountStudioPending: '確認待ち',
+    accountStudioApproved: '公開済み',
+    accountStudioMyResources: '自分の素材',
+    accountStudioMyPosts: '自分の投稿',
+    accountStudioDelete: '削除',
+    accountStudioStatuspending: '確認待ち',
+    accountStudioStatusapproved: '公開済み',
+    accountStudioStatusrejected: '却下',
+    accountStudioLoadError: '素材管理の読み込みに失敗しました。後でもう一度お試しください。',
+    accountStudioDeleteError: '削除に失敗しました。更新してもう一度お試しください。',
+    accountStudioNoResourcesTitle: 'まだ素材はありません。',
+    accountStudioNoResourcesBody: '上のフォームでモデル、画像、素材パックをアップロードできます。',
+    accountStudioNoPostsTitle: 'まだ投稿はありません。',
+    accountStudioNoPostsBody: '上のフォームで最初のモデリング投稿を作成できます。',
     toggleLanguage: '言語を切り替え',
     toggleMenu: 'メニューを開く',
     heroGreeting: 'こんにちは、',
@@ -602,6 +683,13 @@ const copy = {
     modeWireframe: 'ワイヤー',
     reset: 'リセット',
     autoRotate: '自動回転',
+    doubleSidedOn: '両面表示',
+    doubleSidedOff: '片面表示',
+    alphaMode: '透明モード',
+    alphaAuto: '自動',
+    alphaOpaque: '不透明',
+    alphaCutout: '切り抜き',
+    alphaBlend: '半透明',
     experienceKicker: '制作経験',
     experienceTitle: '造形、質感、画面表現を中心にした制作フロー',
     experienceIntro:
@@ -634,8 +722,17 @@ export const getInitialLanguage = () => {
 export const getCopy = (language = defaultLanguage) => copy[language] || copy[defaultLanguage]
 
 export const pickLocalized = (item = {}, field, language = defaultLanguage) => {
+  if (!item || typeof item !== 'object') return ''
+
   const suffix = language === 'zh' ? 'Zh' : language === 'ja' ? 'Ja' : 'En'
-  return item[`${field}${suffix}`] || item[field] || ''
+  const localizedValue = item[`${field}${suffix}`]
+  const fallbackValue = item[field]
+
+  if (localizedValue) return localizedValue
+  if (fallbackValue && typeof fallbackValue === 'object') {
+    return fallbackValue[language] || fallbackValue[defaultLanguage] || fallbackValue.en || ''
+  }
+  return fallbackValue || ''
 }
 
 const labelTranslations = {

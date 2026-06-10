@@ -23,6 +23,7 @@ const Experience = lazy(() => import('./sections/Experience'))
 const Contact = lazy(() => import('./sections/Contact'))
 const Footer = lazy(() => import('./sections/Footer'))
 const visitorTokenKey = 'mrright-visitor-token'
+const getStoredVisitorToken = () => window.localStorage.getItem(visitorTokenKey) || ''
 
 const SectionFallback = ({ title, copy }) => (
   <section className="c-space flex min-h-screen items-center">
@@ -40,12 +41,11 @@ const App = () => {
     experience: [],
   })
   const [status, setStatus] = useState('loading')
-  const [visitorToken, setVisitorToken] = useState(
-    () => window.localStorage.getItem(visitorTokenKey) || '',
-  )
+  const [visitorToken, setVisitorToken] = useState(getStoredVisitorToken)
   const [visitorUser, setVisitorUser] = useState(null)
+  const [visitorSessionChecked, setVisitorSessionChecked] = useState(() => !getStoredVisitorToken())
   const [authStatus, setAuthStatus] = useState('idle')
-  const visitorLoading = Boolean(visitorToken && !visitorUser)
+  const visitorLoading = !visitorSessionChecked
 
   useEffect(() => {
     window.localStorage.setItem('mrright-language', language)
@@ -77,6 +77,43 @@ const App = () => {
   }, [])
 
   useEffect(() => {
+    const syncVisitorToken = () => {
+      const storedToken = getStoredVisitorToken()
+
+      setVisitorToken((currentToken) => {
+        if (currentToken === storedToken) return currentToken
+        if (!storedToken) {
+          setVisitorUser(null)
+          setVisitorSessionChecked(true)
+        } else {
+          setVisitorSessionChecked(false)
+        }
+        return storedToken
+      })
+    }
+
+    const handleStorage = (event) => {
+      if (event.key === visitorTokenKey) syncVisitorToken()
+    }
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') syncVisitorToken()
+    }
+
+    window.addEventListener('storage', handleStorage)
+    window.addEventListener('focus', syncVisitorToken)
+    window.addEventListener('pageshow', syncVisitorToken)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      window.removeEventListener('storage', handleStorage)
+      window.removeEventListener('focus', syncVisitorToken)
+      window.removeEventListener('pageshow', syncVisitorToken)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [])
+
+  useEffect(() => {
     let isMounted = true
 
     if (!visitorToken) {
@@ -100,6 +137,9 @@ const App = () => {
         setVisitorToken('')
         setVisitorUser(null)
       })
+      .finally(() => {
+        if (isMounted) setVisitorSessionChecked(true)
+      })
 
     return () => {
       isMounted = false
@@ -110,6 +150,7 @@ const App = () => {
     window.localStorage.setItem(visitorTokenKey, payload.session.token)
     setVisitorToken(payload.session.token)
     setVisitorUser(payload.user)
+    setVisitorSessionChecked(true)
   }
 
   const handleVisitorLogin = async (payload) => {
@@ -118,6 +159,7 @@ const App = () => {
       const result = await loginVisitor(payload)
       saveVisitorSession(result)
       setAuthStatus('idle')
+      return result
     } catch (error) {
       setAuthStatus(error.message.includes('not configured') ? 'unavailable' : 'error')
       throw error
@@ -166,6 +208,7 @@ const App = () => {
     window.localStorage.removeItem(visitorTokenKey)
     setVisitorToken('')
     setVisitorUser(null)
+    setVisitorSessionChecked(true)
     if (token) logoutVisitor(token).catch(() => {})
   }
 
@@ -193,6 +236,7 @@ const App = () => {
     return (
       <Suspense fallback={<SectionFallback title="Account" copy={copy} />}>
         <AccountPage
+          authToken={visitorToken}
           copy={copy}
           language={language}
           onLanguageChange={setLanguage}
