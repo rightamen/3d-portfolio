@@ -6,6 +6,7 @@ import {
   Box3,
   Color,
   DoubleSide,
+  FrontSide,
   MeshBasicMaterial,
   MeshStandardMaterial,
   PMREMGenerator,
@@ -24,6 +25,13 @@ const modes = [
 ]
 
 const environmentUrl = '/assets/environments/studio-tomoco.exr'
+
+const alphaModes = [
+  { id: 'auto', labelKey: 'alphaAuto' },
+  { id: 'opaque', labelKey: 'alphaOpaque' },
+  { id: 'cutout', labelKey: 'alphaCutout' },
+  { id: 'blend', labelKey: 'alphaBlend' },
+]
 
 const viewerProfiles = {
   generic: {
@@ -123,46 +131,71 @@ const materialKeys = [
 
 const blendMaterialNamePattern = /(glass|clear|transparent|translucent|blend|water|visor|acrylic)/i
 
-const getTransparencyMode = (material) => {
-  if (!material) return 'opaque'
+const defaultRenderSettings = {
+  alphaMode: 'auto',
+  doubleSided: true,
+}
 
-  const hasAlphaMap = Boolean(material.alphaMap)
-  const hasPartialOpacity = (material.opacity ?? 1) < 0.999
+const getStoredMaterialState = (material) => {
+  if (!material) return null
+
+  material.userData.previewMaterialState ||= {
+    alphaTest: material.alphaTest || 0,
+    opacity: material.opacity ?? 1,
+    transparent: Boolean(material.transparent),
+  }
+
+  return material.userData.previewMaterialState
+}
+
+const getTransparencyMode = (material, renderSettings = defaultRenderSettings) => {
+  if (!material) return 'opaque'
+  if (renderSettings.alphaMode !== 'auto') return renderSettings.alphaMode
+
+  const storedState = getStoredMaterialState(material)
+  const hasAlphaTexture = Boolean(material.alphaMap || material.map)
+  const hasPartialOpacity = (storedState?.opacity ?? material.opacity ?? 1) < 0.999
   const wantsBlendedTransparency =
-    hasPartialOpacity || (!hasAlphaMap && material.transparent) || blendMaterialNamePattern.test(material.name || '')
+    hasPartialOpacity || blendMaterialNamePattern.test(material.name || '')
 
   if (wantsBlendedTransparency) return 'blend'
-  if (hasAlphaMap || material.transparent) return 'cutout'
+  if (
+    (storedState?.alphaTest ?? material.alphaTest ?? 0) > 0 ||
+    material.alphaMap ||
+    ((storedState?.transparent ?? material.transparent) && hasAlphaTexture)
+  ) {
+    return 'cutout'
+  }
   return 'opaque'
 }
 
-const materialUsesTransparency = (material) => getTransparencyMode(material) !== 'opaque'
+const materialUsesTransparency = (material, renderSettings) => getTransparencyMode(material, renderSettings) !== 'opaque'
 
-const configureTransparentMaterial = (material) => {
+const configureTransparentMaterial = (material, renderSettings = defaultRenderSettings) => {
   if (!material) return material
 
-  const transparencyMode = getTransparencyMode(material)
-  material.side = DoubleSide
+  const storedState = getStoredMaterialState(material)
+  const transparencyMode = getTransparencyMode(material, renderSettings)
+  material.side = renderSettings.doubleSided ? DoubleSide : FrontSide
 
   if ('forceSinglePass' in material) {
     material.forceSinglePass = false
   }
 
-  if (transparencyMode === 'opaque') {
-    material.needsUpdate = true
-    return material
-  }
-
   material.depthTest = true
 
-  if (transparencyMode === 'cutout') {
+  if (transparencyMode === 'opaque') {
     material.transparent = false
     material.depthWrite = true
-    material.alphaTest = Math.max(material.alphaTest || 0, 0.45)
+    material.alphaTest = 0
+  } else if (transparencyMode === 'cutout') {
+    material.transparent = false
+    material.depthWrite = true
+    material.alphaTest = Math.max(storedState?.alphaTest || 0, 0.08)
   } else {
     material.transparent = true
     material.depthWrite = false
-    material.alphaTest = Math.max(material.alphaTest || 0, material.alphaMap ? 0.01 : 0)
+    material.alphaTest = material.alphaMap ? 0.01 : 0
   }
 
   material.needsUpdate = true
@@ -170,7 +203,7 @@ const configureTransparentMaterial = (material) => {
   return material
 }
 
-const cloneTextureMaterial = (material) => {
+const cloneTextureMaterial = (material, renderSettings) => {
   if (!material) return material
 
   const displayMaterial = new MeshBasicMaterial({
@@ -184,18 +217,18 @@ const cloneTextureMaterial = (material) => {
     name: material.name,
     opacity: material.opacity ?? 1,
     premultipliedAlpha: material.premultipliedAlpha,
-    side: DoubleSide,
-    transparent: getTransparencyMode(material) === 'blend',
+    side: renderSettings.doubleSided ? DoubleSide : FrontSide,
+    transparent: getTransparencyMode(material, renderSettings) === 'blend',
   })
 
   if (displayMaterial.map) {
     displayMaterial.map.colorSpace = SRGBColorSpace
   }
 
-  return configureTransparentMaterial(displayMaterial)
+  return configureTransparentMaterial(displayMaterial, renderSettings)
 }
 
-const prepareStudioMaterial = (material, profile) => {
+const prepareStudioMaterial = (material, profile, renderSettings) => {
   if (!material) return
 
   materialKeys.forEach((key) => {
@@ -206,7 +239,7 @@ const prepareStudioMaterial = (material, profile) => {
     material.map.colorSpace = SRGBColorSpace
   }
 
-  configureTransparentMaterial(material)
+  configureTransparentMaterial(material, renderSettings)
 
   material.envMapIntensity = profile.envIntensity
   if (typeof material.metalness === 'number') material.metalness = Math.min(material.metalness, 0.95)
@@ -214,7 +247,7 @@ const prepareStudioMaterial = (material, profile) => {
   material.needsUpdate = true
 }
 
-const ModelScene = ({ url, mode, profile }) => {
+const ModelScene = ({ url, mode, profile, renderSettings }) => {
   const { scene } = useGLTF(url)
   const displayScene = useMemo(() => {
     const clonedScene = scene.clone(true)
@@ -253,18 +286,22 @@ const ModelScene = ({ url, mode, profile }) => {
     }
   }, [displayScene])
   const clayMaterial = useMemo(
-    () => new MeshStandardMaterial({ color: '#b8bdc7', roughness: 0.72, side: DoubleSide }),
-    [],
+    () => new MeshStandardMaterial({
+      color: '#b8bdc7',
+      roughness: 0.72,
+      side: renderSettings.doubleSided ? DoubleSide : FrontSide,
+    }),
+    [renderSettings.doubleSided],
   )
   const wireMaterial = useMemo(
     () =>
       new MeshStandardMaterial({
         color: '#71f7ff',
         roughness: 0.6,
-        side: DoubleSide,
+        side: renderSettings.doubleSided ? DoubleSide : FrontSide,
         wireframe: true,
       }),
-    [],
+    [renderSettings.doubleSided],
   )
 
   useEffect(() => {
@@ -273,25 +310,26 @@ const ModelScene = ({ url, mode, profile }) => {
 
       if (!object.userData.originalMaterial) {
         object.userData.originalMaterial = object.material
-        object.userData.textureMaterial = Array.isArray(object.material)
-          ? object.material.map(cloneTextureMaterial)
-          : cloneTextureMaterial(object.material)
       }
 
       const materials = Array.isArray(object.userData.originalMaterial)
         ? object.userData.originalMaterial
         : [object.userData.originalMaterial]
 
-      materials.filter(Boolean).forEach((material) => prepareStudioMaterial(material, profile))
+      materials.filter(Boolean).forEach((material) => prepareStudioMaterial(material, profile, renderSettings))
 
-      object.renderOrder = materials.some(materialUsesTransparency) ? 10 : 0
+      object.renderOrder = materials.some((material) => materialUsesTransparency(material, renderSettings)) ? 10 : 0
 
       if (mode === 'clay') object.material = clayMaterial
       if (mode === 'wireframe') object.material = wireMaterial
       if (mode === 'studio') object.material = object.userData.originalMaterial
-      if (mode === 'textured') object.material = object.userData.textureMaterial
+      if (mode === 'textured') {
+        object.material = Array.isArray(object.userData.originalMaterial)
+          ? object.userData.originalMaterial.map((material) => cloneTextureMaterial(material, renderSettings))
+          : cloneTextureMaterial(object.userData.originalMaterial, renderSettings)
+      }
     })
-  }, [clayMaterial, displayScene, mode, profile, wireMaterial])
+  }, [clayMaterial, displayScene, mode, profile, renderSettings, wireMaterial])
 
   return (
     <>
@@ -409,6 +447,8 @@ const ModelPreview = ({ project, onClose, language = 'zh', copy }) => {
   const profile = viewerProfiles[assetCategory] || viewerProfiles.generic
   const [mode, setMode] = useState(profile.defaultMode)
   const [autoRotate, setAutoRotate] = useState(false)
+  const [alphaMode, setAlphaMode] = useState(defaultRenderSettings.alphaMode)
+  const [doubleSided, setDoubleSided] = useState(defaultRenderSettings.doubleSided)
   const controlsRef = useRef(null)
 
   useEffect(() => {
@@ -427,6 +467,8 @@ const ModelPreview = ({ project, onClose, language = 'zh', copy }) => {
   const resetView = () => {
     controlsRef.current?.reset()
   }
+
+  const renderSettings = useMemo(() => ({ alphaMode, doubleSided }), [alphaMode, doubleSided])
 
   return (
     <div className="model-overlay" role="dialog" aria-modal="true">
@@ -464,6 +506,24 @@ const ModelPreview = ({ project, onClose, language = 'zh', copy }) => {
           >
             {copy.autoRotate}
           </button>
+          <button
+            type="button"
+            className={doubleSided ? 'mode-button-active' : 'mode-button'}
+            onClick={() => setDoubleSided((current) => !current)}
+          >
+            {doubleSided ? copy.doubleSidedOn : copy.doubleSidedOff}
+          </button>
+          <span className="model-control-label">{copy.alphaMode}</span>
+          {alphaModes.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              className={alphaMode === item.id ? 'mode-button-active' : 'mode-button'}
+              onClick={() => setAlphaMode(item.id)}
+            >
+              {copy[item.labelKey]}
+            </button>
+          ))}
         </div>
 
         <div className="model-canvas">
@@ -485,7 +545,12 @@ const ModelPreview = ({ project, onClose, language = 'zh', copy }) => {
             <Suspense fallback={<CanvasLoader />}>
               {profile.useEnvironment && mode !== 'textured' && <StudioEnvironment />}
               <ShowcaseLights profile={profile} />
-              <ModelScene url={project.modelUrl} mode={mode} profile={profile} />
+              <ModelScene
+                url={project.modelUrl}
+                mode={mode}
+                profile={profile}
+                renderSettings={renderSettings}
+              />
               <OrbitControls
                 ref={controlsRef}
                 enableDamping

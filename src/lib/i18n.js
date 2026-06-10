@@ -209,6 +209,13 @@ const copy = {
     modeWireframe: '线框',
     reset: '重置',
     autoRotate: '自动旋转',
+    doubleSidedOn: '双面显示',
+    doubleSidedOff: '单面显示',
+    alphaMode: '透明模式',
+    alphaAuto: '自动',
+    alphaOpaque: '不透明',
+    alphaCutout: '镂空',
+    alphaBlend: '半透明',
     experienceKicker: '创作经历',
     experienceTitle: '围绕造型、材质与画面表现建立的创作流程',
     experienceIntro:
@@ -440,6 +447,13 @@ const copy = {
     modeWireframe: 'Wireframe',
     reset: 'Reset',
     autoRotate: 'Auto Rotate',
+    doubleSidedOn: 'Double Side',
+    doubleSidedOff: 'Single Side',
+    alphaMode: 'Alpha Mode',
+    alphaAuto: 'Auto',
+    alphaOpaque: 'Opaque',
+    alphaCutout: 'Cutout',
+    alphaBlend: 'Blend',
     experienceKicker: 'Experience',
     experienceTitle: 'A Process Built Around Form, Material, And Presentation',
     experienceIntro:
@@ -669,6 +683,13 @@ const copy = {
     modeWireframe: 'ワイヤー',
     reset: 'リセット',
     autoRotate: '自動回転',
+    doubleSidedOn: '両面表示',
+    doubleSidedOff: '片面表示',
+    alphaMode: '透明モード',
+    alphaAuto: '自動',
+    alphaOpaque: '不透明',
+    alphaCutout: '切り抜き',
+    alphaBlend: '半透明',
     experienceKicker: '制作経験',
     experienceTitle: '造形、質感、画面表現を中心にした制作フロー',
     experienceIntro:
@@ -701,8 +722,17 @@ export const getInitialLanguage = () => {
 export const getCopy = (language = defaultLanguage) => copy[language] || copy[defaultLanguage]
 
 export const pickLocalized = (item = {}, field, language = defaultLanguage) => {
+  if (!item || typeof item !== 'object') return ''
+
   const suffix = language === 'zh' ? 'Zh' : language === 'ja' ? 'Ja' : 'En'
-  return item[`${field}${suffix}`] || item[field] || ''
+  const localizedValue = item[`${field}${suffix}`]
+  const fallbackValue = item[field]
+
+  if (localizedValue) return localizedValue
+  if (fallbackValue && typeof fallbackValue === 'object') {
+    return fallbackValue[language] || fallbackValue[defaultLanguage] || fallbackValue.en || ''
+  }
+  return fallbackValue || ''
 }
 
 const labelTranslations = {
