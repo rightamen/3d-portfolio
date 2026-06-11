@@ -14,6 +14,8 @@ React Three Fiber, and a small Node/Express API.
 
 ## Local Development
 
+Requires Node.js 22.12+ and npm 10.5+.
+
 ```bash
 npm install
 npm run dev:full
@@ -23,6 +25,8 @@ The frontend runs on `http://localhost:5173`; Vite proxies `/api` to the
 Express server on `http://localhost:4173`.
 
 ## Production Build
+
+Build with Node.js 22.12+ and npm 10.5+.
 
 ```bash
 npm run build
