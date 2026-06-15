@@ -703,9 +703,10 @@ const convertModelInBrowser = async (files) => {
 
 const Admin = () => {
   const editorRef = useRef(null)
-  const [token, setToken] = useState('')
+  const [token, setToken] = useState(() => window.localStorage.getItem(tokenKey) || '')
   const [tokenInput, setTokenInput] = useState(() => window.localStorage.getItem(tokenKey) || '')
   const [status, setStatus] = useState('locked')
+  const [authMessage, setAuthMessage] = useState('')
   const [data, setData] = useState({
     comments: [],
     communityPosts: [],
@@ -736,7 +737,7 @@ const Admin = () => {
   const loadAdminData = async (activeToken = token) => {
     if (!activeToken) {
       setStatus('locked')
-      return
+      return false
     }
 
     setStatus('loading')
@@ -776,23 +777,55 @@ const Admin = () => {
         summary: summaryPayload.summary,
       })
       setStatus('ready')
-    } catch {
-      setStatus('error')
+      return true
+    } catch (error) {
+      // A 401 means the token is wrong/expired: clear it and return to the
+      // login form. Other failures (network, 503) keep the token so the
+      // operator can retry without re-typing the secret.
+      if (error?.status === 401) {
+        window.localStorage.removeItem(tokenKey)
+        setToken('')
+        setStatus('locked')
+        setAuthMessage('That admin token was rejected. Check the ADMIN_TOKEN value and try again.')
+      } else if (error?.status === 503) {
+        setStatus('error')
+        setAuthMessage('The admin data store is not configured on the server.')
+      } else {
+        setStatus('error')
+        setAuthMessage('')
+      }
+      return false
     }
   }
+
+  // Restore a stored admin token on mount so a page reload does not drop the
+  // operator back to the login form. An invalid stored token is cleared by
+  // loadAdminData's 401 handling.
+  useEffect(() => {
+    if (token) loadAdminData(token)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const unlock = async (event) => {
     event.preventDefault()
     const nextToken = tokenInput.trim()
-    window.localStorage.setItem(tokenKey, nextToken)
+    if (!nextToken) return
+
+    setAuthMessage('')
     setToken(nextToken)
-    await loadAdminData(nextToken)
+    const ok = await loadAdminData(nextToken)
+    // Only persist the token once it has been accepted by the server, so a
+    // wrong secret is not stored and re-filled on the next reload.
+    if (ok) {
+      window.localStorage.setItem(tokenKey, nextToken)
+    }
   }
 
   const logout = () => {
     window.localStorage.removeItem(tokenKey)
     setToken('')
     setTokenInput('')
+    setAuthMessage('')
     setStatus('locked')
   }
 
@@ -1073,6 +1106,11 @@ const Admin = () => {
             onChange={(event) => setTokenInput(event.target.value)}
             required
           />
+          {(authMessage || status === 'error') && (
+            <p className="text-sm text-coral">
+              {authMessage || 'Could not reach the admin API. Check your connection and try again.'}
+            </p>
+          )}
           <button type="submit" className="primary-action">
             Open Dashboard
           </button>

@@ -37,43 +37,36 @@ The production server listens on `PORT` or `4173`.
 
 ## VPS Deploy
 
-There are two supported ways to update the VPS.
+Build locally, upload a release archive, and let the VPS run only production
+dependencies. The server must use Node.js 22.12+.
 
-### Option A: Upload a locally built release
+The deployment must never recreate or overwrite `/etc/mrright-portfolio.env`.
+Before every release, back up that file and verify the required keys exist:
 
-Use this when deploying from your local machine. The script builds the frontend,
-uploads `dist`, `server`, and production package files to the VPS, installs
-production dependencies, writes the systemd/nginx config, restarts the service,
-and checks `/api/health`.
-
-Set these environment variables before deployment:
-
-```bash
-VPS_HOST=147.79.20.232
-VPS_PORT=22
-VPS_USER=root
-VPS_PASSWORD=your-root-password
+```text
+DATABASE_URL
+ADMIN_TOKEN
 ```
 
-Then run:
+Optional mail keys may be added manually when email delivery is needed:
 
-```bash
-npm run deploy:vps
+```text
+SMTP_HOST
+SMTP_PORT
+SMTP_SECURE
+SMTP_USER
+SMTP_PASS
+SMTP_FROM
+SMTP_STARTTLS
 ```
 
-Optional variables:
+Do not commit, paste into docs, or log real passwords, tokens, or database URLs.
 
-```bash
-VPS_REMOTE_DIR=/opt/mrright-portfolio
-VPS_SERVICE=mrright-portfolio
-VPS_DOMAIN=mrright.blog
-```
+### Option A: Build locally, upload manually
 
-### Option B: Build locally, upload manually with FinalShell
-
-Use this when the VPS is too small to run `npm run build` reliably. Build the
-release archive on your local machine, upload it with FinalShell, and only run
-`npm ci --omit=dev` plus a service restart on the VPS.
+Use this as the normal production path. Build the release archive on your local
+machine, upload it over SSH/SFTP, install production dependencies on the VPS,
+then restart the systemd service.
 
 On your local machine:
 
@@ -97,6 +90,42 @@ set -euo pipefail
 APP_DIR=/opt/mrright-portfolio
 SERVICE=mrright-portfolio
 ARCHIVE=/tmp/mrright-portfolio-release.tar.gz
+ENV_FILE=/etc/mrright-portfolio.env
+
+if [ ! -f "$ENV_FILE" ]; then
+  echo "Missing $ENV_FILE. Create it manually before deploying." >&2
+  echo "Required keys: DATABASE_URL ADMIN_TOKEN" >&2
+  exit 1
+fi
+
+missing_required=""
+for key in DATABASE_URL ADMIN_TOKEN; do
+  if ! awk -F= -v key="$key" '$1 == key && length($0) > length(key) + 1 { found = 1 } END { exit found ? 0 : 1 }' "$ENV_FILE"; then
+    missing_required="$missing_required $key"
+  fi
+done
+
+if [ -n "$missing_required" ]; then
+  echo "Missing required env key(s):$missing_required" >&2
+  echo "Edit $ENV_FILE manually; deployment will not rewrite it." >&2
+  exit 1
+fi
+
+missing_optional=""
+for key in SMTP_HOST SMTP_PORT SMTP_SECURE SMTP_USER SMTP_PASS SMTP_FROM SMTP_STARTTLS; do
+  if ! awk -F= -v key="$key" '$1 == key { found = 1 } END { exit found ? 0 : 1 }' "$ENV_FILE"; then
+    missing_optional="$missing_optional $key"
+  fi
+done
+
+if [ -n "$missing_optional" ]; then
+  echo "Optional SMTP env key(s) not present:$missing_optional"
+  echo "Email verification will use manual mode until mail settings are added."
+fi
+
+ENV_BACKUP="$ENV_FILE.backup-$(date +%Y%m%d-%H%M%S)"
+cp -a "$ENV_FILE" "$ENV_BACKUP"
+chmod 600 "$ENV_FILE" "$ENV_BACKUP"
 
 mkdir -p "$APP_DIR"
 rm -rf "$APP_DIR/dist" "$APP_DIR/server" "$APP_DIR/scripts"
@@ -110,6 +139,9 @@ sleep 3
 
 curl -fsS http://127.0.0.1:4173/api/health
 printf '\n'
+TOKEN="$(awk -F= '$1 == "ADMIN_TOKEN" { print substr($0, index($0, $2)) }' "$ENV_FILE")"
+curl -fsS -H "Authorization: Bearer $TOKEN" http://127.0.0.1:4173/api/admin/summary >/dev/null
+echo "Admin summary check passed."
 curl -fsS -o /dev/null -w 'home_status=%{http_code}\n' 'http://127.0.0.1:4173/'
 curl -fsS -o /dev/null -w 'login_status=%{http_code}\n' 'http://127.0.0.1:4173/login?mode=login'
 curl -fsS -o /dev/null -w 'account_status=%{http_code}\n' 'http://127.0.0.1:4173/account'
@@ -117,6 +149,31 @@ systemctl --no-pager --full status "$SERVICE"
 EOF_SCRIPT
 
 bash /tmp/apply-mrright-release.sh
+```
+
+### Option B: Automated upload helper
+
+`npm run deploy:vps` can upload and apply a release, but it is intentionally
+conservative:
+
+- It fails if `/etc/mrright-portfolio.env` is missing.
+- It fails if `DATABASE_URL` or `ADMIN_TOKEN` is missing or empty.
+- It backs up `/etc/mrright-portfolio.env` before deployment.
+- It does not write or rewrite secret env values.
+- It checks both `/api/health` and `/api/admin/summary` after restart.
+
+Only pass deployment credentials through your local shell session. Never commit
+them to the repository.
+
+```bash
+VPS_HOST=147.79.20.232 \
+VPS_PORT=22 \
+VPS_USER=root \
+VPS_REMOTE_DIR=/opt/mrright-portfolio \
+VPS_SERVICE=mrright-portfolio \
+VPS_DOMAIN=mrright.blog \
+VPS_ENV_FILE=/etc/mrright-portfolio.env \
+npm run deploy:vps
 ```
 
 ### Option C: Update an existing Git checkout on the VPS
@@ -134,6 +191,29 @@ set -euo pipefail
 APP_DIR=/opt/mrright-portfolio
 BRANCH=work
 SERVICE=mrright-portfolio
+ENV_FILE=/etc/mrright-portfolio.env
+
+if [ ! -f "$ENV_FILE" ]; then
+  echo "Missing $ENV_FILE. Create it manually before deploying." >&2
+  exit 1
+fi
+
+missing_required=""
+for key in DATABASE_URL ADMIN_TOKEN; do
+  if ! awk -F= -v key="$key" '$1 == key && length($0) > length(key) + 1 { found = 1 } END { exit found ? 0 : 1 }' "$ENV_FILE"; then
+    missing_required="$missing_required $key"
+  fi
+done
+
+if [ -n "$missing_required" ]; then
+  echo "Missing required env key(s):$missing_required" >&2
+  echo "Edit $ENV_FILE manually; deployment will not rewrite it." >&2
+  exit 1
+fi
+
+ENV_BACKUP="$ENV_FILE.backup-$(date +%Y%m%d-%H%M%S)"
+cp -a "$ENV_FILE" "$ENV_BACKUP"
+chmod 600 "$ENV_FILE" "$ENV_BACKUP"
 
 cd "$APP_DIR"
 git fetch origin "$BRANCH"
@@ -148,6 +228,9 @@ sleep 3
 
 curl -fsS http://127.0.0.1:4173/api/health
 printf '\n'
+TOKEN="$(awk -F= '$1 == "ADMIN_TOKEN" { print substr($0, index($0, $2)) }' "$ENV_FILE")"
+curl -fsS -H "Authorization: Bearer $TOKEN" http://127.0.0.1:4173/api/admin/summary >/dev/null
+echo "Admin summary check passed."
 curl -fsS -o /dev/null -w 'login_status=%{http_code}\n' 'http://127.0.0.1:4173/login?mode=login'
 curl -fsS -o /dev/null -w 'register_status=%{http_code}\n' 'http://127.0.0.1:4173/login?mode=register'
 curl -fsS -o /dev/null -w 'account_status=%{http_code}\n' 'http://127.0.0.1:4173/account'

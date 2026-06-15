@@ -7,6 +7,7 @@ const request = async (path, options) => {
     const payload = await response.json().catch(() => ({}))
     const error = new Error(payload.error || 'Request failed')
     error.code = payload.code
+    error.status = response.status
     throw error
   }
 
