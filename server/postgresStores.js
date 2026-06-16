@@ -81,6 +81,25 @@ const toCommunityPost = (row) => ({
     : null,
 })
 
+const toCommunityComment = (row) => ({
+  author: row.author,
+  createdAt: row.created_at.toISOString(),
+  id: row.id,
+  likeCount: Number(row.like_count || 0),
+  liked: Boolean(row.liked),
+  message: row.message,
+  parentId: row.parent_id || null,
+  postId: row.post_id,
+  updatedAt: row.updated_at?.toISOString?.() || row.updated_at,
+  user: row.user_id
+    ? {
+        accessLevel: row.access_level,
+        displayName: row.display_name,
+        id: row.user_id,
+      }
+    : null,
+})
+
 const toProjectOverride = (row) => ({
   assetCategory: row.asset_category,
   downloadPolicy: row.download_policy,
@@ -337,6 +356,36 @@ const ensureSchema = async (pool) => {
 
     CREATE INDEX IF NOT EXISTS community_posts_user_idx
       ON community_posts (user_id, created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS community_comments (
+      id text PRIMARY KEY,
+      post_id text NOT NULL REFERENCES community_posts(id) ON DELETE CASCADE,
+      parent_id text REFERENCES community_comments(id) ON DELETE CASCADE,
+      user_id text REFERENCES visitor_users(id) ON DELETE SET NULL,
+      author text NOT NULL,
+      message text NOT NULL,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    );
+
+    CREATE INDEX IF NOT EXISTS community_comments_post_created_idx
+      ON community_comments (post_id, created_at);
+
+    CREATE INDEX IF NOT EXISTS community_comments_parent_idx
+      ON community_comments (parent_id, created_at);
+
+    CREATE INDEX IF NOT EXISTS community_comments_user_idx
+      ON community_comments (user_id, created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS community_comment_likes (
+      comment_id text NOT NULL REFERENCES community_comments(id) ON DELETE CASCADE,
+      user_id text NOT NULL REFERENCES visitor_users(id) ON DELETE CASCADE,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      PRIMARY KEY (comment_id, user_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS community_comment_likes_comment_idx
+      ON community_comment_likes (comment_id);
   `)
 
   await pool.query(`
@@ -814,6 +863,180 @@ export const createPostgresStores = async (databaseUrl) => {
       return result.rows.map(toCommunityPost)
     },
 
+    getPost: async (id) => {
+      const result = await pool.query(
+        `
+          SELECT
+            community_posts.id,
+            community_posts.topic,
+            community_posts.title,
+            community_posts.message,
+            community_posts.created_at,
+            community_posts.updated_at,
+            visitor_users.id AS user_id,
+            visitor_users.display_name,
+            visitor_users.email,
+            visitor_users.access_level
+          FROM community_posts
+          LEFT JOIN visitor_users ON visitor_users.id = community_posts.user_id
+          WHERE community_posts.id = $1
+          LIMIT 1
+        `,
+        [id],
+      )
+
+      return result.rows[0] ? toCommunityPost(result.rows[0]) : null
+    },
+
+    listComments: async (postId, { sort = 'newest', viewerId = null } = {}) => {
+      const orderBy =
+        sort === 'top'
+          ? 'like_count DESC, community_comments.created_at ASC'
+          : 'community_comments.created_at ASC'
+
+      const result = await pool.query(
+        `
+          SELECT
+            community_comments.id,
+            community_comments.post_id,
+            community_comments.parent_id,
+            community_comments.author,
+            community_comments.message,
+            community_comments.created_at,
+            community_comments.updated_at,
+            visitor_users.id AS user_id,
+            visitor_users.display_name,
+            visitor_users.access_level,
+            COALESCE(like_counts.count, 0) AS like_count,
+            CASE WHEN viewer_likes.user_id IS NULL THEN false ELSE true END AS liked
+          FROM community_comments
+          LEFT JOIN visitor_users ON visitor_users.id = community_comments.user_id
+          LEFT JOIN (
+            SELECT comment_id, count(*)::int AS count
+            FROM community_comment_likes
+            GROUP BY comment_id
+          ) AS like_counts ON like_counts.comment_id = community_comments.id
+          LEFT JOIN community_comment_likes AS viewer_likes
+            ON viewer_likes.comment_id = community_comments.id
+            AND viewer_likes.user_id = $2
+          WHERE community_comments.post_id = $1
+          ORDER BY ${orderBy}
+          LIMIT 500
+        `,
+        [postId, viewerId],
+      )
+
+      return result.rows.map(toCommunityComment)
+    },
+
+    createComment: async (comment) => {
+      await pool.query(
+        `
+          INSERT INTO community_comments (id, post_id, parent_id, user_id, author, message)
+          VALUES ($1, $2, $3, $4, $5, $6)
+        `,
+        [
+          comment.id,
+          comment.postId,
+          comment.parentId || null,
+          comment.userId || null,
+          comment.author,
+          comment.message,
+        ],
+      )
+
+      const enriched = await pool.query(
+        `
+          SELECT
+            community_comments.id,
+            community_comments.post_id,
+            community_comments.parent_id,
+            community_comments.author,
+            community_comments.message,
+            community_comments.created_at,
+            community_comments.updated_at,
+            visitor_users.id AS user_id,
+            visitor_users.display_name,
+            visitor_users.access_level,
+            0 AS like_count,
+            false AS liked
+          FROM community_comments
+          LEFT JOIN visitor_users ON visitor_users.id = community_comments.user_id
+          WHERE community_comments.id = $1
+        `,
+        [comment.id],
+      )
+
+      return toCommunityComment(enriched.rows[0])
+    },
+
+    deleteUserComment: async (id, userId) => {
+      const result = await pool.query(
+        `
+          DELETE FROM community_comments
+          WHERE id = $1 AND user_id = $2
+          RETURNING id
+        `,
+        [id, userId],
+      )
+
+      return result.rows[0] || null
+    },
+
+    toggleCommentLike: async (commentId, userId) => {
+      const client = await pool.connect()
+
+      try {
+        await client.query('BEGIN')
+        const existing = await client.query(
+          `
+            SELECT comment_id FROM community_comments WHERE id = $1
+          `,
+          [commentId],
+        )
+
+        if (!existing.rows[0]) {
+          await client.query('ROLLBACK')
+          return null
+        }
+
+        const deleted = await client.query(
+          `
+            DELETE FROM community_comment_likes
+            WHERE comment_id = $1 AND user_id = $2
+            RETURNING comment_id
+          `,
+          [commentId, userId],
+        )
+
+        const liked = deleted.rowCount === 0
+
+        if (liked) {
+          await client.query(
+            `
+              INSERT INTO community_comment_likes (comment_id, user_id)
+              VALUES ($1, $2)
+              ON CONFLICT DO NOTHING
+            `,
+            [commentId, userId],
+          )
+        }
+
+        const countResult = await client.query(
+          'SELECT count(*)::int AS count FROM community_comment_likes WHERE comment_id = $1',
+          [commentId],
+        )
+        await client.query('COMMIT')
+
+        return { liked, likeCount: countResult.rows[0].count }
+      } catch (error) {
+        await client.query('ROLLBACK')
+        throw error
+      } finally {
+        client.release()
+      }
+    },
+
     listUserUploads: async (userId) => {
       const result = await pool.query(
         `
@@ -985,6 +1208,7 @@ export const createPostgresStores = async (databaseUrl) => {
           (SELECT count(*)::int FROM contact_messages) AS contact_messages,
           (SELECT count(*)::int FROM visitor_users) AS visitors,
           (SELECT count(*)::int FROM community_posts) AS community_posts,
+          (SELECT count(*)::int FROM community_comments) AS community_comments,
           (SELECT count(*)::int FROM community_uploads) AS community_uploads,
           (SELECT count(*)::int FROM community_uploads WHERE status = 'pending') AS pending_community_uploads
       `)
@@ -1067,6 +1291,49 @@ export const createPostgresStores = async (databaseUrl) => {
       `)
 
       return result.rows.map(toCommunityPost)
+    },
+
+    listCommunityComments: async () => {
+      const result = await pool.query(`
+        SELECT
+          community_comments.id,
+          community_comments.post_id,
+          community_comments.parent_id,
+          community_comments.author,
+          community_comments.message,
+          community_comments.created_at,
+          community_comments.updated_at,
+          community_posts.title AS post_title,
+          visitor_users.id AS user_id,
+          visitor_users.display_name,
+          visitor_users.email,
+          visitor_users.access_level,
+          COALESCE(like_counts.count, 0) AS like_count,
+          false AS liked
+        FROM community_comments
+        LEFT JOIN community_posts ON community_posts.id = community_comments.post_id
+        LEFT JOIN visitor_users ON visitor_users.id = community_comments.user_id
+        LEFT JOIN (
+          SELECT comment_id, count(*)::int AS count
+          FROM community_comment_likes
+          GROUP BY comment_id
+        ) AS like_counts ON like_counts.comment_id = community_comments.id
+        ORDER BY community_comments.created_at DESC
+        LIMIT 200
+      `)
+
+      return result.rows.map((row) => ({
+        ...toCommunityComment(row),
+        postTitle: row.post_title || null,
+        user: row.user_id
+          ? {
+              accessLevel: row.access_level,
+              displayName: row.display_name,
+              email: row.email,
+              id: row.user_id,
+            }
+          : null,
+      }))
     },
 
     listLikes: async () => {
@@ -1549,6 +1816,19 @@ export const createPostgresStores = async (databaseUrl) => {
       const result = await pool.query(
         `
           DELETE FROM community_posts
+          WHERE id = $1
+          RETURNING id
+        `,
+        [id],
+      )
+
+      return result.rows[0] || null
+    },
+
+    deleteCommunityComment: async (id) => {
+      const result = await pool.query(
+        `
+          DELETE FROM community_comments
           WHERE id = $1
           RETURNING id
         `,

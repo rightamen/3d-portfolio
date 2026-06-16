@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import {
   createAdminProject,
   deleteAdminComment,
+  deleteAdminCommunityComment,
   deleteAdminCommunityPost,
   deleteAdminCommunityUpload,
   deleteAdminContactMessage,
@@ -9,6 +10,7 @@ import {
   deleteAdminProject,
   deleteAdminVisitor,
   getAdminComments,
+  getAdminCommunityComments,
   getAdminCommunityPosts,
   getAdminCommunityUploads,
   getAdminContactMessages,
@@ -709,6 +711,7 @@ const Admin = () => {
   const [authMessage, setAuthMessage] = useState('')
   const [data, setData] = useState({
     comments: [],
+    communityComments: [],
     communityPosts: [],
     communityUploads: [],
     likes: [],
@@ -745,6 +748,7 @@ const Admin = () => {
       const [
         summaryPayload,
         commentsPayload,
+        communityCommentsPayload,
         communityPostsPayload,
         communityUploadsPayload,
         likesPayload,
@@ -756,6 +760,7 @@ const Admin = () => {
         await Promise.all([
           getAdminSummary(activeToken),
           getAdminComments(activeToken),
+          getAdminCommunityComments(activeToken),
           getAdminCommunityPosts(activeToken),
           getAdminCommunityUploads(activeToken),
           getAdminLikes(activeToken),
@@ -767,6 +772,7 @@ const Admin = () => {
 
       setData({
         comments: commentsPayload.comments,
+        communityComments: communityCommentsPayload.comments,
         communityPosts: communityPostsPayload.posts,
         communityUploads: communityUploadsPayload.uploads,
         likes: likesPayload.likes,
@@ -1078,6 +1084,9 @@ const Admin = () => {
   )
   const visibleCommunityPosts = data.communityPosts.filter((post) =>
     searchInItem(post, searchQuery),
+  )
+  const visibleCommunityComments = data.communityComments.filter((comment) =>
+    searchInItem(comment, searchQuery),
   )
   const visibleLikes = data.likes.filter((like) => searchInItem(like, searchQuery))
   const visibleRequests = data.requests.filter((request) =>
@@ -1943,6 +1952,49 @@ const Admin = () => {
               {visibleCommunityUploads.length === 0 && (
                 <p className="text-sm text-neutral-500">
                   No community uploads match this search.
+                </p>
+              )}
+
+              <div className="admin-subsection-title">
+                <strong>Post Comments</strong>
+                <span>{visibleCommunityComments.length}</span>
+              </div>
+              {visibleCommunityComments.map((comment) => (
+                <article key={comment.id} className="admin-row">
+                  <div>
+                    <div className="admin-row-title">
+                      <strong>{comment.author}</strong>
+                      <span>{comment.parentId ? 'reply' : 'comment'}</span>
+                    </div>
+                    <p>{comment.message}</p>
+                    <small>
+                      On: {comment.postTitle || comment.postId} · {comment.likeCount} likes
+                    </small>
+                    <small>
+                      {comment.user
+                        ? `${comment.user.displayName} · ${comment.user.email} · ${comment.user.accessLevel}`
+                        : 'Unknown visitor'}
+                    </small>
+                    <small>Posted {formatDate(comment.createdAt)}</small>
+                  </div>
+                  <div className="admin-actions">
+                    <button
+                      type="button"
+                      className="danger-action"
+                      onClick={() =>
+                        deleteItem('community comment', () =>
+                          deleteAdminCommunityComment(token, comment.id),
+                        )
+                      }
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </article>
+              ))}
+              {visibleCommunityComments.length === 0 && (
+                <p className="text-sm text-neutral-500">
+                  No community comments match this search.
                 </p>
               )}
             </div>

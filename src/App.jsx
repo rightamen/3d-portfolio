@@ -15,6 +15,7 @@ import Navbar from './sections/Navbar'
 
 const AuthPage = lazy(() => import('./pages/AuthPage'))
 const AccountPage = lazy(() => import('./pages/AccountPage'))
+const CommunityPage = lazy(() => import('./pages/CommunityPage'))
 const Hero = lazy(() => import('./sections/Hero'))
 const About = lazy(() => import('./sections/About'))
 const Projects = lazy(() => import('./sections/Projects'))
@@ -248,6 +249,21 @@ const App = () => {
     )
   }
 
+  if (routePath.startsWith('/community')) {
+    return (
+      <Suspense fallback={<SectionFallback title="Community" copy={copy} />}>
+        <CommunityPage
+          authToken={visitorToken}
+          copy={copy}
+          language={language}
+          onLanguageChange={setLanguage}
+          visitorLoading={visitorLoading}
+          visitorUser={visitorUser}
+        />
+      </Suspense>
+    )
+  }
+
   return (
     <div id="home" className="min-h-screen overflow-hidden">
       <Navbar
@@ -282,12 +298,7 @@ const App = () => {
           />
         </Suspense>
         <Suspense fallback={<SectionFallback title="Community" copy={copy} />}>
-          <Community
-            authToken={visitorToken}
-            copy={copy}
-            language={language}
-            visitorUser={visitorUser}
-          />
+          <Community copy={copy} />
         </Suspense>
         <Suspense fallback={<SectionFallback title="Experience" copy={copy} />}>
           <Experience

@@ -648,6 +648,190 @@ html {
   @apply text-xs text-neutral-500;
 }
 
+.community-entry-card {
+  @apply mt-8 grid gap-6 rounded-lg border border-white/10 bg-[#101321]/80 p-6 md:grid-cols-[1.1fr_0.9fr] md:p-8;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.community-entry-copy {
+  @apply grid content-start gap-4;
+}
+
+.community-entry-copy h3 {
+  @apply text-2xl font-semibold text-white;
+}
+
+.community-entry-copy p {
+  @apply leading-relaxed text-neutral-400;
+}
+
+.community-entry-actions {
+  @apply mt-2 flex flex-wrap gap-3;
+}
+
+.community-entry-highlights {
+  @apply grid content-start gap-3;
+}
+
+.community-entry-highlights li {
+  @apply grid gap-1 rounded-lg border border-white/10 bg-black/20 p-4;
+}
+
+.community-entry-highlights strong {
+  @apply text-sm font-semibold text-white;
+}
+
+.community-entry-highlights span {
+  @apply text-xs leading-relaxed text-neutral-400;
+}
+
+.community-page {
+  @apply mx-auto w-full max-w-4xl px-4 py-8 md:px-6;
+}
+
+.community-page-heading {
+  @apply mb-8 grid gap-3;
+}
+
+.community-post-link {
+  @apply block transition duration-200 hover:-translate-y-0.5 hover:border-aqua/40;
+}
+
+.community-post-open {
+  @apply mt-3 block text-xs font-semibold text-aqua;
+}
+
+.community-back-link {
+  @apply mb-6 inline-flex text-sm font-semibold text-neutral-400 transition hover:text-white;
+}
+
+.community-detail {
+  @apply grid gap-8;
+}
+
+.community-detail-post {
+  @apply grid gap-3 rounded-lg border border-white/10 bg-[#101321]/80 p-6;
+}
+
+.community-detail-title {
+  @apply text-3xl font-semibold text-white;
+}
+
+.community-detail-message {
+  @apply whitespace-pre-line leading-relaxed text-neutral-300;
+}
+
+.community-detail-author {
+  @apply text-xs text-neutral-500;
+}
+
+.yt-comments {
+  @apply grid gap-5;
+}
+
+.yt-comments-header {
+  @apply flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-4;
+}
+
+.yt-comments-header h3 {
+  @apply text-lg font-semibold text-white;
+}
+
+.yt-sort {
+  @apply flex gap-2;
+}
+
+.yt-sort-button {
+  @apply rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-semibold text-neutral-300 transition hover:border-aqua/40 hover:text-white;
+}
+
+.yt-sort-active {
+  @apply rounded-full border border-aqua/50 bg-aqua/15 px-3 py-1.5 text-xs font-semibold text-aqua;
+}
+
+.yt-comment-form {
+  @apply flex gap-3;
+}
+
+.yt-comment-form-body {
+  @apply grid flex-1 gap-2;
+}
+
+.yt-comment-form-actions {
+  @apply flex justify-end;
+}
+
+.yt-comment-list {
+  @apply grid gap-5;
+}
+
+.yt-comment {
+  @apply flex gap-3;
+}
+
+.yt-comment-reply {
+  @apply mt-4;
+}
+
+.yt-comment-avatar {
+  @apply flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/10 bg-aqua/15 text-sm font-bold text-aqua;
+}
+
+.yt-comment-body {
+  @apply grid flex-1 gap-1.5;
+}
+
+.yt-comment-head {
+  @apply flex flex-wrap items-center gap-2;
+}
+
+.yt-comment-head strong {
+  @apply text-sm font-semibold text-white;
+}
+
+.yt-comment-head span {
+  @apply text-xs text-neutral-500;
+}
+
+.yt-comment-text {
+  @apply whitespace-pre-line text-sm leading-relaxed text-neutral-300;
+}
+
+.yt-comment-actions {
+  @apply flex flex-wrap items-center gap-3 text-xs;
+}
+
+.yt-like,
+.yt-like-active,
+.yt-reply,
+.yt-delete {
+  @apply inline-flex items-center gap-1 font-semibold text-neutral-400 transition hover:text-white disabled:cursor-not-allowed disabled:opacity-50;
+}
+
+.yt-like-active {
+  @apply text-aqua;
+}
+
+.yt-delete {
+  @apply text-coral/80 hover:text-coral;
+}
+
+.yt-reply-form {
+  @apply mt-2 grid gap-2;
+}
+
+.yt-reply-form-actions {
+  @apply flex justify-end gap-2;
+}
+
+.yt-replies {
+  @apply mt-2 grid gap-3 border-l border-white/10 pl-4;
+}
+
+.yt-replies-toggle {
+  @apply w-fit text-xs font-semibold text-aqua transition hover:text-white;
+}
+
 .timeline-panel {
   @apply rounded-lg border border-white/10 bg-[#101321]/80 p-5 md:p-7;
 }

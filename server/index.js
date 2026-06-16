@@ -501,6 +501,119 @@ app.post('/api/community/posts', requireAuthStore, async (request, response) => 
   return response.status(201).json({ post })
 })
 
+app.get('/api/community/posts/:id', async (request, response) => {
+  if (!communityStore) {
+    return response.status(404).json({ error: 'Community post not found.' })
+  }
+
+  const post = await communityStore.getPost(request.params.id)
+  if (!post) {
+    return response.status(404).json({ error: 'Community post not found.' })
+  }
+
+  return response.json({ post })
+})
+
+app.get('/api/community/posts/:id/comments', async (request, response) => {
+  if (!communityStore) return response.json({ comments: [] })
+
+  const post = await communityStore.getPost(request.params.id)
+  if (!post) {
+    return response.status(404).json({ error: 'Community post not found.' })
+  }
+
+  const sort = request.query?.sort === 'top' ? 'top' : 'newest'
+  const viewer = await getOptionalUser(request)
+  const comments = await communityStore.listComments(post.id, {
+    sort,
+    viewerId: viewer?.id || null,
+  })
+
+  return response.json({ comments })
+})
+
+app.post('/api/community/posts/:id/comments', requireAuthStore, async (request, response) => {
+  if (!communityStore) {
+    return response.status(503).json({ error: 'Community comments are not configured.' })
+  }
+
+  const user = await getOptionalUser(request)
+  if (!user) {
+    return response.status(401).json({ error: 'Please sign in before commenting.' })
+  }
+
+  const post = await communityStore.getPost(request.params.id)
+  if (!post) {
+    return response.status(404).json({ error: 'Community post not found.' })
+  }
+
+  const message = String(request.body?.message ?? '').trim().slice(0, 1800)
+  const parentId = String(request.body?.parentId ?? '').trim().slice(0, 120) || null
+
+  if (!message) {
+    return response.status(400).json({ error: 'Comment message is required.' })
+  }
+
+  if (parentId) {
+    const parents = await communityStore.listComments(post.id)
+    const parent = parents.find((comment) => comment.id === parentId)
+    if (!parent) {
+      return response.status(400).json({ error: 'Parent comment not found.' })
+    }
+  }
+
+  const comment = await communityStore.createComment({
+    author: user.displayName,
+    id: createId(),
+    message,
+    parentId,
+    postId: post.id,
+    userId: user.id,
+  })
+
+  return response.status(201).json({ comment })
+})
+
+app.post(
+  '/api/community/comments/:id/like',
+  requireAuthStore,
+  async (request, response) => {
+    if (!communityStore) {
+      return response.status(503).json({ error: 'Community comments are not configured.' })
+    }
+
+    const user = await getOptionalUser(request)
+    if (!user) {
+      return response.status(401).json({ error: 'Please sign in before liking.' })
+    }
+
+    const result = await communityStore.toggleCommentLike(request.params.id, user.id)
+    if (!result) {
+      return response.status(404).json({ error: 'Community comment not found.' })
+    }
+
+    return response.json(result)
+  },
+)
+
+app.delete('/api/community/comments/:id', requireAuthStore, async (request, response) => {
+  if (!communityStore) {
+    return response.status(503).json({ error: 'Community comments are not configured.' })
+  }
+
+  const user = await getOptionalUser(request)
+  if (!user) {
+    return response.status(401).json({ error: 'Please sign in to manage your comments.' })
+  }
+
+  const deleted = await communityStore.deleteUserComment(request.params.id, user.id)
+  if (!deleted) {
+    return response.status(404).json({ error: 'Community comment not found.' })
+  }
+
+  return response.json({ ok: true })
+})
+
 app.get('/api/account/community', requireAuthStore, async (request, response) => {
   if (!communityStore) {
     return response.status(503).json({
@@ -787,6 +900,10 @@ app.get('/api/admin/community-uploads', requireAdmin, async (_request, response)
 
 app.get('/api/admin/community-posts', requireAdmin, async (_request, response) => {
   response.json({ posts: await adminStore.listCommunityPosts() })
+})
+
+app.get('/api/admin/community-comments', requireAdmin, async (_request, response) => {
+  response.json({ comments: await adminStore.listCommunityComments() })
 })
 
 app.patch('/api/admin/visitors/:id', requireAdmin, async (request, response) => {
@@ -1110,6 +1227,18 @@ app.delete('/api/admin/community-posts/:id', requireAdmin, async (request, respo
   if (!deleted) {
     return response.status(404).json({
       error: 'Community post not found.',
+    })
+  }
+
+  return response.json({ ok: true })
+})
+
+app.delete('/api/admin/community-comments/:id', requireAdmin, async (request, response) => {
+  const deleted = await adminStore.deleteCommunityComment(request.params.id)
+
+  if (!deleted) {
+    return response.status(404).json({
+      error: 'Community comment not found.',
     })
   }
 

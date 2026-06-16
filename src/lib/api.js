@@ -143,6 +143,32 @@ export const createCommunityPost = (token, payload) =>
     body: JSON.stringify(payload),
   })
 
+export const getCommunityPost = (id) => request(`/api/community/posts/${id}`)
+
+export const getCommunityComments = (id, { sort = 'newest', token } = {}) =>
+  request(`/api/community/posts/${id}/comments?sort=${sort}`, {
+    headers: authHeaders(token),
+  })
+
+export const createCommunityComment = (token, postId, payload) =>
+  request(`/api/community/posts/${postId}/comments`, {
+    method: 'POST',
+    headers: authHeaders(token, { 'Content-Type': 'application/json' }),
+    body: JSON.stringify(payload),
+  })
+
+export const toggleCommunityCommentLike = (token, commentId) =>
+  request(`/api/community/comments/${commentId}/like`, {
+    method: 'POST',
+    headers: authHeaders(token),
+  })
+
+export const deleteCommunityComment = (token, commentId) =>
+  request(`/api/community/comments/${commentId}`, {
+    method: 'DELETE',
+    headers: authHeaders(token),
+  })
+
 export const getAccountCommunity = (token) =>
   request('/api/account/community', {
     headers: authHeaders(token),
@@ -181,6 +207,9 @@ export const getAdminCommunityUploads = (token) =>
 
 export const getAdminCommunityPosts = (token) =>
   adminRequest('/api/admin/community-posts', token)
+
+export const getAdminCommunityComments = (token) =>
+  adminRequest('/api/admin/community-comments', token)
 
 export const createAdminProject = (token, payload) =>
   adminRequest('/api/admin/projects', token, {
@@ -290,6 +319,11 @@ export const deleteAdminCommunityUpload = (token, id) =>
 
 export const deleteAdminCommunityPost = (token, id) =>
   adminRequest(`/api/admin/community-posts/${id}`, token, {
+    method: 'DELETE',
+  })
+
+export const deleteAdminCommunityComment = (token, id) =>
+  adminRequest(`/api/admin/community-comments/${id}`, token, {
     method: 'DELETE',
   })
 
