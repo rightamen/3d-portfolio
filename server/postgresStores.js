@@ -766,6 +766,40 @@ export const createPostgresStores = async (databaseUrl) => {
 
       return toComment(enriched.rows[0])
     },
+
+    listUserComments: async (userId) => {
+      const result = await pool.query(
+        `
+          SELECT
+            project_comments.id,
+            project_comments.project_slug,
+            project_comments.author,
+            project_comments.message,
+            project_comments.created_at,
+            visitor_users.id AS user_id,
+            visitor_users.display_name,
+            visitor_users.email,
+            visitor_users.access_level
+          FROM project_comments
+          LEFT JOIN visitor_users ON visitor_users.id = project_comments.user_id
+          WHERE project_comments.user_id = $1
+          ORDER BY project_comments.created_at DESC
+          LIMIT 100
+        `,
+        [userId],
+      )
+
+      return result.rows.map(toComment)
+    },
+
+    countUserLikes: async (userId) => {
+      const result = await pool.query(
+        'SELECT count(*)::int AS count FROM project_likes WHERE user_id = $1',
+        [userId],
+      )
+
+      return result.rows[0].count
+    },
   }
 
   const downloadRequestsStore = {
@@ -808,6 +842,36 @@ export const createPostgresStores = async (databaseUrl) => {
         ...request,
         createdAt: result.rows[0].created_at.toISOString(),
       }
+    },
+
+    listUserRequests: async (userId) => {
+      const result = await pool.query(
+        `
+          SELECT
+            id,
+            status,
+            project_slug,
+            project_title,
+            purpose,
+            visitor_access_level,
+            created_at
+          FROM download_requests
+          WHERE user_id = $1
+          ORDER BY created_at DESC
+          LIMIT 100
+        `,
+        [userId],
+      )
+
+      return result.rows.map((row) => ({
+        id: row.id,
+        status: row.status,
+        projectSlug: row.project_slug,
+        projectTitle: row.project_title,
+        purpose: row.purpose,
+        visitorAccessLevel: row.visitor_access_level,
+        createdAt: row.created_at.toISOString(),
+      }))
     },
   }
 

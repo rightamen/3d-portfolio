@@ -174,6 +174,16 @@ export const getAccountCommunity = (token) =>
     headers: authHeaders(token),
   })
 
+export const getAccountDownloads = (token) =>
+  request('/api/account/downloads', {
+    headers: authHeaders(token),
+  })
+
+export const getAccountComments = (token) =>
+  request('/api/account/comments', {
+    headers: authHeaders(token),
+  })
+
 export const deleteAccountCommunityUpload = (token, id) =>
   request(`/api/account/community/uploads/${id}`, {
     method: 'DELETE',

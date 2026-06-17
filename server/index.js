@@ -636,6 +636,44 @@ app.get('/api/account/community', requireAuthStore, async (request, response) =>
   return response.json({ posts, uploads })
 })
 
+app.get('/api/account/downloads', requireAuthStore, async (request, response) => {
+  const user = await getOptionalUser(request)
+  if (!user) {
+    return response.status(401).json({
+      error: 'Please sign in to view your download requests.',
+    })
+  }
+
+  if (typeof downloadRequestsStore.listUserRequests !== 'function') {
+    return response.json({ requests: [] })
+  }
+
+  const requests = await downloadRequestsStore.listUserRequests(user.id)
+  return response.json({ requests })
+})
+
+app.get('/api/account/comments', requireAuthStore, async (request, response) => {
+  const user = await getOptionalUser(request)
+  if (!user) {
+    return response.status(401).json({
+      error: 'Please sign in to view your comments.',
+    })
+  }
+
+  if (typeof interactionsStore.listUserComments !== 'function') {
+    return response.json({ comments: [], likeCount: 0 })
+  }
+
+  const [comments, likeCount] = await Promise.all([
+    interactionsStore.listUserComments(user.id),
+    typeof interactionsStore.countUserLikes === 'function'
+      ? interactionsStore.countUserLikes(user.id)
+      : Promise.resolve(0),
+  ])
+
+  return response.json({ comments, likeCount })
+})
+
 app.delete('/api/account/community/uploads/:id', requireAuthStore, async (request, response) => {
   if (!communityStore) {
     return response.status(503).json({
