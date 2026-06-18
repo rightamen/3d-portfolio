@@ -1186,10 +1186,13 @@ const AccountPage = ({
 
   return (
     <main className="admin-shell account-shell">
-      <header className="admin-header">
+      <header className="admin-header account-studio-hero">
         <div>
           <p className="section-kicker mb-1">{copy.accountCenterKicker}</p>
           <h1 className="text-3xl font-semibold text-white">{copy.accountCenter}</h1>
+          <p className="account-studio-subtitle">
+            {profileForm.handle ? `@${profileForm.handle}` : visitorUser.email}
+          </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <LanguageSwitch language={language} onLanguageChange={onLanguageChange} copy={copy} />
@@ -1202,7 +1205,7 @@ const AccountPage = ({
         </div>
       </header>
 
-      <section className="admin-metrics">
+      <section className="admin-metrics account-studio-metrics">
         {metrics.map(([tab, label, value], index) => (
           <button
             key={`${label}-${index}`}
@@ -1216,7 +1219,7 @@ const AccountPage = ({
         ))}
       </section>
 
-      <div className="account-layout">
+      <div className="account-layout account-studio-layout">
         <nav className="account-nav admin-tabs">
           {accountTabs.map((tab) => (
             <button

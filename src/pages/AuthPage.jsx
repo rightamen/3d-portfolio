@@ -155,10 +155,15 @@ const AuthPage = ({
       </nav>
 
       <section className="auth-card">
-        <div>
+        <div className="auth-brand-panel">
           <p className="section-kicker">{copy.authPageKicker}</p>
           <h1>{pageCopy.title}</h1>
           <p>{pageCopy.intro}</p>
+          <div className="auth-feature-row" aria-hidden="true">
+            <span>{copy.projectsKicker}</span>
+            <span>{copy.accountCenterKicker}</span>
+            <span>{copy.communityKicker}</span>
+          </div>
         </div>
 
         {mode !== 'verify' ? (

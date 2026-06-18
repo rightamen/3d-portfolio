@@ -319,7 +319,9 @@ const PublicProfilePage = ({ copy, language, onLanguageChange }) => {
               style={
                 profile.bannerUrl ? { backgroundImage: `url(${profile.bannerUrl})` } : undefined
               }
-            />
+            >
+              <div className="public-profile-banner-glow" />
+            </div>
             <div className="public-profile-head">
               {profile.avatarUrl ? (
                 <img className="public-profile-avatar" src={profile.avatarUrl} alt="" />
@@ -330,7 +332,10 @@ const PublicProfilePage = ({ copy, language, onLanguageChange }) => {
               )}
               <div className="public-profile-title">
                 <h1>{profile.displayName}</h1>
-                <span>@{profile.handle}</span>
+                <div className="public-profile-meta-line">
+                  <span>@{profile.handle}</span>
+                  {profile.location && <span>{profile.location}</span>}
+                </div>
                 {profile.bio && <p>{profile.bio}</p>}
                 <div className="public-profile-links">
                   {profile.website && (

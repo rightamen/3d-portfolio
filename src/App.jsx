@@ -278,7 +278,7 @@ const App = () => {
   }
 
   return (
-    <div id="home" className="min-h-screen overflow-hidden">
+    <div id="home" className="site-home min-h-screen overflow-hidden">
       <Navbar
         authStatus={authStatus}
         copy={copy}

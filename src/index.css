@@ -1636,3 +1636,532 @@ select.field-input option:disabled {
 .field-hint {
   @apply mt-2 block text-xs leading-relaxed text-neutral-500;
 }
+
+/* ===============================
+   2026 UI Refresh
+================================ */
+
+:root {
+  --surface-0: #050713;
+  --surface-1: rgba(11, 15, 30, 0.78);
+  --surface-2: rgba(17, 23, 42, 0.72);
+  --line-soft: rgba(255, 255, 255, 0.1);
+  --line-strong: rgba(113, 226, 219, 0.28);
+  --glow-aqua: rgba(51, 194, 204, 0.26);
+  --glow-mint: rgba(87, 219, 150, 0.18);
+  --text-soft: #a8b3c7;
+}
+
+body {
+  background:
+    linear-gradient(180deg, #030412 0%, #060817 44%, #030412 100%),
+    repeating-linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.035) 0,
+      rgba(255, 255, 255, 0.035) 1px,
+      transparent 1px,
+      transparent 92px
+    );
+}
+
+.site-home,
+.auth-page,
+.account-shell,
+.public-profile-shell {
+  position: relative;
+  background:
+    linear-gradient(180deg, rgba(8, 12, 28, 0.96), rgba(3, 4, 18, 1) 52%),
+    linear-gradient(120deg, rgba(51, 194, 204, 0.08), transparent 38%),
+    linear-gradient(260deg, rgba(234, 72, 132, 0.07), transparent 34%);
+}
+
+.site-home::before,
+.auth-page::before,
+.account-shell::before,
+.public-profile-shell::before {
+  @apply pointer-events-none fixed inset-0 content-[''];
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(180deg, transparent, rgba(3, 4, 18, 0.82));
+  background-size: 72px 72px, 72px 72px, 100% 100%;
+  mask-image: linear-gradient(180deg, black, transparent 78%);
+}
+
+.site-home main {
+  @apply rounded-t-lg border-t border-white/10;
+  background: linear-gradient(180deg, rgba(6, 9, 24, 0.55), rgba(3, 4, 18, 0.2));
+}
+
+.hero-stage {
+  isolation: isolate;
+}
+
+.hero-stage::before {
+  @apply pointer-events-none absolute inset-x-0 top-0 h-40 content-[''];
+  background: linear-gradient(180deg, rgba(3, 4, 18, 0.72), transparent);
+}
+
+.hero-stage::after {
+  @apply pointer-events-none absolute inset-x-0 bottom-0 h-52 content-[''];
+  background: linear-gradient(180deg, transparent, rgba(3, 4, 18, 0.96));
+}
+
+.hero-copy {
+  @apply rounded-lg border border-white/10 bg-[#070a18]/45 p-5 backdrop-blur-md md:bg-transparent md:p-0;
+}
+
+.hero-eyebrow {
+  @apply mb-5 inline-flex w-fit rounded-full border border-aqua/30 bg-aqua/10 px-3 py-1 text-xs font-bold uppercase tracking-[0.22em] text-aqua;
+}
+
+.hero-greeting {
+  @apply text-neutral-100;
+}
+
+.hero-statement {
+  line-height: 0.98;
+  text-wrap: balance;
+}
+
+.hero-flip {
+  @apply mt-2;
+  text-shadow: 0 0 34px rgba(51, 194, 204, 0.28);
+}
+
+.hero-subtitle,
+.hero-mobile-copy p {
+  color: var(--text-soft);
+}
+
+.primary-action,
+.secondary-action,
+.danger-action {
+  @apply rounded-md;
+}
+
+.primary-action {
+  background: linear-gradient(135deg, #54e5dd, #76e5a4 58%, #f6c177);
+  border-color: rgba(255, 255, 255, 0.18);
+  box-shadow:
+    0 14px 38px rgba(51, 194, 204, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.48);
+}
+
+.secondary-action {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.045));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.danger-action {
+  @apply rounded-md;
+}
+
+.language-switch,
+.auth-mode-switch,
+.asset-filter-panel {
+  @apply rounded-lg;
+  background: rgba(255, 255, 255, 0.045);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.language-switch-button,
+.language-switch-active,
+.auth-mode,
+.auth-mode-active,
+.asset-filter,
+.asset-filter-active,
+.admin-tab,
+.admin-tab-active {
+  @apply rounded-md;
+}
+
+.field-label {
+  @apply text-neutral-300;
+}
+
+.field-input,
+.asset-upload-control {
+  @apply rounded-md;
+  background: rgba(7, 10, 24, 0.72);
+  border-color: rgba(255, 255, 255, 0.12);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.field-input:hover,
+.asset-upload-control:hover {
+  border-color: rgba(51, 194, 204, 0.34);
+}
+
+.field-input-focus {
+  @apply focus-visible:ring-aqua/30;
+}
+
+.skill-pill,
+.status-pill,
+.account-tag,
+.project-category-badge,
+.community-post-meta span,
+.public-profile-links a,
+.public-profile-links span {
+  @apply rounded-md;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.auth-page {
+  @apply overflow-hidden px-4 py-5 md:px-8;
+}
+
+.auth-page::before {
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(120deg, rgba(51, 194, 204, 0.16), transparent 44%),
+    linear-gradient(300deg, rgba(234, 72, 132, 0.11), transparent 42%);
+  background-size: 72px 72px, 72px 72px, 100% 100%, 100% 100%;
+  mask-image: none;
+}
+
+.auth-card {
+  @apply max-w-5xl gap-0 overflow-hidden p-0 md:grid-cols-[1.05fr_0.95fr];
+  background: rgba(9, 13, 28, 0.82);
+  border-color: rgba(255, 255, 255, 0.13);
+  box-shadow:
+    0 28px 90px rgba(0, 0, 0, 0.44),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.auth-brand-panel {
+  @apply grid content-between gap-8 border-b border-white/10 p-6 md:border-b-0 md:border-r md:p-8 lg:p-10;
+  background:
+    linear-gradient(145deg, rgba(51, 194, 204, 0.16), transparent 46%),
+    linear-gradient(320deg, rgba(214, 153, 92, 0.12), transparent 42%),
+    rgba(255, 255, 255, 0.025);
+}
+
+.auth-card > .auth-brand-panel {
+  @apply md:row-span-2;
+}
+
+.auth-feature-row {
+  @apply mt-6 flex flex-wrap gap-2;
+}
+
+.auth-feature-row span {
+  @apply rounded-md border border-white/10 bg-black/20 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-neutral-300;
+}
+
+.auth-card > .auth-mode-switch,
+.auth-card > .auth-flow,
+.auth-card > .account-form {
+  @apply mx-6 md:mx-8 lg:mx-10;
+}
+
+.auth-card > .auth-mode-switch,
+.auth-card > .auth-flow {
+  @apply mt-6 self-end md:col-start-2;
+}
+
+.auth-card > .account-form {
+  @apply mb-6 mt-5 md:col-start-2 md:mb-8 lg:mb-10;
+}
+
+.account-shell {
+  @apply max-w-none px-4 md:px-8;
+}
+
+.account-shell > * {
+  @apply relative z-10 mx-auto w-full max-w-7xl;
+}
+
+.account-studio-hero {
+  @apply mt-2 rounded-lg border border-white/10 bg-[#0b1020]/80 p-5 md:p-6;
+  box-shadow:
+    0 22px 70px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+
+.account-studio-subtitle {
+  @apply mt-2 max-w-2xl break-words text-sm text-neutral-400;
+}
+
+.account-studio-metrics {
+  @apply lg:grid-cols-5;
+}
+
+.account-studio-metrics .admin-metric,
+.account-center-card,
+.account-profile-card,
+.account-channel-preview,
+.account-form-block,
+.account-contact-row,
+.account-toggle-card,
+.visitor-studio-forms form,
+.admin-table .admin-row,
+.account-shell .admin-section {
+  background: linear-gradient(180deg, rgba(17, 23, 42, 0.78), rgba(7, 10, 24, 0.68));
+  border-color: rgba(255, 255, 255, 0.11);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.055),
+    0 18px 48px rgba(0, 0, 0, 0.22);
+}
+
+.account-shell .admin-section {
+  @apply rounded-lg border p-4 md:p-5;
+}
+
+.account-studio-layout {
+  @apply lg:grid-cols-[15rem_1fr];
+}
+
+.account-nav {
+  @apply rounded-lg border border-white/10 bg-[#0b1020]/72 p-2;
+}
+
+.account-nav .admin-tab,
+.account-nav .admin-tab-active {
+  @apply justify-start;
+}
+
+.account-avatar,
+.account-channel-avatar,
+.public-profile-avatar {
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.1),
+    0 18px 46px rgba(0, 0, 0, 0.36);
+}
+
+.account-channel-banner,
+.public-profile-banner {
+  background-image:
+    linear-gradient(130deg, rgba(51, 194, 204, 0.22), transparent 38%),
+    linear-gradient(285deg, rgba(234, 72, 132, 0.18), transparent 42%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(7, 10, 24, 0.45));
+}
+
+.public-profile-shell {
+  @apply max-w-none;
+}
+
+.public-profile-shell > * {
+  @apply relative z-10;
+}
+
+.public-profile-hero {
+  @apply rounded-lg;
+  background: rgba(9, 13, 28, 0.82);
+  border-color: rgba(255, 255, 255, 0.13);
+  box-shadow:
+    0 28px 86px rgba(0, 0, 0, 0.36),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.public-profile-banner {
+  @apply relative overflow-hidden;
+}
+
+.public-profile-banner-glow {
+  @apply absolute inset-0;
+  background:
+    linear-gradient(180deg, transparent, rgba(8, 11, 22, 0.62)),
+    repeating-linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.08) 0,
+      rgba(255, 255, 255, 0.08) 1px,
+      transparent 1px,
+      transparent 58px
+    );
+}
+
+.public-profile-meta-line {
+  @apply flex flex-wrap gap-2 text-sm text-neutral-400;
+}
+
+.public-profile-meta-line span {
+  @apply rounded-md border border-white/10 bg-white/5 px-2.5 py-1;
+}
+
+.public-profile-tabs {
+  @apply sticky top-3 z-20 rounded-lg border border-white/10 bg-[#070a18]/85 p-2 backdrop-blur-xl;
+}
+
+.public-profile-content .admin-section,
+.public-profile-item,
+.public-profile-about article {
+  background: linear-gradient(180deg, rgba(17, 23, 42, 0.78), rgba(7, 10, 24, 0.68));
+  border-color: rgba(255, 255, 255, 0.11);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.055),
+    0 16px 44px rgba(0, 0, 0, 0.2);
+}
+
+.public-profile-content .admin-section {
+  @apply rounded-lg border p-4 md:p-5;
+}
+
+.public-profile-grid {
+  @apply xl:grid-cols-3;
+}
+
+.public-profile-item {
+  @apply overflow-hidden p-0;
+}
+
+.public-profile-item > div {
+  @apply p-4;
+}
+
+.community-page {
+  @apply max-w-6xl py-10 md:py-12;
+}
+
+.community-page-heading {
+  @apply rounded-lg border border-white/10 bg-[#0b1020]/74 p-5 md:p-7;
+  box-shadow:
+    0 24px 72px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+
+.community-page-heading p:not(.section-kicker) {
+  @apply max-w-3xl text-neutral-400;
+}
+
+.community-hero-stats {
+  @apply mt-4 grid grid-cols-3 gap-2 sm:flex;
+}
+
+.community-hero-stats span {
+  @apply rounded-md border border-white/10 bg-white/5 px-3 py-2 text-center text-sm font-semibold text-white;
+}
+
+.community-discussion,
+.community-panel,
+.community-card,
+.community-detail-post {
+  background: linear-gradient(180deg, rgba(17, 23, 42, 0.78), rgba(7, 10, 24, 0.68));
+  border-color: rgba(255, 255, 255, 0.11);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.055),
+    0 18px 48px rgba(0, 0, 0, 0.22);
+}
+
+.community-list-header {
+  @apply mt-0 items-start rounded-lg border border-white/10 bg-black/20 p-4;
+}
+
+.community-list-header p {
+  @apply mt-1 max-w-2xl text-sm leading-relaxed text-neutral-500;
+}
+
+.community-post-form,
+.community-upload-form {
+  @apply rounded-lg border border-white/10 bg-black/20 p-4;
+}
+
+.community-post-card {
+  @apply border-white/10;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.025));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.055);
+}
+
+.community-post-card:hover {
+  background: linear-gradient(180deg, rgba(51, 194, 204, 0.1), rgba(255, 255, 255, 0.03));
+}
+
+.community-grid {
+  @apply xl:grid-cols-3;
+}
+
+.community-card {
+  @apply rounded-lg;
+}
+
+.community-card h4,
+.project-card h3,
+.public-profile-item h3 {
+  text-wrap: balance;
+}
+
+.asset-filter-panel {
+  @apply border-white/10 bg-[#0b1020]/70;
+}
+
+.asset-category-summary,
+.project-card,
+.timeline-panel,
+.contact-panel,
+.community-entry-card {
+  background: linear-gradient(180deg, rgba(17, 23, 42, 0.76), rgba(7, 10, 24, 0.68));
+  border-color: rgba(255, 255, 255, 0.11);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.055),
+    0 18px 48px rgba(0, 0, 0, 0.2);
+}
+
+.project-card {
+  @apply min-h-[32rem];
+}
+
+.project-media {
+  @apply h-72;
+}
+
+.project-media::before {
+  @apply pointer-events-none absolute inset-0 z-10 content-[''];
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent 35%),
+    linear-gradient(0deg, rgba(3, 4, 18, 0.24), transparent 55%);
+}
+
+@media (max-width: 767px) {
+  .hero-copy {
+    @apply mt-24;
+  }
+
+  .auth-card {
+    @apply mt-10;
+  }
+
+  .account-shell {
+    @apply gap-4 px-3 py-4;
+  }
+
+  .account-studio-hero,
+  .community-page-heading {
+    @apply p-4;
+  }
+
+  .admin-header {
+    @apply items-stretch;
+  }
+
+  .account-studio-metrics {
+    @apply grid-cols-2;
+  }
+
+  .public-profile-head {
+    @apply items-start;
+  }
+
+  .public-profile-tabs {
+    @apply static overflow-x-auto;
+  }
+
+  .public-profile-tabs .admin-tab,
+  .public-profile-tabs .admin-tab-active {
+    @apply shrink-0;
+  }
+
+  .community-post-form,
+  .community-upload-form {
+    @apply p-3;
+  }
+}
+
+@media (min-width: 768px) {
+  .hero-copy {
+    border-color: transparent;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}

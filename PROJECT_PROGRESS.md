@@ -25,6 +25,62 @@
 
 ## 最近完成
 
+### 2026-06-18：本地 UI 视觉升级完成
+
+本地 commit：
+
+- 未提交
+
+完成内容：
+
+- 联网参考现代 3D portfolio、YouTube 频道页、YouTube Studio、Dribbble/Behance 深色 SaaS dashboard 风格后，完成本地 UI 视觉升级。
+- 首页 /：增强 hero 层次、3D 氛围、按钮、标签、筛选和作品卡片质感。
+- /account：升级为更接近 YouTube Studio + 个人资料中心的深色 dashboard 视觉。
+- /u/:handle：增强频道页式封面、头像、handle、简介、链接、tabs 和内容卡片层级。
+- /community：升级为现代社区流布局，优化帖子卡片、统计、上传区和资源卡片。
+- /login?mode=login：升级为独立玻璃登录面板，统一品牌区、模式切换、输入框和按钮视觉。
+- 未新增依赖，未修改服务端认证逻辑，未修改数据库 schema，未部署 VPS，未 push GitHub。
+
+新增/修改文件：
+
+- src/App.jsx
+- src/components/HeroText.jsx
+- src/index.css
+- src/pages/AccountPage.jsx
+- src/pages/AuthPage.jsx
+- src/pages/CommunityPage.jsx
+- src/pages/PublicProfilePage.jsx
+- src/sections/Hero.jsx
+
+验证结果：
+
+- npm run build：通过
+- npm run lint：通过
+- npm run test:e2e：通过，6 passed，1 skipped
+- git diff --check：通过
+- 本地 Express 预览截图：通过，页面非白屏
+- 本地截图检查 500：未发现 500
+- console error：仅 /u/not-exist-test-handle 缺失用户接口返回 404，属于预期缺失资料页场景
+
+截图路径：
+
+- test-results/ui-review/home.png
+- test-results/ui-review/community.png
+- test-results/ui-review/login.png
+- test-results/ui-review/account.png
+- test-results/ui-review/public-profile-missing.png
+- test-results/ui-review/mobile-home.png
+- test-results/ui-review/mobile-community.png
+- test-results/ui-review/mobile-login.png
+- test-results/ui-review/mobile-account.png
+- test-results/ui-review/mobile-public-profile-missing.png
+
+注意：
+
+- 本轮只做本地 UI 改版。
+- 未写入任何真实用户数据。
+- 未输出或修改 ADMIN_TOKEN、DATABASE_URL、数据库密码、GitHub token、VPS 密码。
+
 ### 2026-06-18：线上 Playwright 冒烟测试完成
 
 本地 commit：

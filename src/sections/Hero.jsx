@@ -12,7 +12,7 @@ const Hero = ({ profile, status, language, copy }) => {
   const isMobile = useMediaQuery({ maxWidth: 853 })
 
   return (
-    <section className="c-space relative flex min-h-screen items-start justify-center overflow-hidden md:justify-start">
+    <section className="hero-stage c-space relative flex min-h-screen items-start justify-center overflow-hidden md:justify-start">
       <HeroText profile={profile} status={status} language={language} copy={copy} />
       <ParallaxBackground />
       <figure
@@ -30,8 +30,8 @@ const Hero = ({ profile, status, language, copy }) => {
             <directionalLight position={[3, 3, 3]} intensity={1} />
             <Float speed={1.5} rotationIntensity={0.4} floatIntensity={0.6}>
               <Astronaut
-                scale={isMobile ? 0.18 : 0.3}
-                position={isMobile ? [0, -2.1, 0] : [1.25, -1, 0]}
+                scale={isMobile ? 0.14 : 0.24}
+                position={isMobile ? [0.25, -2.25, 0] : [1.65, -1.05, 0]}
               />
             </Float>
             <Rig />

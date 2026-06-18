@@ -13,10 +13,19 @@ const HeroText = ({ profile, status, language, copy }) => {
   }
 
   return (
-    <div className="relative z-10 mt-20 max-w-4xl rounded-3xl bg-clip-text text-center drop-shadow-[0_3px_18px_rgba(0,0,0,0.65)] md:mt-40 md:text-left">
+    <div className="hero-copy relative z-10 mt-20 max-w-4xl rounded-3xl bg-clip-text text-center drop-shadow-[0_3px_18px_rgba(0,0,0,0.65)] md:mt-40 md:text-left">
       <div className="hidden flex-col md:flex">
+        <Motion.span
+          className="hero-eyebrow"
+          variants={variants}
+          initial="hidden"
+          animate="visible"
+          transition={{ delay: 0.8 }}
+        >
+          mrright.blog / {copy.projectsKicker}
+        </Motion.span>
         <Motion.h1
-          className="text-4xl font-medium"
+          className="hero-greeting text-4xl font-medium"
           variants={variants}
           initial="hidden"
           animate="visible"
@@ -27,7 +36,7 @@ const HeroText = ({ profile, status, language, copy }) => {
 
         <div className="flex flex-col items-start">
           <Motion.p
-            className="mt-5 text-5xl font-medium text-neutral-300"
+            className="hero-statement mt-5 text-5xl font-medium text-neutral-300"
             variants={variants}
             initial="hidden"
             animate="visible"
@@ -39,6 +48,7 @@ const HeroText = ({ profile, status, language, copy }) => {
           </Motion.p>
 
           <Motion.div
+            className="hero-flip"
             variants={variants}
             initial="hidden"
             animate="visible"
@@ -48,7 +58,7 @@ const HeroText = ({ profile, status, language, copy }) => {
           </Motion.div>
 
           <Motion.p
-            className="mt-3 max-w-2xl text-2xl font-medium leading-relaxed text-neutral-300"
+            className="hero-subtitle mt-3 max-w-2xl text-2xl font-medium leading-relaxed text-neutral-300"
             variants={variants}
             initial="hidden"
             animate="visible"
@@ -73,7 +83,8 @@ const HeroText = ({ profile, status, language, copy }) => {
         </div>
       </div>
 
-      <div className="flex max-w-[21rem] flex-col space-y-4 md:hidden">
+      <div className="hero-mobile-copy flex max-w-[21rem] flex-col space-y-4 md:hidden">
+        <span className="hero-eyebrow">mrright.blog / {copy.projectsKicker}</span>
         <Motion.p
           className="text-3xl font-medium"
           variants={variants}

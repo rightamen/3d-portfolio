@@ -219,11 +219,25 @@ const PostList = ({ authToken, copy, language, visitorUser }) => {
         <p className="section-kicker">{copy.communityKicker}</p>
         <h1 className="text-heading">{copy.communityTitle}</h1>
         <p>{copy.communityIntro}</p>
+        <div className="community-hero-stats" aria-hidden="true">
+          <span>
+            {posts.length} {copy.communityDiscussionTitle}
+          </span>
+          <span>
+            {uploads.length} {copy.accountStudioResources}
+          </span>
+          <span>
+            {categories.length} {copy.projectsKicker}
+          </span>
+        </div>
       </header>
 
       <div className="community-discussion">
         <div className="community-list-header">
-          <h3>{copy.communityDiscussionTitle}</h3>
+          <div>
+            <h3>{copy.communityDiscussionTitle}</h3>
+            <p>{copy.communityIntro}</p>
+          </div>
           <span>{status === 'ready' ? posts.length : copy.loading}</span>
         </div>
 
