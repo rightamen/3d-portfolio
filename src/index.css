@@ -405,9 +405,185 @@ html {
 .account-profile-pills {
   @apply flex flex-wrap items-center gap-2;
 }
-
 .account-tag {
   @apply inline-flex items-center rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-semibold text-aqua;
+}
+
+.account-channel-preview {
+  @apply mt-5 overflow-hidden rounded-lg border border-white/10 bg-black/20;
+}
+
+.account-channel-banner {
+  @apply h-36 bg-[#171b2b] bg-cover bg-center md:h-48;
+  background-image:
+    linear-gradient(135deg, rgba(54, 199, 212, 0.2), rgba(255, 255, 255, 0.04)),
+    linear-gradient(90deg, rgba(0, 0, 0, 0.2), transparent);
+}
+
+.account-channel-row {
+  @apply flex flex-wrap items-end gap-4 px-4 pb-4;
+  margin-top: -2rem;
+}
+
+.account-channel-row strong {
+  @apply block text-xl font-semibold text-white;
+}
+
+.account-channel-row span {
+  @apply text-sm text-neutral-400;
+}
+
+.account-channel-avatar {
+  @apply h-24 w-24 shrink-0 rounded-full border-4 border-[#101321] bg-[#101321] object-cover;
+}
+
+.account-channel-avatar-empty {
+  @apply inline-flex items-center justify-center text-2xl font-semibold uppercase text-aqua;
+}
+
+.account-upload-grid,
+.account-form-grid {
+  @apply mt-5 grid gap-4 md:grid-cols-2;
+}
+
+.account-profile-form {
+  @apply gap-5;
+}
+
+.account-form-block {
+  @apply mt-5 grid gap-4 rounded-lg border border-white/10 bg-black/20 p-4;
+}
+
+.account-form-block h3 {
+  @apply text-lg font-semibold text-white;
+}
+
+.account-contact-grid {
+  @apply grid gap-4;
+}
+
+.account-contact-row {
+  @apply grid gap-3 rounded-lg border border-white/10 bg-white/[0.03] p-3 md:grid-cols-[1fr_auto] md:items-end;
+}
+
+.account-toggle-grid {
+  @apply grid gap-3 md:grid-cols-3;
+}
+
+.account-toggle {
+  @apply flex min-h-11 items-center gap-3 text-sm font-semibold text-neutral-300;
+}
+
+.account-toggle input {
+  @apply h-4 w-4 accent-aqua;
+}
+
+.account-toggle-card {
+  @apply rounded-lg border border-white/10 bg-white/[0.03] p-3;
+}
+
+.public-profile-shell {
+  @apply min-h-screen px-4 pb-12 pt-4 md:px-6;
+}
+
+.public-profile-hero,
+.public-profile-content {
+  @apply mx-auto w-full max-w-6xl;
+}
+
+.public-profile-hero {
+  @apply mt-8 overflow-hidden rounded-lg border border-white/10 bg-[#101321]/85 shadow-2xl;
+}
+
+.public-profile-banner {
+  @apply h-40 bg-[#171b2b] bg-cover bg-center md:h-56;
+  background-image:
+    linear-gradient(135deg, rgba(54, 199, 212, 0.2), rgba(255, 255, 255, 0.04)),
+    linear-gradient(90deg, rgba(0, 0, 0, 0.24), transparent);
+}
+
+.public-profile-head {
+  @apply flex flex-wrap items-end gap-5 px-5 pb-6 md:px-8;
+  margin-top: -2.5rem;
+}
+
+.public-profile-avatar {
+  @apply h-28 w-28 shrink-0 rounded-full border-4 border-[#101321] bg-[#101321] object-cover md:h-32 md:w-32;
+}
+
+.public-profile-avatar-empty {
+  @apply inline-flex items-center justify-center text-3xl font-semibold uppercase text-aqua;
+}
+
+.public-profile-title {
+  @apply grid min-w-0 flex-1 gap-2;
+}
+
+.public-profile-title h1 {
+  @apply break-words text-3xl font-semibold text-white md:text-4xl;
+}
+
+.public-profile-title span,
+.public-profile-title p {
+  @apply break-words text-sm leading-relaxed text-neutral-400;
+}
+
+.public-profile-links {
+  @apply flex flex-wrap items-center gap-2;
+}
+
+.public-profile-links a,
+.public-profile-links span {
+  @apply rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-semibold text-aqua;
+}
+
+.public-profile-tabs {
+  @apply mx-auto mt-6 w-full max-w-6xl;
+}
+
+.public-profile-content {
+  @apply mt-6 grid gap-6;
+}
+
+.public-profile-grid {
+  @apply grid gap-4 md:grid-cols-2;
+}
+
+.public-profile-item {
+  @apply grid gap-4 rounded-lg border border-white/10 bg-[#101321]/80 p-4;
+}
+
+.public-profile-item img {
+  @apply aspect-video w-full rounded-md object-cover;
+}
+
+.public-profile-item h3 {
+  @apply text-lg font-semibold text-white;
+}
+
+.public-profile-item p {
+  @apply mt-2 whitespace-pre-line text-sm leading-relaxed text-neutral-400;
+}
+
+.public-profile-item small {
+  @apply mt-2 block text-xs text-neutral-500;
+}
+
+.public-profile-about {
+  @apply grid gap-4;
+}
+
+.public-profile-about article {
+  @apply rounded-lg border border-white/10 bg-[#101321]/80 p-4;
+}
+
+.public-profile-about span {
+  @apply text-xs uppercase tracking-[0.16em] text-neutral-500;
+}
+
+.public-profile-about p,
+.public-profile-about a {
+  @apply mt-2 block break-words text-sm leading-relaxed text-neutral-300;
 }
 
 .account-skeleton-row {

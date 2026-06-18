@@ -24,12 +24,20 @@ const toPublicUser = (row) =>
   row
     ? {
         accessLevel: row.access_level,
+        activityPublic: row.activity_public !== false,
+        avatarUrl: row.avatar_url || '',
+        bannerUrl: row.banner_url || '',
+        bio: row.bio || '',
         createdAt: row.created_at?.toISOString?.() || row.created_at,
         displayName: row.display_name,
         email: row.email,
         emailVerified: Boolean(row.email_verified_at),
         emailVerifiedAt: row.email_verified_at?.toISOString?.() || row.email_verified_at || null,
+        handle: row.handle || '',
         id: row.id,
+        location: row.location || '',
+        profilePublic: row.profile_public !== false,
+        website: row.website || '',
       }
     : null
 
@@ -40,6 +48,72 @@ const toPrivateUser = (row) =>
         passwordHash: row.password_hash,
       }
     : null
+
+const toAccountProfile = (row) =>
+  row
+    ? {
+        ...toPublicUser(row),
+        contactLinks: row.contact_links || {},
+        contactsPublic: row.contacts_public === true,
+        lastLoginAt: row.last_login_at?.toISOString?.() || row.last_login_at || null,
+        publicEmail: row.public_email || '',
+        stats: {
+          commentCount: Number(row.comment_count || 0),
+          downloadRequestCount: Number(row.download_request_count || 0),
+          likeCount: Number(row.like_count || 0),
+          postCount: Number(row.post_count || 0),
+          uploadCount: Number(row.upload_count || 0),
+        },
+        updatedAt: row.updated_at?.toISOString?.() || row.updated_at || null,
+      }
+    : null
+
+const toPublicProfile = (row) =>
+  row
+    ? {
+        activityPublic: row.activity_public !== false,
+        avatarUrl: row.avatar_url || '',
+        bannerUrl: row.banner_url || '',
+        bio: row.bio || '',
+        contactsPublic: row.contacts_public === true,
+        createdAt: row.created_at?.toISOString?.() || row.created_at,
+        displayName: row.display_name,
+        handle: row.handle || '',
+        location: row.location || '',
+        profilePublic: row.profile_public !== false,
+        publicEmail: row.contacts_public === true ? row.public_email || '' : '',
+        stats:
+          row.activity_public !== false
+            ? {
+                commentCount: Number(row.comment_count || 0),
+                downloadRequestCount: Number(row.download_request_count || 0),
+                likeCount: Number(row.like_count || 0),
+                postCount: Number(row.post_count || 0),
+                uploadCount: Number(row.upload_count || 0),
+              }
+            : null,
+        updatedAt: row.updated_at?.toISOString?.() || row.updated_at || null,
+        website: row.website || '',
+      }
+    : null
+
+const publicContactLinks = (contactLinks = {}, contactsPublic = false) => {
+  if (!contactsPublic || !contactLinks || typeof contactLinks !== 'object') return {}
+
+  return Object.fromEntries(
+    Object.entries(contactLinks)
+      .filter(([, item]) => item && typeof item === 'object' && item.public === true)
+      .map(([key, item]) => [
+        key,
+        {
+          label: item.label || key,
+          url: item.url || '',
+          value: item.value || '',
+        },
+      ])
+      .filter(([, item]) => item.url || item.value),
+  )
+}
 
 const toCommunityUpload = (row) => ({
   assetCategory: row.asset_category,
@@ -408,7 +482,24 @@ const ensureSchema = async (pool) => {
     ALTER TABLE visitor_users
       ADD COLUMN IF NOT EXISTS email_verified_at timestamptz,
       ADD COLUMN IF NOT EXISTS verification_code_hash text,
-      ADD COLUMN IF NOT EXISTS verification_expires_at timestamptz;
+      ADD COLUMN IF NOT EXISTS verification_expires_at timestamptz,
+      ADD COLUMN IF NOT EXISTS handle text,
+      ADD COLUMN IF NOT EXISTS bio text,
+      ADD COLUMN IF NOT EXISTS avatar_url text,
+      ADD COLUMN IF NOT EXISTS banner_url text,
+      ADD COLUMN IF NOT EXISTS location text,
+      ADD COLUMN IF NOT EXISTS website text,
+      ADD COLUMN IF NOT EXISTS public_email text,
+      ADD COLUMN IF NOT EXISTS contact_links jsonb DEFAULT '{}'::jsonb,
+      ADD COLUMN IF NOT EXISTS profile_public boolean DEFAULT true,
+      ADD COLUMN IF NOT EXISTS contacts_public boolean DEFAULT false,
+      ADD COLUMN IF NOT EXISTS activity_public boolean DEFAULT true,
+      ADD COLUMN IF NOT EXISTS last_login_at timestamptz,
+      ADD COLUMN IF NOT EXISTS updated_at timestamptz DEFAULT now();
+
+    CREATE UNIQUE INDEX IF NOT EXISTS visitor_users_handle_unique_idx
+      ON visitor_users (lower(handle))
+      WHERE handle IS NOT NULL AND handle <> '';
 
     ALTER TABLE project_overrides
       ADD COLUMN IF NOT EXISTS title_zh text,
@@ -561,6 +652,15 @@ export const createPostgresStores = async (databaseUrl) => {
         `,
         [session.tokenHash, session.userId, session.expiresAt],
       )
+      await pool.query(
+        `
+          UPDATE visitor_users
+          SET last_login_at = now(),
+              updated_at = now()
+          WHERE id = $1
+        `,
+        [session.userId],
+      )
     },
 
     deleteSession: async (tokenHash) => {
@@ -575,7 +675,15 @@ export const createPostgresStores = async (databaseUrl) => {
             visitor_users.email,
             visitor_users.display_name,
             visitor_users.access_level,
+            visitor_users.activity_public,
+            visitor_users.avatar_url,
+            visitor_users.banner_url,
+            visitor_users.bio,
             visitor_users.email_verified_at,
+            visitor_users.handle,
+            visitor_users.location,
+            visitor_users.profile_public,
+            visitor_users.website,
             visitor_users.created_at
           FROM visitor_sessions
           JOIN visitor_users ON visitor_users.id = visitor_sessions.user_id
@@ -639,6 +747,124 @@ export const createPostgresStores = async (databaseUrl) => {
       )
 
       return Boolean(result.rows[0])
+    },
+
+    getAccountProfile: async (userId) => {
+      const result = await pool.query(
+        `
+          SELECT
+            visitor_users.*,
+            (
+              (SELECT count(*)::int FROM project_likes WHERE user_id = visitor_users.id) +
+              (SELECT count(*)::int FROM community_comment_likes WHERE user_id = visitor_users.id)
+            ) AS like_count,
+            (
+              (SELECT count(*)::int FROM project_comments WHERE user_id = visitor_users.id) +
+              (SELECT count(*)::int FROM community_comments WHERE user_id = visitor_users.id)
+            ) AS comment_count,
+            (SELECT count(*)::int FROM download_requests WHERE user_id = visitor_users.id)
+              AS download_request_count,
+            (SELECT count(*)::int FROM community_uploads WHERE user_id = visitor_users.id)
+              AS upload_count,
+            (SELECT count(*)::int FROM community_posts WHERE user_id = visitor_users.id)
+              AS post_count
+          FROM visitor_users
+          WHERE visitor_users.id = $1
+          LIMIT 1
+        `,
+        [userId],
+      )
+
+      return toAccountProfile(result.rows[0])
+    },
+
+    updateAccountProfile: async (userId, profile) => {
+      const result = await pool.query(
+        `
+          UPDATE visitor_users
+          SET display_name = $2,
+              handle = $3,
+              bio = $4,
+              location = $5,
+              website = $6,
+              public_email = $7,
+              contact_links = $8::jsonb,
+              profile_public = $9,
+              contacts_public = $10,
+              activity_public = $11,
+              updated_at = now()
+          WHERE id = $1
+          RETURNING id
+        `,
+        [
+          userId,
+          profile.displayName,
+          profile.handle,
+          profile.bio,
+          profile.location,
+          profile.website,
+          profile.publicEmail,
+          JSON.stringify(profile.contactLinks || {}),
+          profile.profilePublic,
+          profile.contactsPublic,
+          profile.activityPublic,
+        ],
+      )
+
+      if (!result.rows[0]) return null
+      return authStore.getAccountProfile(userId)
+    },
+
+    updateAccountImage: async (userId, field, url) => {
+      const column = field === 'banner' ? 'banner_url' : 'avatar_url'
+      const result = await pool.query(
+        `
+          UPDATE visitor_users
+          SET ${column} = $2,
+              updated_at = now()
+          WHERE id = $1
+          RETURNING id
+        `,
+        [userId, url],
+      )
+
+      if (!result.rows[0]) return null
+      return authStore.getAccountProfile(userId)
+    },
+
+    getUserByHandle: async (handle) => {
+      const result = await pool.query(
+        `
+          SELECT
+            visitor_users.*,
+            (
+              (SELECT count(*)::int FROM project_likes WHERE user_id = visitor_users.id) +
+              (SELECT count(*)::int FROM community_comment_likes WHERE user_id = visitor_users.id)
+            ) AS like_count,
+            (
+              (SELECT count(*)::int FROM project_comments WHERE user_id = visitor_users.id) +
+              (SELECT count(*)::int FROM community_comments WHERE user_id = visitor_users.id)
+            ) AS comment_count,
+            (SELECT count(*)::int FROM download_requests WHERE user_id = visitor_users.id)
+              AS download_request_count,
+            (SELECT count(*)::int FROM community_uploads WHERE user_id = visitor_users.id)
+              AS upload_count,
+            (SELECT count(*)::int FROM community_posts WHERE user_id = visitor_users.id)
+              AS post_count
+          FROM visitor_users
+          WHERE lower(visitor_users.handle) = lower($1)
+          LIMIT 1
+        `,
+        [handle],
+      )
+      const profile = toPublicProfile(result.rows[0])
+      if (!profile) return null
+
+      return {
+        ...profile,
+        contactLinks: publicContactLinks(result.rows[0].contact_links, profile.contactsPublic),
+        internalId: result.rows[0].id,
+      }
     },
   }
 
@@ -1157,6 +1383,90 @@ export const createPostgresStores = async (databaseUrl) => {
       )
 
       return result.rows.map(toCommunityPost)
+    },
+
+    listPublicUserUploads: async (userId) => {
+      const result = await pool.query(
+        `
+          SELECT
+            community_uploads.id,
+            community_uploads.status,
+            community_uploads.title,
+            community_uploads.description,
+            community_uploads.asset_category,
+            community_uploads.file_name,
+            community_uploads.file_type,
+            community_uploads.file_size,
+            community_uploads.file_url,
+            community_uploads.preview_url,
+            community_uploads.created_at,
+            community_uploads.updated_at,
+            visitor_users.id AS user_id,
+            visitor_users.display_name,
+            visitor_users.email,
+            visitor_users.access_level
+          FROM community_uploads
+          LEFT JOIN visitor_users ON visitor_users.id = community_uploads.user_id
+          WHERE community_uploads.user_id = $1
+            AND community_uploads.status = 'approved'
+          ORDER BY community_uploads.created_at DESC
+          LIMIT 100
+        `,
+        [userId],
+      )
+
+      return result.rows.map(toCommunityUpload)
+    },
+
+    listPublicUserPosts: async (userId) => {
+      const result = await pool.query(
+        `
+          SELECT
+            community_posts.id,
+            community_posts.topic,
+            community_posts.title,
+            community_posts.message,
+            community_posts.created_at,
+            community_posts.updated_at,
+            visitor_users.id AS user_id,
+            visitor_users.display_name,
+            visitor_users.email,
+            visitor_users.access_level
+          FROM community_posts
+          LEFT JOIN visitor_users ON visitor_users.id = community_posts.user_id
+          WHERE community_posts.user_id = $1
+          ORDER BY community_posts.created_at DESC
+          LIMIT 100
+        `,
+        [userId],
+      )
+
+      return result.rows.map(toCommunityPost)
+    },
+
+    listPublicUserComments: async (userId) => {
+      const result = await pool.query(
+        `
+          SELECT
+            project_comments.id,
+            project_comments.project_slug,
+            project_comments.author,
+            project_comments.message,
+            project_comments.created_at,
+            visitor_users.id AS user_id,
+            visitor_users.display_name,
+            visitor_users.email,
+            visitor_users.access_level
+          FROM project_comments
+          LEFT JOIN visitor_users ON visitor_users.id = project_comments.user_id
+          WHERE project_comments.user_id = $1
+          ORDER BY project_comments.created_at DESC
+          LIMIT 100
+        `,
+        [userId],
+      )
+
+      return result.rows.map(toComment)
     },
 
     createUpload: async (upload) => {

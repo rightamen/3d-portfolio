@@ -16,6 +16,7 @@ import Navbar from './sections/Navbar'
 const AuthPage = lazy(() => import('./pages/AuthPage'))
 const AccountPage = lazy(() => import('./pages/AccountPage'))
 const CommunityPage = lazy(() => import('./pages/CommunityPage'))
+const PublicProfilePage = lazy(() => import('./pages/PublicProfilePage'))
 const Hero = lazy(() => import('./sections/Hero'))
 const About = lazy(() => import('./sections/About'))
 const Projects = lazy(() => import('./sections/Projects'))
@@ -244,6 +245,18 @@ const App = () => {
           onLogout={handleVisitorLogout}
           visitorLoading={visitorLoading}
           visitorUser={visitorUser}
+        />
+      </Suspense>
+    )
+  }
+
+  if (routePath.startsWith('/u/')) {
+    return (
+      <Suspense fallback={<SectionFallback title="Profile" copy={copy} />}>
+        <PublicProfilePage
+          copy={copy}
+          language={language}
+          onLanguageChange={setLanguage}
         />
       </Suspense>
     )

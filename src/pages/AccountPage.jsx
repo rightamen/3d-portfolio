@@ -7,6 +7,10 @@ import {
   getAccountComments,
   getAccountCommunity,
   getAccountDownloads,
+  getAccountProfile,
+  updateAccountProfile,
+  uploadAccountAvatar,
+  uploadAccountBanner,
   uploadCommunityResource,
 } from '../lib/api'
 import { languages, getAccessLevelLabel } from '../lib/i18n'
@@ -25,6 +29,29 @@ const emptyPostForm = {
 }
 
 const topicKeys = ['general', 'showcase', 'help', 'feedback']
+const contactKeys = ['wechat', 'telegram', 'twitter', 'github', 'bilibili', 'youtube', 'artstation']
+
+const emptyContactLinks = Object.fromEntries(
+  contactKeys.map((key) => [key, { public: false, url: '', value: '' }]),
+)
+
+const createProfileForm = (profile = {}) => ({
+  activityPublic: profile.activityPublic !== false,
+  avatarUrl: profile.avatarUrl || '',
+  bannerUrl: profile.bannerUrl || '',
+  bio: profile.bio || '',
+  contactLinks: {
+    ...emptyContactLinks,
+    ...(profile.contactLinks || {}),
+  },
+  contactsPublic: profile.contactsPublic === true,
+  displayName: profile.displayName || '',
+  handle: profile.handle || '',
+  location: profile.location || '',
+  profilePublic: profile.profilePublic !== false,
+  publicEmail: profile.publicEmail || '',
+  website: profile.website || '',
+})
 
 const accountTabs = [
   { key: 'overview', labelKey: 'accountNavOverview' },
@@ -70,6 +97,14 @@ const getInitials = (name = '', email = '') => {
   if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`.toUpperCase()
   return source.slice(0, 2).toUpperCase()
 }
+
+const getImageUrl = (url) => {
+  if (!url) return ''
+  if (/^https?:\/\//i.test(url)) return url
+  return url
+}
+
+const getContactLabel = (copy, key) => copy[`accountContact${key[0].toUpperCase()}${key.slice(1)}`] || key
 
 const AccountShell = ({ children, copy, language, onLanguageChange }) => (
   <main className="auth-page">
@@ -133,6 +168,11 @@ const AccountPage = ({
   const [postForm, setPostForm] = useState(emptyPostForm)
   const [postState, setPostState] = useState({ phase: 'idle', message: '' })
   const [deletingId, setDeletingId] = useState('')
+  const [profile, setProfile] = useState(null)
+  const [profileForm, setProfileForm] = useState(() => createProfileForm(visitorUser || {}))
+  const [profileStatus, setProfileStatus] = useState('idle')
+  const [profileMessage, setProfileMessage] = useState('')
+  const [imageUploadState, setImageUploadState] = useState({ field: '', message: '', progress: 0 })
 
   const categories = useMemo(
     () =>
@@ -145,6 +185,30 @@ const AccountPage = ({
   const pendingCount = dashboard.uploads.filter((upload) => upload.status === 'pending').length
   const approvedCount = dashboard.uploads.filter((upload) => upload.status === 'approved').length
   const canDownload = Boolean(visitorUser?.emailVerified)
+  const profileStats = profile?.stats || {
+    commentCount: comments.length,
+    downloadRequestCount: downloads.length,
+    likeCount,
+    postCount: dashboard.posts.length,
+    uploadCount: dashboard.uploads.length,
+  }
+
+  const refreshProfile = async () => {
+    if (!authToken || !visitorUser) return
+
+    setProfileStatus('loading')
+    setProfileMessage('')
+
+    try {
+      const payload = await getAccountProfile(authToken)
+      setProfile(payload.profile)
+      setProfileForm(createProfileForm(payload.profile || visitorUser))
+      setProfileStatus('ready')
+    } catch (error) {
+      setProfileStatus('error')
+      setProfileMessage(error.message || copy.accountProfileLoadError)
+    }
+  }
 
   const refreshDashboard = async () => {
     if (!authToken || !visitorUser) return
@@ -199,6 +263,7 @@ const AccountPage = ({
   }
 
   useEffect(() => {
+    refreshProfile()
     refreshDashboard()
     refreshDownloads()
     refreshComments()
@@ -278,6 +343,71 @@ const AccountPage = ({
       setDashboardMessage(error.message || copy.accountStudioDeleteError)
     } finally {
       setDeletingId('')
+    }
+  }
+
+  const updateProfileField = (field, value) => {
+    setProfileForm((current) => ({ ...current, [field]: value }))
+  }
+
+  const updateContactField = (key, field, value) => {
+    setProfileForm((current) => ({
+      ...current,
+      contactLinks: {
+        ...current.contactLinks,
+        [key]: {
+          ...(current.contactLinks[key] || emptyContactLinks[key]),
+          [field]: value,
+        },
+      },
+    }))
+  }
+
+  const submitProfile = async (event) => {
+    event.preventDefault()
+    if (!authToken) return
+
+    setProfileStatus('saving')
+    setProfileMessage('')
+
+    try {
+      const payload = await updateAccountProfile(authToken, profileForm)
+      setProfile(payload.profile)
+      setProfileForm(createProfileForm(payload.profile))
+      setProfileStatus('ready')
+      setProfileMessage(copy.accountProfileSaved)
+    } catch (error) {
+      setProfileStatus('error')
+      setProfileMessage(
+        error.code === 'HANDLE_TAKEN'
+          ? copy.accountProfileHandleTaken
+          : error.message || copy.accountProfileSaveError,
+      )
+    }
+  }
+
+  const uploadProfileImage = async (field, file) => {
+    if (!authToken || !file) return
+
+    setImageUploadState({ field, message: copy.accountProfileUploading, progress: 0 })
+    try {
+      const uploadFn = field === 'banner' ? uploadAccountBanner : uploadAccountAvatar
+      const payload = await uploadFn(authToken, file, (progress) => {
+        setImageUploadState({
+          field,
+          message: `${copy.accountProfileUploading} ${progress}%`,
+          progress,
+        })
+      })
+      setProfile(payload.profile)
+      setProfileForm(createProfileForm(payload.profile))
+      setImageUploadState({ field: '', message: copy.accountProfileImageSaved, progress: 100 })
+    } catch (error) {
+      setImageUploadState({
+        field: '',
+        message: error.message || copy.accountProfileUploadError,
+        progress: 0,
+      })
     }
   }
 
@@ -756,51 +886,287 @@ const AccountPage = ({
   )
 
   const renderSettings = () => (
-    <section className="admin-section">
-      <div className="admin-section-header">
-        <h2>{copy.accountSettingsTitle}</h2>
-      </div>
-      <p className="account-section-intro">{copy.accountSettingsIntro}</p>
-      <div className="account-stat-grid">
-        <article className="account-center-card">
-          <span>{copy.authDisplayName}</span>
-          <strong>{visitorUser.displayName}</strong>
-        </article>
-        <article className="account-center-card">
-          <span>{copy.authEmail}</span>
-          <strong>{visitorUser.email}</strong>
-        </article>
-        <article className="account-center-card">
-          <span>{copy.accessLevel}</span>
-          <strong>{getAccessLevelLabel(visitorUser.accessLevel, language)}</strong>
-        </article>
-        <article className="account-center-card">
-          <span>{copy.accountMemberSince}</span>
-          <strong>{formatDate(visitorUser.createdAt)}</strong>
-        </article>
-      </div>
-      <div className="asset-editor-note">
-        <strong>{copy.authEmailStatus}</strong>
-        <span>
-          {visitorUser.emailVerified
-            ? copy.accountSettingsVerifiedHint
-            : copy.accountSettingsVerifyHint}
-        </span>
-      </div>
-      <div className="account-center-actions">
-        {!visitorUser.emailVerified && (
-          <a href="/login?mode=verify" className="primary-action">
-            {copy.accountSettingsVerifyAction}
+    <div className="account-section-stack">
+      <section className="admin-section">
+        <div className="admin-section-header">
+          <div>
+            <h2>{copy.accountSettingsTitle}</h2>
+            <p className="account-section-intro">{copy.accountSettingsIntro}</p>
+          </div>
+          <a
+            className="secondary-action"
+            href={profileForm.handle ? `/u/${profileForm.handle}` : '#profile-settings'}
+          >
+            {copy.accountProfileViewPublic}
           </a>
+        </div>
+
+        <div className="account-channel-preview">
+          <div
+            className="account-channel-banner"
+            style={
+              profileForm.bannerUrl
+                ? { backgroundImage: `url(${getImageUrl(profileForm.bannerUrl)})` }
+                : undefined
+            }
+          />
+          <div className="account-channel-row">
+            {profileForm.avatarUrl ? (
+              <img
+                className="account-channel-avatar"
+                src={getImageUrl(profileForm.avatarUrl)}
+                alt=""
+              />
+            ) : (
+              <span className="account-channel-avatar account-channel-avatar-empty">
+                {getInitials(profileForm.displayName, visitorUser.email)}
+              </span>
+            )}
+            <div>
+              <strong>{profileForm.displayName || visitorUser.displayName}</strong>
+              <span>{profileForm.handle ? `@${profileForm.handle}` : copy.accountProfileNoHandle}</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="account-upload-grid">
+          <label className="field-label">
+            {copy.accountProfileAvatar}
+            <input
+              className="field-input field-input-focus"
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              disabled={imageUploadState.field === 'avatar'}
+              onChange={(event) => uploadProfileImage('avatar', event.target.files?.[0])}
+            />
+            <span className="text-xs text-neutral-500">{copy.accountProfileAvatarHint}</span>
+          </label>
+          <label className="field-label">
+            {copy.accountProfileBanner}
+            <input
+              className="field-input field-input-focus"
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              disabled={imageUploadState.field === 'banner'}
+              onChange={(event) => uploadProfileImage('banner', event.target.files?.[0])}
+            />
+            <span className="text-xs text-neutral-500">{copy.accountProfileBannerHint}</span>
+          </label>
+        </div>
+        {imageUploadState.message && (
+          <p className="account-section-intro">{imageUploadState.message}</p>
         )}
-        <a href="/" className="secondary-action">
-          {copy.accountBackHome}
-        </a>
-        <button type="button" className="danger-action" onClick={onLogout}>
-          {copy.accountSignOut}
-        </button>
-      </div>
-    </section>
+      </section>
+
+      <form id="profile-settings" className="admin-section account-profile-form" onSubmit={submitProfile}>
+        <div className="admin-section-header">
+          <h2>{copy.accountProfileBasics}</h2>
+          <button type="submit" className="primary-action" disabled={profileStatus === 'saving'}>
+            {profileStatus === 'saving' ? copy.saving : copy.accountProfileSave}
+          </button>
+        </div>
+        {profileMessage && (
+          <p className={profileStatus === 'error' ? 'text-coral' : 'text-neutral-300'}>
+            {profileMessage}
+          </p>
+        )}
+        <div className="account-form-grid">
+          <label className="field-label">
+            {copy.authDisplayName}
+            <input
+              className="field-input field-input-focus"
+              maxLength={40}
+              minLength={2}
+              required
+              value={profileForm.displayName}
+              onChange={(event) => updateProfileField('displayName', event.target.value)}
+            />
+          </label>
+          <label className="field-label">
+            {copy.accountProfileHandle}
+            <input
+              className="field-input field-input-focus"
+              maxLength={30}
+              minLength={3}
+              pattern="[a-z0-9_-]{3,30}"
+              placeholder="mrright"
+              required
+              value={profileForm.handle}
+              onChange={(event) =>
+                updateProfileField('handle', event.target.value.toLowerCase().replace(/^@+/, ''))
+              }
+            />
+          </label>
+          <label className="field-label md:col-span-2">
+            {copy.accountProfileBio}
+            <textarea
+              className="field-input field-input-focus min-h-28 resize-none"
+              maxLength={300}
+              value={profileForm.bio}
+              onChange={(event) => updateProfileField('bio', event.target.value)}
+            />
+          </label>
+          <label className="field-label">
+            {copy.accountProfileLocation}
+            <input
+              className="field-input field-input-focus"
+              maxLength={120}
+              value={profileForm.location}
+              onChange={(event) => updateProfileField('location', event.target.value)}
+            />
+          </label>
+          <label className="field-label">
+            {copy.accountProfileWebsite}
+            <input
+              className="field-input field-input-focus"
+              placeholder="https://example.com"
+              value={profileForm.website}
+              onChange={(event) => updateProfileField('website', event.target.value)}
+            />
+          </label>
+          <label className="field-label md:col-span-2">
+            {copy.accountProfilePublicEmail}
+            <input
+              className="field-input field-input-focus"
+              type="email"
+              value={profileForm.publicEmail}
+              onChange={(event) => updateProfileField('publicEmail', event.target.value)}
+            />
+          </label>
+        </div>
+
+        <div className="account-form-block">
+          <h3>{copy.accountProfileContacts}</h3>
+          <div className="account-contact-grid">
+            {contactKeys.map((key) => {
+              const item = profileForm.contactLinks[key] || emptyContactLinks[key]
+              const isWechat = key === 'wechat'
+              return (
+                <div key={key} className="account-contact-row">
+                  <label className="field-label">
+                    {getContactLabel(copy, key)}
+                    <input
+                      className="field-input field-input-focus"
+                      placeholder={isWechat ? copy.accountProfileContactValue : 'https://'}
+                      value={isWechat ? item.value || '' : item.url || ''}
+                      onChange={(event) =>
+                        updateContactField(key, isWechat ? 'value' : 'url', event.target.value)
+                      }
+                    />
+                  </label>
+                  <label className="account-toggle">
+                    <input
+                      type="checkbox"
+                      checked={item.public === true}
+                      onChange={(event) => updateContactField(key, 'public', event.target.checked)}
+                    />
+                    <span>{copy.accountProfileItemPublic}</span>
+                  </label>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+
+        <div className="account-form-block">
+          <h3>{copy.accountProfilePrivacy}</h3>
+          <div className="account-toggle-grid">
+            {[
+              ['profilePublic', copy.accountProfilePublic],
+              ['contactsPublic', copy.accountProfileContactsPublic],
+              ['activityPublic', copy.accountProfileActivityPublic],
+            ].map(([field, label]) => (
+              <label key={field} className="account-toggle account-toggle-card">
+                <input
+                  type="checkbox"
+                  checked={profileForm[field] === true}
+                  onChange={(event) => updateProfileField(field, event.target.checked)}
+                />
+                <span>{label}</span>
+              </label>
+            ))}
+          </div>
+          <p className="account-section-intro">{copy.accountProfilePrivacyHint}</p>
+        </div>
+      </form>
+
+      <section className="admin-section">
+        <div className="admin-section-header">
+          <h2>{copy.accountProfileStats}</h2>
+        </div>
+        <div className="account-stat-grid">
+          <article className="account-center-card">
+            <span>{copy.accountStatComments}</span>
+            <strong>{profileStats.commentCount}</strong>
+          </article>
+          <article className="account-center-card">
+            <span>{copy.accountStatLikes}</span>
+            <strong>{profileStats.likeCount}</strong>
+          </article>
+          <article className="account-center-card">
+            <span>{copy.accountStatResources}</span>
+            <strong>{profileStats.uploadCount}</strong>
+          </article>
+          <article className="account-center-card">
+            <span>{copy.accountStatPosts}</span>
+            <strong>{profileStats.postCount}</strong>
+          </article>
+          <article className="account-center-card">
+            <span>{copy.accountStatDownloads}</span>
+            <strong>{profileStats.downloadRequestCount}</strong>
+          </article>
+        </div>
+      </section>
+
+      <section className="admin-section">
+        <div className="admin-section-header">
+          <h2>{copy.accountProfileAccount}</h2>
+        </div>
+        <div className="account-stat-grid">
+          <article className="account-center-card">
+            <span>{copy.authEmail}</span>
+            <strong>{visitorUser.email}</strong>
+          </article>
+          <article className="account-center-card">
+            <span>{copy.authEmailStatus}</span>
+            <strong>{visitorUser.emailVerified ? copy.accountStatusVerified : copy.accountStatusUnverified}</strong>
+          </article>
+          <article className="account-center-card">
+            <span>{copy.accessLevel}</span>
+            <strong>{getAccessLevelLabel(visitorUser.accessLevel, language)}</strong>
+          </article>
+          <article className="account-center-card">
+            <span>{copy.accountMemberSince}</span>
+            <strong>{formatDate(visitorUser.createdAt)}</strong>
+          </article>
+          <article className="account-center-card">
+            <span>{copy.accountProfileLastLogin}</span>
+            <strong>{formatDate(profile?.lastLoginAt) || copy.accountProfileUnknown}</strong>
+          </article>
+        </div>
+        <div className="asset-editor-note">
+          <strong>{copy.authEmailStatus}</strong>
+          <span>
+            {visitorUser.emailVerified
+              ? copy.accountSettingsVerifiedHint
+              : copy.accountSettingsVerifyHint}
+          </span>
+        </div>
+        <div className="account-center-actions">
+          {!visitorUser.emailVerified && (
+            <a href="/login?mode=verify" className="primary-action">
+              {copy.accountSettingsVerifyAction}
+            </a>
+          )}
+          <a href="/" className="secondary-action">
+            {copy.accountBackHome}
+          </a>
+          <button type="button" className="danger-action" onClick={onLogout}>
+            {copy.accountSignOut}
+          </button>
+        </div>
+      </section>
+    </div>
   )
 
   const renderActiveTab = () => {

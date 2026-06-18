@@ -23,8 +23,12 @@ const uploadRoot = path.join(rootDir, 'public', 'uploads')
 const modelConverterScript = path.join(rootDir, 'scripts', 'convert-model-to-glb.py')
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
+const handlePattern = /^[a-z0-9_-]{3,30}$/
 const imageExtensions = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif'])
+const profileImageExtensions = new Set(['.jpg', '.jpeg', '.png', '.webp'])
 const imageUploadLimit = 16 * 1024 * 1024
+const avatarUploadLimit = 2 * 1024 * 1024
+const bannerUploadLimit = 5 * 1024 * 1024
 const modelExtensions = new Set(['.glb', '.gltf', '.fbx', '.obj', '.zip'])
 const visitorAccessLevels = ['guest', 'member', 'approved']
 const accessRank = new Map(visitorAccessLevels.map((level, index) => [level, index]))
@@ -119,6 +123,35 @@ const upload = multer({
   },
 })
 
+const createProfileImageUpload = ({ folder, limit }) =>
+  multer({
+    limits: { fileSize: limit },
+    storage: multer.diskStorage({
+      destination: (_request, _file, callback) => {
+        const destination = path.join(uploadRoot, folder)
+
+        mkdir(destination, { recursive: true })
+          .then(() => callback(null, destination))
+          .catch(callback)
+      },
+      filename: (_request, file, callback) => {
+        const extension = path.extname(file.originalname).toLowerCase()
+        callback(null, `${Date.now()}-${randomBytes(6).toString('hex')}${extension}`)
+      },
+    }),
+    fileFilter: (_request, file, callback) => {
+      const extension = path.extname(file.originalname).toLowerCase()
+      const allowed =
+        profileImageExtensions.has(extension) &&
+        ['image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype)
+
+      callback(allowed ? null : new Error('Only JPG, PNG, and WebP images are allowed.'), allowed)
+    },
+  })
+
+const avatarUpload = createProfileImageUpload({ folder: 'avatars', limit: avatarUploadLimit })
+const bannerUpload = createProfileImageUpload({ folder: 'banners', limit: bannerUploadLimit })
+
 const createId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 
 const hashToken = (token) => createHash('sha256').update(token).digest('hex')
@@ -206,6 +239,97 @@ const normalizeCommunityTopic = (value, fallback = 'general') => {
   const normalized = String(value ?? '').trim()
   return communityTopics.has(normalized) ? normalized : fallback
 }
+
+const normalizeHandle = (value) => String(value ?? '').trim().toLowerCase().replace(/^@+/, '')
+
+const normalizeUrl = (value, maxLength = 300) => {
+  const text = String(value ?? '').trim().slice(0, maxLength)
+  if (!text) return ''
+
+  try {
+    const url = new URL(text)
+    return ['http:', 'https:'].includes(url.protocol) ? url.toString() : ''
+  } catch {
+    return ''
+  }
+}
+
+const socialLinkKeys = new Set([
+  'wechat',
+  'telegram',
+  'twitter',
+  'github',
+  'bilibili',
+  'youtube',
+  'artstation',
+])
+
+const normalizeContactLinks = (value = {}) => {
+  const links = value && typeof value === 'object' ? value : {}
+
+  return Object.fromEntries(
+    Array.from(socialLinkKeys).map((key) => {
+      const item = links[key] && typeof links[key] === 'object' ? links[key] : {}
+      const rawValue = String(item.value ?? '').trim().slice(0, 160)
+      const url = key === 'wechat' ? '' : normalizeUrl(item.url ?? rawValue, 300)
+
+      return [
+        key,
+        {
+          public: item.public === true,
+          url,
+          value: key === 'wechat' ? rawValue : url,
+        },
+      ]
+    }),
+  )
+}
+
+const normalizeAccountProfile = (body) => ({
+  activityPublic: body?.activityPublic !== false,
+  bio: String(body?.bio ?? '').trim().slice(0, 300),
+  contactLinks: normalizeContactLinks(body?.contactLinks),
+  contactsPublic: body?.contactsPublic === true,
+  displayName: String(body?.displayName ?? '').trim().slice(0, 40),
+  handle: normalizeHandle(body?.handle),
+  location: String(body?.location ?? '').trim().slice(0, 120),
+  profilePublic: body?.profilePublic !== false,
+  publicEmail: String(body?.publicEmail ?? '').trim().toLowerCase().slice(0, 180),
+  website: normalizeUrl(body?.website, 300),
+})
+
+const stripInternalPublicProfile = (profile) => {
+  if (!profile) return null
+  const publicProfile = { ...profile }
+  delete publicProfile.internalId
+  return publicProfile
+}
+
+const toPublicUploadPayload = (upload) => ({
+  assetCategory: upload.assetCategory,
+  createdAt: upload.createdAt,
+  description: upload.description,
+  fileType: upload.fileType,
+  fileUrl: upload.fileUrl,
+  id: upload.id,
+  previewUrl: upload.previewUrl,
+  title: upload.title,
+})
+
+const toPublicPostPayload = (post) => ({
+  createdAt: post.createdAt,
+  id: post.id,
+  message: post.message,
+  title: post.title,
+  topic: post.topic,
+})
+
+const toPublicCommentPayload = (comment) => ({
+  createdAt: comment.createdAt,
+  id: comment.id,
+  message: comment.message,
+  projectSlug: comment.projectSlug,
+})
 
 const getPolicyAccessLevel = (policy = '') => {
   const normalized = policy.toLowerCase()
@@ -354,15 +478,7 @@ app.post('/api/auth/login', requireAuthStore, async (request, response) => {
   }
 
   const session = await createSession(user)
-  const publicUser = {
-    accessLevel: user.accessLevel,
-    createdAt: user.createdAt,
-    displayName: user.displayName,
-    email: user.email,
-    emailVerified: user.emailVerified,
-    emailVerifiedAt: user.emailVerifiedAt,
-    id: user.id,
-  }
+  const publicUser = await authStore.getAccountProfile(user.id)
 
   return response.json({ session, user: publicUser })
 })
@@ -612,6 +728,184 @@ app.delete('/api/community/comments/:id', requireAuthStore, async (request, resp
   }
 
   return response.json({ ok: true })
+})
+
+app.get('/api/account/profile', requireAuthStore, async (request, response) => {
+  const user = await getOptionalUser(request)
+  if (!user) {
+    return response.status(401).json({
+      error: 'Please sign in to manage your profile.',
+    })
+  }
+
+  const profile = await authStore.getAccountProfile(user.id)
+  return response.json({ profile })
+})
+
+app.put('/api/account/profile', requireAuthStore, async (request, response) => {
+  const user = await getOptionalUser(request)
+  if (!user) {
+    return response.status(401).json({
+      error: 'Please sign in to manage your profile.',
+    })
+  }
+
+  const profile = normalizeAccountProfile(request.body)
+
+  if (profile.displayName.length < 2) {
+    return response.status(400).json({
+      error: 'Display name must be 2-40 characters.',
+    })
+  }
+
+  if (!handlePattern.test(profile.handle)) {
+    return response.status(400).json({
+      error: 'Handle must use 3-30 lowercase letters, numbers, hyphens, or underscores.',
+    })
+  }
+
+  if (request.body?.website && !profile.website) {
+    return response.status(400).json({
+      error: 'Website must be a valid http or https URL.',
+    })
+  }
+
+  if (profile.publicEmail && !emailPattern.test(profile.publicEmail)) {
+    return response.status(400).json({
+      error: 'Public email must be valid.',
+    })
+  }
+
+  try {
+    const updated = await authStore.updateAccountProfile(user.id, profile)
+    return response.json({ profile: updated })
+  } catch (error) {
+    if (error.code === '23505') {
+      return response.status(409).json({
+        code: 'HANDLE_TAKEN',
+        error: 'This handle is already taken.',
+      })
+    }
+    throw error
+  }
+})
+
+app.post(
+  '/api/account/avatar',
+  requireAuthStore,
+  avatarUpload.single('file'),
+  async (request, response) => {
+    const user = await getOptionalUser(request)
+    if (!user) {
+      if (request.file) unlink(request.file.path).catch((error) => console.error(error))
+      return response.status(401).json({
+        error: 'Please sign in to update your avatar.',
+      })
+    }
+
+    if (!request.file) {
+      return response.status(400).json({ error: 'Avatar file is required.' })
+    }
+
+    const avatarUrl = `/uploads/avatars/${request.file.filename}`
+    const profile = await authStore.updateAccountImage(user.id, 'avatar', avatarUrl)
+    return response.status(201).json({ avatarUrl, profile })
+  },
+)
+
+app.post(
+  '/api/account/banner',
+  requireAuthStore,
+  bannerUpload.single('file'),
+  async (request, response) => {
+    const user = await getOptionalUser(request)
+    if (!user) {
+      if (request.file) unlink(request.file.path).catch((error) => console.error(error))
+      return response.status(401).json({
+        error: 'Please sign in to update your banner.',
+      })
+    }
+
+    if (!request.file) {
+      return response.status(400).json({ error: 'Banner file is required.' })
+    }
+
+    const bannerUrl = `/uploads/banners/${request.file.filename}`
+    const profile = await authStore.updateAccountImage(user.id, 'banner', bannerUrl)
+    return response.status(201).json({ bannerUrl, profile })
+  },
+)
+
+app.get('/api/users/:handle', async (request, response) => {
+  if (!authStore) return response.status(404).json({ error: 'User profile not found.' })
+
+  const handle = normalizeHandle(request.params.handle)
+  if (!handlePattern.test(handle)) {
+    return response.status(404).json({ error: 'User profile not found.' })
+  }
+
+  const profile = await authStore.getUserByHandle(handle)
+  if (!profile) return response.status(404).json({ error: 'User profile not found.' })
+  if (!profile.profilePublic) {
+    return response.json({ profile: { handle, profilePublic: false } })
+  }
+
+  return response.json({ profile: stripInternalPublicProfile(profile) })
+})
+
+app.get('/api/users/:handle/resources', async (request, response) => {
+  if (!authStore || !communityStore) return response.json({ resources: [] })
+
+  const handle = normalizeHandle(request.params.handle)
+  if (!handlePattern.test(handle)) return response.status(404).json({ error: 'User profile not found.' })
+
+  const profile = await authStore.getUserByHandle(handle)
+  if (!profile) return response.status(404).json({ error: 'User profile not found.' })
+  if (!profile.profilePublic || !profile.activityPublic) return response.json({ resources: [] })
+
+  const resources = await communityStore.listPublicUserUploads(profile.internalId)
+  return response.json({ resources: resources.map(toPublicUploadPayload) })
+})
+
+app.get('/api/users/:handle/posts', async (request, response) => {
+  if (!authStore || !communityStore) return response.json({ posts: [] })
+
+  const handle = normalizeHandle(request.params.handle)
+  if (!handlePattern.test(handle)) return response.status(404).json({ error: 'User profile not found.' })
+
+  const profile = await authStore.getUserByHandle(handle)
+  if (!profile) return response.status(404).json({ error: 'User profile not found.' })
+  if (!profile.profilePublic || !profile.activityPublic) return response.json({ posts: [] })
+
+  const posts = await communityStore.listPublicUserPosts(profile.internalId)
+  return response.json({ posts: posts.map(toPublicPostPayload) })
+})
+
+app.get('/api/users/:handle/activity', async (request, response) => {
+  if (!authStore || !communityStore) {
+    return response.json({ comments: [], posts: [], resources: [] })
+  }
+
+  const handle = normalizeHandle(request.params.handle)
+  if (!handlePattern.test(handle)) return response.status(404).json({ error: 'User profile not found.' })
+
+  const profile = await authStore.getUserByHandle(handle)
+  if (!profile) return response.status(404).json({ error: 'User profile not found.' })
+  if (!profile.profilePublic || !profile.activityPublic) {
+    return response.json({ comments: [], posts: [], resources: [] })
+  }
+
+  const [comments, posts, resources] = await Promise.all([
+    communityStore.listPublicUserComments(profile.internalId),
+    communityStore.listPublicUserPosts(profile.internalId),
+    communityStore.listPublicUserUploads(profile.internalId),
+  ])
+
+  return response.json({
+    comments: comments.map(toPublicCommentPayload),
+    posts: posts.map(toPublicPostPayload),
+    resources: resources.map(toPublicUploadPayload),
+  })
 })
 
 app.get('/api/account/community', requireAuthStore, async (request, response) => {

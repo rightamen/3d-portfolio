@@ -184,17 +184,80 @@ export const getAccountComments = (token) =>
     headers: authHeaders(token),
   })
 
+export const getAccountProfile = (token) =>
+  request('/api/account/profile', {
+    headers: authHeaders(token),
+  })
+
+export const updateAccountProfile = (token, payload) =>
+  request('/api/account/profile', {
+    method: 'PUT',
+    headers: authHeaders(token, { 'Content-Type': 'application/json' }),
+    body: JSON.stringify(payload),
+  })
+
+const uploadAccountImage = (token, endpoint, file, onProgress) => {
+  const formData = new FormData()
+  formData.append('file', file)
+
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', `${API_BASE}${endpoint}`)
+    xhr.setRequestHeader('Authorization', `Bearer ${token}`)
+
+    xhr.upload.onprogress = (event) => {
+      if (!event.lengthComputable || !onProgress) return
+      onProgress(Math.round((event.loaded / event.total) * 100))
+    }
+
+    xhr.onload = () => {
+      let responsePayload = {}
+      try {
+        responsePayload = JSON.parse(xhr.responseText || '{}')
+      } catch {
+        responsePayload = {}
+      }
+
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve(responsePayload)
+      } else {
+        const error = new Error(responsePayload.error || 'Upload failed')
+        error.code = responsePayload.code
+        error.status = xhr.status
+        reject(error)
+      }
+    }
+
+    xhr.onerror = () => reject(new Error('Upload failed'))
+    xhr.send(formData)
+  })
+}
+
+export const uploadAccountAvatar = (token, file, onProgress) =>
+  uploadAccountImage(token, '/api/account/avatar', file, onProgress)
+
+export const uploadAccountBanner = (token, file, onProgress) =>
+  uploadAccountImage(token, '/api/account/banner', file, onProgress)
+
 export const deleteAccountCommunityUpload = (token, id) =>
   request(`/api/account/community/uploads/${id}`, {
     method: 'DELETE',
     headers: authHeaders(token),
   })
-
 export const deleteAccountCommunityPost = (token, id) =>
   request(`/api/account/community/posts/${id}`, {
     method: 'DELETE',
     headers: authHeaders(token),
   })
+
+export const getPublicUserProfile = (handle) => request(`/api/users/${handle}`)
+
+export const getPublicUserResources = (handle) =>
+  request(`/api/users/${handle}/resources`)
+
+export const getPublicUserPosts = (handle) => request(`/api/users/${handle}/posts`)
+
+export const getPublicUserActivity = (handle) => request(`/api/users/${handle}/activity`)
 
 export const getAdminSummary = (token) => adminRequest('/api/admin/summary', token)
 

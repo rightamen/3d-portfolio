@@ -25,6 +25,54 @@
 
 ## 最近完成
 
+### 2026-06-18：访客个人中心升级为公开资料中心
+
+本地 commit：
+
+- 未提交
+
+完成内容：
+
+- 将 /account 设置页升级为类似 YouTube 频道资料中心，可编辑头像、封面图、显示名称、handle、简介、所在地、网站、公开邮箱、社交链接和隐私开关。
+- 新增公开个人主页路由 /u/:handle，包含封面、头像、简介、公开联系方式、统计和 Overview/Resources/Posts/Comments/About tabs。
+- 新增访客私有 API：
+  - GET /api/account/profile
+  - PUT /api/account/profile
+  - POST /api/account/avatar
+  - POST /api/account/banner
+- 新增公开 API：
+  - GET /api/users/:handle
+  - GET /api/users/:handle/activity
+  - GET /api/users/:handle/resources
+  - GET /api/users/:handle/posts
+- 兼容扩展 visitor_users 资料字段，使用 ALTER TABLE ADD COLUMN IF NOT EXISTS。
+
+新增/修改文件：
+
+- server/index.js
+- server/postgresStores.js
+- src/App.jsx
+- src/lib/api.js
+- src/lib/i18n.js
+- src/pages/AccountPage.jsx
+- src/pages/PublicProfilePage.jsx
+- src/index.css
+
+验证结果：
+
+- npm run build：通过
+- npm run lint：通过
+- git diff --check：通过
+- VPS 部署：未部署
+- GitHub push：未执行
+
+注意：
+
+- 未修改 /admin 的 ADMIN_TOKEN 登录逻辑。
+- 访客中心继续使用 visitor token。
+- 公开接口不返回 visitor token，不默认暴露真实邮箱；只有 public_email 且 contacts_public 开启时才公开联系邮箱。
+- 头像和封面上传保存到 public/uploads/avatars 与 public/uploads/banners，不删除旧文件。
+
 ### 2026-06-18：项目规则、进度记录和 Claude 自动化命令本地提交
 
 本地 commit：
