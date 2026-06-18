@@ -25,37 +25,40 @@
 
 ## 最近完成
 
-### 2026-06-18：模型预览优化已部署上线
-
-本地 commit：
-
-- a5f3d401bd2615e8cf8b5fb29e4089376055576a
+### 2026-06-18：模型预览优化上线
 
 完成内容：
 
-- 将 3D 模型预览优化 release 包上传到 VPS 并部署到 /opt/mrright-portfolio。
-- 部署前按要求运行 npm run build、npm run lint、npm run test:e2e、npm run release:vps。
-- 部署前仅检查 ADMIN_TOKEN 和 DATABASE_URL 为 [set]，未输出 value。
-- 部署前已备份 /opt/mrright-portfolio。
-- 部署未覆盖 /etc/mrright-portfolio.env，未修改数据库密码，未删除数据库、表、data、public/uploads 或备份目录。
-- 本轮未重新 commit，未 push GitHub。
+- 模型预览 UI 已优化并部署上线
+- 新增专业 loading overlay：百分比、加载文案、loading ring、大模型慢加载提示
+- 新增 ModelErrorBoundary：模型失败时显示友好错误卡片和 Reload Model 按钮
+- 新增工具栏：重置视角、全屏、自动旋转、Studio/Dark/Grid、信息面板开关
+- 新增模型信息面板：名称、格式、模型大小、顶点、三角面、材质、贴图、bounds、下载权限
+- 优化相机适配：bounding box、自动居中、相机位置、Orbit target、reset 回到最佳视角
+- 优化移动端：降低 DPR、关闭移动端阴影、工具栏适配、信息面板适配手机
+- 优化资源释放：dispose cloned geometry/material/texture，并清理 useGLTF cache
+- 保持 lazy loading，没有首页预加载全部模型
 
-release 包：
+修改文件：
 
-- .deploy-tools/mrright-portfolio-release.tar.gz：生成成功
+- src/components/ModelPreview.jsx
+- src/index.css
+- src/lib/i18n.js
+
+部署信息：
+
+- 使用 commit：a5f3d401bd2615e8cf8b5fb29e4089376055576a
+- release 包：.deploy-tools/mrright-portfolio-release.tar.gz
 - VPS 上传路径：/tmp/mrright-portfolio-release.tar.gz
-
-备份路径：
-
-- /opt/mrright-portfolio.backup-20260618-121102
+- VPS 备份路径：/opt/mrright-portfolio.backup-20260618-121102
+- 服务状态：active
 
 验证结果：
 
 - npm run build：通过
 - npm run lint：通过
-- npm run test:e2e：通过，6 passed，1 skipped
+- npm run test:e2e：通过，6 passed, 1 skipped
 - npm run release:vps：通过
-- VPS service active：active
 - VPS local /api/health：200
 - VPS local admin_summary：200
 - https://mrright.blog/api/health：200
@@ -63,15 +66,18 @@ release 包：
 - https://mrright.blog/admin：200
 - https://mrright.blog/account：200
 - https://mrright.blog/community：200
-- 线上 Playwright 模型预览冒烟测试：首页正常。
-- 线上 Playwright 模型预览冒烟测试：模型预览弹窗正常打开。
-- 线上 Playwright 模型预览冒烟测试：loading 截图已捕获。
-- 线上 Playwright 模型预览冒烟测试：Canvas、工具栏、模型信息面板存在。
-- 线上 Playwright 模型预览冒烟测试：人为拦截模型资源后，错误态显示 LOAD FAILED 和 Reload Model，页面未崩溃。
-- 线上 Playwright 模型预览冒烟测试：未发现生产 500。
-- console：正常预览未发现明显 error；错误态测试中有预期模型资源 404。
 
-截图路径：
+线上 Playwright 模型预览冒烟测试：
+
+- 首页正常
+- 模型预览弹窗正常打开
+- loading 截图已捕获
+- Canvas、工具栏、模型信息面板存在
+- 人为拦截模型资源后，错误态显示 LOAD FAILED 和 Reload Model，页面未崩溃
+- 未发现生产 500
+- console：正常预览未发现明显 error；错误态测试中有预期模型资源 404
+
+截图路径，仅记录，不提交：
 
 - test-results/model-viewer-production-smoke/home.png
 - test-results/model-viewer-production-smoke/model-preview-loading.png
@@ -81,10 +87,11 @@ release 包：
 - test-results/model-viewer-production-smoke/account.png
 - test-results/model-viewer-production-smoke/community.png
 
-注意：
+备注：
 
-- 截图文件未提交。
-- 若用户浏览器仍看到旧 CSS/JS 或“页面资源正在更新”，可执行 Ctrl+Shift+R 强制刷新。
+- 截图文件不提交
+- 浏览器如仍看到旧样式，需要 Ctrl+Shift+R 强制刷新
+- GitHub push 仍待后续凭证可用时执行
 
 ### 2026-06-18：UI 视觉升级已部署到 VPS
 
