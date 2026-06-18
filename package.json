@@ -17,6 +17,9 @@
     "start": "node server/index.js",
     "deploy:vps": "npm run build && node scripts/deploy-vps.mjs",
     "release:vps": "npm run build && node scripts/package-vps-release.mjs",
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:report": "playwright show-report",
     "verify:visitor-studio": "node scripts/verify-visitor-studio.mjs"
   },
   "dependencies": {
@@ -27,6 +30,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
+    "@playwright/test": "^1.61.0",
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.5.0",
     "@tailwindcss/vite": "^4.1.18",

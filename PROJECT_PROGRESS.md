@@ -29,7 +29,7 @@
 
 本地 commit：
 
-- 未提交
+- 本次提交（最终 hash 以 git log 为准）
 
 完成内容：
 
@@ -74,7 +74,7 @@
 
 - 新增 Playwright 测试配置 playwright.config.js。
 - 新增正式 E2E 测试 tests/e2e/production-smoke.spec.js。
-- 新增 npm run test:e2e 脚本。
+- 新增 npm run test:e2e、npm run test:e2e:headed、npm run test:e2e:report 脚本。
 - 新增 @playwright/test 开发依赖并更新 package-lock.json。
 - E2E 覆盖：
   - 首页 /
@@ -87,6 +87,7 @@
   - /api/account/downloads 未登录 401
   - /api/account/comments 未登录 401
   - /api/users/not-exist-test-handle 404
+- 新增可选登录冒烟测试，仅使用 E2E_VISITOR_EMAIL 和 E2E_VISITOR_PASSWORD；未设置环境变量时自动 skip。
 
 新增/修改文件：
 
@@ -99,7 +100,7 @@
 
 - npm run build：通过
 - npm run lint：通过
-- npm run test:e2e：通过，6 passed
+- npm run test:e2e：通过，6 passed，1 skipped
 - VPS 部署：未部署
 - GitHub push：未执行
 
