@@ -15,6 +15,7 @@ data
 public/uploads
 server-local*.log
 *.local
+.claude/settings.local.json
 
 # Editor directories and files
 .vscode/*
