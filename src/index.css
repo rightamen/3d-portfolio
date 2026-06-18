@@ -1129,39 +1129,181 @@ html {
 }
 
 .model-overlay {
-  @apply fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-3 backdrop-blur-md;
+  @apply fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-3 backdrop-blur-md;
 }
 
 .model-panel {
-  @apply flex h-[min(88vh,48rem)] w-full max-w-5xl flex-col rounded-lg border border-white/10 bg-[#080b16] shadow-2xl;
+  @apply flex h-[min(92vh,54rem)] w-full max-w-7xl flex-col overflow-hidden rounded-lg border border-white/10 bg-[#070a14] shadow-2xl;
+  box-shadow:
+    0 30px 120px rgba(0, 0, 0, 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 .model-toolbar {
-  @apply flex items-center justify-between gap-4 border-b border-white/10 p-4;
+  @apply flex items-start justify-between gap-4 border-b border-white/10 p-4;
+  background:
+    radial-gradient(circle at 12% 0%, rgba(51, 194, 204, 0.14), transparent 28rem),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.02));
+}
+
+.model-toolbar h3 {
+  @apply break-words;
+}
+
+.model-toolbar p {
+  @apply mt-1 max-w-xl text-xs leading-relaxed text-neutral-500;
+}
+
+.model-toolbar-actions {
+  @apply flex shrink-0 flex-wrap justify-end gap-2;
 }
 
 .model-controls {
-  @apply flex flex-wrap gap-2 border-b border-white/10 px-4 py-3;
+  @apply flex gap-2 overflow-x-auto border-b border-white/10 px-4 py-3;
+  background: rgba(255, 255, 255, 0.025);
 }
 
 .mode-button {
-  @apply inline-flex min-h-9 items-center justify-center rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-semibold text-neutral-300 transition hover:border-aqua/40 hover:text-white;
+  @apply inline-flex min-h-9 shrink-0 items-center justify-center rounded-md border border-white/10 bg-white/5 px-4 py-2 text-xs font-semibold text-neutral-300 transition hover:border-aqua/40 hover:text-white;
 }
 
 .mode-button-active {
-  @apply inline-flex min-h-9 items-center justify-center rounded-full border border-aqua/50 bg-aqua px-4 py-2 text-xs font-semibold text-[#031014];
+  @apply inline-flex min-h-9 shrink-0 items-center justify-center rounded-md border border-aqua/50 bg-aqua px-4 py-2 text-xs font-semibold text-[#031014];
 }
 
 .model-control-label {
-  @apply inline-flex min-h-9 items-center px-2 text-xs font-bold uppercase tracking-[0.16em] text-neutral-500;
+  @apply inline-flex min-h-9 shrink-0 items-center px-2 text-xs font-bold uppercase tracking-[0.16em] text-neutral-500;
+}
+
+.model-viewer-body {
+  @apply grid min-h-0 flex-1;
+}
+
+.model-info-open {
+  @apply lg:grid-cols-[minmax(0,1fr)_20rem];
 }
 
 .model-canvas {
-  @apply min-h-0 flex-1;
+  @apply relative min-h-[28rem] overflow-hidden;
+  background:
+    radial-gradient(circle at 50% 42%, rgba(88, 214, 223, 0.15), transparent 18rem),
+    radial-gradient(circle at 70% 20%, rgba(234, 72, 132, 0.08), transparent 20rem),
+    linear-gradient(180deg, #080c18, #02030a 72%);
+}
+
+.model-canvas::before {
+  @apply pointer-events-none absolute inset-0 z-10 content-[''];
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+  background-size: 64px 64px;
+  mask-image: radial-gradient(circle at 50% 52%, black, transparent 72%);
+}
+
+.model-canvas-dark {
+  background:
+    radial-gradient(circle at 50% 38%, rgba(105, 119, 255, 0.08), transparent 17rem),
+    linear-gradient(180deg, #050713, #010207 78%);
+}
+
+.model-canvas-grid {
+  background:
+    radial-gradient(circle at 48% 42%, rgba(51, 194, 204, 0.18), transparent 19rem),
+    linear-gradient(180deg, #0a1020, #02030a 78%);
+}
+
+.model-canvas-halo {
+  @apply pointer-events-none absolute inset-x-[12%] bottom-8 z-10 h-32 rounded-full blur-3xl;
+  background: rgba(51, 194, 204, 0.1);
 }
 
 .model-loader {
-  @apply rounded-full border border-white/10 bg-black/60 px-4 py-2 text-sm font-semibold text-white;
+  @apply pointer-events-none;
+}
+
+.model-loader-card {
+  @apply flex min-w-72 items-center gap-4 rounded-lg border border-white/10 bg-black/70 p-4 text-left shadow-2xl backdrop-blur-md;
+}
+
+.model-loader-card > div {
+  @apply grid gap-1;
+}
+
+.model-loader-card strong {
+  @apply text-sm font-semibold text-white;
+}
+
+.model-loader-card p {
+  @apply max-w-60 text-xs leading-relaxed text-neutral-400;
+}
+
+.model-loader-ring {
+  @apply grid h-16 w-16 shrink-0 place-items-center rounded-full;
+  background:
+    conic-gradient(#57e6dd var(--model-load-progress), rgba(255, 255, 255, 0.11) 0deg),
+    radial-gradient(circle, #060914 56%, transparent 57%);
+}
+
+.model-loader-ring strong {
+  @apply text-xs text-white;
+}
+
+.model-error-card {
+  @apply grid max-w-sm gap-3 rounded-lg border border-coral/30 bg-[#120812]/90 p-5 text-center shadow-2xl backdrop-blur-md;
+}
+
+.model-error-card span {
+  @apply text-xs font-bold uppercase tracking-[0.18em] text-coral;
+}
+
+.model-error-card strong {
+  @apply text-lg font-semibold text-white;
+}
+
+.model-error-card p {
+  @apply text-sm leading-relaxed text-neutral-400;
+}
+
+.model-info-panel {
+  @apply min-h-0 overflow-y-auto border-t border-white/10 bg-[#080b16]/95 p-4 lg:border-l lg:border-t-0;
+}
+
+.model-info-panel > div:first-child {
+  @apply mb-4 grid gap-1 rounded-lg border border-white/10 bg-white/[0.035] p-4;
+}
+
+.model-info-panel span,
+.model-info-grid dt {
+  @apply text-xs font-bold uppercase tracking-[0.16em] text-neutral-500;
+}
+
+.model-info-panel strong {
+  @apply text-lg font-semibold text-white;
+}
+
+.model-info-panel p,
+.model-info-note span {
+  @apply text-sm leading-relaxed text-neutral-400;
+}
+
+.model-info-grid {
+  @apply grid gap-3;
+}
+
+.model-info-grid div {
+  @apply rounded-lg border border-white/10 bg-black/20 p-3;
+}
+
+.model-info-grid dd {
+  @apply mt-1 break-words text-sm font-semibold text-neutral-100;
+}
+
+.model-info-note {
+  @apply mt-4 grid gap-1 rounded-lg border border-aqua/20 bg-aqua/5 p-3;
+}
+
+.model-info-note strong {
+  @apply text-sm text-aqua;
 }
 
 .detail-overlay {
@@ -2155,6 +2297,64 @@ body {
   .community-post-form,
   .community-upload-form {
     @apply p-3;
+  }
+
+  .model-overlay {
+    @apply items-stretch p-2;
+  }
+
+  .model-panel {
+    @apply h-[calc(100dvh-1rem)] max-h-none;
+  }
+
+  .model-toolbar {
+    @apply flex-col p-3;
+  }
+
+  .model-toolbar-actions {
+    @apply w-full justify-between;
+  }
+
+  .model-toolbar-actions .mode-button,
+  .model-toolbar-actions .secondary-action {
+    @apply min-h-10 flex-1 px-3 py-2 text-xs;
+  }
+
+  .model-controls {
+    @apply px-3 py-2;
+  }
+
+  .mode-button,
+  .mode-button-active {
+    @apply min-h-10 px-3 text-[0.7rem];
+  }
+
+  .model-control-label {
+    @apply min-h-10 text-[0.62rem];
+  }
+
+  .model-viewer-body {
+    @apply overflow-y-auto;
+  }
+
+  .model-canvas {
+    @apply min-h-[55dvh];
+  }
+
+  .model-info-panel {
+    @apply max-h-[38dvh] p-3;
+  }
+
+  .model-info-grid {
+    @apply grid-cols-2;
+  }
+
+  .model-loader-card {
+    @apply min-w-0 max-w-[18rem] flex-col text-center;
+  }
+
+  .model-loader-card p {
+    @apply max-w-none;
   }
 }
 

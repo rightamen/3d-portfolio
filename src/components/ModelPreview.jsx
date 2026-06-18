@@ -1,6 +1,6 @@
 import { ContactShadows, Grid, Html, OrbitControls, useGLTF, useProgress } from '@react-three/drei'
 import { Canvas, useThree } from '@react-three/fiber'
-import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { Component, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ACESFilmicToneMapping,
   Box3,
@@ -15,7 +15,7 @@ import {
 } from 'three'
 import { EXRLoader } from 'three/examples/jsm/loaders/EXRLoader.js'
 import { inferAssetCategory } from '../lib/assetCategories'
-import { pickLocalized } from '../lib/i18n'
+import { pickLocalized, translateKnownLabel } from '../lib/i18n'
 
 const modes = [
   { id: 'textured', labelKey: 'modeTextured' },
@@ -31,6 +31,12 @@ const alphaModes = [
   { id: 'opaque', labelKey: 'alphaOpaque' },
   { id: 'cutout', labelKey: 'alphaCutout' },
   { id: 'blend', labelKey: 'alphaBlend' },
+]
+
+const sceneModes = [
+  { id: 'studio', labelKey: 'viewerSceneStudio' },
+  { id: 'dark', labelKey: 'viewerSceneDark' },
+  { id: 'grid', labelKey: 'viewerSceneGrid' },
 ]
 
 const viewerProfiles = {
@@ -134,6 +140,91 @@ const blendMaterialNamePattern = /(glass|clear|transparent|translucent|blend|wat
 const defaultRenderSettings = {
   alphaMode: 'auto',
   doubleSided: true,
+}
+
+const emptyModelStats = {
+  bounds: null,
+  materials: 0,
+  textures: 0,
+  triangles: 0,
+  vertices: 0,
+}
+
+const formatNumber = (value, fallback = 'Unknown') =>
+  Number.isFinite(value) && value > 0 ? new Intl.NumberFormat().format(Math.round(value)) : fallback
+
+const disposeMaterial = (material) => {
+  if (!material) return
+  materialKeys.forEach((key) => {
+    material[key]?.dispose?.()
+  })
+  material.dispose?.()
+}
+
+const disposeObject = (object) => {
+  object.traverse((child) => {
+    if (!child.isMesh) return
+    child.geometry?.dispose?.()
+    const materials = Array.isArray(child.material) ? child.material : [child.material]
+    materials.forEach(disposeMaterial)
+  })
+}
+
+const collectModelStats = (scene) => {
+  const materials = new Set()
+  const textures = new Set()
+  let triangles = 0
+  let vertices = 0
+
+  scene.traverse((object) => {
+    if (!object.isMesh) return
+
+    const geometry = object.geometry
+    const positionCount = geometry?.attributes?.position?.count || 0
+    vertices += positionCount
+    triangles += geometry?.index?.count ? geometry.index.count / 3 : positionCount / 3
+
+    const objectMaterials = Array.isArray(object.material) ? object.material : [object.material]
+    objectMaterials.filter(Boolean).forEach((material) => {
+      materials.add(material.uuid || material)
+      materialKeys.forEach((key) => {
+        if (material[key]) textures.add(material[key].uuid || material[key])
+      })
+    })
+  })
+
+  return {
+    materials: materials.size,
+    textures: textures.size,
+    triangles,
+    vertices,
+  }
+}
+
+class ModelErrorBoundary extends Component {
+  constructor(props) {
+    super(props)
+    this.state = { hasError: false }
+  }
+
+  static getDerivedStateFromError() {
+    return { hasError: true }
+  }
+
+  componentDidCatch(error) {
+    console.warn('Model preview failed to load.', error?.message || error)
+  }
+
+  componentDidUpdate(previousProps) {
+    if (previousProps.resetKey !== this.props.resetKey && this.state.hasError) {
+      this.setState({ hasError: false })
+    }
+  }
+
+  render() {
+    if (this.state.hasError) return this.props.fallback
+    return this.props.children
+  }
 }
 
 const getStoredMaterialState = (material) => {
@@ -247,8 +338,19 @@ const prepareStudioMaterial = (material, profile, renderSettings) => {
   material.needsUpdate = true
 }
 
-const ModelScene = ({ url, mode, profile, renderSettings }) => {
+const ModelScene = ({
+  controlsRef,
+  isMobile,
+  mode,
+  onModelReady,
+  profile,
+  renderSettings,
+  resetNonce,
+  sceneMode,
+  url,
+}) => {
   const { scene } = useGLTF(url)
+  const { camera } = useThree()
   const displayScene = useMemo(() => {
     const clonedScene = scene.clone(true)
 
@@ -267,6 +369,7 @@ const ModelScene = ({ url, mode, profile, renderSettings }) => {
 
     return clonedScene
   }, [scene])
+
   const transform = useMemo(() => {
     const box = new Box3().setFromObject(displayScene)
     const size = new Vector3()
@@ -278,13 +381,20 @@ const ModelScene = ({ url, mode, profile, renderSettings }) => {
     const maxDimension = Math.max(size.x, size.y, size.z) || 1
     const scale = 2.35 / maxDimension
     const bottom = (box.min.y - center.y) * scale
+    const radius = Math.max(size.length() * scale * 0.5, 1)
+    const distance = Math.min(Math.max(radius * (isMobile ? 2.45 : 2.18), 3), isMobile ? 7 : 8.5)
 
     return {
+      bounds: `${size.x.toFixed(2)} x ${size.y.toFixed(2)} x ${size.z.toFixed(2)}`,
+      cameraPosition: [distance * 0.34, distance * 0.16, distance],
+      distance,
       position: [-center.x * scale, -center.y * scale, -center.z * scale],
       scale,
       gridY: bottom,
     }
-  }, [displayScene])
+  }, [displayScene, isMobile])
+  const stats = useMemo(() => collectModelStats(displayScene), [displayScene])
+
   const clayMaterial = useMemo(
     () => new MeshStandardMaterial({
       color: '#b8bdc7',
@@ -305,6 +415,8 @@ const ModelScene = ({ url, mode, profile, renderSettings }) => {
   )
 
   useEffect(() => {
+    const texturedClones = []
+
     displayScene.traverse((object) => {
       if (!object.isMesh) return
 
@@ -324,12 +436,47 @@ const ModelScene = ({ url, mode, profile, renderSettings }) => {
       if (mode === 'wireframe') object.material = wireMaterial
       if (mode === 'studio') object.material = object.userData.originalMaterial
       if (mode === 'textured') {
-        object.material = Array.isArray(object.userData.originalMaterial)
-          ? object.userData.originalMaterial.map((material) => cloneTextureMaterial(material, renderSettings))
-          : cloneTextureMaterial(object.userData.originalMaterial, renderSettings)
+        if (Array.isArray(object.userData.originalMaterial)) {
+          object.material = object.userData.originalMaterial.map((material) => {
+            const clonedMaterial = cloneTextureMaterial(material, renderSettings)
+            texturedClones.push(clonedMaterial)
+            return clonedMaterial
+          })
+        } else {
+          object.material = cloneTextureMaterial(object.userData.originalMaterial, renderSettings)
+          texturedClones.push(object.material)
+        }
       }
     })
+
+    return () => {
+      texturedClones.forEach(disposeMaterial)
+    }
   }, [clayMaterial, displayScene, mode, profile, renderSettings, wireMaterial])
+
+  useEffect(() => {
+    onModelReady({
+      ...stats,
+      bounds: transform.bounds,
+    })
+  }, [onModelReady, stats, transform.bounds])
+
+  useEffect(() => {
+    const previewCamera = camera
+    previewCamera.position.set(...transform.cameraPosition)
+    controlsRef.current?.target.set(0, 0, 0)
+    controlsRef.current?.update()
+  }, [camera, controlsRef, resetNonce, transform.cameraPosition, transform.distance])
+
+  useEffect(() => () => {
+    clayMaterial.dispose()
+    wireMaterial.dispose()
+    disposeObject(displayScene)
+    useGLTF.clear(url)
+  }, [clayMaterial, displayScene, url, wireMaterial])
+
+  const showGrid = sceneMode === 'grid' || (mode !== 'textured' && profile.grid && sceneMode === 'studio')
+  const showContactShadow = !isMobile && mode !== 'textured' && sceneMode !== 'dark'
 
   return (
     <>
@@ -339,7 +486,7 @@ const ModelScene = ({ url, mode, profile, renderSettings }) => {
         scale={transform.scale}
         rotation={[0, -0.35, 0]}
       />
-      {mode !== 'textured' && profile.grid && (
+      {showGrid && (
         <>
           <Grid
             args={[8, 8]}
@@ -349,15 +496,17 @@ const ModelScene = ({ url, mode, profile, renderSettings }) => {
             fadeStrength={1.35}
             position={[0, transform.gridY, 0]}
           />
-          <ContactShadows
-            position={[0, transform.gridY + 0.02, 0]}
-            opacity={profile.envIntensity * 0.34}
-            scale={6}
-            blur={2.4}
-            far={3.5}
-            color="#020617"
-          />
         </>
+      )}
+      {showContactShadow && (
+        <ContactShadows
+          position={[0, transform.gridY + 0.02, 0]}
+          opacity={profile.envIntensity * 0.34}
+          scale={6}
+          blur={2.4}
+          far={3.5}
+          color="#020617"
+        />
       )}
     </>
   )
@@ -404,43 +553,78 @@ const StudioEnvironment = () => {
   return <primitive attach="environment" object={environment} />
 }
 
-const ShowcaseLights = ({ profile }) => (
-  <>
-    <color attach="background" args={[profile.background]} />
-    <hemisphereLight args={['#dbeafe', '#182033', profile.ambient * 0.9]} />
-    <ambientLight intensity={profile.ambient} />
-    <directionalLight
-      castShadow
-      color="#ffffff"
-      intensity={profile.key}
-      position={[3.5, 4.5, 4.5]}
-      shadow-mapSize={[2048, 2048]}
-      shadow-bias={-0.00025}
-    />
-    <directionalLight color="#dff8ff" intensity={profile.fill} position={[-3.5, 2.2, 2.5]} />
-    <spotLight
-      castShadow
-      color="#fff4df"
-      intensity={profile.spot}
-      position={[0, 4.5, 3.2]}
-      angle={0.48}
-      penumbra={0.65}
-      distance={9}
-    />
-    <pointLight color="#9eefff" intensity={profile.rim} position={[-2.8, 1.4, -2.5]} />
-    <pointLight color="#ff9fe2" intensity={profile.rim * 0.45} position={[2.8, 1.1, -2.8]} />
-  </>
-)
-
-const CanvasLoader = () => {
-  const { progress } = useProgress()
+const ShowcaseLights = ({ isMobile, profile, sceneMode }) => {
+  const isDark = sceneMode === 'dark'
 
   return (
-    <Html center className="model-loader">
-      {Math.round(progress)}%
+    <>
+      <color attach="background" args={[isDark ? '#02030a' : profile.background]} />
+      <hemisphereLight args={['#dbeafe', '#182033', profile.ambient * (isDark ? 0.62 : 0.9)]} />
+      <ambientLight intensity={profile.ambient * (isDark ? 0.72 : 1)} />
+      <directionalLight
+        castShadow={!isMobile}
+        color="#ffffff"
+        intensity={profile.key * (isDark ? 0.72 : 1)}
+        position={[3.5, 4.5, 4.5]}
+        shadow-mapSize-width={isMobile ? 1024 : 1536}
+        shadow-mapSize-height={isMobile ? 1024 : 1536}
+        shadow-bias={-0.00025}
+      />
+      <directionalLight
+        color="#dff8ff"
+        intensity={profile.fill * (isDark ? 0.7 : 1)}
+        position={[-3.5, 2.2, 2.5]}
+      />
+      <spotLight
+        castShadow={!isMobile}
+        color="#fff4df"
+        intensity={profile.spot * (isDark ? 0.62 : 1)}
+        position={[0, 4.5, 3.2]}
+        angle={0.48}
+        penumbra={0.65}
+        distance={9}
+      />
+      <pointLight
+        color="#9eefff"
+        intensity={profile.rim * (isDark ? 0.76 : 1)}
+        position={[-2.8, 1.4, -2.5]}
+      />
+      {!isMobile && (
+        <pointLight color="#ff9fe2" intensity={profile.rim * 0.45} position={[2.8, 1.1, -2.8]} />
+      )}
+    </>
+  )
+}
+
+const CanvasLoader = ({ copy, timedOut }) => {
+  const { progress } = useProgress()
+  const percent = Math.max(0, Math.min(100, Math.round(progress || 0)))
+
+  return (
+    <Html center className="model-loader" transform={false}>
+      <div className="model-loader-card">
+        <span className="model-loader-ring" style={{ '--model-load-progress': `${percent * 3.6}deg` }}>
+          <strong>{percent}%</strong>
+        </span>
+        <div>
+          <strong>{copy.modelLoadingTitle}</strong>
+          <p>{timedOut ? copy.modelLoadingSlow : copy.modelLoadingHint}</p>
+        </div>
+      </div>
     </Html>
   )
 }
+
+const ModelErrorCard = ({ copy, onRetry }) => (
+  <div className="model-error-card">
+    <span>{copy.modelErrorKicker}</span>
+    <strong>{copy.modelErrorTitle}</strong>
+    <p>{copy.modelErrorBody}</p>
+    <button type="button" className="primary-action" onClick={onRetry}>
+      {copy.modelRetry}
+    </button>
+  </div>
+)
 
 const ModelPreview = ({ project, onClose, language = 'zh', copy }) => {
   const assetCategory = useMemo(() => inferAssetCategory(project), [project])
@@ -449,11 +633,51 @@ const ModelPreview = ({ project, onClose, language = 'zh', copy }) => {
   const [autoRotate, setAutoRotate] = useState(false)
   const [alphaMode, setAlphaMode] = useState(defaultRenderSettings.alphaMode)
   const [doubleSided, setDoubleSided] = useState(defaultRenderSettings.doubleSided)
+  const [sceneMode, setSceneMode] = useState('studio')
+  const [infoVisible, setInfoVisible] = useState(true)
+  const [modelStats, setModelStats] = useState(emptyModelStats)
+  const [retryKey, setRetryKey] = useState(0)
+  const [resetNonce, setResetNonce] = useState(0)
+  const [loadingTimedOut, setLoadingTimedOut] = useState(false)
+  const [isFullscreen, setIsFullscreen] = useState(false)
+  const [isMobile, setIsMobile] = useState(false)
   const controlsRef = useRef(null)
+  const panelRef = useRef(null)
+  const projectTitle = pickLocalized(project, 'title', language)
+  const projectFormat = translateKnownLabel(
+    pickLocalized(project, 'format', language) || copy.modelPreviewFallback,
+    language,
+  )
+  const projectSize = translateKnownLabel(
+    pickLocalized(project, 'modelSize', language) || copy.modelUnknown,
+    language,
+  )
+  const downloadPolicy = translateKnownLabel(
+    pickLocalized(project, 'downloadPolicy', language) || copy.requestOnly,
+    language,
+  )
 
   useEffect(() => {
     setMode(profile.defaultMode)
   }, [profile.defaultMode, project.slug])
+
+  useEffect(() => {
+    setModelStats(emptyModelStats)
+    setLoadingTimedOut(false)
+  }, [project.slug, retryKey])
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(max-width: 767px), (pointer: coarse)')
+    const updateMobileState = () => setIsMobile(mediaQuery.matches)
+    updateMobileState()
+    mediaQuery.addEventListener?.('change', updateMobileState)
+    return () => mediaQuery.removeEventListener?.('change', updateMobileState)
+  }, [])
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => setLoadingTimedOut(true), 8000)
+    return () => window.clearTimeout(timeout)
+  }, [project.slug, retryKey])
 
   useEffect(() => {
     const onKeyDown = (event) => {
@@ -464,28 +688,62 @@ const ModelPreview = ({ project, onClose, language = 'zh', copy }) => {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [onClose])
 
+  useEffect(() => {
+    const onFullscreenChange = () => setIsFullscreen(Boolean(document.fullscreenElement))
+    document.addEventListener('fullscreenchange', onFullscreenChange)
+    return () => document.removeEventListener('fullscreenchange', onFullscreenChange)
+  }, [])
+
   const resetView = () => {
-    controlsRef.current?.reset()
+    setResetNonce((current) => current + 1)
+  }
+
+  const retryModel = () => {
+    useGLTF.clear(project.modelUrl)
+    setRetryKey((current) => current + 1)
+    setLoadingTimedOut(false)
+  }
+
+  const toggleFullscreen = async () => {
+    if (!document.fullscreenElement) {
+      await panelRef.current?.requestFullscreen?.()
+    } else {
+      await document.exitFullscreen?.()
+    }
   }
 
   const renderSettings = useMemo(() => ({ alphaMode, doubleSided }), [alphaMode, doubleSided])
+  const onModelReady = useMemo(
+    () => (stats) => {
+      setModelStats(stats)
+      setLoadingTimedOut(false)
+    },
+    [],
+  )
 
   return (
     <div className="model-overlay" role="dialog" aria-modal="true">
-      <div className="model-panel">
+      <div className="model-panel" ref={panelRef}>
         <div className="model-toolbar">
           <div>
             <div className="section-kicker mb-1">{copy.modelPreview}</div>
             <h3 className="text-xl font-semibold text-white">
-              {pickLocalized(project, 'title', language)}
+              {projectTitle}
             </h3>
+            <p>{isMobile ? copy.modelTouchHint : copy.modelDesktopHint}</p>
           </div>
-          <button type="button" className="secondary-action" onClick={onClose}>
-            {copy.close}
-          </button>
+          <div className="model-toolbar-actions">
+            <button type="button" className="mode-button" onClick={toggleFullscreen}>
+              {isFullscreen ? copy.viewerExitFullscreen : copy.viewerFullscreen}
+            </button>
+            <button type="button" className="secondary-action" onClick={onClose}>
+              {copy.close}
+            </button>
+          </div>
         </div>
 
         <div className="model-controls">
+          <span className="model-control-label">{copy.viewerMaterialMode}</span>
           {modes.map((item) => (
             <button
               key={item.id}
@@ -508,6 +766,24 @@ const ModelPreview = ({ project, onClose, language = 'zh', copy }) => {
           </button>
           <button
             type="button"
+            className={infoVisible ? 'mode-button-active' : 'mode-button'}
+            onClick={() => setInfoVisible((current) => !current)}
+          >
+            {copy.viewerInfo}
+          </button>
+          <span className="model-control-label">{copy.viewerSceneMode}</span>
+          {sceneModes.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              className={sceneMode === item.id ? 'mode-button-active' : 'mode-button'}
+              onClick={() => setSceneMode(item.id)}
+            >
+              {copy[item.labelKey]}
+            </button>
+          ))}
+          <button
+            type="button"
             className={doubleSided ? 'mode-button-active' : 'mode-button'}
             onClick={() => setDoubleSided((current) => !current)}
           >
@@ -526,13 +802,15 @@ const ModelPreview = ({ project, onClose, language = 'zh', copy }) => {
           ))}
         </div>
 
-        <div className="model-canvas">
+        <div className={`model-viewer-body ${infoVisible ? 'model-info-open' : ''}`}>
+          <div className={`model-canvas model-canvas-${sceneMode}`}>
+            <div className="model-canvas-halo" aria-hidden="true" />
           <Canvas
             camera={{ position: [0, 0.55, 4.8], fov: 42 }}
-            dpr={[1, 1.75]}
-            shadows
+            dpr={isMobile ? [1, 1.25] : [1, 1.5]}
+            shadows={!isMobile}
             gl={{
-              antialias: true,
+              antialias: !isMobile,
               outputColorSpace: 'srgb',
               toneMapping: ACESFilmicToneMapping,
               toneMappingExposure: profile.exposure,
@@ -542,14 +820,28 @@ const ModelPreview = ({ project, onClose, language = 'zh', copy }) => {
               canvasScene.background = new Color(profile.background)
             }}
           >
-            <Suspense fallback={<CanvasLoader />}>
-              {profile.useEnvironment && mode !== 'textured' && <StudioEnvironment />}
-              <ShowcaseLights profile={profile} />
+            <ModelErrorBoundary
+              resetKey={`${project.modelUrl}-${retryKey}`}
+              fallback={(
+                <Html center transform={false}>
+                  <ModelErrorCard copy={copy} onRetry={retryModel} />
+                </Html>
+              )}
+            >
+            <Suspense fallback={<CanvasLoader copy={copy} timedOut={loadingTimedOut} />}>
+              {profile.useEnvironment && mode !== 'textured' && sceneMode !== 'dark' && <StudioEnvironment />}
+              <ShowcaseLights isMobile={isMobile} profile={profile} sceneMode={sceneMode} />
               <ModelScene
+                key={`${project.modelUrl}-${retryKey}`}
+                controlsRef={controlsRef}
+                isMobile={isMobile}
                 url={project.modelUrl}
                 mode={mode}
+                onModelReady={onModelReady}
                 profile={profile}
                 renderSettings={renderSettings}
+                resetNonce={resetNonce}
+                sceneMode={sceneMode}
               />
               <OrbitControls
                 ref={controlsRef}
@@ -562,7 +854,57 @@ const ModelPreview = ({ project, onClose, language = 'zh', copy }) => {
                 target={[0, 0, 0]}
               />
             </Suspense>
+            </ModelErrorBoundary>
           </Canvas>
+          </div>
+
+          {infoVisible && (
+            <aside className="model-info-panel">
+              <div>
+                <span>{copy.modelInfoTitle}</span>
+                <strong>{projectTitle}</strong>
+                <p>{copy.modelInfoHint}</p>
+              </div>
+              <dl className="model-info-grid">
+                <div>
+                  <dt>{copy.format}</dt>
+                  <dd>{projectFormat}</dd>
+                </div>
+                <div>
+                  <dt>{copy.modelSize}</dt>
+                  <dd>{projectSize}</dd>
+                </div>
+                <div>
+                  <dt>{copy.modelVertices}</dt>
+                  <dd>{formatNumber(modelStats.vertices, copy.modelUnknown)}</dd>
+                </div>
+                <div>
+                  <dt>{copy.modelTriangles}</dt>
+                  <dd>{formatNumber(modelStats.triangles, copy.modelUnknown)}</dd>
+                </div>
+                <div>
+                  <dt>{copy.modelMaterials}</dt>
+                  <dd>{formatNumber(modelStats.materials, copy.modelUnknown)}</dd>
+                </div>
+                <div>
+                  <dt>{copy.modelTextures}</dt>
+                  <dd>{formatNumber(modelStats.textures, copy.modelUnknown)}</dd>
+                </div>
+                <div>
+                  <dt>{copy.modelBounds}</dt>
+                  <dd>{modelStats.bounds || copy.modelUnknown}</dd>
+                </div>
+                <div>
+                  <dt>{copy.downloadPolicy}</dt>
+                  <dd>{downloadPolicy}</dd>
+                </div>
+              </dl>
+              <div className="model-info-note">
+                <strong>{copy.viewerInteraction}</strong>
+                <span>{isMobile ? copy.modelTouchHint : copy.modelDesktopHint}</span>
+              </div>
+            </aside>
+          )}
         </div>
       </div>
     </div>
