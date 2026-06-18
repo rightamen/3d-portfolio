@@ -27,3 +27,8 @@ server-local*.log
 *.njsproj
 *.sln
 *.sw?
+
+# Playwright smoke test artifacts
+.playwright-mcp/
+test-results/
+playwright-report/

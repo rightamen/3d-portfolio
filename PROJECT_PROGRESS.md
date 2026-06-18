@@ -29,7 +29,7 @@
 
 本地 commit：
 
-- 未提交
+- 74369497099d184b6ffef8e7e419eaab97628146
 
 完成内容：
 
@@ -62,9 +62,39 @@
 
 - npm run build：通过
 - npm run lint：通过
+- npm run release:vps：通过
 - git diff --check：通过
-- VPS 部署：未部署
+- VPS 部署：成功
+- 服务重启：成功
+- /api/health：200
+- admin_summary：200
+- /：200
+- /account：200
+- /login?mode=login：200
+- /admin：200
+- /community：200
+- /api/account/profile：未登录 401，正常
+- /api/account/downloads：未登录 401，正常
+- /api/account/comments：未登录 401，正常
+- /api/users/not-exist-test-handle：404，正常
+- 线上 Playwright 冒烟测试：通过
+- 线上 /：200，页面正常
+- 线上 /community：页面正常
+- 线上 /login?mode=login：页面正常
+- 线上 /account：未登录提示正常
+- 线上 /u/not-exist-test-handle：显示 Profile Not Found
+- 线上 /api/health：200
+- 线上 /api/account/profile：未登录 401，正常
+- 线上 /api/account/downloads：未登录 401，正常
+- 线上 /api/account/comments：未登录 401，正常
+- 线上 /api/users/not-exist-test-handle：404，正常
+- 线上 500 错误数量：0
+- 线上冒烟测试截图路径：test-results/smoke/
 - GitHub push：未执行
+
+备份路径：
+
+- /opt/mrright-portfolio.backup-20260618-053201
 
 注意：
 
@@ -72,6 +102,7 @@
 - 访客中心继续使用 visitor token。
 - 公开接口不返回 visitor token，不默认暴露真实邮箱；只有 public_email 且 contacts_public 开启时才公开联系邮箱。
 - 头像和封面上传保存到 public/uploads/avatars 与 public/uploads/banners，不删除旧文件。
+- 部署时 env 仅检查 ADMIN_TOKEN 和 DATABASE_URL 为 [set]，未输出 value。
 
 ### 2026-06-18：项目规则、进度记录和 Claude 自动化命令本地提交
 
