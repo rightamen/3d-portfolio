@@ -25,6 +25,67 @@
 
 ## 最近完成
 
+### 2026-06-18：模型预览优化已部署上线
+
+本地 commit：
+
+- a5f3d401bd2615e8cf8b5fb29e4089376055576a
+
+完成内容：
+
+- 将 3D 模型预览优化 release 包上传到 VPS 并部署到 /opt/mrright-portfolio。
+- 部署前按要求运行 npm run build、npm run lint、npm run test:e2e、npm run release:vps。
+- 部署前仅检查 ADMIN_TOKEN 和 DATABASE_URL 为 [set]，未输出 value。
+- 部署前已备份 /opt/mrright-portfolio。
+- 部署未覆盖 /etc/mrright-portfolio.env，未修改数据库密码，未删除数据库、表、data、public/uploads 或备份目录。
+- 本轮未重新 commit，未 push GitHub。
+
+release 包：
+
+- .deploy-tools/mrright-portfolio-release.tar.gz：生成成功
+- VPS 上传路径：/tmp/mrright-portfolio-release.tar.gz
+
+备份路径：
+
+- /opt/mrright-portfolio.backup-20260618-121102
+
+验证结果：
+
+- npm run build：通过
+- npm run lint：通过
+- npm run test:e2e：通过，6 passed，1 skipped
+- npm run release:vps：通过
+- VPS service active：active
+- VPS local /api/health：200
+- VPS local admin_summary：200
+- https://mrright.blog/api/health：200
+- https://mrright.blog/：200
+- https://mrright.blog/admin：200
+- https://mrright.blog/account：200
+- https://mrright.blog/community：200
+- 线上 Playwright 模型预览冒烟测试：首页正常。
+- 线上 Playwright 模型预览冒烟测试：模型预览弹窗正常打开。
+- 线上 Playwright 模型预览冒烟测试：loading 截图已捕获。
+- 线上 Playwright 模型预览冒烟测试：Canvas、工具栏、模型信息面板存在。
+- 线上 Playwright 模型预览冒烟测试：人为拦截模型资源后，错误态显示 LOAD FAILED 和 Reload Model，页面未崩溃。
+- 线上 Playwright 模型预览冒烟测试：未发现生产 500。
+- console：正常预览未发现明显 error；错误态测试中有预期模型资源 404。
+
+截图路径：
+
+- test-results/model-viewer-production-smoke/home.png
+- test-results/model-viewer-production-smoke/model-preview-loading.png
+- test-results/model-viewer-production-smoke/model-preview.png
+- test-results/model-viewer-production-smoke/model-preview-error.png
+- test-results/model-viewer-production-smoke/admin.png
+- test-results/model-viewer-production-smoke/account.png
+- test-results/model-viewer-production-smoke/community.png
+
+注意：
+
+- 截图文件未提交。
+- 若用户浏览器仍看到旧 CSS/JS 或“页面资源正在更新”，可执行 Ctrl+Shift+R 强制刷新。
+
 ### 2026-06-18：UI 视觉升级已部署到 VPS
 
 本地 commit：
