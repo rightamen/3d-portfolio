@@ -25,6 +25,64 @@
 
 ## 最近完成
 
+### 2026-06-18：UI 视觉升级已部署到 VPS
+
+本地 commit：
+
+- afc0838a8dc90f2fb572b08e02cb9c9ed6c32f00
+
+完成内容：
+
+- 将本地 UI 视觉升级 release 包上传到 VPS 并部署到 /opt/mrright-portfolio。
+- 部署前按要求运行 npm run build、npm run lint、npm run test:e2e、npm run release:vps。
+- 部署前仅检查 ADMIN_TOKEN 和 DATABASE_URL 为 [set]，未输出 value。
+- 部署前已备份 /opt/mrright-portfolio。
+- 部署未覆盖 /etc/mrright-portfolio.env，未修改数据库密码，未删除数据库、表、data、public/uploads 或备份目录。
+- 本轮未重新 commit，未 push GitHub。
+
+release 包：
+
+- .deploy-tools/mrright-portfolio-release.tar.gz：生成成功
+- VPS 上传路径：/tmp/mrright-portfolio-release.tar.gz
+
+备份路径：
+
+- /opt/mrright-portfolio.backup-20260618-111302
+
+验证结果：
+
+- npm run build：通过
+- npm run lint：通过
+- npm run test:e2e：通过，6 passed，1 skipped
+- npm run release:vps：通过
+- VPS service active：active
+- VPS local /api/health：200
+- VPS local admin_summary：200
+- https://mrright.blog/api/health：200
+- https://mrright.blog admin_summary：200
+- https://mrright.blog/：200
+- https://mrright.blog/account：200
+- https://mrright.blog/login?mode=login：200
+- https://mrright.blog/admin：200
+- https://mrright.blog/community：200
+- https://mrright.blog/u/not-exist-test-handle：200，页面显示缺失资料友好错误
+- 线上 500 错误数量：0
+- console error：仅 /u/not-exist-test-handle 缺失用户接口返回 404，属于预期缺失资料页场景
+
+截图路径：
+
+- test-results/ui-production-smoke/home.png
+- test-results/ui-production-smoke/account.png
+- test-results/ui-production-smoke/login.png
+- test-results/ui-production-smoke/admin.png
+- test-results/ui-production-smoke/community.png
+- test-results/ui-production-smoke/public-profile-missing.png
+
+注意：
+
+- 截图文件未提交。
+- 若用户浏览器仍看到旧 CSS/JS，可执行 Ctrl+Shift+R 强制刷新。
+
 ### 2026-06-18：本地 UI 视觉升级完成
 
 本地 commit：
