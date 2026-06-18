@@ -25,6 +25,90 @@
 
 ## 最近完成
 
+### 2026-06-18：线上 Playwright 冒烟测试完成
+
+本地 commit：
+
+- 未提交
+
+完成内容：
+
+- 对线上 YouTube 式用户个人中心 / 公开主页功能完成 Playwright 冒烟测试。
+- 测试过程未登录真实账号、未修改线上数据、未上传文件。
+- 本轮测试未提交代码、未部署 VPS、未 push GitHub。
+
+测试结果：
+
+- https://mrright.blog/：打开成功，非白屏
+- https://mrright.blog/community：打开成功，非白屏
+- https://mrright.blog/login?mode=login：打开成功，登录表单正常
+- https://mrright.blog/account：打开成功，未登录提示正常
+- https://mrright.blog/u/not-exist-test-handle：打开成功，显示 Profile Not Found 友好错误
+- /api/health：200
+- /api/account/profile：未登录 401，正常
+- /api/account/downloads：未登录 401，正常
+- /api/account/comments：未登录 401，正常
+- /api/users/not-exist-test-handle：404，正常
+- 线上 500 错误数量：0
+
+截图路径：
+
+- test-results/smoke/home.png
+- test-results/smoke/community.png
+- test-results/smoke/login.png
+- test-results/smoke/account.png
+- test-results/smoke/public-profile-missing.png
+
+注意：
+
+- test-results/ 和 playwright-report/ 已加入 .gitignore。
+- 截图文件未提交。
+
+### 2026-06-18：新增正式 Playwright E2E 冒烟测试
+
+本地 commit：
+
+- 未提交
+
+完成内容：
+
+- 新增 Playwright 测试配置 playwright.config.js。
+- 新增正式 E2E 测试 tests/e2e/production-smoke.spec.js。
+- 新增 npm run test:e2e 脚本。
+- 新增 @playwright/test 开发依赖并更新 package-lock.json。
+- E2E 覆盖：
+  - 首页 /
+  - /community
+  - /login?mode=login
+  - /account 未登录状态
+  - /u/not-exist-test-handle 公开用户页 404/友好错误
+  - /api/health 200
+  - /api/account/profile 未登录 401
+  - /api/account/downloads 未登录 401
+  - /api/account/comments 未登录 401
+  - /api/users/not-exist-test-handle 404
+
+新增/修改文件：
+
+- package.json
+- package-lock.json
+- playwright.config.js
+- tests/e2e/production-smoke.spec.js
+
+验证结果：
+
+- npm run build：通过
+- npm run lint：通过
+- npm run test:e2e：通过，6 passed
+- VPS 部署：未部署
+- GitHub push：未执行
+
+注意：
+
+- 未写入真实账号或密码。
+- 测试只做页面渲染和只读 API 状态检查，不登录、不上传、不修改线上数据。
+- 首次运行 E2E 时安装了 Playwright Chromium 浏览器运行时。
+
 ### 2026-06-18：访客个人中心升级为公开资料中心
 
 本地 commit：
