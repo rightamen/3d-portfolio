@@ -18,12 +18,16 @@ import {
   getAdminLikes,
   getAdminProjects,
   getAdminSummary,
+  getAdminVisitor,
+  getAdminVisitorContent,
   getAdminVisitors,
+  moderateAdminVisitorProfile,
   updateAdminDownloadRequest,
   updateAdminCommunityUpload,
   updateAdminProject,
   updateAdminVisitor,
   updateAdminVisitorEmailVerification,
+  updateAdminVisitorProfileVisibility,
   uploadAdminAsset,
 } from './lib/api'
 import { assetCategoryProfiles, getAssetCategoryProfile } from './lib/assetCategories'
@@ -160,6 +164,15 @@ const visitorAccessPresets = [
   { label: 'Open Access', value: 'guest' },
   { label: 'Member', value: 'member' },
   { label: 'Approved', value: 'approved' },
+]
+
+const visitorDetailTabs = [
+  { key: 'overview', label: 'Overview' },
+  { key: 'comments', label: 'Comments' },
+  { key: 'posts', label: 'Posts' },
+  { key: 'uploads', label: 'Resources' },
+  { key: 'download-requests', label: 'Downloads' },
+  { key: 'actions', label: 'Moderation Log' },
 ]
 
 const assetCategoryPresets = assetCategoryProfiles.map((category) => ({
@@ -719,6 +732,7 @@ const Admin = () => {
     projects: [],
     requests: [],
     visitors: [],
+    visitorPagination: { page: 1, pages: 1, total: 0 },
     summary: null,
   })
   const [editingProject, setEditingProject] = useState(null)
@@ -728,6 +742,20 @@ const Admin = () => {
   const [searchQuery, setSearchQuery] = useState('')
   const [translationFilter, setTranslationFilter] = useState('all')
   const [uploadStatus, setUploadStatus] = useState(() => ({ ...emptyUploadStatus }))
+  const [visitorFilters, setVisitorFilters] = useState({
+    accessLevel: '',
+    limit: 20,
+    page: 1,
+    profileStatus: '',
+    query: '',
+    sort: 'createdAt',
+    verified: '',
+  })
+  const [selectedVisitor, setSelectedVisitor] = useState(null)
+  const [visitorDetailStatus, setVisitorDetailStatus] = useState('idle')
+  const [visitorDetailTab, setVisitorDetailTab] = useState('overview')
+  const [visitorContent, setVisitorContent] = useState({})
+  const [visitorActionStatus, setVisitorActionStatus] = useState('')
 
   useEffect(() => {
     if (!editorScrollKey) return
@@ -767,7 +795,7 @@ const Admin = () => {
           getAdminContactMessages(activeToken),
           getAdminDownloadRequests(activeToken),
           getAdminProjects(activeToken),
-          getAdminVisitors(activeToken),
+          getAdminVisitors(activeToken, visitorFilters),
         ])
 
       setData({
@@ -780,6 +808,7 @@ const Admin = () => {
         projects: projectsPayload.projects,
         requests: requestsPayload.requests,
         visitors: visitorsPayload.visitors,
+        visitorPagination: visitorsPayload.pagination,
         summary: summaryPayload.summary,
       })
       setStatus('ready')
@@ -848,6 +877,88 @@ const Admin = () => {
   const updateVisitorVerification = async (id, verified) => {
     await updateAdminVisitorEmailVerification(token, id, verified)
     await loadAdminData(token)
+  }
+
+  const loadVisitors = async (filters = visitorFilters) => {
+    const payload = await getAdminVisitors(token, filters)
+    setData((current) => ({
+      ...current,
+      visitors: payload.visitors,
+      visitorPagination: payload.pagination,
+    }))
+  }
+
+  const updateVisitorFilters = (patch) => {
+    const next = { ...visitorFilters, ...patch }
+    setVisitorFilters(next)
+    loadVisitors(next)
+  }
+
+  const openVisitorDetail = async (visitor) => {
+    setSelectedVisitor(visitor)
+    setVisitorDetailTab('overview')
+    setVisitorContent({})
+    setVisitorDetailStatus('loading')
+    try {
+      const payload = await getAdminVisitor(token, visitor.id)
+      setSelectedVisitor({ ...payload.visitor, recentActions: payload.recentActions })
+      setVisitorDetailStatus('ready')
+    } catch {
+      setVisitorDetailStatus('error')
+    }
+  }
+
+  const loadVisitorTab = async (tab, page = 1) => {
+    setVisitorDetailTab(tab)
+    if (tab === 'overview' || !selectedVisitor) return
+    setVisitorContent((current) => ({
+      ...current,
+      [tab]: { ...(current[tab] || {}), loading: true },
+    }))
+    try {
+      const payload = await getAdminVisitorContent(token, selectedVisitor.id, tab, page)
+      setVisitorContent((current) => ({
+        ...current,
+        [tab]: { ...payload, loading: false },
+      }))
+    } catch (error) {
+      setVisitorContent((current) => ({
+        ...current,
+        [tab]: { error: error.message, items: [], loading: false },
+      }))
+    }
+  }
+
+  const refreshSelectedVisitor = async () => {
+    if (!selectedVisitor) return
+    const payload = await getAdminVisitor(token, selectedVisitor.id)
+    setSelectedVisitor({ ...payload.visitor, recentActions: payload.recentActions })
+    await loadVisitors()
+    if (visitorDetailTab !== 'overview') await loadVisitorTab(visitorDetailTab)
+  }
+
+  const confirmVisitorModeration = async ({ action, fields = [], label }) => {
+    if (!selectedVisitor) return
+    const reason = window.prompt(`Reason for ${label}:`, '')
+    if (reason === null) return
+    if (!window.confirm(`Confirm ${label} for ${selectedVisitor.displayName}?`)) return
+    setVisitorActionStatus('working')
+    try {
+      if (action === 'visibility') {
+        await updateAdminVisitorProfileVisibility(
+          token,
+          selectedVisitor.id,
+          !selectedVisitor.profileAdminDisabled,
+          reason,
+        )
+      } else {
+        await moderateAdminVisitorProfile(token, selectedVisitor.id, fields, reason)
+      }
+      await refreshSelectedVisitor()
+      setVisitorActionStatus('done')
+    } catch (error) {
+      setVisitorActionStatus(error.message)
+    }
   }
 
   const deleteVisitor = async (id) => {
@@ -2074,67 +2185,160 @@ const Admin = () => {
           )}
 
           {activeSection === 'visitors' && (
-          <section className="admin-section">
+          <section className="admin-section admin-visitors-section">
             <div className="admin-section-header">
-              <h2>Visitors</h2>
-              <span>{visibleVisitors.length}</span>
+              <div>
+                <h2>Visitor Management</h2>
+                <small>Search accounts, inspect activity, and moderate public profiles.</small>
+              </div>
+              <span>{data.visitorPagination.total || 0}</span>
             </div>
-            <div className="admin-table">
+
+            <div className="visitor-filter-grid">
+              <input
+                className="field-input"
+                placeholder="Search name, handle, or email"
+                value={visitorFilters.query}
+                onChange={(event) =>
+                  setVisitorFilters((current) => ({ ...current, query: event.target.value }))
+                }
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    updateVisitorFilters({ page: 1, query: event.currentTarget.value })
+                  }
+                }}
+              />
+              <select className="field-input" value={visitorFilters.verified} onChange={(event) => updateVisitorFilters({ page: 1, verified: event.target.value })}>
+                <option value="">All verification states</option>
+                <option value="true">Verified email</option>
+                <option value="false">Unverified email</option>
+              </select>
+              <select className="field-input" value={visitorFilters.profileStatus} onChange={(event) => updateVisitorFilters({ page: 1, profileStatus: event.target.value })}>
+                <option value="">All profile states</option>
+                <option value="public">Public</option>
+                <option value="private">Private</option>
+                <option value="disabled">Admin disabled</option>
+              </select>
+              <select className="field-input" value={visitorFilters.accessLevel} onChange={(event) => updateVisitorFilters({ page: 1, accessLevel: event.target.value })}>
+                <option value="">All access levels</option>
+                {visitorAccessPresets.map((level) => <option key={level.value} value={level.value}>{level.label}</option>)}
+              </select>
+              <select className="field-input" value={visitorFilters.sort} onChange={(event) => updateVisitorFilters({ page: 1, sort: event.target.value })}>
+                <option value="createdAt">Newest accounts</option>
+                <option value="lastLoginAt">Recent login</option>
+                <option value="updatedAt">Recently updated</option>
+                <option value="displayName">Display name</option>
+              </select>
+              <button type="button" className="secondary-action" onClick={() => updateVisitorFilters({ page: 1 })}>Search</button>
+            </div>
+
+            <div className="visitor-management-layout">
+            <div className="admin-table visitor-list">
               {visibleVisitors.map((visitor) => (
-                <article key={visitor.id} className="admin-row">
-                  <div>
+                <button key={visitor.id} type="button" className={`admin-row visitor-row ${selectedVisitor?.id === visitor.id ? 'visitor-row-active' : ''}`} onClick={() => openVisitorDetail(visitor)}>
+                  <span className="visitor-avatar">
+                    {visitor.avatarUrl ? <img src={visitor.avatarUrl} alt="" /> : visitor.displayName?.slice(0, 1)}
+                  </span>
+                  <span className="visitor-row-main">
                     <strong>{visitor.displayName}</strong>
-                    <span>{visitor.email}</span>
-                    <p>
-                      {visitor.likeCount} likes · {visitor.commentCount} comments ·{' '}
-                      {visitor.downloadRequestCount} download requests
-                    </p>
-                    <small>{visitor.emailVerified ? 'Email verified' : 'Email unverified'}</small>
-                    <small>
-                      Joined {formatDate(visitor.createdAt)} · updated {formatDate(visitor.updatedAt)}
-                    </small>
-                  </div>
-                  <div className="admin-actions">
-                    <span
-                      className={`status-pill ${
-                        visitor.emailVerified ? 'status-approved' : 'status-pending'
-                      }`}
-                    >
-                      {visitor.emailVerified ? 'verified' : 'unverified'}
-                    </span>
-                    <select
-                      className="field-input visitor-access-select"
-                      value={visitor.accessLevel}
-                      onChange={(event) => updateVisitorAccess(visitor.id, event.target.value)}
-                    >
-                      {visitorAccessPresets.map((level) => (
-                        <option key={level.value} value={level.value}>
-                          {level.label}
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      type="button"
-                      className="secondary-action"
-                      onClick={() => updateVisitorVerification(visitor.id, !visitor.emailVerified)}
-                    >
-                      {visitor.emailVerified ? 'Mark Unverified' : 'Verify Email'}
-                    </button>
-                    <button
-                      type="button"
-                      className="danger-action"
-                      onClick={() =>
-                        deleteItem('visitor account', () => deleteVisitor(visitor.id))
-                      }
-                    >
-                      Delete Account
-                    </button>
-                  </div>
-                </article>
+                    <span>{visitor.handle ? `@${visitor.handle}` : 'No handle'} · {visitor.email}</span>
+                    <small>Joined {formatDate(visitor.createdAt)} · Last login {visitor.lastLoginAt ? formatDate(visitor.lastLoginAt) : 'Never'}</small>
+                    <span className="visitor-stat-line">{visitor.stats?.commentCount || 0} comments · {visitor.stats?.postCount || 0} posts · {visitor.stats?.uploadCount || 0} resources · {visitor.stats?.downloadRequestCount || 0} downloads</span>
+                  </span>
+                  <span className="visitor-row-status">
+                    <span className={`status-pill ${visitor.emailVerified ? 'status-approved' : 'status-pending'}`}>{visitor.emailVerified ? 'verified' : 'unverified'}</span>
+                    <span className={`status-pill ${visitor.profileAdminDisabled ? 'status-rejected' : visitor.profilePublic ? 'status-approved' : 'status-pending'}`}>{visitor.profileAdminDisabled ? 'disabled' : visitor.profilePublic ? 'public' : 'private'}</span>
+                  </span>
+                </button>
               ))}
               {visibleVisitors.length === 0 && (
-                <p className="text-sm text-neutral-500">No visitors match this search.</p>
+                <p className="text-sm text-neutral-500">No visitors match these filters.</p>
               )}
+              <div className="visitor-pagination">
+                <button type="button" className="secondary-action" disabled={!data.visitorPagination.hasPrevious} onClick={() => updateVisitorFilters({ page: visitorFilters.page - 1 })}>Previous</button>
+                <span>Page {data.visitorPagination.page || 1} of {data.visitorPagination.pages || 1}</span>
+                <button type="button" className="secondary-action" disabled={!data.visitorPagination.hasNext} onClick={() => updateVisitorFilters({ page: visitorFilters.page + 1 })}>Next</button>
+              </div>
+            </div>
+
+            <aside className="visitor-detail-panel">
+              {!selectedVisitor && <p className="text-sm text-neutral-500">Select a visitor to inspect the account.</p>}
+              {selectedVisitor && (
+                <>
+                  <div className="visitor-detail-head">
+                    <div>
+                      <p className="section-kicker">Visitor Detail</p>
+                      <h3>{selectedVisitor.displayName}</h3>
+                      <span>{selectedVisitor.handle ? `@${selectedVisitor.handle}` : selectedVisitor.email}</span>
+                    </div>
+                    <button type="button" className="icon-action" aria-label="Close visitor detail" onClick={() => setSelectedVisitor(null)}>×</button>
+                  </div>
+                  <nav className="visitor-detail-tabs">
+                    {visitorDetailTabs.map((tab) => (
+                      <button type="button" key={tab.key} className={visitorDetailTab === tab.key ? 'admin-tab-active' : 'admin-tab'} onClick={() => loadVisitorTab(tab.key)}>{tab.label}</button>
+                    ))}
+                  </nav>
+                  {visitorDetailStatus === 'loading' && <p>Loading visitor details...</p>}
+                  {visitorDetailStatus === 'error' && <p className="text-coral">Could not load visitor details.</p>}
+                  {visitorDetailStatus === 'ready' && visitorDetailTab === 'overview' && (
+                    <div className="visitor-overview">
+                      <dl>
+                        <div><dt>Email</dt><dd>{selectedVisitor.email}</dd></div>
+                        <div><dt>Email status</dt><dd>{selectedVisitor.emailVerified ? 'Verified' : 'Unverified'}</dd></div>
+                        <div><dt>Registered</dt><dd>{formatDate(selectedVisitor.createdAt)}</dd></div>
+                        <div><dt>Last login</dt><dd>{selectedVisitor.lastLoginAt ? formatDate(selectedVisitor.lastLoginAt) : 'Never'}</dd></div>
+                        <div><dt>Public profile</dt><dd>{selectedVisitor.profileAdminDisabled ? 'Admin disabled' : selectedVisitor.profilePublic ? 'Public' : 'Private'}</dd></div>
+                        <div><dt>Contacts</dt><dd>{selectedVisitor.contactsPublic ? 'Public' : 'Private'}</dd></div>
+                      </dl>
+                      {selectedVisitor.bio && <p className="visitor-bio">{selectedVisitor.bio}</p>}
+                      <select className="field-input visitor-access-select" value={selectedVisitor.accessLevel} onChange={async (event) => {
+                        await updateVisitorAccess(selectedVisitor.id, event.target.value)
+                        await refreshSelectedVisitor()
+                      }}>
+                        {visitorAccessPresets.map((level) => <option key={level.value} value={level.value}>{level.label}</option>)}
+                      </select>
+                      <div className="visitor-moderation-actions">
+                        <button type="button" className="secondary-action" onClick={() => confirmVisitorModeration({ action: 'visibility', label: selectedVisitor.profileAdminDisabled ? 'restore public profile' : 'disable public profile' })}>{selectedVisitor.profileAdminDisabled ? 'Restore Public Profile' : 'Disable Public Profile'}</button>
+                        {[['avatar', 'Clear Avatar'], ['banner', 'Clear Banner'], ['bio', 'Clear Bio'], ['contacts', 'Clear Contacts']].map(([field, label]) => (
+                          <button key={field} type="button" className="secondary-action" onClick={() => confirmVisitorModeration({ action: 'moderate', fields: [field], label })}>{label}</button>
+                        ))}
+                        <button type="button" className="secondary-action" onClick={async () => {
+                          await updateVisitorVerification(selectedVisitor.id, !selectedVisitor.emailVerified)
+                          await refreshSelectedVisitor()
+                        }}>{selectedVisitor.emailVerified ? 'Mark Unverified' : 'Verify Email'}</button>
+                        <button type="button" className="danger-action" onClick={() => deleteItem('visitor account', async () => {
+                          await deleteVisitor(selectedVisitor.id)
+                          setSelectedVisitor(null)
+                        })}>Delete Account</button>
+                      </div>
+                      {visitorActionStatus && <small>{visitorActionStatus === 'done' ? 'Moderation action saved.' : visitorActionStatus}</small>}
+                    </div>
+                  )}
+                  {visitorDetailTab !== 'overview' && (
+                    <div className="visitor-content-list">
+                      {visitorContent[visitorDetailTab]?.loading && <p>Loading...</p>}
+                      {visitorContent[visitorDetailTab]?.error && <p className="text-coral">{visitorContent[visitorDetailTab].error}</p>}
+                      {(visitorContent[visitorDetailTab]?.items || []).map((item) => (
+                        <article key={item.id} className="visitor-content-item">
+                          <strong>{item.title || item.action || item.projectTitle || item.contextTitle || item.source || item.status}</strong>
+                          <p>{item.message || item.description || item.purpose || (item.fields || []).join(', ')}</p>
+                          {item.reason && <span>Reason: {item.reason}</span>}
+                          <small>{item.createdAt ? formatDate(item.createdAt) : ''}</small>
+                        </article>
+                      ))}
+                      {visitorContent[visitorDetailTab] && !visitorContent[visitorDetailTab].loading && visitorContent[visitorDetailTab].items?.length === 0 && <p className="text-sm text-neutral-500">No records in this section.</p>}
+                      {visitorContent[visitorDetailTab]?.pagination && (
+                        <div className="visitor-pagination">
+                          <button type="button" className="secondary-action" disabled={!visitorContent[visitorDetailTab].pagination.hasPrevious} onClick={() => loadVisitorTab(visitorDetailTab, visitorContent[visitorDetailTab].pagination.page - 1)}>Previous</button>
+                          <span>Page {visitorContent[visitorDetailTab].pagination.page} of {visitorContent[visitorDetailTab].pagination.pages}</span>
+                          <button type="button" className="secondary-action" disabled={!visitorContent[visitorDetailTab].pagination.hasNext} onClick={() => loadVisitorTab(visitorDetailTab, visitorContent[visitorDetailTab].pagination.page + 1)}>Next</button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
+            </aside>
             </div>
           </section>
           )}

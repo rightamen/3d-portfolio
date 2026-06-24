@@ -273,7 +273,21 @@ export const getAdminDownloadRequests = (token) =>
 
 export const getAdminProjects = (token) => adminRequest('/api/admin/projects', token)
 
-export const getAdminVisitors = (token) => adminRequest('/api/admin/visitors', token)
+export const getAdminVisitors = (token, filters = {}) => {
+  const query = new URLSearchParams(
+    Object.entries(filters).filter(([, value]) => value !== '' && value !== null && value !== undefined),
+  )
+  return adminRequest(`/api/admin/visitors?${query.toString()}`, token)
+}
+
+export const getAdminVisitor = (token, id) =>
+  adminRequest(`/api/admin/visitors/${id}`, token)
+
+export const getAdminVisitorContent = (token, id, section, page = 1, limit = 20) =>
+  adminRequest(
+    `/api/admin/visitors/${id}/${section}?page=${encodeURIComponent(page)}&limit=${encodeURIComponent(limit)}`,
+    token,
+  )
 
 export const getAdminCommunityUploads = (token) =>
   adminRequest('/api/admin/community-uploads', token)
@@ -317,6 +331,20 @@ export const updateAdminVisitorEmailVerification = (token, id, verified) =>
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ verified }),
+  })
+
+export const updateAdminVisitorProfileVisibility = (token, id, disabled, reason) =>
+  adminRequest(`/api/admin/visitors/${id}/profile-visibility`, token, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ disabled, reason }),
+  })
+
+export const moderateAdminVisitorProfile = (token, id, clear, reason) =>
+  adminRequest(`/api/admin/visitors/${id}/profile-moderation`, token, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ clear, reason }),
   })
 
 export const deleteAdminVisitor = (token, id) =>

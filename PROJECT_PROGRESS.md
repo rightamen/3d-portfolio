@@ -1,5 +1,34 @@
 # mrright.blog 项目进度记录
 
+## 2026-06-23: Local admin visitor management implementation
+
+Completed locally:
+
+- Added paginated visitor search, verification/profile/access filters, and sorting.
+- Added lazy-loaded visitor detail with Overview, Comments, Posts, Resources, Downloads, and Moderation Log tabs.
+- Added admin profile disable/restore controls and profile-field moderation for avatar, banner, bio, and contacts.
+- Added compatible visitor moderation columns and the admin_user_actions audit table.
+- Added paginated admin APIs for visitor details and visitor-owned content.
+- Public profile, resource, post, and activity APIs now respect administrator profile disable state.
+- Added zh/en/ja copy for the friendly administrator-disabled public-profile state.
+- Added a local Playwright visitor-management review with mocked administrator data.
+
+Validation:
+
+- npm run build: passed
+- npm run lint: passed
+- npm run test:e2e: passed (6 passed, 2 skipped)
+- Local admin visitor Playwright review: passed (1 passed)
+- git diff --check: passed
+- Browser review: /admin opens; /account, /community, and missing public profile remain available; no console errors observed.
+
+Notes:
+
+- No VPS deployment was performed.
+- No GitHub push was performed.
+- No production database or environment file was modified.
+- Review screenshot: test-results/admin-visitors-review/admin-visitors.png (ignored by Git).
+
 ## 项目信息
 
 - 项目目录：/mnt/g/Code/3d-portfolio

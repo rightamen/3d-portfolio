@@ -92,7 +92,7 @@ const PublicProfilePage = ({ copy, language, onLanguageChange }) => {
       })
       .catch((error) => {
         if (!isMounted) return
-        setStatus('error')
+        setStatus(error.code === 'PROFILE_ADMIN_DISABLED' ? 'admin-disabled' : 'error')
         setMessage(error.message || copy.publicProfileLoadError)
       })
 
@@ -305,6 +305,17 @@ const PublicProfilePage = ({ copy, language, onLanguageChange }) => {
           <p className="section-kicker">{copy.publicProfileKicker}</p>
           <h1>{copy.publicProfilePrivateTitle}</h1>
           <p>{copy.publicProfilePrivateBody}</p>
+          <a href="/" className="secondary-action">
+            {copy.accountBackHome}
+          </a>
+        </section>
+      )}
+
+      {status === 'admin-disabled' && (
+        <section className="account-state-card">
+          <p className="section-kicker">{copy.publicProfileKicker}</p>
+          <h1>{copy.publicProfileAdminDisabledTitle}</h1>
+          <p>{copy.publicProfileAdminDisabledBody}</p>
           <a href="/" className="secondary-action">
             {copy.accountBackHome}
           </a>

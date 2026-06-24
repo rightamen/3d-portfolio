@@ -36,6 +36,7 @@ const toPublicUser = (row) =>
         handle: row.handle || '',
         id: row.id,
         location: row.location || '',
+        profileAdminDisabled: row.profile_admin_disabled === true,
         profilePublic: row.profile_public !== false,
         website: row.website || '',
       }
@@ -56,6 +57,9 @@ const toAccountProfile = (row) =>
         contactLinks: row.contact_links || {},
         contactsPublic: row.contacts_public === true,
         lastLoginAt: row.last_login_at?.toISOString?.() || row.last_login_at || null,
+        profileAdminDisabled: row.profile_admin_disabled === true,
+        profileAdminDisabledAt:
+          row.profile_admin_disabled_at?.toISOString?.() || row.profile_admin_disabled_at || null,
         publicEmail: row.public_email || '',
         stats: {
           commentCount: Number(row.comment_count || 0),
@@ -81,6 +85,7 @@ const toPublicProfile = (row) =>
         handle: row.handle || '',
         location: row.location || '',
         profilePublic: row.profile_public !== false,
+        profileAdminDisabled: row.profile_admin_disabled === true,
         publicEmail: row.contacts_public === true ? row.public_email || '' : '',
         stats:
           row.activity_public !== false
@@ -460,6 +465,18 @@ const ensureSchema = async (pool) => {
 
     CREATE INDEX IF NOT EXISTS community_comment_likes_comment_idx
       ON community_comment_likes (comment_id);
+
+    CREATE TABLE IF NOT EXISTS admin_user_actions (
+      id text PRIMARY KEY,
+      visitor_user_id text REFERENCES visitor_users(id) ON DELETE SET NULL,
+      action text NOT NULL,
+      fields jsonb NOT NULL DEFAULT '[]'::jsonb,
+      reason text,
+      created_at timestamptz NOT NULL DEFAULT now()
+    );
+
+    CREATE INDEX IF NOT EXISTS admin_user_actions_user_created_idx
+      ON admin_user_actions (visitor_user_id, created_at DESC);
   `)
 
   await pool.query(`
@@ -495,6 +512,10 @@ const ensureSchema = async (pool) => {
       ADD COLUMN IF NOT EXISTS contacts_public boolean DEFAULT false,
       ADD COLUMN IF NOT EXISTS activity_public boolean DEFAULT true,
       ADD COLUMN IF NOT EXISTS last_login_at timestamptz,
+      ADD COLUMN IF NOT EXISTS profile_admin_disabled boolean NOT NULL DEFAULT false,
+      ADD COLUMN IF NOT EXISTS profile_admin_disabled_at timestamptz,
+      ADD COLUMN IF NOT EXISTS profile_admin_disable_reason text,
+      ADD COLUMN IF NOT EXISTS profile_moderated_at timestamptz,
       ADD COLUMN IF NOT EXISTS updated_at timestamptz DEFAULT now();
 
     CREATE UNIQUE INDEX IF NOT EXISTS visitor_users_handle_unique_idx
@@ -1803,35 +1824,367 @@ export const createPostgresStores = async (databaseUrl) => {
       }))
     },
 
-    listVisitors: async () => {
-      const result = await pool.query(`
-        SELECT
-          visitor_users.id,
-          visitor_users.email,
-          visitor_users.display_name,
-          visitor_users.access_level,
-          visitor_users.email_verified_at,
-          visitor_users.created_at,
-          visitor_users.updated_at,
-          count(DISTINCT project_likes.project_slug) AS like_count,
-          count(DISTINCT project_comments.id) AS comment_count,
-          count(DISTINCT download_requests.id) AS download_request_count
-        FROM visitor_users
-        LEFT JOIN project_likes ON project_likes.user_id = visitor_users.id
-        LEFT JOIN project_comments ON project_comments.user_id = visitor_users.id
-        LEFT JOIN download_requests ON download_requests.user_id = visitor_users.id
-        GROUP BY visitor_users.id
-        ORDER BY visitor_users.created_at DESC
-        LIMIT 200
-      `)
+    listVisitors: async ({
+      accessLevel,
+      limit,
+      offset,
+      profileStatus,
+      query,
+      sort,
+      verified,
+    }) => {
+      const values = []
+      const conditions = []
+      const addValue = (value) => {
+        values.push(value)
+        return `$${values.length}`
+      }
 
-      return result.rows.map((row) => ({
-        ...toPublicUser(row),
-        commentCount: Number(row.comment_count),
-        downloadRequestCount: Number(row.download_request_count),
-        likeCount: Number(row.like_count),
-        updatedAt: row.updated_at.toISOString(),
-      }))
+      if (query) {
+        const placeholder = addValue(`%${query}%`)
+        conditions.push(
+          `(visitor_users.email ILIKE ${placeholder} OR visitor_users.display_name ILIKE ${placeholder} OR visitor_users.handle ILIKE ${placeholder})`,
+        )
+      }
+      if (verified === true) conditions.push('visitor_users.email_verified_at IS NOT NULL')
+      if (verified === false) conditions.push('visitor_users.email_verified_at IS NULL')
+      if (accessLevel) conditions.push(`visitor_users.access_level = ${addValue(accessLevel)}`)
+      if (profileStatus === 'disabled') {
+        conditions.push('visitor_users.profile_admin_disabled = true')
+      } else if (profileStatus === 'public') {
+        conditions.push(
+          'visitor_users.profile_public = true AND visitor_users.profile_admin_disabled = false',
+        )
+      } else if (profileStatus === 'private') {
+        conditions.push(
+          'visitor_users.profile_public = false AND visitor_users.profile_admin_disabled = false',
+        )
+      }
+
+      const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
+      const orderBy = {
+        createdAt: 'visitor_users.created_at DESC',
+        displayName: 'visitor_users.display_name ASC',
+        lastLoginAt: 'visitor_users.last_login_at DESC NULLS LAST',
+        updatedAt: 'visitor_users.updated_at DESC',
+      }[sort] || 'visitor_users.created_at DESC'
+      const countResult = await pool.query(
+        `SELECT count(*)::int AS count FROM visitor_users ${where}`,
+        values,
+      )
+      const limitPlaceholder = addValue(limit)
+      const offsetPlaceholder = addValue(offset)
+      const result = await pool.query(
+        `
+          SELECT
+            visitor_users.*,
+            (
+              (SELECT count(*)::int FROM project_comments WHERE user_id = visitor_users.id) +
+              (SELECT count(*)::int FROM community_comments WHERE user_id = visitor_users.id)
+            ) AS comment_count,
+            (SELECT count(*)::int FROM community_posts WHERE user_id = visitor_users.id) AS post_count,
+            (SELECT count(*)::int FROM community_uploads WHERE user_id = visitor_users.id) AS upload_count,
+            (SELECT count(*)::int FROM download_requests WHERE user_id = visitor_users.id)
+              AS download_request_count
+          FROM visitor_users
+          ${where}
+          ORDER BY ${orderBy}
+          LIMIT ${limitPlaceholder}
+          OFFSET ${offsetPlaceholder}
+        `,
+        values,
+      )
+
+      return {
+        items: result.rows.map((row) => ({
+          ...toAccountProfile(row),
+          profileAdminDisabledReason: undefined,
+        })),
+        total: Number(countResult.rows[0]?.count || 0),
+      }
+    },
+
+    getVisitor: async (id) => {
+      const result = await pool.query(
+        `
+          SELECT
+            visitor_users.*,
+            (
+              (SELECT count(*)::int FROM project_likes WHERE user_id = visitor_users.id) +
+              (SELECT count(*)::int FROM community_comment_likes WHERE user_id = visitor_users.id)
+            ) AS like_count,
+            (
+              (SELECT count(*)::int FROM project_comments WHERE user_id = visitor_users.id) +
+              (SELECT count(*)::int FROM community_comments WHERE user_id = visitor_users.id)
+            ) AS comment_count,
+            (SELECT count(*)::int FROM download_requests WHERE user_id = visitor_users.id)
+              AS download_request_count,
+            (SELECT count(*)::int FROM community_uploads WHERE user_id = visitor_users.id)
+              AS upload_count,
+            (SELECT count(*)::int FROM community_posts WHERE user_id = visitor_users.id)
+              AS post_count
+          FROM visitor_users
+          WHERE visitor_users.id = $1
+          LIMIT 1
+        `,
+        [id],
+      )
+      const visitor = toAccountProfile(result.rows[0])
+      if (!visitor) return null
+      return {
+        ...visitor,
+        profileAdminDisableReason: result.rows[0].profile_admin_disable_reason || '',
+        profileModeratedAt:
+          result.rows[0].profile_moderated_at?.toISOString?.() ||
+          result.rows[0].profile_moderated_at ||
+          null,
+      }
+    },
+
+    listVisitorActions: async (id, limit, offset) => {
+      const [itemsResult, countResult] = await Promise.all([
+        pool.query(
+          `
+            SELECT id, visitor_user_id, action, fields, reason, created_at
+            FROM admin_user_actions
+            WHERE visitor_user_id = $1
+            ORDER BY created_at DESC
+            LIMIT $2 OFFSET $3
+          `,
+          [id, limit, offset],
+        ),
+        pool.query(
+          'SELECT count(*)::int AS count FROM admin_user_actions WHERE visitor_user_id = $1',
+          [id],
+        ),
+      ])
+      return {
+        items: itemsResult.rows.map((row) => ({
+          action: row.action,
+          createdAt: row.created_at.toISOString(),
+          fields: row.fields || [],
+          id: row.id,
+          reason: row.reason || '',
+          visitorUserId: row.visitor_user_id,
+        })),
+        total: Number(countResult.rows[0]?.count || 0),
+      }
+    },
+
+    listVisitorComments: async (id, limit, offset) => {
+      const [itemsResult, countResult] = await Promise.all([
+        pool.query(
+          `
+            SELECT *
+            FROM (
+              SELECT id, 'project' AS source, project_slug AS context_id, null::text AS context_title,
+                author, message, created_at, created_at AS updated_at
+              FROM project_comments
+              WHERE user_id = $1
+              UNION ALL
+              SELECT community_comments.id, 'community' AS source,
+                community_comments.post_id AS context_id, community_posts.title AS context_title,
+                community_comments.author, community_comments.message,
+                community_comments.created_at, community_comments.updated_at
+              FROM community_comments
+              LEFT JOIN community_posts ON community_posts.id = community_comments.post_id
+              WHERE community_comments.user_id = $1
+            ) AS comments
+            ORDER BY created_at DESC
+            LIMIT $2 OFFSET $3
+          `,
+          [id, limit, offset],
+        ),
+        pool.query(
+          `
+            SELECT (
+              (SELECT count(*) FROM project_comments WHERE user_id = $1) +
+              (SELECT count(*) FROM community_comments WHERE user_id = $1)
+            )::int AS count
+          `,
+          [id],
+        ),
+      ])
+      return {
+        items: itemsResult.rows.map((row) => ({
+          author: row.author,
+          contextId: row.context_id,
+          contextTitle: row.context_title,
+          createdAt: row.created_at.toISOString(),
+          id: row.id,
+          message: row.message,
+          source: row.source,
+          updatedAt: row.updated_at?.toISOString?.() || row.updated_at,
+        })),
+        total: Number(countResult.rows[0]?.count || 0),
+      }
+    },
+
+    listVisitorPosts: async (id, limit, offset) => {
+      const [itemsResult, countResult] = await Promise.all([
+        pool.query(
+          `
+            SELECT id, topic, title, message, created_at, updated_at
+            FROM community_posts
+            WHERE user_id = $1
+            ORDER BY created_at DESC
+            LIMIT $2 OFFSET $3
+          `,
+          [id, limit, offset],
+        ),
+        pool.query('SELECT count(*)::int AS count FROM community_posts WHERE user_id = $1', [id]),
+      ])
+      return {
+        items: itemsResult.rows.map((row) => ({
+          createdAt: row.created_at.toISOString(),
+          id: row.id,
+          message: row.message,
+          title: row.title,
+          topic: row.topic,
+          updatedAt: row.updated_at.toISOString(),
+        })),
+        total: Number(countResult.rows[0]?.count || 0),
+      }
+    },
+
+    listVisitorUploads: async (id, limit, offset) => {
+      const [itemsResult, countResult] = await Promise.all([
+        pool.query(
+          `
+            SELECT id, status, title, description, asset_category, file_name, file_type,
+              file_size, file_url, preview_url, created_at, updated_at
+            FROM community_uploads
+            WHERE user_id = $1
+            ORDER BY created_at DESC
+            LIMIT $2 OFFSET $3
+          `,
+          [id, limit, offset],
+        ),
+        pool.query('SELECT count(*)::int AS count FROM community_uploads WHERE user_id = $1', [id]),
+      ])
+      return {
+        items: itemsResult.rows.map(toCommunityUpload),
+        total: Number(countResult.rows[0]?.count || 0),
+      }
+    },
+
+    listVisitorDownloadRequests: async (id, limit, offset) => {
+      const [itemsResult, countResult] = await Promise.all([
+        pool.query(
+          `
+            SELECT id, status, project_slug, project_title, name, email, purpose, ip,
+              visitor_access_level, created_at
+            FROM download_requests
+            WHERE user_id = $1
+            ORDER BY created_at DESC
+            LIMIT $2 OFFSET $3
+          `,
+          [id, limit, offset],
+        ),
+        pool.query('SELECT count(*)::int AS count FROM download_requests WHERE user_id = $1', [id]),
+      ])
+      return {
+        items: itemsResult.rows.map((row) => ({
+          createdAt: row.created_at.toISOString(),
+          email: row.email,
+          id: row.id,
+          ip: row.ip,
+          name: row.name,
+          projectSlug: row.project_slug,
+          projectTitle: row.project_title,
+          purpose: row.purpose,
+          status: row.status,
+          visitorAccessLevel: row.visitor_access_level,
+        })),
+        total: Number(countResult.rows[0]?.count || 0),
+      }
+    },
+
+    setVisitorProfileVisibility: async (id, disabled, reason) => {
+      const client = await pool.connect()
+      try {
+        await client.query('BEGIN')
+        const result = await client.query(
+          `
+            UPDATE visitor_users
+            SET profile_admin_disabled = $2,
+                profile_admin_disabled_at = CASE WHEN $2 THEN now() ELSE null END,
+                profile_admin_disable_reason = CASE WHEN $2 THEN $3 ELSE null END,
+                profile_moderated_at = now(),
+                updated_at = now()
+            WHERE id = $1
+            RETURNING id
+          `,
+          [id, disabled, reason || null],
+        )
+        if (!result.rows[0]) {
+          await client.query('ROLLBACK')
+          return null
+        }
+        await client.query(
+          `
+            INSERT INTO admin_user_actions (id, visitor_user_id, action, fields, reason)
+            VALUES ($1, $2, $3, $4::jsonb, $5)
+          `,
+          [
+            createId(),
+            id,
+            disabled ? 'profile_disabled' : 'profile_restored',
+            JSON.stringify(['profile']),
+            reason || null,
+          ],
+        )
+        await client.query('COMMIT')
+        return adminStore.getVisitor(id)
+      } catch (error) {
+        await client.query('ROLLBACK')
+        throw error
+      } finally {
+        client.release()
+      }
+    },
+
+    moderateVisitorProfile: async (id, fields, reason) => {
+      const assignments = []
+      if (fields.includes('avatar')) assignments.push("avatar_url = ''")
+      if (fields.includes('banner')) assignments.push("banner_url = ''")
+      if (fields.includes('bio')) assignments.push("bio = ''")
+      if (fields.includes('contacts')) {
+        assignments.push("public_email = ''", "contact_links = '{}'::jsonb", 'contacts_public = false')
+      }
+      const client = await pool.connect()
+      try {
+        await client.query('BEGIN')
+        const result = await client.query(
+          `
+            UPDATE visitor_users
+            SET ${assignments.join(', ')},
+                profile_moderated_at = now(),
+                updated_at = now()
+            WHERE id = $1
+            RETURNING id
+          `,
+          [id],
+        )
+        if (!result.rows[0]) {
+          await client.query('ROLLBACK')
+          return null
+        }
+        await client.query(
+          `
+            INSERT INTO admin_user_actions (id, visitor_user_id, action, fields, reason)
+            VALUES ($1, $2, 'profile_fields_cleared', $3::jsonb, $4)
+          `,
+          [createId(), id, JSON.stringify(fields), reason || null],
+        )
+        await client.query('COMMIT')
+        return adminStore.getVisitor(id)
+      } catch (error) {
+        await client.query('ROLLBACK')
+        throw error
+      } finally {
+        client.release()
+      }
     },
 
     updateVisitorAccessLevel: async (id, accessLevel) => {

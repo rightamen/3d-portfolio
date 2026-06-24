@@ -242,6 +242,24 @@ const normalizeCommunityTopic = (value, fallback = 'general') => {
 
 const normalizeHandle = (value) => String(value ?? '').trim().toLowerCase().replace(/^@+/, '')
 
+const normalizePagination = (query, defaultLimit = 20, maxLimit = 100) => {
+  const page = Math.max(1, Number.parseInt(query?.page, 10) || 1)
+  const limit = Math.min(maxLimit, Math.max(1, Number.parseInt(query?.limit, 10) || defaultLimit))
+  return { limit, offset: (page - 1) * limit, page }
+}
+
+const toPaginatedPayload = ({ items, total }, page, limit) => ({
+  items,
+  pagination: {
+    hasNext: page * limit < total,
+    hasPrevious: page > 1,
+    limit,
+    page,
+    pages: Math.max(1, Math.ceil(total / limit)),
+    total,
+  },
+})
+
 const normalizeUrl = (value, maxLength = 300) => {
   const text = String(value ?? '').trim().slice(0, maxLength)
   if (!text) return ''
@@ -846,6 +864,12 @@ app.get('/api/users/:handle', async (request, response) => {
 
   const profile = await authStore.getUserByHandle(handle)
   if (!profile) return response.status(404).json({ error: 'User profile not found.' })
+  if (profile.profileAdminDisabled) {
+    return response.status(403).json({
+      code: 'PROFILE_ADMIN_DISABLED',
+      error: 'This public profile is currently unavailable.',
+    })
+  }
   if (!profile.profilePublic) {
     return response.json({ profile: { handle, profilePublic: false } })
   }
@@ -861,6 +885,9 @@ app.get('/api/users/:handle/resources', async (request, response) => {
 
   const profile = await authStore.getUserByHandle(handle)
   if (!profile) return response.status(404).json({ error: 'User profile not found.' })
+  if (profile.profileAdminDisabled) {
+    return response.status(403).json({ code: 'PROFILE_ADMIN_DISABLED', error: 'This public profile is currently unavailable.' })
+  }
   if (!profile.profilePublic || !profile.activityPublic) return response.json({ resources: [] })
 
   const resources = await communityStore.listPublicUserUploads(profile.internalId)
@@ -875,6 +902,9 @@ app.get('/api/users/:handle/posts', async (request, response) => {
 
   const profile = await authStore.getUserByHandle(handle)
   if (!profile) return response.status(404).json({ error: 'User profile not found.' })
+  if (profile.profileAdminDisabled) {
+    return response.status(403).json({ code: 'PROFILE_ADMIN_DISABLED', error: 'This public profile is currently unavailable.' })
+  }
   if (!profile.profilePublic || !profile.activityPublic) return response.json({ posts: [] })
 
   const posts = await communityStore.listPublicUserPosts(profile.internalId)
@@ -891,6 +921,9 @@ app.get('/api/users/:handle/activity', async (request, response) => {
 
   const profile = await authStore.getUserByHandle(handle)
   if (!profile) return response.status(404).json({ error: 'User profile not found.' })
+  if (profile.profileAdminDisabled) {
+    return response.status(403).json({ code: 'PROFILE_ADMIN_DISABLED', error: 'This public profile is currently unavailable.' })
+  }
   if (!profile.profilePublic || !profile.activityPublic) {
     return response.json({ comments: [], posts: [], resources: [] })
   }
@@ -1222,8 +1255,110 @@ app.get('/api/admin/projects', requireAdmin, async (_request, response) => {
   response.json({ projects: await adminStore.listProjects(staticProjects) })
 })
 
-app.get('/api/admin/visitors', requireAdmin, async (_request, response) => {
-  response.json({ visitors: await adminStore.listVisitors() })
+app.get('/api/admin/visitors', requireAdmin, async (request, response) => {
+  const { limit, offset, page } = normalizePagination(request.query, 20, 100)
+  const verified =
+    request.query.verified === 'true'
+      ? true
+      : request.query.verified === 'false'
+        ? false
+        : null
+  const accessLevel = visitorAccessLevels.includes(request.query.accessLevel)
+    ? request.query.accessLevel
+    : ''
+  const profileStatuses = new Set(['public', 'private', 'disabled'])
+  const profileStatus = profileStatuses.has(request.query.profileStatus)
+    ? request.query.profileStatus
+    : ''
+  const visitorSorts = new Set(['createdAt', 'updatedAt', 'lastLoginAt', 'displayName'])
+  const sort = visitorSorts.has(request.query.sort) ? request.query.sort : 'createdAt'
+  const query = String(request.query.query ?? '').trim().slice(0, 120)
+  const result = await adminStore.listVisitors({
+    accessLevel,
+    limit,
+    offset,
+    profileStatus,
+    query,
+    sort,
+    verified,
+  })
+  const payload = toPaginatedPayload(result, page, limit)
+  response.json({ visitors: payload.items, pagination: payload.pagination })
+})
+
+app.get('/api/admin/visitors/:id', requireAdmin, async (request, response) => {
+  const visitor = await adminStore.getVisitor(request.params.id)
+  if (!visitor) return response.status(404).json({ error: 'Visitor not found.' })
+  const actions = await adminStore.listVisitorActions(request.params.id, 10, 0)
+  return response.json({ visitor, recentActions: actions.items })
+})
+
+const sendVisitorContentPage = (method) => async (request, response) => {
+  const visitor = await adminStore.getVisitor(request.params.id)
+  if (!visitor) return response.status(404).json({ error: 'Visitor not found.' })
+  const { limit, offset, page } = normalizePagination(request.query, 20, 100)
+  const payload = toPaginatedPayload(
+    await adminStore[method](request.params.id, limit, offset),
+    page,
+    limit,
+  )
+  return response.json({ items: payload.items, pagination: payload.pagination })
+}
+
+app.get(
+  '/api/admin/visitors/:id/comments',
+  requireAdmin,
+  sendVisitorContentPage('listVisitorComments'),
+)
+app.get(
+  '/api/admin/visitors/:id/posts',
+  requireAdmin,
+  sendVisitorContentPage('listVisitorPosts'),
+)
+app.get(
+  '/api/admin/visitors/:id/uploads',
+  requireAdmin,
+  sendVisitorContentPage('listVisitorUploads'),
+)
+app.get(
+  '/api/admin/visitors/:id/download-requests',
+  requireAdmin,
+  sendVisitorContentPage('listVisitorDownloadRequests'),
+)
+app.get(
+  '/api/admin/visitors/:id/actions',
+  requireAdmin,
+  sendVisitorContentPage('listVisitorActions'),
+)
+
+app.patch('/api/admin/visitors/:id/profile-visibility', requireAdmin, async (request, response) => {
+  if (typeof request.body?.disabled !== 'boolean') {
+    return response.status(400).json({ error: 'disabled must be a boolean.' })
+  }
+  const reason = String(request.body?.reason ?? '').trim().slice(0, 500)
+  const visitor = await adminStore.setVisitorProfileVisibility(
+    request.params.id,
+    request.body.disabled,
+    reason,
+  )
+  if (!visitor) return response.status(404).json({ error: 'Visitor not found.' })
+  return response.json({ visitor })
+})
+
+app.patch('/api/admin/visitors/:id/profile-moderation', requireAdmin, async (request, response) => {
+  const allowedFields = new Set(['avatar', 'banner', 'bio', 'contacts'])
+  const fields = Array.isArray(request.body?.clear)
+    ? [...new Set(request.body.clear.map((value) => String(value).trim()))]
+    : []
+  if (!fields.length || fields.some((field) => !allowedFields.has(field))) {
+    return response.status(400).json({
+      error: 'clear must contain one or more allowed profile fields.',
+    })
+  }
+  const reason = String(request.body?.reason ?? '').trim().slice(0, 500)
+  const visitor = await adminStore.moderateVisitorProfile(request.params.id, fields, reason)
+  if (!visitor) return response.status(404).json({ error: 'Visitor not found.' })
+  return response.json({ visitor })
 })
 
 app.get('/api/admin/community-uploads', requireAdmin, async (_request, response) => {
