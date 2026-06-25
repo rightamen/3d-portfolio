@@ -1,5 +1,70 @@
 # mrright.blog 项目进度记录
 
+## 2026-06-24：/admin 访客用户管理功能上线
+
+部署信息：
+
+- 使用 commit：f49b6e6
+- release 包：已生成并上传到 /tmp/mrright-portfolio-release.tar.gz
+- VPS 备份路径：/opt/mrright-portfolio.backup-20260624-051010
+- 服务状态：mrright-portfolio active
+- nginx 状态：active
+- 部署前 env 检查：ADMIN_TOKEN=[set]，DATABASE_URL=[set]
+
+Schema：
+
+- schema 安全扫描：通过
+- schema ensure：成功
+- visitor_users 4/4 个新增字段存在
+- admin_user_actions 表存在
+
+验证状态码：
+
+- /api/health：200
+- admin_summary：200
+- https://mrright.blog/：200
+- https://mrright.blog/admin：200
+- https://mrright.blog/account：200
+- https://mrright.blog/community：200
+- https://mrright.blog/u/not-exist-test-handle：200，页面正常，不是 500
+
+Admin Visitors 接口：
+
+- GET /api/admin/visitors：200
+- GET /api/admin/visitors?page=1&limit=30：200
+- GET /api/admin/visitors?query=test：200
+- GET /api/admin/visitors/:id：200
+- 未提供 admin token：401，符合预期，未出现 500
+
+Playwright 线上冒烟：
+
+- /admin 可打开
+- Visitors 区域可显示
+- 搜索/筛选/分页 UI 存在
+- 点击用户详情不白屏
+- /account 不受影响
+- /community 不受影响
+
+截图路径，仅记录，不提交：
+
+- G:\Code\3d-portfolio\test-results\admin-visitors-production-smoke
+- admin-visitors.png
+- admin-visitor-detail.png
+- account.png
+- community.png
+- u_not-exist-test-handle.png
+
+错误检查：
+
+- network 500：0
+- 非预期 console error：0
+- 有 1 个预期 404：/api/users/not-exist-test-handle，这是缺失公开主页测试的正常结果，不是页面崩溃
+
+备注：
+
+- 如果浏览器还显示旧版 /admin，需要 Ctrl+Shift+R 强制刷新一次
+- GitHub push 仍待后续凭证可用时执行
+
 ## 2026-06-23: Local admin visitor management implementation
 
 Completed locally:
