@@ -1,5 +1,63 @@
 # mrright.blog 项目进度记录
 
+## 2026-07-01：后台访客管理 E2E 覆盖部署到 VPS
+
+部署内容：
+
+- 将后台访客管理 E2E 覆盖增强版本部署到 VPS。
+- 部署 commit：f11546c
+- release 包：.deploy-tools/mrright-portfolio-release.tar.gz
+- VPS 上传路径：/tmp/mrright-portfolio-release.tar.gz
+- VPS 备份路径：/opt/mrright-portfolio.backup-20260701-004849
+- 服务名：mrright-portfolio
+- 服务状态：active
+
+部署前验证：
+
+- npm run build：通过
+- npm run lint：通过
+- npm run release:vps：通过
+
+部署安全检查：
+
+- ADMIN_TOKEN=[set]
+- DATABASE_URL=[set]
+- 未输出 env value、token、数据库密码。
+- 已备份 /opt/mrright-portfolio。
+- 保留 /etc/mrright-portfolio.env、data、public/uploads、backup。
+- 未修改生产数据库密码。
+- 未删除数据库、表、上传文件或备份目录。
+
+部署后验证：
+
+- local /api/health：200
+- local admin_summary：200
+- https://mrright.blog/api/health：200
+- https://mrright.blog/admin：200
+- https://mrright.blog/community：200
+- https://mrright.blog/login?mode=login：200
+- https://mrright.blog/account：200
+- GET https://mrright.blog/api/admin/visitors 无 token：401
+- GET https://mrright.blog/api/account/downloads 未登录：401
+- GET https://mrright.blog/api/account/comments 未登录：401
+- npx playwright test tests/e2e/production-smoke.spec.js：通过，6 passed，1 skipped
+- npx playwright test tests/e2e/admin-visitors.spec.js：通过，4 passed，3 skipped
+
+Skip 原因：
+
+- production smoke 可选登录测试：缺少 E2E_VISITOR_EMAIL 和 E2E_VISITOR_PASSWORD。
+- admin visitors 有 token API 只读测试：缺少 E2E_ADMIN_TOKEN。
+- admin visitors 详情敏感字段只读测试：缺少 E2E_ADMIN_TOKEN。
+- admin visitors 本地写闭环测试：生产环境按安全规则 skip。
+
+注意：
+
+- 本轮按用户要求部署 VPS。
+- 本轮没有 push GitHub。
+- 本轮没有修改业务代码。
+- 本轮没有修改认证系统或 /admin 权限逻辑。
+- 本轮没有执行生产写测试。
+
 ## 2026-07-01：后台访客管理 E2E 闭环补全与稳定性验证
 
 完成内容：
