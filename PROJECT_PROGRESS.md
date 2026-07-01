@@ -1,5 +1,56 @@
 # mrright.blog 项目进度记录
 
+## 2026-06-25：后台访客管理自动化测试补充
+
+完成内容：
+
+- 将 /admin 访客用户管理的一次性本地 Playwright review 扩展为可重复运行的正式 E2E 覆盖。
+- 在 tests/e2e/admin-visitors.spec.js 中新增 admin visitors API 只读/权限测试：
+  - GET /api/admin/visitors 无 admin token 返回 401，且不是 500。
+  - 有 admin token 的列表分页、query、verified、profileStatus、accessLevel、sort 参数测试已加入，但默认缺少 E2E_ADMIN_TOKEN 时自动 skip。
+  - 访客详情敏感字段泄露检查已加入，但默认缺少 E2E_ADMIN_TOKEN 或无访客数据时自动 skip。
+- 扩展后台 UI mock 冒烟测试：
+  - /admin 可打开。
+  - Visitors 区域、搜索框、4 个筛选/排序控件、Search 按钮、分页控件存在。
+  - 用户列表不白屏，点击用户详情不白屏。
+  - 详情 tabs 覆盖 Overview、Comments、Posts、Resources、Downloads、Moderation Log。
+  - 新增空访客列表状态测试，确认 No visitors match these filters. 正常显示且页面不白屏。
+- 新增本地安全写操作闭环测试骨架：
+  - 仅在 E2E_ADMIN_VISITOR_WRITE=1、baseURL 为 localhost/127.0.0.1、并提供本地 admin token 时运行。
+  - 默认 npm run test:e2e 下自动 skip，不会写生产数据。
+  - 覆盖专用测试用户创建、管理员禁用公开主页、公开接口 403 PROFILE_ADMIN_DISABLED、用户尝试恢复仍被管理员禁用、清理 bio/contacts、admin_user_actions 审计记录、恢复公开主页。
+  - 如果本地非生产服务不返回 dev verification code，则该闭环自动 skip。
+
+修改文件：
+
+- tests/e2e/admin-visitors.spec.js
+- PROJECT_PROGRESS.md
+
+验证结果：
+
+- npm run build：通过
+- npm run lint：通过
+- npx playwright test tests/e2e/admin-visitors.spec.js：通过，3 passed，3 skipped
+- npm run test:e2e：通过，9 passed，4 skipped
+- git diff --check：通过
+
+Skip 原因：
+
+- admin visitors 有 token API 只读测试：缺少 E2E_ADMIN_TOKEN，按安全规则 skip。
+- admin visitors 本地写闭环测试：未设置 E2E_ADMIN_VISITOR_WRITE=1，且默认 baseURL 是生产站点，按安全规则 skip。
+- production smoke 可选登录测试：缺少 E2E_VISITOR_EMAIL 和 E2E_VISITOR_PASSWORD，按既有规则 skip。
+
+注意：
+
+- 本轮没有部署 VPS。
+- 本轮没有 push GitHub。
+- 本轮没有修改 /admin 权限认证逻辑。
+- 本轮没有修改 visitor token 或 ADMIN_TOKEN 认证逻辑。
+- 本轮没有操作线上真实用户，没有连接线上数据库做写操作。
+- 本轮没有覆盖 /etc/mrright-portfolio.env。
+- 本轮没有删除数据库、表、上传文件或备份目录。
+- npm run build 首次运行时发现本地 node_modules 缺少 Rollup optional native package；执行 npm install 补齐本地依赖后 build 通过，package.json 和 package-lock.json 未改变。
+
 ## 2026-06-24：/admin 访客用户管理功能上线
 
 部署信息：
