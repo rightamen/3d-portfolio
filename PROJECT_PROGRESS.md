@@ -1,5 +1,61 @@
 # mrright.blog 项目进度记录
 
+## 2026-07-01：后台访客管理 E2E 闭环补全与稳定性验证
+
+完成内容：
+
+- 继续完善 tests/e2e/admin-visitors.spec.js，把后台访客管理从可用状态补强为可验证闭环。
+- API 安全与权限覆盖增强：
+  - GET /api/admin/visitors 未登录返回 401。
+  - 新增 page、limit、query、sort 等筛选参数未登录请求覆盖，确认返回 401 且不报 500。
+  - 有 admin token 的列表筛选和详情敏感字段检查仍保留为可选只读测试，缺少 E2E_ADMIN_TOKEN 时自动 skip。
+- UI 稳定性覆盖保持：
+  - /admin 加载不白屏。
+  - Visitors 列表、搜索框、筛选、排序、分页、详情入口存在。
+  - Visitor Detail 可打开。
+  - Overview、Comments、Posts、Resources、Downloads、Moderation Log tabs 均存在。
+  - 新增所有详情 tabs 逐个点击切换检查，确认任意 tab 不白屏且不触发 console/network 500 错误。
+  - 空访客列表状态不白屏。
+- 管理操作闭环测试补强：
+  - 写闭环现在强制要求 E2E_ADMIN_VISITOR_WRITE=1、localhost/127.0.0.1 baseURL、本地 admin token、E2E_TEST_DATABASE_URL。
+  - E2E_TEST_DATABASE_URL 必须指向名称明显包含 test/e2e/local/dev 的数据库，且不能是 mrright_portfolio。
+  - 无 test DB 时自动 skip，不报错。
+  - 覆盖 admin 禁用公开主页后公开接口 403 PROFILE_ADMIN_DISABLED。
+  - 覆盖 admin 禁用/恢复后 /u/:handle 前端页面壳不返回 500；公开主页权限状态以 /api/users/:handle 数据接口验证。
+  - 覆盖 admin 恢复公开主页后公开接口可访问。
+  - 资料清理从 bio/contacts 扩展到 avatar/banner/bio/contacts。
+  - 通过 test DB 直接确认 avatar_url、banner_url、bio、public_email、contact_links、contacts_public、profile_admin_disabled 等字段变更。
+  - 通过 test DB 直接确认 admin_user_actions 写入 profile_disabled 和 profile_fields_cleared，并包含 avatar/banner/bio/contacts 字段记录。
+
+修改文件：
+
+- tests/e2e/admin-visitors.spec.js
+- PROJECT_PROGRESS.md
+
+验证结果：
+
+- npm run build：通过
+- npm run lint：通过
+- npm run test:e2e：通过，10 passed，4 skipped
+- git diff --check：通过
+
+Skip 原因：
+
+- admin visitors 有 token API 只读测试：缺少 E2E_ADMIN_TOKEN，按安全规则 skip。
+- admin visitors 详情敏感字段只读测试：缺少 E2E_ADMIN_TOKEN，按安全规则 skip。
+- admin visitors 本地写闭环测试：未设置 E2E_ADMIN_VISITOR_WRITE=1，且默认 baseURL 是生产站点；没有 E2E_TEST_DATABASE_URL 时也会自动 skip。
+- production smoke 可选登录测试：缺少 E2E_VISITOR_EMAIL 和 E2E_VISITOR_PASSWORD，按既有规则 skip。
+
+安全说明：
+
+- 本轮没有部署 VPS。
+- 本轮按用户要求提交并同步 GitHub 远端分支。
+- 本轮没有修改业务代码。
+- 本轮没有修改 /admin 权限认证逻辑。
+- 本轮没有修改 visitor token 或认证系统。
+- 本轮没有操作线上数据库，没有执行线上写操作。
+- 本轮没有输出或记录 ADMIN_TOKEN、DATABASE_URL、数据库密码或任何 env value。
+
 ## 2026-06-25：后台访客管理自动化测试补充
 
 完成内容：

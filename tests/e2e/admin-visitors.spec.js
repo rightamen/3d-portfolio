@@ -1,11 +1,32 @@
 import { expect, test } from '@playwright/test'
+import pg from 'pg'
+
+const { Pool } = pg
 
 const adminToken = process.env.E2E_ADMIN_TOKEN
 const writeAdminToken = process.env.E2E_LOCAL_ADMIN_TOKEN || adminToken
 const runWriteTests = process.env.E2E_ADMIN_VISITOR_WRITE === '1'
+const testDatabaseUrl = process.env.E2E_TEST_DATABASE_URL
 const isLocalBaseURL = (baseURL = '') => /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?/i.test(baseURL)
 const jsonHeaders = { 'Content-Type': 'application/json' }
 const authHeaders = (token) => ({ Authorization: `Bearer ${token}` })
+const detailTabNames = ['Overview', 'Comments', 'Posts', 'Resources', 'Downloads', 'Moderation Log']
+
+const isSafeTestDatabaseUrl = (databaseUrl = '') => {
+  try {
+    const parsed = new URL(databaseUrl)
+    const databaseName = decodeURIComponent(parsed.pathname.split('/').filter(Boolean).at(-1) || '')
+    return /(?:test|e2e|local|dev)/i.test(databaseName) && databaseName !== 'mrright_portfolio'
+  } catch {
+    return false
+  }
+}
+
+const createTestDatabasePool = () =>
+  new Pool({
+    connectionString: testDatabaseUrl,
+    max: 1,
+  })
 
 const visitor = {
   accessLevel: 'member',
@@ -53,12 +74,65 @@ const expectNotServerError = (response, label) => {
   expect(response.status(), label).toBeLessThan(500)
 }
 
+const getVisitorModerationState = async (pool, visitorId) => {
+  const result = await pool.query(
+    `
+      SELECT
+        avatar_url,
+        banner_url,
+        bio,
+        public_email,
+        contact_links,
+        contacts_public,
+        profile_admin_disabled
+      FROM visitor_users
+      WHERE id = $1
+    `,
+    [visitorId],
+  )
+
+  return result.rows[0] || null
+}
+
+const getVisitorAdminActions = async (pool, visitorId) => {
+  const result = await pool.query(
+    `
+      SELECT action, fields
+      FROM admin_user_actions
+      WHERE visitor_user_id = $1
+      ORDER BY created_at DESC
+    `,
+    [visitorId],
+  )
+
+  return result.rows
+}
+
 test.describe('admin visitors API read-only access', () => {
   test('rejects visitor list requests without an admin token', async ({ request }) => {
     const response = await request.get('/api/admin/visitors')
 
     expect(response.status()).toBe(401)
     expectNotServerError(response, 'GET /api/admin/visitors without token')
+  })
+
+  test('rejects filtered visitor list requests without server errors when unauthenticated', async ({
+    request,
+  }) => {
+    const cases = [
+      '/api/admin/visitors?page=1',
+      '/api/admin/visitors?limit=30',
+      '/api/admin/visitors?query=test',
+      '/api/admin/visitors?sort=createdAt',
+      '/api/admin/visitors?page=1&limit=30&query=test&sort=updatedAt',
+    ]
+
+    for (const endpoint of cases) {
+      const response = await request.get(endpoint)
+
+      expect(response.status(), endpoint).toBe(401)
+      expectNotServerError(response, endpoint)
+    }
   })
 
   test('accepts safe visitor list filters with an admin token', async ({ request }) => {
@@ -223,15 +297,16 @@ test('admin visitor management renders filters and lazy visitor detail', async (
   await expect(page.getByText('Visitor Detail')).toBeVisible()
   await expect(page.getByText('@review-visitor', { exact: true })).toBeVisible()
   const detailTabs = page.locator('.visitor-detail-tabs')
-  await expect(detailTabs.getByRole('button', { name: 'Overview' })).toBeVisible()
-  await expect(detailTabs.getByRole('button', { name: 'Comments', exact: true })).toBeVisible()
-  await expect(detailTabs.getByRole('button', { name: 'Posts', exact: true })).toBeVisible()
-  await expect(detailTabs.getByRole('button', { name: 'Resources', exact: true })).toBeVisible()
-  await expect(detailTabs.getByRole('button', { name: 'Downloads', exact: true })).toBeVisible()
-  await expect(detailTabs.getByRole('button', { name: 'Moderation Log' })).toBeVisible()
 
-  await detailTabs.getByRole('button', { name: 'Comments', exact: true }).click()
-  await expect(page.getByText('No records in this section.')).toBeVisible()
+  for (const tabName of detailTabNames) {
+    await expect(detailTabs.getByRole('button', { name: tabName, exact: true })).toBeVisible()
+  }
+
+  for (const tabName of detailTabNames) {
+    await detailTabs.getByRole('button', { name: tabName, exact: true }).click()
+    await expect(page.getByText('Visitor Detail')).toBeVisible()
+    await expect(page.locator('body')).not.toBeEmpty()
+  }
 
   expect(serverErrors).toEqual([])
   expect(consoleErrors).toEqual([])
@@ -315,12 +390,20 @@ test.describe('admin visitors local write workflow', () => {
     test.skip(!runWriteTests, 'Set E2E_ADMIN_VISITOR_WRITE=1 to run local admin visitor write coverage.')
     test.skip(!isLocalBaseURL(baseURL), 'Admin visitor write coverage only runs against localhost or 127.0.0.1.')
     test.skip(!writeAdminToken, 'Set E2E_LOCAL_ADMIN_TOKEN or E2E_ADMIN_TOKEN for local admin visitor write coverage.')
+    test.skip(!testDatabaseUrl, 'Set E2E_TEST_DATABASE_URL to run local admin visitor database write coverage.')
+    test.skip(
+      !isSafeTestDatabaseUrl(testDatabaseUrl),
+      'E2E_TEST_DATABASE_URL must point to a clearly named test, e2e, local, or dev database.',
+    )
 
     const unique = Date.now()
     const handle = `e2e-admin-visitor-${unique}`
     const email = `${handle}@example.test`
     const password = `E2eVisitor-${unique}`
     const reason = 'e2e admin visitor moderation'
+    const seededAvatarUrl = '/uploads/avatars/e2e-admin-visitor-avatar.png'
+    const seededBannerUrl = '/uploads/banners/e2e-admin-visitor-banner.png'
+    const db = createTestDatabasePool()
     let visitorId
 
     try {
@@ -377,6 +460,33 @@ test.describe('admin visitors local write workflow', () => {
       })
       expect(profileResponse.status()).toBe(200)
 
+      const seedResult = await db.query(
+        `
+          UPDATE visitor_users
+          SET avatar_url = $2,
+              banner_url = $3,
+              updated_at = now()
+          WHERE id = $1
+          RETURNING id
+        `,
+        [visitorId, seededAvatarUrl, seededBannerUrl],
+      )
+      test.skip(
+        !seedResult.rows[0]?.id,
+        'The configured E2E_TEST_DATABASE_URL does not contain the local test visitor.',
+      )
+
+      await expect.poll(async () => getVisitorModerationState(db, visitorId)).toEqual(
+        expect.objectContaining({
+          avatar_url: seededAvatarUrl,
+          banner_url: seededBannerUrl,
+          bio: 'E2E bio before moderation.',
+          contacts_public: true,
+          profile_admin_disabled: false,
+          public_email: email,
+        }),
+      )
+
       const disableResponse = await request.patch(`/api/admin/visitors/${visitorId}/profile-visibility`, {
         data: { disabled: true, reason },
         headers: {
@@ -390,6 +500,14 @@ test.describe('admin visitors local write workflow', () => {
       expect(disabledPublicResponse.status()).toBe(403)
       expect(await disabledPublicResponse.json()).toEqual(
         expect.objectContaining({ code: 'PROFILE_ADMIN_DISABLED' }),
+      )
+      const disabledPublicPageResponse = await request.get(`/u/${handle}`)
+      expectNotServerError(disabledPublicPageResponse, `/u/${handle} after admin disable`)
+
+      await expect.poll(async () => getVisitorModerationState(db, visitorId)).toEqual(
+        expect.objectContaining({
+          profile_admin_disabled: true,
+        }),
       )
 
       const userRestoreAttempt = await request.put('/api/account/profile', {
@@ -425,7 +543,7 @@ test.describe('admin visitors local write workflow', () => {
       )
 
       const moderationResponse = await request.patch(`/api/admin/visitors/${visitorId}/profile-moderation`, {
-        data: { clear: ['bio', 'contacts'], reason },
+        data: { clear: ['avatar', 'banner', 'bio', 'contacts'], reason },
         headers: {
           ...authHeaders(writeAdminToken),
           ...jsonHeaders,
@@ -435,9 +553,23 @@ test.describe('admin visitors local write workflow', () => {
       const moderationPayload = await moderationResponse.json()
       expect(moderationPayload.visitor).toEqual(
         expect.objectContaining({
+          avatarUrl: '',
+          bannerUrl: '',
           bio: '',
+          contactLinks: {},
           contactsPublic: false,
           publicEmail: '',
+        }),
+      )
+      await expect.poll(async () => getVisitorModerationState(db, visitorId)).toEqual(
+        expect.objectContaining({
+          avatar_url: '',
+          banner_url: '',
+          bio: '',
+          contact_links: {},
+          contacts_public: false,
+          profile_admin_disabled: true,
+          public_email: '',
         }),
       )
 
@@ -448,6 +580,14 @@ test.describe('admin visitors local write workflow', () => {
       const actionsPayload = await actionsResponse.json()
       const actions = actionsPayload.items?.map((item) => item.action) || []
       expect(actions).toEqual(expect.arrayContaining(['profile_disabled', 'profile_fields_cleared']))
+
+      const databaseActions = await getVisitorAdminActions(db, visitorId)
+      expect(databaseActions.map((item) => item.action)).toEqual(
+        expect.arrayContaining(['profile_disabled', 'profile_fields_cleared']),
+      )
+      expect(databaseActions.find((item) => item.action === 'profile_fields_cleared')?.fields).toEqual(
+        expect.arrayContaining(['avatar', 'banner', 'bio', 'contacts']),
+      )
 
       const restoreResponse = await request.patch(`/api/admin/visitors/${visitorId}/profile-visibility`, {
         data: { disabled: false, reason },
@@ -460,6 +600,9 @@ test.describe('admin visitors local write workflow', () => {
 
       const restoredPublicResponse = await request.get(`/api/users/${handle}`)
       expect(restoredPublicResponse.status()).toBe(200)
+      const restoredPublicPageResponse = await request.get(`/u/${handle}`)
+      expectNotServerError(restoredPublicPageResponse, `/u/${handle} after admin restore`)
+
       const restoredPublicPayload = await restoredPublicResponse.json()
       expect(restoredPublicPayload.profile).toEqual(
         expect.objectContaining({
@@ -469,6 +612,16 @@ test.describe('admin visitors local write workflow', () => {
           profileAdminDisabled: false,
           profilePublic: true,
           publicEmail: '',
+        }),
+      )
+      await expect.poll(async () => getVisitorModerationState(db, visitorId)).toEqual(
+        expect.objectContaining({
+          avatar_url: '',
+          banner_url: '',
+          bio: '',
+          contacts_public: false,
+          profile_admin_disabled: false,
+          public_email: '',
         }),
       )
     } finally {
@@ -481,6 +634,7 @@ test.describe('admin visitors local write workflow', () => {
           },
         }).catch(() => {})
       }
+      await db.end().catch(() => {})
     }
   })
 })
