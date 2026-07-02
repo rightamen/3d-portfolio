@@ -6,6 +6,9 @@
 
 - 提交 API envelope/contract 第一阶段代码、文档、测试配置和进度记录。
 - 同步当前分支 codex/check-project-and-fix-errors 到 GitHub。
+- 首次 HTTPS push 因当前环境无 GitHub HTTPS 凭据失败，未重复提交、未 reset、未 force push。
+- 已验证本机 GitHub SSH key 可用，并将 origin 改为 git@github.com:rightamen/3d-portfolio.git。
+- 已通过 SSH push 成功。
 
 提交前验证：
 
@@ -14,6 +17,11 @@
 - npm run test:api：已通过，5 passed
 - npx playwright test tests/e2e/production-smoke.spec.js：部署后已通过，6 passed，1 skipped
 - git diff --check：通过
+
+提交信息：
+
+- e01f721 feat(api): add response envelope contract
+- 远端分支：origin/codex/check-project-and-fix-errors
 
 安全说明：
 
