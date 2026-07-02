@@ -1,17 +1,48 @@
 const API_BASE = import.meta.env.VITE_API_BASE || ''
 
+const isPlainObject = (value) =>
+  value !== null && typeof value === 'object' && !Array.isArray(value)
+
+const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value, key)
+
+const normalizeApiPayload = (payload) => {
+  if (!isPlainObject(payload) || !hasOwn(payload, 'data') || !hasOwn(payload, 'error')) {
+    return payload
+  }
+
+  if (isPlainObject(payload.data)) {
+    return {
+      ...payload.data,
+      ...payload,
+    }
+  }
+
+  return payload
+}
+
+const createApiError = (payload, fallbackMessage, status) => {
+  const envelopeError = isPlainObject(payload?.error) ? payload.error : null
+  const legacyError = typeof payload?.error === 'string' ? payload.error : ''
+  const message =
+    envelopeError?.message || legacyError || payload?.message || fallbackMessage
+  const error = new Error(message)
+
+  error.code = envelopeError?.code || payload?.code
+  error.status = status
+  error.payload = payload
+
+  return error
+}
+
 const request = async (path, options) => {
   const response = await fetch(`${API_BASE}${path}`, options)
 
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}))
-    const error = new Error(payload.error || 'Request failed')
-    error.code = payload.code
-    error.status = response.status
-    throw error
+    throw createApiError(payload, 'Request failed', response.status)
   }
 
-  return response.json()
+  return response.json().then(normalizeApiPayload)
 }
 
 const adminRequest = (path, token, options = {}) =>
@@ -125,9 +156,9 @@ export const uploadCommunityResource = (token, payload, file, onProgress) => {
       }
 
       if (xhr.status >= 200 && xhr.status < 300) {
-        resolve(responsePayload)
+        resolve(normalizeApiPayload(responsePayload))
       } else {
-        reject(new Error(responsePayload.error || 'Upload failed'))
+        reject(createApiError(responsePayload, 'Upload failed', xhr.status))
       }
     }
 
@@ -219,12 +250,9 @@ const uploadAccountImage = (token, endpoint, file, onProgress) => {
       }
 
       if (xhr.status >= 200 && xhr.status < 300) {
-        resolve(responsePayload)
+        resolve(normalizeApiPayload(responsePayload))
       } else {
-        const error = new Error(responsePayload.error || 'Upload failed')
-        error.code = responsePayload.code
-        error.status = xhr.status
-        reject(error)
+        reject(createApiError(responsePayload, 'Upload failed', xhr.status))
       }
     }
 
@@ -387,9 +415,9 @@ export const uploadAdminAsset = (token, file, onProgress) => {
       }
 
       if (request.status >= 200 && request.status < 300) {
-        resolve(payload)
+        resolve(normalizeApiPayload(payload))
       } else {
-        reject(new Error(payload.error || 'Upload failed'))
+        reject(createApiError(payload, 'Upload failed', request.status))
       }
     }
 

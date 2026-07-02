@@ -1,5 +1,229 @@
 # mrright.blog 项目进度记录
 
+## 2026-07-02：API envelope 版本提交到 GitHub
+
+提交内容：
+
+- 提交 API envelope/contract 第一阶段代码、文档、测试配置和进度记录。
+- 同步当前分支 codex/check-project-and-fix-errors 到 GitHub。
+
+提交前验证：
+
+- npm run build：已通过
+- npm run lint：已通过
+- npm run test:api：已通过，5 passed
+- npx playwright test tests/e2e/production-smoke.spec.js：部署后已通过，6 passed，1 skipped
+- git diff --check：通过
+
+安全说明：
+
+- 本轮没有 force push。
+- 本轮没有 reset。
+- 本轮没有修改生产 env 文件内容。
+- 本轮没有输出或记录 ADMIN_TOKEN、DATABASE_URL、数据库密码、GitHub token 或 VPS 密码。
+
+## 2026-07-02：API envelope 版本部署到 VPS
+
+部署内容：
+
+- 将 API envelope/contract 第一阶段和前端兼容解析版本部署到 VPS。
+- release 包：.deploy-tools/mrright-portfolio-release.tar.gz
+- VPS 上传路径：/tmp/mrright-portfolio-release.tar.gz
+- VPS 备份路径：/opt/mrright-portfolio.backup-20260702-042140
+- 线上目录：/opt/mrright-portfolio
+- 服务名：mrright-portfolio
+- 服务状态：active
+
+部署前验证：
+
+- npm run build：通过
+- npm run lint：通过
+- npm run release:vps：通过
+
+部署安全检查：
+
+- ADMIN_TOKEN=[set]
+- DATABASE_URL=[set]
+- 未输出 env value、token、数据库密码。
+- 已备份 /opt/mrright-portfolio 到 /opt/mrright-portfolio.backup-20260702-042140。
+- 保留 /etc/mrright-portfolio.env、data、public/uploads、backup。
+- 未修改生产数据库密码。
+- 未删除数据库、表、上传文件或备份目录。
+
+部署后验证：
+
+- systemctl is-active mrright-portfolio：active
+- local /api/health：200
+- local admin_summary：200
+- https://mrright.blog/api/health：200，包含 data、pagination、error envelope 字段
+- remote admin_summary：200
+- https://mrright.blog/admin：200
+- https://mrright.blog/community：200
+- https://mrright.blog/login?mode=login：200
+- https://mrright.blog/account：200
+- npx playwright test tests/e2e/production-smoke.spec.js：通过，6 passed，1 skipped
+
+Skip 原因：
+
+- production smoke 可选登录测试：缺少 E2E_VISITOR_EMAIL 和 E2E_VISITOR_PASSWORD。
+
+回退说明：
+
+- 当前可回退备份目录：/opt/mrright-portfolio.backup-20260702-042140
+- 如需回退，应先备份当前 /opt/mrright-portfolio，再用该备份目录恢复线上目录并重启 mrright-portfolio。
+
+安全说明：
+
+- 本轮按用户要求部署 VPS。
+- 本轮没有 push GitHub。
+- 本轮没有修改生产 env 文件内容。
+- 本轮没有输出或记录 ADMIN_TOKEN、DATABASE_URL、数据库密码或任何 env value。
+
+## 2026-07-02：API envelope 自动化测试复跑
+
+测试内容：
+
+- 复跑 API envelope 相关自动化测试。
+- 复跑本地前端页面 smoke，验证前端 API helper 可消费 envelope 响应。
+- 直接校验本地 API 关键接口状态和 envelope 必填字段。
+
+验证结果：
+
+- npm run build：通过
+- npm run lint：通过
+- npm run test:api：通过，5 passed
+- 本地 API 服务：PORT=4194 npm run dev:server，启动成功
+- 本地 Web 服务：VITE_API_BASE=http://127.0.0.1:4194 npm run dev -- --host 127.0.0.1 --port 5174，启动成功
+- npx playwright test tests/e2e/production-smoke.spec.js --grep "renders"：通过，5 passed
+- 本地 API 只读状态与 envelope 字段检查：
+  - GET /api/health：200
+  - GET /api/profile：200
+  - GET /api/projects：200
+  - GET /api/projects/not-a-real-project：404
+  - GET /api/users/not-exist-test-handle：404
+
+安全说明：
+
+- 本轮没有部署 VPS。
+- 本轮没有 push GitHub。
+- 本轮没有修改业务代码，只更新自动化测试记录。
+- 本轮没有修改数据库结构。
+- 本轮没有修改认证系统。
+- 本轮没有输出或记录 ADMIN_TOKEN、DATABASE_URL、数据库密码或任何 env value。
+
+## 2026-07-02：API envelope 兼容层收尾与验证
+
+完成内容：
+
+- 补齐 Web 前端 API helper 的 envelope/legacy 双兼容解析：
+  - 成功响应优先展开 data，保留现有调用读取 profile、projects、project 等顶层字段的方式。
+  - 错误响应兼容 legacy 字符串 error 和新 envelope error.code/error.message。
+  - fetch 与 XMLHttpRequest 上传路径统一使用同一套错误解析，避免新错误对象显示为 [object Object]。
+- 修正文档与实现不一致：
+  - 非分页响应 pagination 统一记录为 {}。
+  - sendError 文档签名改为 sendError(response, code, message, status = 400)。
+- 修正项目列表异常错误码：
+  - API_ERROR_CODES 新增 SERVICE_UNAVAILABLE。
+  - /api/projects store 异常返回 SERVICE_UNAVAILABLE 和 503，不再误用 RESOURCE_FORBIDDEN。
+- 复查 API-first 文档：
+  - docs/API_CONTRACT.md
+  - docs/API_ERRORS.md
+  - docs/ARCHITECTURE.md
+
+验证结果：
+
+- npm run build：通过
+- npm run lint：通过
+- npm run test:api：通过，5 passed
+- git diff --check：通过
+- 本地前后端分端口 smoke：
+  - PORT=4194 npm run dev:server：启动成功
+  - VITE_API_BASE=http://127.0.0.1:4194 npm run dev -- --host 127.0.0.1 --port 5174：启动成功
+  - npx playwright test tests/e2e/production-smoke.spec.js 使用 E2E_BASE_URL=http://127.0.0.1:5174：页面渲染 5 passed，1 个 API status 子测试失败，原因是该子测试按同源请求 /api/*，本地 Vite 与 API 分端口运行时会请求到 Vite 端口，不代表 API envelope 失败。
+  - curl --noproxy '*' http://127.0.0.1:4194/api/health：返回 200 envelope。
+
+安全说明：
+
+- 本轮没有部署 VPS。
+- 本轮没有 push GitHub。
+- 本轮没有修改数据库结构。
+- 本轮没有修改认证系统。
+- 本轮没有修改 /admin 的 ADMIN_TOKEN 登录逻辑。
+- 本轮没有修改 visitor token 逻辑。
+- 本轮没有输出或记录 ADMIN_TOKEN、DATABASE_URL、数据库密码或任何 env value。
+
+## 2026-07-01：API contract 校验层与测试
+
+完成内容：
+
+- 新增 server/contracts/responseValidator.js：
+  - validateResponseShape()
+  - 校验 data、pagination、error 必填。
+  - 校验错误响应必须有 error.code 和 error.message。
+  - 校验 pagination 必须是对象。
+  - 校验 undefined 字段。
+  - 校验顶层 key 只允许 envelope、迁移期兼容 key 和声明的 legacy key。
+  - 校验 legacy 顶层字段必须同时存在于 data 中。
+- 在 server/responses.js 的 sendData、sendPage、sendError 中接入轻量 runtime contract 检查。
+  - 校验失败只 console.warn，不阻断请求。
+  - 成功响应包含 data、pagination、error:null。
+  - 错误响应包含 data:null、pagination、error.code、error.message。
+  - 继续保留迁移期 legacy 顶层字段，保证现有 Web 前端兼容。
+- 新增 docs/API_CONTRACT.md、docs/API_ERRORS.md、docs/ARCHITECTURE.md，记录 API-first 响应 envelope、错误码、资产模型和迁移阶段。
+- 新增 tests/api/contract.spec.js：
+  - 启动本地 API server。
+  - 验证 /api/health、/api/profile、/api/projects、/api/projects/:slug、/api/users/:handle。
+  - 验证 envelope 必填字段、错误码、legacy 兼容字段和顶层 key 白名单。
+- 新增 npm run test:api 脚本。
+
+安全说明：
+
+- 本轮没有修改业务逻辑。
+- 本轮没有修改数据库结构。
+- 本轮没有修改认证系统。
+- 本轮没有修改 /admin 权限逻辑。
+- 本轮没有修改前端 UI。
+- 本轮没有修改 Three.js 渲染逻辑。
+- 本轮没有新增 npm 依赖。
+- 本轮没有部署 VPS。
+- 本轮没有 push GitHub。
+
+## 2026-07-01：API-first response 层最小侵入第一阶段
+
+完成内容：
+
+- 新增 server/responses.js 统一响应工具层：
+  - sendData(response, data, httpStatus)
+  - sendPage(response, data, pagination, httpStatus)
+  - sendError(response, code, message, httpStatus)
+  - API_ERROR_CODES 常量包含 AUTH_REQUIRED、INVALID_TOKEN、PROFILE_ADMIN_DISABLED、RESOURCE_FORBIDDEN、PROJECT_NOT_FOUND、VALIDATION_ERROR、RATE_LIMITED、SERVICE_UNAVAILABLE。
+- 仅迁移低风险 API 到 response helper：
+  - GET /api/health
+  - GET /api/profile
+  - GET /api/projects
+  - GET /api/projects/:slug
+  - GET /api/users/:handle
+- 保持 legacy 顶层字段兼容：
+  - ok
+  - service
+  - profile
+  - skills
+  - projects
+  - project
+- 错误响应新增 envelope error.code/error.message，同时保留迁移期顶层 code/message。
+
+安全说明：
+
+- 本轮没有修改业务逻辑。
+- 本轮没有修改数据库结构。
+- 本轮没有修改认证系统。
+- 本轮没有修改 /admin 权限逻辑。
+- 本轮没有修改前端 UI。
+- 本轮没有修改 Three.js 渲染逻辑。
+- 本轮没有新增依赖。
+- 本轮没有部署 VPS。
+- 本轮没有 push GitHub。
+
 ## 2026-07-01：后台访客管理 E2E 覆盖部署到 VPS
 
 部署内容：

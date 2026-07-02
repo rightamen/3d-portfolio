@@ -12,6 +12,7 @@ import { sendVerificationEmail } from './emailDelivery.js'
 import { createInteractionsStore } from './interactionsStore.js'
 import { convertModelToGlb } from './modelConverter.js'
 import { createPostgresStores } from './postgresStores.js'
+import { API_ERROR_CODES, sendData, sendError } from './responses.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -382,7 +383,7 @@ const requireAuthStore = (_request, response, next) => {
 }
 
 app.get('/api/health', (_request, response) => {
-  response.json({ ok: true, service: 'mrright-portfolio' })
+  sendData(response, { ok: true, service: 'mrright-portfolio' })
 })
 
 app.get('/api/auth/me', async (request, response) => {
@@ -547,16 +548,16 @@ const requireAdmin = (request, response, next) => {
 }
 
 app.get('/api/profile', (_request, response) => {
-  response.json({ profile, skills })
+  sendData(response, { profile, skills })
 })
 
 app.get('/api/projects', (_request, response) => {
   projectStore
     .listProjects(staticProjects)
-    .then((projects) => response.json({ projects }))
+    .then((projects) => sendData(response, { projects }))
     .catch((error) => {
       console.error(error)
-      response.status(500).json({ error: 'Could not load projects.' })
+      sendError(response, API_ERROR_CODES.SERVICE_UNAVAILABLE, 'Could not load projects.', 503)
     })
 })
 
@@ -564,12 +565,10 @@ app.get('/api/projects/:slug', async (request, response) => {
   const project = await projectStore.getProject(staticProjects, request.params.slug)
 
   if (!project) {
-    return response.status(404).json({
-      error: 'Project not found.',
-    })
+    return sendError(response, API_ERROR_CODES.PROJECT_NOT_FOUND, 'Project not found.', 404)
   }
 
-  return response.json({ project })
+  return sendData(response, { project })
 })
 
 app.get('/api/projects/:slug/interactions', async (request, response) => {
@@ -855,26 +854,32 @@ app.post(
 )
 
 app.get('/api/users/:handle', async (request, response) => {
-  if (!authStore) return response.status(404).json({ error: 'User profile not found.' })
+  if (!authStore) {
+    return sendError(response, API_ERROR_CODES.RESOURCE_FORBIDDEN, 'User profile not found.', 404)
+  }
 
   const handle = normalizeHandle(request.params.handle)
   if (!handlePattern.test(handle)) {
-    return response.status(404).json({ error: 'User profile not found.' })
+    return sendError(response, API_ERROR_CODES.RESOURCE_FORBIDDEN, 'User profile not found.', 404)
   }
 
   const profile = await authStore.getUserByHandle(handle)
-  if (!profile) return response.status(404).json({ error: 'User profile not found.' })
+  if (!profile) {
+    return sendError(response, API_ERROR_CODES.RESOURCE_FORBIDDEN, 'User profile not found.', 404)
+  }
   if (profile.profileAdminDisabled) {
-    return response.status(403).json({
-      code: 'PROFILE_ADMIN_DISABLED',
-      error: 'This public profile is currently unavailable.',
-    })
+    return sendError(
+      response,
+      API_ERROR_CODES.PROFILE_ADMIN_DISABLED,
+      'This public profile is currently unavailable.',
+      403,
+    )
   }
   if (!profile.profilePublic) {
-    return response.json({ profile: { handle, profilePublic: false } })
+    return sendData(response, { profile: { handle, profilePublic: false } })
   }
 
-  return response.json({ profile: stripInternalPublicProfile(profile) })
+  return sendData(response, { profile: stripInternalPublicProfile(profile) })
 })
 
 app.get('/api/users/:handle/resources', async (request, response) => {
