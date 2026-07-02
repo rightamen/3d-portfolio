@@ -374,12 +374,23 @@ const getOptionalUser = async (request) => {
 
 const requireAuthStore = (_request, response, next) => {
   if (!authStore) {
-    return response.status(503).json({
-      error: 'Visitor accounts are not configured.',
-    })
+    return sendError(
+      response,
+      API_ERROR_CODES.SERVICE_UNAVAILABLE,
+      'Visitor accounts are not configured.',
+      503,
+    )
   }
 
   return next()
+}
+
+const requireUser = async (request, response, message) => {
+  const user = await getOptionalUser(request)
+  if (user) return user
+
+  sendError(response, API_ERROR_CODES.AUTH_REQUIRED, message, 401)
+  return null
 }
 
 app.get('/api/health', (_request, response) => {
@@ -388,7 +399,7 @@ app.get('/api/health', (_request, response) => {
 
 app.get('/api/auth/me', async (request, response) => {
   const user = await getOptionalUser(request)
-  response.json({ user })
+  sendData(response, { user })
 })
 
 app.post('/api/auth/register', requireAuthStore, async (request, response) => {
@@ -575,28 +586,26 @@ app.get('/api/projects/:slug/interactions', async (request, response) => {
   const project = await projectStore.getProject(staticProjects, request.params.slug)
 
   if (!project) {
-    return response.status(404).json({
-      error: 'Project not found.',
-    })
+    return sendError(response, API_ERROR_CODES.PROJECT_NOT_FOUND, 'Project not found.', 404)
   }
 
   const state = await interactionsStore.getProjectState(project.slug)
-  return response.json({
+  return sendData(response, {
     comments: state.comments,
     likeCount: state.likes.length,
   })
 })
 
 app.get('/api/community/uploads', async (_request, response) => {
-  if (!communityStore) return response.json({ uploads: [] })
+  if (!communityStore) return sendData(response, { uploads: [] })
 
-  response.json({ uploads: await communityStore.listApprovedUploads() })
+  sendData(response, { uploads: await communityStore.listApprovedUploads() })
 })
 
 app.get('/api/community/posts', async (_request, response) => {
-  if (!communityStore) return response.json({ posts: [] })
+  if (!communityStore) return sendData(response, { posts: [] })
 
-  response.json({ posts: await communityStore.listPosts() })
+  sendData(response, { posts: await communityStore.listPosts() })
 })
 
 app.post('/api/community/posts', requireAuthStore, async (request, response) => {
@@ -636,23 +645,38 @@ app.post('/api/community/posts', requireAuthStore, async (request, response) => 
 
 app.get('/api/community/posts/:id', async (request, response) => {
   if (!communityStore) {
-    return response.status(404).json({ error: 'Community post not found.' })
+    return sendError(
+      response,
+      API_ERROR_CODES.COMMUNITY_POST_NOT_FOUND,
+      'Community post not found.',
+      404,
+    )
   }
 
   const post = await communityStore.getPost(request.params.id)
   if (!post) {
-    return response.status(404).json({ error: 'Community post not found.' })
+    return sendError(
+      response,
+      API_ERROR_CODES.COMMUNITY_POST_NOT_FOUND,
+      'Community post not found.',
+      404,
+    )
   }
 
-  return response.json({ post })
+  return sendData(response, { post })
 })
 
 app.get('/api/community/posts/:id/comments', async (request, response) => {
-  if (!communityStore) return response.json({ comments: [] })
+  if (!communityStore) return sendData(response, { comments: [] })
 
   const post = await communityStore.getPost(request.params.id)
   if (!post) {
-    return response.status(404).json({ error: 'Community post not found.' })
+    return sendError(
+      response,
+      API_ERROR_CODES.COMMUNITY_POST_NOT_FOUND,
+      'Community post not found.',
+      404,
+    )
   }
 
   const sort = request.query?.sort === 'top' ? 'top' : 'newest'
@@ -662,7 +686,7 @@ app.get('/api/community/posts/:id/comments', async (request, response) => {
     viewerId: viewer?.id || null,
   })
 
-  return response.json({ comments })
+  return sendData(response, { comments })
 })
 
 app.post('/api/community/posts/:id/comments', requireAuthStore, async (request, response) => {
@@ -748,15 +772,11 @@ app.delete('/api/community/comments/:id', requireAuthStore, async (request, resp
 })
 
 app.get('/api/account/profile', requireAuthStore, async (request, response) => {
-  const user = await getOptionalUser(request)
-  if (!user) {
-    return response.status(401).json({
-      error: 'Please sign in to manage your profile.',
-    })
-  }
+  const user = await requireUser(request, response, 'Please sign in to manage your profile.')
+  if (!user) return
 
   const profile = await authStore.getAccountProfile(user.id)
-  return response.json({ profile })
+  return sendData(response, { profile })
 })
 
 app.put('/api/account/profile', requireAuthStore, async (request, response) => {
@@ -883,54 +903,81 @@ app.get('/api/users/:handle', async (request, response) => {
 })
 
 app.get('/api/users/:handle/resources', async (request, response) => {
-  if (!authStore || !communityStore) return response.json({ resources: [] })
+  if (!authStore || !communityStore) return sendData(response, { resources: [] })
 
   const handle = normalizeHandle(request.params.handle)
-  if (!handlePattern.test(handle)) return response.status(404).json({ error: 'User profile not found.' })
+  if (!handlePattern.test(handle)) {
+    return sendError(response, API_ERROR_CODES.RESOURCE_FORBIDDEN, 'User profile not found.', 404)
+  }
 
   const profile = await authStore.getUserByHandle(handle)
-  if (!profile) return response.status(404).json({ error: 'User profile not found.' })
-  if (profile.profileAdminDisabled) {
-    return response.status(403).json({ code: 'PROFILE_ADMIN_DISABLED', error: 'This public profile is currently unavailable.' })
+  if (!profile) {
+    return sendError(response, API_ERROR_CODES.RESOURCE_FORBIDDEN, 'User profile not found.', 404)
   }
-  if (!profile.profilePublic || !profile.activityPublic) return response.json({ resources: [] })
+  if (profile.profileAdminDisabled) {
+    return sendError(
+      response,
+      API_ERROR_CODES.PROFILE_ADMIN_DISABLED,
+      'This public profile is currently unavailable.',
+      403,
+    )
+  }
+  if (!profile.profilePublic || !profile.activityPublic) return sendData(response, { resources: [] })
 
   const resources = await communityStore.listPublicUserUploads(profile.internalId)
-  return response.json({ resources: resources.map(toPublicUploadPayload) })
+  return sendData(response, { resources: resources.map(toPublicUploadPayload) })
 })
 
 app.get('/api/users/:handle/posts', async (request, response) => {
-  if (!authStore || !communityStore) return response.json({ posts: [] })
+  if (!authStore || !communityStore) return sendData(response, { posts: [] })
 
   const handle = normalizeHandle(request.params.handle)
-  if (!handlePattern.test(handle)) return response.status(404).json({ error: 'User profile not found.' })
+  if (!handlePattern.test(handle)) {
+    return sendError(response, API_ERROR_CODES.RESOURCE_FORBIDDEN, 'User profile not found.', 404)
+  }
 
   const profile = await authStore.getUserByHandle(handle)
-  if (!profile) return response.status(404).json({ error: 'User profile not found.' })
-  if (profile.profileAdminDisabled) {
-    return response.status(403).json({ code: 'PROFILE_ADMIN_DISABLED', error: 'This public profile is currently unavailable.' })
+  if (!profile) {
+    return sendError(response, API_ERROR_CODES.RESOURCE_FORBIDDEN, 'User profile not found.', 404)
   }
-  if (!profile.profilePublic || !profile.activityPublic) return response.json({ posts: [] })
+  if (profile.profileAdminDisabled) {
+    return sendError(
+      response,
+      API_ERROR_CODES.PROFILE_ADMIN_DISABLED,
+      'This public profile is currently unavailable.',
+      403,
+    )
+  }
+  if (!profile.profilePublic || !profile.activityPublic) return sendData(response, { posts: [] })
 
   const posts = await communityStore.listPublicUserPosts(profile.internalId)
-  return response.json({ posts: posts.map(toPublicPostPayload) })
+  return sendData(response, { posts: posts.map(toPublicPostPayload) })
 })
 
 app.get('/api/users/:handle/activity', async (request, response) => {
   if (!authStore || !communityStore) {
-    return response.json({ comments: [], posts: [], resources: [] })
+    return sendData(response, { comments: [], posts: [], resources: [] })
   }
 
   const handle = normalizeHandle(request.params.handle)
-  if (!handlePattern.test(handle)) return response.status(404).json({ error: 'User profile not found.' })
+  if (!handlePattern.test(handle)) {
+    return sendError(response, API_ERROR_CODES.RESOURCE_FORBIDDEN, 'User profile not found.', 404)
+  }
 
   const profile = await authStore.getUserByHandle(handle)
-  if (!profile) return response.status(404).json({ error: 'User profile not found.' })
+  if (!profile) {
+    return sendError(response, API_ERROR_CODES.RESOURCE_FORBIDDEN, 'User profile not found.', 404)
+  }
   if (profile.profileAdminDisabled) {
-    return response.status(403).json({ code: 'PROFILE_ADMIN_DISABLED', error: 'This public profile is currently unavailable.' })
+    return sendError(
+      response,
+      API_ERROR_CODES.PROFILE_ADMIN_DISABLED,
+      'This public profile is currently unavailable.',
+      403,
+    )
   }
   if (!profile.profilePublic || !profile.activityPublic) {
-    return response.json({ comments: [], posts: [], resources: [] })
+    return sendData(response, { comments: [], posts: [], resources: [] })
   }
 
   const [comments, posts, resources] = await Promise.all([
@@ -939,7 +986,7 @@ app.get('/api/users/:handle/activity', async (request, response) => {
     communityStore.listPublicUserUploads(profile.internalId),
   ])
 
-  return response.json({
+  return sendData(response, {
     comments: comments.map(toPublicCommentPayload),
     posts: posts.map(toPublicPostPayload),
     resources: resources.map(toPublicUploadPayload),
@@ -948,52 +995,47 @@ app.get('/api/users/:handle/activity', async (request, response) => {
 
 app.get('/api/account/community', requireAuthStore, async (request, response) => {
   if (!communityStore) {
-    return response.status(503).json({
-      error: 'Community features are not configured.',
-    })
+    return sendError(
+      response,
+      API_ERROR_CODES.SERVICE_UNAVAILABLE,
+      'Community features are not configured.',
+      503,
+    )
   }
 
-  const user = await getOptionalUser(request)
-  if (!user) {
-    return response.status(401).json({
-      error: 'Please sign in to manage your community resources.',
-    })
-  }
+  const user = await requireUser(
+    request,
+    response,
+    'Please sign in to manage your community resources.',
+  )
+  if (!user) return
 
   const [uploads, posts] = await Promise.all([
     communityStore.listUserUploads(user.id),
     communityStore.listUserPosts(user.id),
   ])
 
-  return response.json({ posts, uploads })
+  return sendData(response, { posts, uploads })
 })
 
 app.get('/api/account/downloads', requireAuthStore, async (request, response) => {
-  const user = await getOptionalUser(request)
-  if (!user) {
-    return response.status(401).json({
-      error: 'Please sign in to view your download requests.',
-    })
-  }
+  const user = await requireUser(request, response, 'Please sign in to view your download requests.')
+  if (!user) return
 
   if (typeof downloadRequestsStore.listUserRequests !== 'function') {
-    return response.json({ requests: [] })
+    return sendData(response, { requests: [] })
   }
 
   const requests = await downloadRequestsStore.listUserRequests(user.id)
-  return response.json({ requests })
+  return sendData(response, { requests })
 })
 
 app.get('/api/account/comments', requireAuthStore, async (request, response) => {
-  const user = await getOptionalUser(request)
-  if (!user) {
-    return response.status(401).json({
-      error: 'Please sign in to view your comments.',
-    })
-  }
+  const user = await requireUser(request, response, 'Please sign in to view your comments.')
+  if (!user) return
 
   if (typeof interactionsStore.listUserComments !== 'function') {
-    return response.json({ comments: [], likeCount: 0 })
+    return sendData(response, { comments: [], likeCount: 0 })
   }
 
   const [comments, likeCount] = await Promise.all([
@@ -1003,7 +1045,7 @@ app.get('/api/account/comments', requireAuthStore, async (request, response) => 
       : Promise.resolve(0),
   ])
 
-  return response.json({ comments, likeCount })
+  return sendData(response, { comments, likeCount })
 })
 
 app.delete('/api/account/community/uploads/:id', requireAuthStore, async (request, response) => {
@@ -1212,7 +1254,7 @@ app.post('/api/projects/:slug/download-requests', async (request, response) => {
 })
 
 app.get('/api/experience', (_request, response) => {
-  response.json({ experience })
+  sendData(response, { experience })
 })
 
 app.post('/api/contact', async (request, response) => {

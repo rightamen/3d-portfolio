@@ -2,6 +2,7 @@ import { validateResponseShape } from './contracts/responseValidator.js'
 
 export const API_ERROR_CODES = Object.freeze({
   AUTH_REQUIRED: 'AUTH_REQUIRED',
+  COMMUNITY_POST_NOT_FOUND: 'COMMUNITY_POST_NOT_FOUND',
   INVALID_TOKEN: 'INVALID_TOKEN',
   PROFILE_ADMIN_DISABLED: 'PROFILE_ADMIN_DISABLED',
   PROJECT_NOT_FOUND: 'PROJECT_NOT_FOUND',

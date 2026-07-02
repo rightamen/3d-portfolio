@@ -99,6 +99,15 @@ test.describe('api contract envelope', () => {
     expect(payload.profile).toBeTruthy()
   })
 
+  test('GET /api/auth/me returns envelope with legacy compatibility', async () => {
+    const { payload, response } = await getJson('/api/auth/me')
+
+    expect(response.status).toBe(200)
+    expectContractShape(payload, { legacyKeys: ['user'] })
+    expect(payload.data.user).toBeNull()
+    expect(payload.user).toBeNull()
+  })
+
   test('GET /api/projects and /api/projects/:slug return envelopes', async () => {
     const list = await getJson('/api/projects')
 
@@ -115,6 +124,12 @@ test.describe('api contract envelope', () => {
     expectContractShape(detail.payload, { legacyKeys: ['project'] })
     expect(detail.payload.data.project.slug).toBe(slug)
     expect(detail.payload.project.slug).toBe(slug)
+
+    const interactions = await getJson(`/api/projects/${slug}/interactions`)
+    expect(interactions.response.status).toBe(200)
+    expectContractShape(interactions.payload, { legacyKeys: ['comments', 'likeCount'] })
+    expect(Array.isArray(interactions.payload.data.comments)).toBe(true)
+    expect(typeof interactions.payload.data.likeCount).toBe('number')
   })
 
   test('GET /api/projects/:slug not found returns coded envelope error', async () => {
@@ -123,6 +138,52 @@ test.describe('api contract envelope', () => {
     expect(response.status).toBe(404)
     expectContractShape(payload)
     expect(payload.error.code).toBe('PROJECT_NOT_FOUND')
+
+    const interactions = await getJson('/api/projects/not-a-real-project/interactions')
+    expect(interactions.response.status).toBe(404)
+    expectContractShape(interactions.payload)
+    expect(interactions.payload.error.code).toBe('PROJECT_NOT_FOUND')
+  })
+
+  test('GET /api/experience returns envelope with legacy compatibility', async () => {
+    const { payload, response } = await getJson('/api/experience')
+
+    expect(response.status).toBe(200)
+    expectContractShape(payload, { legacyKeys: ['experience'] })
+    expect(Array.isArray(payload.data.experience)).toBe(true)
+    expect(Array.isArray(payload.experience)).toBe(true)
+  })
+
+  test('GET /api/community public read endpoints return envelopes when local stores are absent', async () => {
+    const uploads = await getJson('/api/community/uploads')
+    expect(uploads.response.status).toBe(200)
+    expectContractShape(uploads.payload, { legacyKeys: ['uploads'] })
+    expect(uploads.payload.uploads).toEqual([])
+
+    const posts = await getJson('/api/community/posts')
+    expect(posts.response.status).toBe(200)
+    expectContractShape(posts.payload, { legacyKeys: ['posts'] })
+    expect(posts.payload.posts).toEqual([])
+
+    const post = await getJson('/api/community/posts/not-a-real-post')
+    expect(post.response.status).toBe(404)
+    expectContractShape(post.payload)
+    expect(post.payload.error.code).toBe('COMMUNITY_POST_NOT_FOUND')
+
+    const comments = await getJson('/api/community/posts/not-a-real-post/comments')
+    expect(comments.response.status).toBe(200)
+    expectContractShape(comments.payload, { legacyKeys: ['comments'] })
+    expect(comments.payload.comments).toEqual([])
+  })
+
+  test('GET /api/account read endpoints return coded envelopes when local auth store is absent', async () => {
+    for (const endpoint of ['profile', 'community', 'downloads', 'comments']) {
+      const { payload, response } = await getJson(`/api/account/${endpoint}`)
+
+      expect(response.status, endpoint).toBe(503)
+      expectContractShape(payload)
+      expect(payload.error.code, endpoint).toBe('SERVICE_UNAVAILABLE')
+    }
   })
 
   test('GET /api/users/:handle returns envelope for missing local profile', async () => {
@@ -131,5 +192,24 @@ test.describe('api contract envelope', () => {
     expect(response.status).toBe(404)
     expectContractShape(payload)
     expect(payload.error.code).toBe('RESOURCE_FORBIDDEN')
+  })
+
+  test('GET /api/users/:handle activity endpoints return envelopes when local stores are absent', async () => {
+    const resources = await getJson('/api/users/not-exist-test-handle/resources')
+    expect(resources.response.status).toBe(200)
+    expectContractShape(resources.payload, { legacyKeys: ['resources'] })
+    expect(resources.payload.resources).toEqual([])
+
+    const posts = await getJson('/api/users/not-exist-test-handle/posts')
+    expect(posts.response.status).toBe(200)
+    expectContractShape(posts.payload, { legacyKeys: ['posts'] })
+    expect(posts.payload.posts).toEqual([])
+
+    const activity = await getJson('/api/users/not-exist-test-handle/activity')
+    expect(activity.response.status).toBe(200)
+    expectContractShape(activity.payload, { legacyKeys: ['comments', 'posts', 'resources'] })
+    expect(activity.payload.comments).toEqual([])
+    expect(activity.payload.posts).toEqual([])
+    expect(activity.payload.resources).toEqual([])
   })
 })
