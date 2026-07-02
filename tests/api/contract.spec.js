@@ -315,4 +315,126 @@ test.describe('api contract envelope', () => {
     expectContractShape(invalid.payload)
     expect(invalid.payload.error.code).toBe('VALIDATION_ERROR')
   })
+
+  // --- Admin endpoint envelopes ---
+  //
+  // requireAdmin runs two checks in order: (1) the Authorization bearer token
+  // must equal ADMIN_TOKEN, else 401 ADMIN_AUTH_REQUIRED; (2) adminStore must
+  // exist, else 503 SERVICE_UNAVAILABLE. On the main test server ADMIN_TOKEN is
+  // unset / never matched, so both no-token and wrong-token requests deterministically
+  // hit check (1) and return the 401 envelope below. The valid-token path (which
+  // reaches check 2's 503, and — with a real store — the 200 success responses and
+  // their legacy top-level mirrors) is covered in the separate describe block that
+  // boots a server WITH an ADMIN_TOKEN. True 200 admin success + legacy-field
+  // assertions still require a DATABASE_URL-backed adminStore and must be covered
+  // in a DB-enabled environment.
+
+  const adminFetch = async (path, { method = 'GET', token } = {}) => {
+    const response = await fetch(`${baseURL}${path}`, {
+      method,
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+    const payload = await response.json()
+    return { payload, response }
+  }
+
+  test('admin GET without authorization returns coded 401 envelope', async () => {
+    const { payload, response } = await adminFetch('/api/admin/summary')
+
+    expect(response.status).toBe(401)
+    expectContractShape(payload)
+    expect(payload.error.code).toBe('ADMIN_AUTH_REQUIRED')
+  })
+
+  test('admin GET with wrong token returns coded 401 envelope', async () => {
+    const { payload, response } = await adminFetch('/api/admin/visitors', {
+      token: 'definitely-not-the-admin-token',
+    })
+
+    expect(response.status).toBe(401)
+    expectContractShape(payload)
+    expect(payload.error.code).toBe('ADMIN_AUTH_REQUIRED')
+  })
+
+  test('admin write without authorization returns coded 401 envelope', async () => {
+    const { payload, response } = await adminFetch('/api/admin/comments/any-id', {
+      method: 'DELETE',
+    })
+
+    expect(response.status).toBe(401)
+    expectContractShape(payload)
+    expect(payload.error.code).toBe('ADMIN_AUTH_REQUIRED')
+  })
+})
+
+// Boots a second server WITH a known ADMIN_TOKEN but with DATABASE_URL forced
+// empty, so a correctly-authenticated admin request passes requireAdmin's token
+// check and then hits the missing-store branch. This exercises the valid-token
+// path and asserts the SERVICE_UNAVAILABLE envelope. The 200 success responses
+// (and their legacy top-level mirrors) still require a real adminStore and are
+// deferred to a DATABASE_URL-backed environment.
+test.describe('admin contract envelope (authenticated, store unavailable)', () => {
+  const adminPort = 4194
+  const adminBaseURL = `http://127.0.0.1:${adminPort}`
+  const adminToken = 'contract-admin-token'
+  let adminServerProcess
+
+  test.beforeAll(async () => {
+    adminServerProcess = spawn(process.execPath, ['server/index.js'], {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        PORT: String(adminPort),
+        ADMIN_TOKEN: adminToken,
+        DATABASE_URL: '',
+      },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+
+    const deadline = Date.now() + 20_000
+    let lastError
+    while (Date.now() < deadline) {
+      try {
+        const response = await fetch(`${adminBaseURL}/api/health`)
+        if (response.ok) return
+      } catch (error) {
+        lastError = error
+      }
+      await new Promise((resolve) => setTimeout(resolve, 250))
+    }
+    throw lastError || new Error('Timed out waiting for admin API server.')
+  })
+
+  test.afterAll(async () => {
+    if (!adminServerProcess) return
+    adminServerProcess.kill('SIGTERM')
+    await new Promise((resolve) => adminServerProcess.once('exit', resolve))
+  })
+
+  const adminAuthedFetch = async (path, { method = 'GET' } = {}) => {
+    const response = await fetch(`${adminBaseURL}${path}`, {
+      method,
+      headers: { Authorization: `Bearer ${adminToken}` },
+    })
+    const payload = await response.json()
+    return { payload, response }
+  }
+
+  test('valid admin token but missing store returns coded 503 envelope (GET)', async () => {
+    const { payload, response } = await adminAuthedFetch('/api/admin/summary')
+
+    expect(response.status).toBe(503)
+    expectContractShape(payload)
+    expect(payload.error.code).toBe('SERVICE_UNAVAILABLE')
+  })
+
+  test('valid admin token but missing store returns coded 503 envelope (write)', async () => {
+    const { payload, response } = await adminAuthedFetch('/api/admin/projects/any-slug', {
+      method: 'DELETE',
+    })
+
+    expect(response.status).toBe(503)
+    expectContractShape(payload)
+    expect(payload.error.code).toBe('SERVICE_UNAVAILABLE')
+  })
 })

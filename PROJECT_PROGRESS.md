@@ -1,5 +1,52 @@
 # mrright.blog 项目进度记录
 
+## 2026-07-02：Admin 管理接口 API envelope 迁移
+
+完成内容：
+
+- requireAdmin 中间件迁移到 sendError：
+  - 缺 / 错 ADMIN_TOKEN → 401 ADMIN_AUTH_REQUIRED
+  - adminStore 缺失 → 503 SERVICE_UNAVAILABLE
+- 全部 /api/admin/* handler 的裸 response.json 迁移到 sendData/sendError，覆盖：
+  - 只读列表：summary、comments、likes、contact-messages、download-requests、projects、community-uploads/posts/comments
+  - 分页接口：visitors 列表、visitor 详情子分页（comments/posts/uploads/download-requests/actions）
+  - 写操作：visitor access-level / email-verification / profile-visibility / profile-moderation / 删除、community-upload 状态更新与删除、community-post/comment 删除、admin 素材上传、project 创建/更新/删除、download-request 状态更新与删除、comment / contact-message 删除
+- 分页接口改用 sendPage(response, data, pagination)：
+  - 原因：sendData 会把 envelope 的 pagination 强制为 {}，会覆盖真实分页；admin 前端（Admin.jsx）依赖顶层 payload.pagination 做翻页。sendPage 保留真实 pagination，同时保留顶层 visitors/items legacy 镜像。
+- 保留 admin 前端依赖的 legacy 顶层字段：visitors、visitor、recentActions、items、pagination、summary、file、conversion、project、upload、request、deleted、ok 等（api.js normalizeApiPayload 合并 data + 顶层，UI 读取不受影响）。
+- server/responses.js 新增错误码：ADMIN_AUTH_REQUIRED、COMMENT_NOT_FOUND、CONTACT_MESSAGE_NOT_FOUND、DOWNLOAD_REQUEST_NOT_FOUND、PROJECT_SLUG_TAKEN、VISITOR_NOT_FOUND。
+- 扩展 tests/api/contract.spec.js：新增 admin 用例，contract 覆盖从 15 增至 20 个用例。
+
+修改文件：
+
+- server/index.js
+- server/responses.js
+- tests/api/contract.spec.js
+- PROJECT_PROGRESS.md
+
+验证结果：
+
+- git diff --check：通过
+- npm run lint：通过
+- npm run build：通过
+- npm run test:api：通过，20 passed
+- admin contract 覆盖：
+  - 无 Authorization 访问 admin GET / 写操作：401 ADMIN_AUTH_REQUIRED
+  - 错误 token 访问 admin GET：401 ADMIN_AUTH_REQUIRED
+  - 有效 ADMIN_TOKEN 但 store 缺失（独立 server，DATABASE_URL 置空）：admin GET / 写操作 503 SERVICE_UNAVAILABLE
+
+待办事项：
+
+- admin 真正的 200 成功响应与 legacy 顶层字段镜像断言，需要配置了 DATABASE_URL 的 adminStore 环境补测（当前无 DB，成功路径不可达）。
+- server/index.js 末尾的 multer 全局错误中间件仍返回 `{ error: string }`；它被 community 上传与 admin 上传共享，不属于 /api/admin/* handler，按"仅 admin、不动 community 写"约束本批未迁移，留作后续统一错误处理批次。
+
+安全说明：
+
+- 本轮没有部署 VPS，无需备份。
+- 本轮没有 push GitHub。
+- 本轮没有修改数据库结构、登录判断、session 生成、visitor token 或 ADMIN_TOKEN 逻辑（仅将 ADMIN_TOKEN 判定失败的响应体改为 envelope，判定逻辑不变）。
+- 本轮没有输出或记录 ADMIN_TOKEN、DATABASE_URL、数据库密码、GitHub token 或 VPS 密码。
+
 ## 2026-07-02：换行符规范化 + Auth/写接口 API envelope 迁移
 
 完成内容：

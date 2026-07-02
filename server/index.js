@@ -12,7 +12,7 @@ import { sendVerificationEmail } from './emailDelivery.js'
 import { createInteractionsStore } from './interactionsStore.js'
 import { convertModelToGlb } from './modelConverter.js'
 import { createPostgresStores } from './postgresStores.js'
-import { API_ERROR_CODES, sendData, sendError } from './responses.js'
+import { API_ERROR_CODES, sendData, sendError, sendPage } from './responses.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -569,15 +569,21 @@ const requireAdmin = (request, response, next) => {
   const token = request.get('Authorization')?.replace(/^Bearer\s+/i, '')
 
   if (!process.env.ADMIN_TOKEN || token !== process.env.ADMIN_TOKEN) {
-    return response.status(401).json({
-      error: 'Admin authorization is required.',
-    })
+    return sendError(
+      response,
+      API_ERROR_CODES.ADMIN_AUTH_REQUIRED,
+      'Admin authorization is required.',
+      401,
+    )
   }
 
   if (!adminStore) {
-    return response.status(503).json({
-      error: 'Admin data store is not configured.',
-    })
+    return sendError(
+      response,
+      API_ERROR_CODES.SERVICE_UNAVAILABLE,
+      'Admin data store is not configured.',
+      503,
+    )
   }
 
   return next()
@@ -1380,27 +1386,27 @@ app.post('/api/contact', async (request, response) => {
 })
 
 app.get('/api/admin/summary', requireAdmin, async (_request, response) => {
-  response.json({ summary: await adminStore.getSummary() })
+  sendData(response, { summary: await adminStore.getSummary() })
 })
 
 app.get('/api/admin/comments', requireAdmin, async (_request, response) => {
-  response.json({ comments: await adminStore.listComments() })
+  sendData(response, { comments: await adminStore.listComments() })
 })
 
 app.get('/api/admin/likes', requireAdmin, async (_request, response) => {
-  response.json({ likes: await adminStore.listLikes() })
+  sendData(response, { likes: await adminStore.listLikes() })
 })
 
 app.get('/api/admin/contact-messages', requireAdmin, async (_request, response) => {
-  response.json({ messages: await adminStore.listContactMessages() })
+  sendData(response, { messages: await adminStore.listContactMessages() })
 })
 
 app.get('/api/admin/download-requests', requireAdmin, async (_request, response) => {
-  response.json({ requests: await adminStore.listDownloadRequests() })
+  sendData(response, { requests: await adminStore.listDownloadRequests() })
 })
 
 app.get('/api/admin/projects', requireAdmin, async (_request, response) => {
-  response.json({ projects: await adminStore.listProjects(staticProjects) })
+  sendData(response, { projects: await adminStore.listProjects(staticProjects) })
 })
 
 app.get('/api/admin/visitors', requireAdmin, async (request, response) => {
@@ -1431,26 +1437,30 @@ app.get('/api/admin/visitors', requireAdmin, async (request, response) => {
     verified,
   })
   const payload = toPaginatedPayload(result, page, limit)
-  response.json({ visitors: payload.items, pagination: payload.pagination })
+  sendPage(response, { visitors: payload.items }, payload.pagination)
 })
 
 app.get('/api/admin/visitors/:id', requireAdmin, async (request, response) => {
   const visitor = await adminStore.getVisitor(request.params.id)
-  if (!visitor) return response.status(404).json({ error: 'Visitor not found.' })
+  if (!visitor) {
+    return sendError(response, API_ERROR_CODES.VISITOR_NOT_FOUND, 'Visitor not found.', 404)
+  }
   const actions = await adminStore.listVisitorActions(request.params.id, 10, 0)
-  return response.json({ visitor, recentActions: actions.items })
+  return sendData(response, { visitor, recentActions: actions.items })
 })
 
 const sendVisitorContentPage = (method) => async (request, response) => {
   const visitor = await adminStore.getVisitor(request.params.id)
-  if (!visitor) return response.status(404).json({ error: 'Visitor not found.' })
+  if (!visitor) {
+    return sendError(response, API_ERROR_CODES.VISITOR_NOT_FOUND, 'Visitor not found.', 404)
+  }
   const { limit, offset, page } = normalizePagination(request.query, 20, 100)
   const payload = toPaginatedPayload(
     await adminStore[method](request.params.id, limit, offset),
     page,
     limit,
   )
-  return response.json({ items: payload.items, pagination: payload.pagination })
+  return sendPage(response, { items: payload.items }, payload.pagination)
 }
 
 app.get(
@@ -1481,7 +1491,7 @@ app.get(
 
 app.patch('/api/admin/visitors/:id/profile-visibility', requireAdmin, async (request, response) => {
   if (typeof request.body?.disabled !== 'boolean') {
-    return response.status(400).json({ error: 'disabled must be a boolean.' })
+    return sendError(response, API_ERROR_CODES.VALIDATION_ERROR, 'disabled must be a boolean.', 400)
   }
   const reason = String(request.body?.reason ?? '').trim().slice(0, 500)
   const visitor = await adminStore.setVisitorProfileVisibility(
@@ -1489,8 +1499,10 @@ app.patch('/api/admin/visitors/:id/profile-visibility', requireAdmin, async (req
     request.body.disabled,
     reason,
   )
-  if (!visitor) return response.status(404).json({ error: 'Visitor not found.' })
-  return response.json({ visitor })
+  if (!visitor) {
+    return sendError(response, API_ERROR_CODES.VISITOR_NOT_FOUND, 'Visitor not found.', 404)
+  }
+  return sendData(response, { visitor })
 })
 
 app.patch('/api/admin/visitors/:id/profile-moderation', requireAdmin, async (request, response) => {
@@ -1499,46 +1511,47 @@ app.patch('/api/admin/visitors/:id/profile-moderation', requireAdmin, async (req
     ? [...new Set(request.body.clear.map((value) => String(value).trim()))]
     : []
   if (!fields.length || fields.some((field) => !allowedFields.has(field))) {
-    return response.status(400).json({
-      error: 'clear must contain one or more allowed profile fields.',
-    })
+    return sendError(
+      response,
+      API_ERROR_CODES.VALIDATION_ERROR,
+      'clear must contain one or more allowed profile fields.',
+      400,
+    )
   }
   const reason = String(request.body?.reason ?? '').trim().slice(0, 500)
   const visitor = await adminStore.moderateVisitorProfile(request.params.id, fields, reason)
-  if (!visitor) return response.status(404).json({ error: 'Visitor not found.' })
-  return response.json({ visitor })
+  if (!visitor) {
+    return sendError(response, API_ERROR_CODES.VISITOR_NOT_FOUND, 'Visitor not found.', 404)
+  }
+  return sendData(response, { visitor })
 })
 
 app.get('/api/admin/community-uploads', requireAdmin, async (_request, response) => {
-  response.json({ uploads: await adminStore.listCommunityUploads() })
+  sendData(response, { uploads: await adminStore.listCommunityUploads() })
 })
 
 app.get('/api/admin/community-posts', requireAdmin, async (_request, response) => {
-  response.json({ posts: await adminStore.listCommunityPosts() })
+  sendData(response, { posts: await adminStore.listCommunityPosts() })
 })
 
 app.get('/api/admin/community-comments', requireAdmin, async (_request, response) => {
-  response.json({ comments: await adminStore.listCommunityComments() })
+  sendData(response, { comments: await adminStore.listCommunityComments() })
 })
 
 app.patch('/api/admin/visitors/:id', requireAdmin, async (request, response) => {
   const accessLevel = normalizeAccessLevel(request.body?.accessLevel, '')
 
   if (!accessLevel) {
-    return response.status(400).json({
-      error: 'Invalid visitor access level.',
-    })
+    return sendError(response, API_ERROR_CODES.VALIDATION_ERROR, 'Invalid visitor access level.', 400)
   }
 
   const visitor = await adminStore.updateVisitorAccessLevel(request.params.id, accessLevel)
 
   if (!visitor) {
-    return response.status(404).json({
-      error: 'Visitor not found.',
-    })
+    return sendError(response, API_ERROR_CODES.VISITOR_NOT_FOUND, 'Visitor not found.', 404)
   }
 
-  return response.json({ visitor })
+  return sendData(response, { visitor })
 })
 
 app.patch('/api/admin/visitors/:id/email-verification', requireAdmin, async (request, response) => {
@@ -1546,24 +1559,20 @@ app.patch('/api/admin/visitors/:id/email-verification', requireAdmin, async (req
   const visitor = await adminStore.setVisitorEmailVerified(request.params.id, verified)
 
   if (!visitor) {
-    return response.status(404).json({
-      error: 'Visitor not found.',
-    })
+    return sendError(response, API_ERROR_CODES.VISITOR_NOT_FOUND, 'Visitor not found.', 404)
   }
 
-  return response.json({ visitor })
+  return sendData(response, { visitor })
 })
 
 app.delete('/api/admin/visitors/:id', requireAdmin, async (request, response) => {
   const deleted = await adminStore.deleteVisitor(request.params.id)
 
   if (!deleted) {
-    return response.status(404).json({
-      error: 'Visitor not found.',
-    })
+    return sendError(response, API_ERROR_CODES.VISITOR_NOT_FOUND, 'Visitor not found.', 404)
   }
 
-  return response.json({ deleted })
+  return sendData(response, { deleted })
 })
 
 app.patch('/api/admin/community-uploads/:id', requireAdmin, async (request, response) => {
@@ -1571,27 +1580,26 @@ app.patch('/api/admin/community-uploads/:id', requireAdmin, async (request, resp
   const allowedStatuses = new Set(['pending', 'approved', 'rejected'])
 
   if (!allowedStatuses.has(status)) {
-    return response.status(400).json({
-      error: 'Invalid upload status.',
-    })
+    return sendError(response, API_ERROR_CODES.VALIDATION_ERROR, 'Invalid upload status.', 400)
   }
 
   const uploadRecord = await adminStore.updateCommunityUploadStatus(request.params.id, status)
 
   if (!uploadRecord) {
-    return response.status(404).json({
-      error: 'Community upload not found.',
-    })
+    return sendError(
+      response,
+      API_ERROR_CODES.COMMUNITY_UPLOAD_NOT_FOUND,
+      'Community upload not found.',
+      404,
+    )
   }
 
-  return response.json({ upload: uploadRecord })
+  return sendData(response, { upload: uploadRecord })
 })
 
 app.post('/api/admin/uploads', requireAdmin, upload.single('file'), async (request, response) => {
   if (!request.file) {
-    return response.status(400).json({
-      error: 'Upload file is required.',
-    })
+    return sendError(response, API_ERROR_CODES.VALIDATION_ERROR, 'Upload file is required.', 400)
   }
 
   const extension = path.extname(request.file.originalname).toLowerCase()
@@ -1600,9 +1608,12 @@ app.post('/api/admin/uploads', requireAdmin, upload.single('file'), async (reque
   if (type === 'image' && request.file.size > imageUploadLimit) {
     unlink(request.file.path).catch((error) => console.error(error))
 
-    return response.status(400).json({
-      error: 'Image uploads must be 16 MB or smaller.',
-    })
+    return sendError(
+      response,
+      API_ERROR_CODES.VALIDATION_ERROR,
+      'Image uploads must be 16 MB or smaller.',
+      400,
+    )
   }
 
   const folder = type === 'image' ? 'images' : 'models'
@@ -1629,15 +1640,19 @@ app.post('/api/admin/uploads', requireAdmin, upload.single('file'), async (reque
     }
   }
 
-  return response.status(201).json({
-    file: {
-      name: request.file.originalname,
-      size: request.file.size,
-      type,
-      url,
+  return sendData(
+    response,
+    {
+      file: {
+        name: request.file.originalname,
+        size: request.file.size,
+        type,
+        url,
+      },
+      conversion,
     },
-    conversion,
-  })
+    201,
+  )
 })
 
 const normalizeProjectPayload = (body) => {
@@ -1682,9 +1697,12 @@ app.post('/api/admin/projects', requireAdmin, async (request, response) => {
   const normalized = normalizeProjectPayload(request.body)
 
   if (!slugPattern.test(slug)) {
-    return response.status(400).json({
-      error: 'Slug must use lowercase letters, numbers, and hyphens.',
-    })
+    return sendError(
+      response,
+      API_ERROR_CODES.VALIDATION_ERROR,
+      'Slug must use lowercase letters, numbers, and hyphens.',
+      400,
+    )
   }
 
   const existingProject = await projectStore.getProject(staticProjects, slug, {
@@ -1692,15 +1710,16 @@ app.post('/api/admin/projects', requireAdmin, async (request, response) => {
   })
 
   if (existingProject) {
-    return response.status(409).json({
-      error: 'Project slug already exists.',
-    })
+    return sendError(response, API_ERROR_CODES.PROJECT_SLUG_TAKEN, 'Project slug already exists.', 409)
   }
 
   if (!normalized.title || !normalized.summary || !normalized.image || !normalized.year) {
-    return response.status(400).json({
-      error: 'Title, summary, image, and year are required.',
-    })
+    return sendError(
+      response,
+      API_ERROR_CODES.VALIDATION_ERROR,
+      'Title, summary, image, and year are required.',
+      400,
+    )
   }
 
   await adminStore.createProject({ slug, ...normalized })
@@ -1708,7 +1727,7 @@ app.post('/api/admin/projects', requireAdmin, async (request, response) => {
     includeHidden: true,
   })
 
-  return response.status(201).json({ project })
+  return sendData(response, { project }, 201)
 })
 
 app.patch('/api/admin/projects/:slug', requireAdmin, async (request, response) => {
@@ -1717,17 +1736,18 @@ app.patch('/api/admin/projects/:slug', requireAdmin, async (request, response) =
   })
 
   if (!existingProject) {
-    return response.status(404).json({
-      error: 'Project not found.',
-    })
+    return sendError(response, API_ERROR_CODES.PROJECT_NOT_FOUND, 'Project not found.', 404)
   }
 
   const normalized = normalizeProjectPayload(request.body)
 
   if (!normalized.title || !normalized.summary || !normalized.image || !normalized.year) {
-    return response.status(400).json({
-      error: 'Title, summary, image, and year are required.',
-    })
+    return sendError(
+      response,
+      API_ERROR_CODES.VALIDATION_ERROR,
+      'Title, summary, image, and year are required.',
+      400,
+    )
   }
 
   await adminStore.updateProject(request.params.slug, normalized)
@@ -1735,7 +1755,7 @@ app.patch('/api/admin/projects/:slug', requireAdmin, async (request, response) =
     includeHidden: true,
   })
 
-  return response.json({ project })
+  return sendData(response, { project })
 })
 
 app.delete('/api/admin/projects/:slug', requireAdmin, async (request, response) => {
@@ -1744,20 +1764,16 @@ app.delete('/api/admin/projects/:slug', requireAdmin, async (request, response) 
   })
 
   if (!existingProject) {
-    return response.status(404).json({
-      error: 'Project not found.',
-    })
+    return sendError(response, API_ERROR_CODES.PROJECT_NOT_FOUND, 'Project not found.', 404)
   }
 
   const deleted = await adminStore.deleteProject(request.params.slug)
 
   if (!deleted) {
-    return response.status(404).json({
-      error: 'Project not found.',
-    })
+    return sendError(response, API_ERROR_CODES.PROJECT_NOT_FOUND, 'Project not found.', 404)
   }
 
-  return response.json({ ok: true })
+  return sendData(response, { ok: true })
 })
 
 app.patch('/api/admin/download-requests/:id', requireAdmin, async (request, response) => {
@@ -1765,65 +1781,73 @@ app.patch('/api/admin/download-requests/:id', requireAdmin, async (request, resp
   const allowedStatuses = new Set(['pending', 'approved', 'rejected'])
 
   if (!allowedStatuses.has(status)) {
-    return response.status(400).json({
-      error: 'Invalid request status.',
-    })
+    return sendError(response, API_ERROR_CODES.VALIDATION_ERROR, 'Invalid request status.', 400)
   }
 
   const updated = await adminStore.updateDownloadRequestStatus(request.params.id, status)
 
   if (!updated) {
-    return response.status(404).json({
-      error: 'Download request not found.',
-    })
+    return sendError(
+      response,
+      API_ERROR_CODES.DOWNLOAD_REQUEST_NOT_FOUND,
+      'Download request not found.',
+      404,
+    )
   }
 
-  return response.json({ request: updated })
+  return sendData(response, { request: updated })
 })
 
 app.delete('/api/admin/comments/:id', requireAdmin, async (request, response) => {
   const deleted = await adminStore.deleteComment(request.params.id)
 
   if (!deleted) {
-    return response.status(404).json({
-      error: 'Comment not found.',
-    })
+    return sendError(response, API_ERROR_CODES.COMMENT_NOT_FOUND, 'Comment not found.', 404)
   }
 
-  return response.json({ ok: true })
+  return sendData(response, { ok: true })
 })
 
 app.delete('/api/admin/contact-messages/:id', requireAdmin, async (request, response) => {
   const deleted = await adminStore.deleteContactMessage(request.params.id)
 
   if (!deleted) {
-    return response.status(404).json({
-      error: 'Contact message not found.',
-    })
+    return sendError(
+      response,
+      API_ERROR_CODES.CONTACT_MESSAGE_NOT_FOUND,
+      'Contact message not found.',
+      404,
+    )
   }
 
-  return response.json({ ok: true })
+  return sendData(response, { ok: true })
 })
 
 app.delete('/api/admin/download-requests/:id', requireAdmin, async (request, response) => {
   const deleted = await adminStore.deleteDownloadRequest(request.params.id)
 
   if (!deleted) {
-    return response.status(404).json({
-      error: 'Download request not found.',
-    })
+    return sendError(
+      response,
+      API_ERROR_CODES.DOWNLOAD_REQUEST_NOT_FOUND,
+      'Download request not found.',
+      404,
+    )
   }
 
-  return response.json({ ok: true })
+  return sendData(response, { ok: true })
 })
 
 app.delete('/api/admin/community-uploads/:id', requireAdmin, async (request, response) => {
   const deleted = await adminStore.deleteCommunityUpload(request.params.id)
 
   if (!deleted) {
-    return response.status(404).json({
-      error: 'Community upload not found.',
-    })
+    return sendError(
+      response,
+      API_ERROR_CODES.COMMUNITY_UPLOAD_NOT_FOUND,
+      'Community upload not found.',
+      404,
+    )
   }
 
   if (deleted.file_url?.startsWith('/uploads/')) {
@@ -1833,31 +1857,37 @@ app.delete('/api/admin/community-uploads/:id', requireAdmin, async (request, res
     }
   }
 
-  return response.json({ ok: true })
+  return sendData(response, { ok: true })
 })
 
 app.delete('/api/admin/community-posts/:id', requireAdmin, async (request, response) => {
   const deleted = await adminStore.deleteCommunityPost(request.params.id)
 
   if (!deleted) {
-    return response.status(404).json({
-      error: 'Community post not found.',
-    })
+    return sendError(
+      response,
+      API_ERROR_CODES.COMMUNITY_POST_NOT_FOUND,
+      'Community post not found.',
+      404,
+    )
   }
 
-  return response.json({ ok: true })
+  return sendData(response, { ok: true })
 })
 
 app.delete('/api/admin/community-comments/:id', requireAdmin, async (request, response) => {
   const deleted = await adminStore.deleteCommunityComment(request.params.id)
 
   if (!deleted) {
-    return response.status(404).json({
-      error: 'Community comment not found.',
-    })
+    return sendError(
+      response,
+      API_ERROR_CODES.COMMUNITY_COMMENT_NOT_FOUND,
+      'Community comment not found.',
+      404,
+    )
   }
 
-  return response.json({ ok: true })
+  return sendData(response, { ok: true })
 })
 
 app.use((error, _request, response, next) => {
