@@ -1,5 +1,197 @@
 # mrright.blog 项目进度记录
 
+## 2026-07-02：换行符规范化 + Auth/写接口 API envelope 迁移
+
+完成内容：
+
+- 任务 A（换行符规范化，独立提交）：
+  - 新增 `.gitattributes`，统一 `*.js/.jsx/.ts/.tsx/.json/.md/.css` 为 `eol=lf`。
+  - 将 `server/index.js` 由 CRLF/LF 混用规范化为纯 LF（仅换行符，零逻辑改动，`git diff --ignore-space-at-eol` 无差异）。
+  - 目的：让后续 envelope 迁移 diff 可读。
+- 任务 B（auth 与写操作 envelope 迁移）：
+  - 认证接口迁移到 sendData/sendError：register、resend-verification、login、verify-email、logout。
+  - community 写操作迁移：create post、comment create、comment like、comment delete、post/upload delete、community upload。
+  - profile/account 写操作迁移：profile PUT、avatar upload、banner upload。
+  - 访客交互写接口迁移：project like、project comment、download-requests、contact。
+  - 错误体统一为 `{ error: { code, message } }`（含顶层 code/message 兼容），不再返回 `{ error: '字符串' }`。
+  - 成功响应保持 legacy 顶层字段兼容：user、session、verification、post、comment、profile、avatarUrl、bannerUrl、upload、request、access、ok。
+  - `server/responses.js` 新增错误码：COMMUNITY_COMMENT_NOT_FOUND、COMMUNITY_UPLOAD_NOT_FOUND、EMAIL_ALREADY_REGISTERED、EMAIL_ALREADY_VERIFIED、EMAIL_NOT_REGISTERED、EMAIL_NOT_VERIFIED、HANDLE_TAKEN。前端依赖的 EMAIL_NOT_VERIFIED、HANDLE_TAKEN 已保留。
+  - `/api/users/:handle*` 的 RESOURCE_FORBIDDEN + 404 补充防用户枚举说明注释（刻意对"不存在/非法 handle"统一返回，不泄露 handle 是否存在）。
+  - `withLegacyData` 附近补注释：data 顶层展开可能与 data/pagination/error/code/message 保留字段名碰撞，新接口需避免。
+  - 扩展 tests/api/contract.spec.js：新增 postJson helper 与写/认证接口用例，contract 覆盖从 10 增至 15 个用例。
+
+修改文件：
+
+- .gitattributes（新增）
+- server/index.js
+- server/responses.js
+- tests/api/contract.spec.js
+
+commit：
+
+- 2049d5d feat(api): migrate read endpoints to envelope（上一轮读接口迁移，本轮先独立提交）
+- 2d306e8 chore: normalize line endings
+- cd5c207 refactor(api): migrate auth and write responses to envelope
+
+验证结果：
+
+- npm run lint：通过
+- npm run build：通过
+- npm run test:api：通过，15 passed
+- 本地 store 缺失环境 API 状态抽查：
+  - POST /api/auth/register：503 SERVICE_UNAVAILABLE
+  - POST /api/community/posts：503 SERVICE_UNAVAILABLE
+  - POST /api/projects/:slug/comments：201（成功）/ 400 VALIDATION_ERROR / 404 PROJECT_NOT_FOUND
+  - POST /api/projects/:slug/like：400 VALIDATION_ERROR / 404 PROJECT_NOT_FOUND
+  - POST /api/contact：201（成功，ok:true）/ 400 VALIDATION_ERROR
+
+待办事项：
+
+- admin 管理接口块（约 40 个 handler，含 requireAdmin 中间件 401/503）仍为裸 response.json，尚未 envelope 化，作为下一批迁移。
+- store 缺失环境下 requireAuthStore 会先于 auth 校验返回 503，未登录 AUTH_REQUIRED(401) 路径需在配置了 DATABASE_URL 的环境中补测。
+
+安全说明：
+
+- 本轮没有部署 VPS，无需备份。
+- 本轮没有 push GitHub。
+- 本轮没有修改数据库结构、登录判断、session 生成、visitor token 或 ADMIN_TOKEN 逻辑。
+- 本轮没有输出或记录 ADMIN_TOKEN、DATABASE_URL、数据库密码、GitHub token 或 VPS 密码。
+
+## 2026-07-02：Auth 与 Account 只读 API envelope 迁移
+
+完成内容：
+
+- 继续推进 API-first response envelope 迁移，新增覆盖 auth/account 只读接口：
+  - GET /api/auth/me
+  - GET /api/account/profile
+  - GET /api/account/community
+  - GET /api/account/downloads
+  - GET /api/account/comments
+- 新增 requireUser() 小 helper，用于只读 account 接口统一返回 AUTH_REQUIRED envelope。
+- requireAuthStore() 的 visitor account store 缺失错误迁移为 SERVICE_UNAVAILABLE envelope。
+- account 只读接口成功响应继续保持 legacy 顶层字段兼容：
+  - user
+  - profile
+  - posts
+  - uploads
+  - requests
+  - comments
+  - likeCount
+- 扩展 tests/api/contract.spec.js，API contract 覆盖从 8 个用例增加到 10 个用例。
+
+验证结果：
+
+- npm run test:api：通过，10 passed
+- npm run build：通过
+- npm run lint：通过
+- 本地前后端分端口 smoke：
+  - PORT=4194 npm run dev:server：启动成功
+  - VITE_API_BASE=http://127.0.0.1:4194 npm run dev -- --host 127.0.0.1 --port 5174：启动成功
+  - npx playwright test tests/e2e/production-smoke.spec.js --grep "renders"：通过，5 passed
+- 本地 API 只读状态与 envelope 字段检查：
+  - GET /api/auth/me：200
+  - GET /api/account/profile：503
+  - GET /api/account/community：503
+  - GET /api/account/downloads：503
+  - GET /api/account/comments：503
+
+安全说明：
+
+- 本轮没有部署 VPS。
+- 本轮没有 push GitHub。
+- 本轮没有修改数据库结构。
+- 本轮没有修改登录判断、session 生成、visitor token 或 ADMIN_TOKEN 逻辑。
+- 本轮没有输出或记录 ADMIN_TOKEN、DATABASE_URL、数据库密码、GitHub token 或 VPS 密码。
+
+## 2026-07-02：Community 公开只读 API envelope 迁移
+
+完成内容：
+
+- 继续推进 API-first response envelope 迁移，新增覆盖 community 公开只读接口：
+  - GET /api/community/uploads
+  - GET /api/community/posts
+  - GET /api/community/posts/:id
+  - GET /api/community/posts/:id/comments
+- 保持 legacy 顶层字段兼容：
+  - uploads
+  - posts
+  - post
+  - comments
+- API_ERROR_CODES 新增 COMMUNITY_POST_NOT_FOUND。
+- 将 community post 详情的不存在错误迁移为 COMMUNITY_POST_NOT_FOUND envelope。
+- 扩展 tests/api/contract.spec.js，API contract 覆盖从 7 个用例增加到 8 个用例。
+
+验证结果：
+
+- npm run test:api：通过，8 passed
+- npm run build：通过
+- npm run lint：通过
+- 本地前后端分端口 smoke：
+  - PORT=4194 npm run dev:server：启动成功
+  - VITE_API_BASE=http://127.0.0.1:4194 npm run dev -- --host 127.0.0.1 --port 5174：启动成功
+  - npx playwright test tests/e2e/production-smoke.spec.js --grep "renders"：通过，5 passed
+- 本地 API 只读状态与 envelope 字段检查：
+  - GET /api/community/uploads：200
+  - GET /api/community/posts：200
+  - GET /api/community/posts/not-a-real-post：404
+  - GET /api/community/posts/not-a-real-post/comments：200
+
+安全说明：
+
+- 本轮没有部署 VPS。
+- 本轮没有 push GitHub。
+- 本轮没有修改数据库结构。
+- 本轮没有修改认证系统。
+- 本轮没有修改 /admin 的 ADMIN_TOKEN 登录逻辑。
+- 本轮没有修改 visitor token 逻辑。
+- 本轮没有输出或记录 ADMIN_TOKEN、DATABASE_URL、数据库密码、GitHub token 或 VPS 密码。
+
+## 2026-07-02：公开只读 API envelope 第二批迁移
+
+完成内容：
+
+- 继续推进 API-first response envelope 迁移，新增覆盖低风险公开只读接口：
+  - GET /api/experience
+  - GET /api/projects/:slug/interactions
+  - GET /api/users/:handle/resources
+  - GET /api/users/:handle/posts
+  - GET /api/users/:handle/activity
+- 保持 legacy 顶层字段兼容：
+  - experience
+  - comments
+  - likeCount
+  - resources
+  - posts
+- 将 /api/projects/:slug/interactions 的项目不存在错误迁移为 PROJECT_NOT_FOUND envelope。
+- 将公开用户 activity 子接口的公开主页禁用错误迁移为 PROFILE_ADMIN_DISABLED envelope。
+- 扩展 tests/api/contract.spec.js，API contract 覆盖从 5 个用例增加到 7 个用例。
+
+验证结果：
+
+- npm run test:api：通过，7 passed
+- npm run build：通过
+- npm run lint：通过
+- 本地前后端分端口 smoke：
+  - PORT=4194 npm run dev:server：启动成功
+  - VITE_API_BASE=http://127.0.0.1:4194 npm run dev -- --host 127.0.0.1 --port 5174：启动成功
+  - npx playwright test tests/e2e/production-smoke.spec.js --grep "renders"：通过，5 passed
+- 本地 API 只读状态与 envelope 字段检查：
+  - GET /api/experience：200
+  - GET /api/projects/not-a-real-project/interactions：404
+  - GET /api/users/not-exist-test-handle/resources：200
+  - GET /api/users/not-exist-test-handle/posts：200
+  - GET /api/users/not-exist-test-handle/activity：200
+
+安全说明：
+
+- 本轮没有部署 VPS。
+- 本轮没有 push GitHub。
+- 本轮没有修改数据库结构。
+- 本轮没有修改认证系统。
+- 本轮没有修改 /admin 的 ADMIN_TOKEN 登录逻辑。
+- 本轮没有修改 visitor token 逻辑。
+- 本轮没有输出或记录 ADMIN_TOKEN、DATABASE_URL、数据库密码、GitHub token 或 VPS 密码。
+
 ## 2026-07-02：API envelope 版本提交到 GitHub
 
 提交内容：
