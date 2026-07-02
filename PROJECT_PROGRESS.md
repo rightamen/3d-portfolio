@@ -1,5 +1,91 @@
 # mrright.blog 项目进度记录
 
+## 2026-07-02：统一错误处理收尾 — 全局 multer 上传错误 envelope 化
+
+完成内容：
+
+- 将 server/index.js 末尾共享的 multer / 全局上传错误中间件从裸响应
+  `{ error: "字符串" }` 迁移到统一 envelope（sendError）。这是全项目最后一个
+  `{ error: string }` 裸响应点，迁移后 server/index.js 已无裸 JSON 错误。
+- 中间件不再直接返回 `response.status(400).json({ error })`，改为调用
+  `describeUploadError(error)` 分类后走 `sendError(response, CODE, message, httpStatus)`。
+- 按错误类型选用/新增语义准确的错误码（server/responses.js API_ERROR_CODES 新增）：
+  - MulterError `LIMIT_FILE_SIZE` → FILE_TOO_LARGE，HTTP 413
+  - 其它 MulterError（如 LIMIT_UNEXPECTED_FILE）→ FILE_UPLOAD_ERROR，HTTP 400
+  - fileFilter 抛出的 `Unsupported file type.` → INVALID_FILE_TYPE，HTTP 400
+  - 未匹配的错误仍 `next(error)`，行为不变（不吞其它错误）。
+- 新增纯函数 `describeUploadError(error)`（server/responses.js），不 import multer，
+  用 `error.name === 'MulterError'` + `error.code` 判定，便于无 DB / 无 multer 单测。
+- 错误体统一为 `{ data: null, pagination: {}, error: { code, message } }`
+  （含顶层 code/message 兼容镜像，与既有 sendError 一致）。
+- 该中间件同时服务 community 上传、admin 上传、profile avatar/banner 上传，四处上传
+  路由（/api/community/uploads、/api/admin/uploads、/api/account/avatar、
+  /api/account/banner）共享同一处理，本次迁移对四处一致生效。
+
+前端错误消费核查（未改前端）：
+
+- src/lib/api.js 的 `createApiError` 已同时兼容 envelope（`payload.error.message`）
+  与 legacy 字符串（`typeof payload.error === 'string'`），并回退 `payload.message`
+  / fallbackMessage；上传 helper（uploadCommunityResource、uploadAccountImage、
+  uploadAdminAsset）与 `request` 均通过 `createApiError` 构造 `error.message`。
+- Admin.jsx / community 上传 / profile avatar-banner 上传均消费 `error.message`，
+  不直接把 `payload.error` 当字符串展示。
+- 结论：前端已通过 createApiError 兼容 error.message，无需改动，未做 UI 重构。
+
+测试：
+
+- tests/api/contract.spec.js：
+  - 新增可达上传错误路径 contract 断言：multipart POST `/api/community/uploads`
+    （无 DB，requireAuthStore 在 multer 前短路）→ 503 SERVICE_UNAVAILABLE，断言
+    envelope（data===null、pagination 为对象、error.code/message 存在、
+    `typeof payload.error !== 'string'`）。
+  - 新增 `describeUploadError` 映射单测（直接测真实分类器，无需 DB/multipart）：
+    FILE_TOO_LARGE/413、FILE_UPLOAD_ERROR/400、INVALID_FILE_TYPE/400、
+    以及 null / 无关错误返回 null。
+  - contract 覆盖从 20 增至 25 个用例。
+- 说明：四个上传路由都在 multer 之前有 requireAuthStore/requireAdmin 门禁，无 DB
+  环境下会先返回 503，真实 multer 上传错误（FILE_TOO_LARGE 等）通过路由不可达；
+  故用纯函数单测覆盖真实映射逻辑，并保留可达路径（503）的 contract 断言。
+  → 待办：配置 DATABASE_URL 的环境中补一条真实 multipart 触发 multer 错误的端到端断言。
+
+修改文件：
+
+- server/index.js（中间件迁移 + import describeUploadError）
+- server/responses.js（新增 FILE_TOO_LARGE / FILE_UPLOAD_ERROR / INVALID_FILE_TYPE
+  错误码 + describeUploadError 分类器）
+- tests/api/contract.spec.js
+- PROJECT_PROGRESS.md
+
+验证结果：
+
+- git diff --check：通过
+- npm run lint：通过
+- npm run build：通过
+- npm run test:api：通过，25 passed
+- 全局复查：`grep -n "json({ *error:"`、`res\.json`、`response\.json` 于
+  server/index.js 均无裸 JSON 错误命中（错误响应统一经 sendData/sendError/sendPage）。
+
+commit：
+
+- refactor(api): envelope global upload errors
+
+待办事项：
+
+- 配置 DATABASE_URL 的 adminStore/authStore 环境中：
+  - 补 admin 真正 200 成功响应与 legacy 顶层字段镜像断言（上一批遗留）。
+  - 补真实 multipart 触发 multer 上传错误（FILE_TOO_LARGE / INVALID_FILE_TYPE）的
+    端到端 contract 断言（当前受门禁 + 无 DB 限制不可达）。
+  - store 缺失环境下 AUTH_REQUIRED(401) 路径补测（上一批遗留）。
+
+安全说明：
+
+- 本轮未部署 VPS，无需备份。
+- 本轮未 push GitHub。
+- 本轮未修改数据库结构、登录判断、session 生成、visitor token、ADMIN_TOKEN 或
+  任何权限判定逻辑（仅将上传错误响应体改为 envelope，中间件匹配范围与放行行为不变，
+  MulterError LIMIT_FILE_SIZE 由 400 细化为 413 更贴合语义，非 2xx 前端行为不受影响）。
+- 本轮未输出或记录 ADMIN_TOKEN、DATABASE_URL、数据库密码、GitHub token 或 VPS 密码。
+
 ## 2026-07-02：Admin 管理接口 API envelope 迁移
 
 完成内容：

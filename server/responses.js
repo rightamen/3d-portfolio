@@ -13,7 +13,10 @@ export const API_ERROR_CODES = Object.freeze({
   EMAIL_ALREADY_VERIFIED: 'EMAIL_ALREADY_VERIFIED',
   EMAIL_NOT_REGISTERED: 'EMAIL_NOT_REGISTERED',
   EMAIL_NOT_VERIFIED: 'EMAIL_NOT_VERIFIED',
+  FILE_TOO_LARGE: 'FILE_TOO_LARGE',
+  FILE_UPLOAD_ERROR: 'FILE_UPLOAD_ERROR',
   HANDLE_TAKEN: 'HANDLE_TAKEN',
+  INVALID_FILE_TYPE: 'INVALID_FILE_TYPE',
   INVALID_TOKEN: 'INVALID_TOKEN',
   PROFILE_ADMIN_DISABLED: 'PROFILE_ADMIN_DISABLED',
   PROJECT_NOT_FOUND: 'PROJECT_NOT_FOUND',
@@ -85,4 +88,40 @@ export const sendError = (response, code, message, httpStatus = 400) => {
 
   warnContractIssues(response, payload)
   return response.status(httpStatus).json(payload)
+}
+
+// Classifies an error surfaced by the shared multer upload middleware into an
+// envelope error descriptor, or returns null when the error is not an upload
+// error (so callers fall through to the next error handler). Kept multer-free
+// so it can be unit-tested without spinning up a server: multer raises
+// instances whose `name` is 'MulterError' (limits, unexpected fields), while
+// fileFilter rejections arrive as plain Errors with a known message.
+export const describeUploadError = (error) => {
+  if (!error) return null
+
+  if (error.name === 'MulterError') {
+    if (error.code === 'LIMIT_FILE_SIZE') {
+      return {
+        code: API_ERROR_CODES.FILE_TOO_LARGE,
+        message: error.message,
+        httpStatus: 413,
+      }
+    }
+
+    return {
+      code: API_ERROR_CODES.FILE_UPLOAD_ERROR,
+      message: error.message,
+      httpStatus: 400,
+    }
+  }
+
+  if (error.message === 'Unsupported file type.') {
+    return {
+      code: API_ERROR_CODES.INVALID_FILE_TYPE,
+      message: error.message,
+      httpStatus: 400,
+    }
+  }
+
+  return null
 }

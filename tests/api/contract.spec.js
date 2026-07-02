@@ -1,6 +1,8 @@
 import { expect, test } from '@playwright/test'
 import { spawn } from 'node:child_process'
 
+import { describeUploadError } from '../../server/responses.js'
+
 const port = 4193
 const baseURL = `http://127.0.0.1:${port}`
 
@@ -365,6 +367,25 @@ test.describe('api contract envelope', () => {
     expectContractShape(payload)
     expect(payload.error.code).toBe('ADMIN_AUTH_REQUIRED')
   })
+
+  test('multipart POST to an upload route returns a coded envelope, never a bare string error', async () => {
+    const form = new FormData()
+    form.append('file', new Blob(['stub-bytes'], { type: 'text/plain' }), 'stub.txt')
+
+    const response = await fetch(`${baseURL}/api/community/uploads`, {
+      method: 'POST',
+      body: form,
+    })
+    const payload = await response.json()
+
+    // Reachable upload error path in this store-less env: requireAuthStore
+    // short-circuits before multer runs. The response must still be an
+    // envelope, never the legacy `{ error: '<string>' }`.
+    expect(response.status).toBe(503)
+    expectContractShape(payload)
+    expect(payload.error.code).toBe('SERVICE_UNAVAILABLE')
+    expect(typeof payload.error).not.toBe('string')
+  })
 })
 
 // Boots a second server WITH a known ADMIN_TOKEN but with DATABASE_URL forced
@@ -436,5 +457,47 @@ test.describe('admin contract envelope (authenticated, store unavailable)', () =
     expect(response.status).toBe(503)
     expectContractShape(payload)
     expect(payload.error.code).toBe('SERVICE_UNAVAILABLE')
+  })
+})
+
+// Directly exercises the shared multer/global upload error mapping used by the
+// end-of-app error middleware. The live upload routes gate on the auth/admin
+// stores before multer runs, so the FILE_* branches are unreachable without a
+// configured DATABASE_URL; this covers the real classifier without a DB.
+test.describe('describeUploadError mapping (shared upload error handler)', () => {
+  const makeMulterError = (code, message) => {
+    const error = new Error(message)
+    error.name = 'MulterError'
+    error.code = code
+    return error
+  }
+
+  test('LIMIT_FILE_SIZE maps to FILE_TOO_LARGE with HTTP 413', () => {
+    expect(describeUploadError(makeMulterError('LIMIT_FILE_SIZE', 'File too large'))).toEqual({
+      code: 'FILE_TOO_LARGE',
+      message: 'File too large',
+      httpStatus: 413,
+    })
+  })
+
+  test('other multer errors map to FILE_UPLOAD_ERROR with HTTP 400', () => {
+    expect(describeUploadError(makeMulterError('LIMIT_UNEXPECTED_FILE', 'Unexpected field'))).toEqual({
+      code: 'FILE_UPLOAD_ERROR',
+      message: 'Unexpected field',
+      httpStatus: 400,
+    })
+  })
+
+  test('unsupported file type maps to INVALID_FILE_TYPE with HTTP 400', () => {
+    expect(describeUploadError(new Error('Unsupported file type.'))).toEqual({
+      code: 'INVALID_FILE_TYPE',
+      message: 'Unsupported file type.',
+      httpStatus: 400,
+    })
+  })
+
+  test('unrelated errors are not classified as upload errors', () => {
+    expect(describeUploadError(null)).toBeNull()
+    expect(describeUploadError(new Error('Something unrelated blew up'))).toBeNull()
   })
 })

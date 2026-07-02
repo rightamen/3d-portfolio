@@ -12,7 +12,7 @@ import { sendVerificationEmail } from './emailDelivery.js'
 import { createInteractionsStore } from './interactionsStore.js'
 import { convertModelToGlb } from './modelConverter.js'
 import { createPostgresStores } from './postgresStores.js'
-import { API_ERROR_CODES, sendData, sendError, sendPage } from './responses.js'
+import { API_ERROR_CODES, describeUploadError, sendData, sendError, sendPage } from './responses.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -1893,10 +1893,9 @@ app.delete('/api/admin/community-comments/:id', requireAdmin, async (request, re
 app.use((error, _request, response, next) => {
   if (!error) return next()
 
-  if (error instanceof multer.MulterError || error.message === 'Unsupported file type.') {
-    return response.status(400).json({
-      error: error.message,
-    })
+  const uploadError = describeUploadError(error)
+  if (uploadError) {
+    return sendError(response, uploadError.code, uploadError.message, uploadError.httpStatus)
   }
 
   return next(error)
