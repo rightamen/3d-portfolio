@@ -1901,6 +1901,11 @@ app.use((error, _request, response, next) => {
   return next(error)
 })
 
+// Non-API responses below intentionally bypass the JSON envelope
+// (sendData/sendPage/sendError): they serve the built single-page client, not
+// the API contract. Static assets are streamed as-is, and any non-API GET
+// falls back to the SPA's index.html so client-side routing can take over.
+// API routes are all registered above; the envelope contract applies to them.
 app.use(express.static(distDir, { setHeaders: setStaticCacheHeaders }))
 
 app.get(/.*/, (_request, response) => {

@@ -1,5 +1,93 @@
 # mrright.blog 项目进度记录
 
+## 2026-07-02：API envelope 最终审计（v1 freeze 准备）
+
+结论：后端 API response envelope 化已完整闭环。本轮为审计 + 必要注释，无业务逻辑改动。
+
+一、后端裸响应复查（server/index.js、server/responses.js、server/contracts）：
+
+- `grep response.json / res.json / json({ / sendStatus / status(...).end / status(...).json`：
+  - 全部业务响应均经 sendData / sendPage / sendError（内部统一 `response.status(x).json()`）。
+  - 唯一 `json({` 命中为 `express.json({ limit: '96kb' })` body parser 配置，非响应。
+  - 无 `sendStatus`；唯一 `.end(` 为 postgresStores.js 的 `pool.end()`（DB 连接池，非 Express response）。
+- 非 API / 静态响应（保留，已加注释说明原因）：
+  - `express.static(distDir, ...)` 与 SPA fallback `response.sendFile(distIndexPath)`：
+    服务已构建的前端单页，不属于 API 契约，刻意不走 JSON envelope。本轮补注释说明。
+  - 缓存头 setNoStoreHeaders / setStaticCacheHeaders：仅设 header，非响应体。
+- `/api/health`：已用 sendData 输出 envelope（含 legacy ok/service 顶层镜像）。
+
+二、错误码完整性复查（server/responses.js API_ERROR_CODES）：
+
+- index.js 中所有 `sendError` 使用的 code 均存在于 API_ERROR_CODES（20 个在用）。
+- 定义但当前未在 index.js 直接引用：FILE_TOO_LARGE / FILE_UPLOAD_ERROR / INVALID_FILE_TYPE
+  （由 responses.js describeUploadError 使用）、INVALID_TOKEN / RATE_LIMITED（预留词表，
+  保留不动，删除属 unrelated cleanup）。
+- HTTP status ↔ code 语义核对：
+  - 401：ADMIN_AUTH_REQUIRED、AUTH_REQUIRED
+  - 403：RESOURCE_FORBIDDEN（部分）、PROFILE_ADMIN_DISABLED
+  - 404：各 *_NOT_FOUND；`/api/users/:handle*` 刻意用 RESOURCE_FORBIDDEN + 404 防用户枚举
+    （已有注释 server/index.js:954-958）
+  - 409：HANDLE_TAKEN、PROJECT_SLUG_TAKEN
+  - 413：FILE_TOO_LARGE（describeUploadError）
+  - 400：VALIDATION_ERROR、FILE_UPLOAD_ERROR、INVALID_FILE_TYPE
+  - 503：SERVICE_UNAVAILABLE
+  - 均匹配，无语义不准的错误码复用。
+  - 500：当前无显式 sendError(...,500)；未捕获异常经全局 error 中间件 `next(error)`
+    落到 Express 默认处理（HTML 500）。见待办（freeze 前可加 INTERNAL_ERROR envelope 兜底）。
+
+三、contract 测试复查（tests/api/contract.spec.js，25 用例）：
+
+- 覆盖确认：GET 成功 envelope、GET 错误 envelope（404）、auth 错误 envelope（503）、
+  visitor/community/contact 写接口 envelope（201/400/404/503）、admin 未授权 envelope（401）、
+  admin 有 token 但 store 缺失（503）、upload/global error envelope（multipart 503 +
+  describeUploadError 单测）、legacy 顶层字段镜像（payload.X === payload.data.X）、
+  每个 payload 的 pagination 均断言为对象。
+- 未新增测试：无低成本可达遗漏；剩余均为 DB 门禁路径（见待办）。
+
+四、前端兼容性复查（src/lib/api.js、src/Admin.jsx）：
+
+- `createApiError` 优先读 envelope `payload.error.message`，回退 legacy 字符串 →
+  `payload.message` → fallback；上传错误 payload.error 由字符串变对象不影响。
+- `normalizeApiPayload` 合并 data 顶层键 → legacy 顶层字段兼容。
+- Admin.jsx 分页读顶层 `payload.pagination` / 子分页 pagination，sendPage 已保留，正常。
+- 结论：前端无需改动。
+
+修改文件：
+
+- server/index.js（仅新增静态 / SPA fallback 注释，说明其刻意保留非 envelope；零逻辑改动）
+- PROJECT_PROGRESS.md
+
+验证结果：
+
+- git diff --check：通过
+- npm run lint：通过
+- npm run build：通过
+- npm run test:api：通过，25 passed
+
+commit：
+
+- chore(api): audit envelope migration
+
+待办事项（API v1 freeze 前）：
+
+- DB-backed admin 200 contract tests：配置 DATABASE_URL 后补 admin 成功响应（200）与
+  真实 pagination（sendPage）+ legacy 顶层字段镜像断言。
+- DB-backed real upload multer error E2E：配置 DB + 通过 auth 门禁后，补真实 multipart
+  触发 multer 错误（FILE_TOO_LARGE / INVALID_FILE_TYPE / FILE_UPLOAD_ERROR）端到端断言。
+- 未捕获异常兜底：评估在全局 error 中间件为非 upload 错误加 INTERNAL_ERROR(500) envelope，
+  替代当前落到 Express 默认 HTML 500 的行为（需权衡是否影响非 API 路径）。
+- API v1 freeze docs：整理 envelope 契约 + 错误码表（API_ERROR_CODES）文档。
+- SDK contract extraction：从 responses.js / contract 测试抽取 OpenAPI 或 typed client。
+- store 缺失环境下 AUTH_REQUIRED(401) 路径补测（历史遗留）。
+
+安全说明：
+
+- 本轮未部署 VPS，无需备份。
+- 本轮未 push GitHub。
+- 本轮未修改数据库结构、登录判断、session 生成、visitor token、ADMIN_TOKEN、
+  权限判定或任何生产配置（仅新增静态/ SPA fallback 注释）。
+- 本轮未输出或记录 ADMIN_TOKEN、DATABASE_URL、数据库密码、GitHub token 或 VPS 密码。
+
 ## 2026-07-02：统一错误处理收尾 — 全局 multer 上传错误 envelope 化
 
 完成内容：
