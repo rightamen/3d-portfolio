@@ -2,7 +2,14 @@ import { validateResponseShape } from './contracts/responseValidator.js'
 
 export const API_ERROR_CODES = Object.freeze({
   AUTH_REQUIRED: 'AUTH_REQUIRED',
+  COMMUNITY_COMMENT_NOT_FOUND: 'COMMUNITY_COMMENT_NOT_FOUND',
   COMMUNITY_POST_NOT_FOUND: 'COMMUNITY_POST_NOT_FOUND',
+  COMMUNITY_UPLOAD_NOT_FOUND: 'COMMUNITY_UPLOAD_NOT_FOUND',
+  EMAIL_ALREADY_REGISTERED: 'EMAIL_ALREADY_REGISTERED',
+  EMAIL_ALREADY_VERIFIED: 'EMAIL_ALREADY_VERIFIED',
+  EMAIL_NOT_REGISTERED: 'EMAIL_NOT_REGISTERED',
+  EMAIL_NOT_VERIFIED: 'EMAIL_NOT_VERIFIED',
+  HANDLE_TAKEN: 'HANDLE_TAKEN',
   INVALID_TOKEN: 'INVALID_TOKEN',
   PROFILE_ADMIN_DISABLED: 'PROFILE_ADMIN_DISABLED',
   PROJECT_NOT_FOUND: 'PROJECT_NOT_FOUND',
@@ -15,6 +22,12 @@ export const API_ERROR_CODES = Object.freeze({
 const hasPlainObjectData = (value) =>
   value && typeof value === 'object' && !Array.isArray(value)
 
+// Spreads the data object's keys onto the top level alongside `data` so that
+// legacy clients reading `payload.<key>` keep working during the envelope
+// migration. WARNING: because these keys land at the top level, a data key
+// named `data`, `pagination`, `error`, `code`, or `message` would collide with
+// (and overwrite) the envelope/compatibility fields. New endpoints must avoid
+// returning data keys with those reserved names.
 const withLegacyData = (data) => ({
   data,
   ...(hasPlainObjectData(data) ? data : {}),

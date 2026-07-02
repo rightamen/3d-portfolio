@@ -408,16 +408,22 @@ app.post('/api/auth/register', requireAuthStore, async (request, response) => {
   const password = String(request.body?.password ?? '')
 
   if (!displayName || !emailPattern.test(email) || password.length < 8) {
-    return response.status(400).json({
-      error: 'Please provide a display name, valid email, and password with at least 8 characters.',
-    })
+    return sendError(
+      response,
+      API_ERROR_CODES.VALIDATION_ERROR,
+      'Please provide a display name, valid email, and password with at least 8 characters.',
+      400,
+    )
   }
 
   const existingUser = await authStore.getUserByEmail(email)
   if (existingUser) {
-    return response.status(409).json({
-      error: 'This email is already registered.',
-    })
+    return sendError(
+      response,
+      API_ERROR_CODES.EMAIL_ALREADY_REGISTERED,
+      'This email is already registered.',
+      409,
+    )
   }
 
   const verification = createEmailVerification(email)
@@ -437,37 +443,45 @@ app.post('/api/auth/register', requireAuthStore, async (request, response) => {
     expiresAt: verification.expiresAt,
   })
 
-  return response.status(201).json({
-    user,
-    verification: {
-      delivery: delivery.delivery,
-      expiresAt: verification.expiresAt.toISOString(),
-      required: true,
-      ...(process.env.NODE_ENV === 'production' ? {} : { devCode: verification.code }),
+  return sendData(
+    response,
+    {
+      user,
+      verification: {
+        delivery: delivery.delivery,
+        expiresAt: verification.expiresAt.toISOString(),
+        required: true,
+        ...(process.env.NODE_ENV === 'production' ? {} : { devCode: verification.code }),
+      },
     },
-  })
+    201,
+  )
 })
 
 app.post('/api/auth/resend-verification', requireAuthStore, async (request, response) => {
   const email = String(request.body?.email ?? '').trim().toLowerCase().slice(0, 180)
 
   if (!emailPattern.test(email)) {
-    return response.status(400).json({
-      error: 'Valid email is required.',
-    })
+    return sendError(response, API_ERROR_CODES.VALIDATION_ERROR, 'Valid email is required.', 400)
   }
 
   const user = await authStore.getUserByEmail(email)
   if (!user) {
-    return response.status(404).json({
-      error: 'This email is not registered.',
-    })
+    return sendError(
+      response,
+      API_ERROR_CODES.EMAIL_NOT_REGISTERED,
+      'This email is not registered.',
+      404,
+    )
   }
 
   if (user.emailVerified) {
-    return response.status(409).json({
-      error: 'This email is already verified.',
-    })
+    return sendError(
+      response,
+      API_ERROR_CODES.EMAIL_ALREADY_VERIFIED,
+      'This email is already verified.',
+      409,
+    )
   }
 
   const verification = createEmailVerification(email)
@@ -479,7 +493,7 @@ app.post('/api/auth/resend-verification', requireAuthStore, async (request, resp
     expiresAt: verification.expiresAt,
   })
 
-  return response.json({
+  return sendData(response, {
     verification: {
       delivery: delivery.delivery,
       expiresAt: verification.expiresAt.toISOString(),
@@ -495,22 +509,27 @@ app.post('/api/auth/login', requireAuthStore, async (request, response) => {
   const user = await authStore.getUserByEmail(email)
 
   if (!user || !verifyPassword(password, user.passwordHash)) {
-    return response.status(401).json({
-      error: 'Email or password is incorrect.',
-    })
+    return sendError(
+      response,
+      API_ERROR_CODES.VALIDATION_ERROR,
+      'Email or password is incorrect.',
+      401,
+    )
   }
 
   if (!user.emailVerified) {
-    return response.status(403).json({
-      code: 'EMAIL_NOT_VERIFIED',
-      error: 'Please verify your email before signing in.',
-    })
+    return sendError(
+      response,
+      API_ERROR_CODES.EMAIL_NOT_VERIFIED,
+      'Please verify your email before signing in.',
+      403,
+    )
   }
 
   const session = await createSession(user)
   const publicUser = await authStore.getAccountProfile(user.id)
 
-  return response.json({ session, user: publicUser })
+  return sendData(response, { session, user: publicUser })
 })
 
 app.post('/api/auth/verify-email', requireAuthStore, async (request, response) => {
@@ -518,26 +537,32 @@ app.post('/api/auth/verify-email', requireAuthStore, async (request, response) =
   const code = String(request.body?.code ?? '').trim().slice(0, 12)
 
   if (!emailPattern.test(email) || !code) {
-    return response.status(400).json({
-      error: 'Valid email and verification code are required.',
-    })
+    return sendError(
+      response,
+      API_ERROR_CODES.VALIDATION_ERROR,
+      'Valid email and verification code are required.',
+      400,
+    )
   }
 
   const user = await authStore.verifyEmail(email, hashVerificationCode(email, code))
   if (!user) {
-    return response.status(400).json({
-      error: 'Verification code is invalid or expired.',
-    })
+    return sendError(
+      response,
+      API_ERROR_CODES.VALIDATION_ERROR,
+      'Verification code is invalid or expired.',
+      400,
+    )
   }
 
   const session = await createSession(user)
-  return response.json({ session, user })
+  return sendData(response, { session, user })
 })
 
 app.post('/api/auth/logout', async (request, response) => {
   const token = getAuthToken(request)
   if (token && authStore) await authStore.deleteSession(hashToken(token))
-  response.json({ ok: true })
+  sendData(response, { ok: true })
 })
 
 const requireAdmin = (request, response, next) => {
@@ -610,25 +635,24 @@ app.get('/api/community/posts', async (_request, response) => {
 
 app.post('/api/community/posts', requireAuthStore, async (request, response) => {
   if (!communityStore) {
-    return response.status(503).json({
-      error: 'Community posts are not configured.',
-    })
+    return sendError(
+      response,
+      API_ERROR_CODES.SERVICE_UNAVAILABLE,
+      'Community posts are not configured.',
+      503,
+    )
   }
 
   const user = await getOptionalUser(request)
   if (!user) {
-    return response.status(401).json({
-      error: 'Please sign in before posting.',
-    })
+    return sendError(response, API_ERROR_CODES.AUTH_REQUIRED, 'Please sign in before posting.', 401)
   }
 
   const title = String(request.body?.title ?? '').trim().slice(0, 160)
   const message = String(request.body?.message ?? '').trim().slice(0, 1800)
 
   if (!title || !message) {
-    return response.status(400).json({
-      error: 'Title and message are required.',
-    })
+    return sendError(response, API_ERROR_CODES.VALIDATION_ERROR, 'Title and message are required.', 400)
   }
 
   const post = await communityStore.createPost({
@@ -640,7 +664,7 @@ app.post('/api/community/posts', requireAuthStore, async (request, response) => 
     userId: user.id,
   })
 
-  return response.status(201).json({ post })
+  return sendData(response, { post }, 201)
 })
 
 app.get('/api/community/posts/:id', async (request, response) => {
@@ -691,31 +715,41 @@ app.get('/api/community/posts/:id/comments', async (request, response) => {
 
 app.post('/api/community/posts/:id/comments', requireAuthStore, async (request, response) => {
   if (!communityStore) {
-    return response.status(503).json({ error: 'Community comments are not configured.' })
+    return sendError(
+      response,
+      API_ERROR_CODES.SERVICE_UNAVAILABLE,
+      'Community comments are not configured.',
+      503,
+    )
   }
 
   const user = await getOptionalUser(request)
   if (!user) {
-    return response.status(401).json({ error: 'Please sign in before commenting.' })
+    return sendError(response, API_ERROR_CODES.AUTH_REQUIRED, 'Please sign in before commenting.', 401)
   }
 
   const post = await communityStore.getPost(request.params.id)
   if (!post) {
-    return response.status(404).json({ error: 'Community post not found.' })
+    return sendError(
+      response,
+      API_ERROR_CODES.COMMUNITY_POST_NOT_FOUND,
+      'Community post not found.',
+      404,
+    )
   }
 
   const message = String(request.body?.message ?? '').trim().slice(0, 1800)
   const parentId = String(request.body?.parentId ?? '').trim().slice(0, 120) || null
 
   if (!message) {
-    return response.status(400).json({ error: 'Comment message is required.' })
+    return sendError(response, API_ERROR_CODES.VALIDATION_ERROR, 'Comment message is required.', 400)
   }
 
   if (parentId) {
     const parents = await communityStore.listComments(post.id)
     const parent = parents.find((comment) => comment.id === parentId)
     if (!parent) {
-      return response.status(400).json({ error: 'Parent comment not found.' })
+      return sendError(response, API_ERROR_CODES.VALIDATION_ERROR, 'Parent comment not found.', 400)
     }
   }
 
@@ -728,7 +762,7 @@ app.post('/api/community/posts/:id/comments', requireAuthStore, async (request, 
     userId: user.id,
   })
 
-  return response.status(201).json({ comment })
+  return sendData(response, { comment }, 201)
 })
 
 app.post(
@@ -736,39 +770,64 @@ app.post(
   requireAuthStore,
   async (request, response) => {
     if (!communityStore) {
-      return response.status(503).json({ error: 'Community comments are not configured.' })
+      return sendError(
+        response,
+        API_ERROR_CODES.SERVICE_UNAVAILABLE,
+        'Community comments are not configured.',
+        503,
+      )
     }
 
     const user = await getOptionalUser(request)
     if (!user) {
-      return response.status(401).json({ error: 'Please sign in before liking.' })
+      return sendError(response, API_ERROR_CODES.AUTH_REQUIRED, 'Please sign in before liking.', 401)
     }
 
     const result = await communityStore.toggleCommentLike(request.params.id, user.id)
     if (!result) {
-      return response.status(404).json({ error: 'Community comment not found.' })
+      return sendError(
+        response,
+        API_ERROR_CODES.COMMUNITY_COMMENT_NOT_FOUND,
+        'Community comment not found.',
+        404,
+      )
     }
 
-    return response.json(result)
+    return sendData(response, result)
   },
 )
 
 app.delete('/api/community/comments/:id', requireAuthStore, async (request, response) => {
   if (!communityStore) {
-    return response.status(503).json({ error: 'Community comments are not configured.' })
+    return sendError(
+      response,
+      API_ERROR_CODES.SERVICE_UNAVAILABLE,
+      'Community comments are not configured.',
+      503,
+    )
   }
 
   const user = await getOptionalUser(request)
   if (!user) {
-    return response.status(401).json({ error: 'Please sign in to manage your comments.' })
+    return sendError(
+      response,
+      API_ERROR_CODES.AUTH_REQUIRED,
+      'Please sign in to manage your comments.',
+      401,
+    )
   }
 
   const deleted = await communityStore.deleteUserComment(request.params.id, user.id)
   if (!deleted) {
-    return response.status(404).json({ error: 'Community comment not found.' })
+    return sendError(
+      response,
+      API_ERROR_CODES.COMMUNITY_COMMENT_NOT_FOUND,
+      'Community comment not found.',
+      404,
+    )
   }
 
-  return response.json({ ok: true })
+  return sendData(response, { ok: true })
 })
 
 app.get('/api/account/profile', requireAuthStore, async (request, response) => {
@@ -782,46 +841,53 @@ app.get('/api/account/profile', requireAuthStore, async (request, response) => {
 app.put('/api/account/profile', requireAuthStore, async (request, response) => {
   const user = await getOptionalUser(request)
   if (!user) {
-    return response.status(401).json({
-      error: 'Please sign in to manage your profile.',
-    })
+    return sendError(
+      response,
+      API_ERROR_CODES.AUTH_REQUIRED,
+      'Please sign in to manage your profile.',
+      401,
+    )
   }
 
   const profile = normalizeAccountProfile(request.body)
 
   if (profile.displayName.length < 2) {
-    return response.status(400).json({
-      error: 'Display name must be 2-40 characters.',
-    })
+    return sendError(
+      response,
+      API_ERROR_CODES.VALIDATION_ERROR,
+      'Display name must be 2-40 characters.',
+      400,
+    )
   }
 
   if (!handlePattern.test(profile.handle)) {
-    return response.status(400).json({
-      error: 'Handle must use 3-30 lowercase letters, numbers, hyphens, or underscores.',
-    })
+    return sendError(
+      response,
+      API_ERROR_CODES.VALIDATION_ERROR,
+      'Handle must use 3-30 lowercase letters, numbers, hyphens, or underscores.',
+      400,
+    )
   }
 
   if (request.body?.website && !profile.website) {
-    return response.status(400).json({
-      error: 'Website must be a valid http or https URL.',
-    })
+    return sendError(
+      response,
+      API_ERROR_CODES.VALIDATION_ERROR,
+      'Website must be a valid http or https URL.',
+      400,
+    )
   }
 
   if (profile.publicEmail && !emailPattern.test(profile.publicEmail)) {
-    return response.status(400).json({
-      error: 'Public email must be valid.',
-    })
+    return sendError(response, API_ERROR_CODES.VALIDATION_ERROR, 'Public email must be valid.', 400)
   }
 
   try {
     const updated = await authStore.updateAccountProfile(user.id, profile)
-    return response.json({ profile: updated })
+    return sendData(response, { profile: updated })
   } catch (error) {
     if (error.code === '23505') {
-      return response.status(409).json({
-        code: 'HANDLE_TAKEN',
-        error: 'This handle is already taken.',
-      })
+      return sendError(response, API_ERROR_CODES.HANDLE_TAKEN, 'This handle is already taken.', 409)
     }
     throw error
   }
@@ -835,18 +901,21 @@ app.post(
     const user = await getOptionalUser(request)
     if (!user) {
       if (request.file) unlink(request.file.path).catch((error) => console.error(error))
-      return response.status(401).json({
-        error: 'Please sign in to update your avatar.',
-      })
+      return sendError(
+        response,
+        API_ERROR_CODES.AUTH_REQUIRED,
+        'Please sign in to update your avatar.',
+        401,
+      )
     }
 
     if (!request.file) {
-      return response.status(400).json({ error: 'Avatar file is required.' })
+      return sendError(response, API_ERROR_CODES.VALIDATION_ERROR, 'Avatar file is required.', 400)
     }
 
     const avatarUrl = `/uploads/avatars/${request.file.filename}`
     const profile = await authStore.updateAccountImage(user.id, 'avatar', avatarUrl)
-    return response.status(201).json({ avatarUrl, profile })
+    return sendData(response, { avatarUrl, profile }, 201)
   },
 )
 
@@ -858,21 +927,29 @@ app.post(
     const user = await getOptionalUser(request)
     if (!user) {
       if (request.file) unlink(request.file.path).catch((error) => console.error(error))
-      return response.status(401).json({
-        error: 'Please sign in to update your banner.',
-      })
+      return sendError(
+        response,
+        API_ERROR_CODES.AUTH_REQUIRED,
+        'Please sign in to update your banner.',
+        401,
+      )
     }
 
     if (!request.file) {
-      return response.status(400).json({ error: 'Banner file is required.' })
+      return sendError(response, API_ERROR_CODES.VALIDATION_ERROR, 'Banner file is required.', 400)
     }
 
     const bannerUrl = `/uploads/banners/${request.file.filename}`
     const profile = await authStore.updateAccountImage(user.id, 'banner', bannerUrl)
-    return response.status(201).json({ bannerUrl, profile })
+    return sendData(response, { bannerUrl, profile }, 201)
   },
 )
 
+// Public profile lookups deliberately return RESOURCE_FORBIDDEN with a 404 for
+// every "cannot show this handle" case — missing store, invalid handle format,
+// and non-existent profile all share one response. This is intentional: it
+// avoids leaking through the error code whether a given handle actually exists,
+// so the endpoints cannot be used to enumerate registered users.
 app.get('/api/users/:handle', async (request, response) => {
   if (!authStore) {
     return sendError(response, API_ERROR_CODES.RESOURCE_FORBIDDEN, 'User profile not found.', 404)
@@ -1050,23 +1127,32 @@ app.get('/api/account/comments', requireAuthStore, async (request, response) => 
 
 app.delete('/api/account/community/uploads/:id', requireAuthStore, async (request, response) => {
   if (!communityStore) {
-    return response.status(503).json({
-      error: 'Community features are not configured.',
-    })
+    return sendError(
+      response,
+      API_ERROR_CODES.SERVICE_UNAVAILABLE,
+      'Community features are not configured.',
+      503,
+    )
   }
 
   const user = await getOptionalUser(request)
   if (!user) {
-    return response.status(401).json({
-      error: 'Please sign in to manage your community resources.',
-    })
+    return sendError(
+      response,
+      API_ERROR_CODES.AUTH_REQUIRED,
+      'Please sign in to manage your community resources.',
+      401,
+    )
   }
 
   const deleted = await communityStore.deleteUserUpload(request.params.id, user.id)
   if (!deleted) {
-    return response.status(404).json({
-      error: 'Community upload not found.',
-    })
+    return sendError(
+      response,
+      API_ERROR_CODES.COMMUNITY_UPLOAD_NOT_FOUND,
+      'Community upload not found.',
+      404,
+    )
   }
 
   if (deleted.file_url?.startsWith('/uploads/')) {
@@ -1076,52 +1162,65 @@ app.delete('/api/account/community/uploads/:id', requireAuthStore, async (reques
     }
   }
 
-  return response.json({ ok: true })
+  return sendData(response, { ok: true })
 })
 
 app.delete('/api/account/community/posts/:id', requireAuthStore, async (request, response) => {
   if (!communityStore) {
-    return response.status(503).json({
-      error: 'Community features are not configured.',
-    })
+    return sendError(
+      response,
+      API_ERROR_CODES.SERVICE_UNAVAILABLE,
+      'Community features are not configured.',
+      503,
+    )
   }
 
   const user = await getOptionalUser(request)
   if (!user) {
-    return response.status(401).json({
-      error: 'Please sign in to manage your community posts.',
-    })
+    return sendError(
+      response,
+      API_ERROR_CODES.AUTH_REQUIRED,
+      'Please sign in to manage your community posts.',
+      401,
+    )
   }
 
   const deleted = await communityStore.deleteUserPost(request.params.id, user.id)
   if (!deleted) {
-    return response.status(404).json({
-      error: 'Community post not found.',
-    })
+    return sendError(
+      response,
+      API_ERROR_CODES.COMMUNITY_POST_NOT_FOUND,
+      'Community post not found.',
+      404,
+    )
   }
 
-  return response.json({ ok: true })
+  return sendData(response, { ok: true })
 })
 
 app.post('/api/community/uploads', requireAuthStore, upload.single('file'), async (request, response) => {
   if (!communityStore) {
-    return response.status(503).json({
-      error: 'Community uploads are not configured.',
-    })
+    return sendError(
+      response,
+      API_ERROR_CODES.SERVICE_UNAVAILABLE,
+      'Community uploads are not configured.',
+      503,
+    )
   }
 
   const user = await getOptionalUser(request)
   if (!user) {
     if (request.file) unlink(request.file.path).catch((error) => console.error(error))
-    return response.status(401).json({
-      error: 'Please sign in before uploading community resources.',
-    })
+    return sendError(
+      response,
+      API_ERROR_CODES.AUTH_REQUIRED,
+      'Please sign in before uploading community resources.',
+      401,
+    )
   }
 
   if (!request.file) {
-    return response.status(400).json({
-      error: 'Upload file is required.',
-    })
+    return sendError(response, API_ERROR_CODES.VALIDATION_ERROR, 'Upload file is required.', 400)
   }
 
   const title = String(request.body?.title ?? '').trim().slice(0, 160)
@@ -1132,9 +1231,12 @@ app.post('/api/community/uploads', requireAuthStore, upload.single('file'), asyn
   if (!title || !description) {
     unlink(request.file.path).catch((error) => console.error(error))
 
-    return response.status(400).json({
-      error: 'Title and description are required.',
-    })
+    return sendError(
+      response,
+      API_ERROR_CODES.VALIDATION_ERROR,
+      'Title and description are required.',
+      400,
+    )
   }
 
   const folder = fileType === 'image' ? 'images' : 'models'
@@ -1153,7 +1255,7 @@ app.post('/api/community/uploads', requireAuthStore, upload.single('file'), asyn
     userId: user.id,
   })
 
-  return response.status(201).json({ upload: uploadRecord })
+  return sendData(response, { upload: uploadRecord }, 201)
 })
 
 app.post('/api/projects/:slug/like', async (request, response) => {
@@ -1162,19 +1264,15 @@ app.post('/api/projects/:slug/like', async (request, response) => {
   const user = await getOptionalUser(request)
 
   if (!project) {
-    return response.status(404).json({
-      error: 'Project not found.',
-    })
+    return sendError(response, API_ERROR_CODES.PROJECT_NOT_FOUND, 'Project not found.', 404)
   }
 
   if (!visitorId) {
-    return response.status(400).json({
-      error: 'Visitor id is required.',
-    })
+    return sendError(response, API_ERROR_CODES.VALIDATION_ERROR, 'Visitor id is required.', 400)
   }
 
   const result = await interactionsStore.toggleLike(project.slug, visitorId, user?.id)
-  return response.json(result)
+  return sendData(response, result)
 })
 
 app.post('/api/projects/:slug/comments', async (request, response) => {
@@ -1184,15 +1282,11 @@ app.post('/api/projects/:slug/comments', async (request, response) => {
   const message = String(request.body?.message ?? '').trim().slice(0, 1000)
 
   if (!project) {
-    return response.status(404).json({
-      error: 'Project not found.',
-    })
+    return sendError(response, API_ERROR_CODES.PROJECT_NOT_FOUND, 'Project not found.', 404)
   }
 
   if (!author || !message) {
-    return response.status(400).json({
-      error: 'Author and message are required.',
-    })
+    return sendError(response, API_ERROR_CODES.VALIDATION_ERROR, 'Author and message are required.', 400)
   }
 
   const comment = await interactionsStore.addComment(project.slug, {
@@ -1200,16 +1294,14 @@ app.post('/api/projects/:slug/comments', async (request, response) => {
     message,
     userId: user?.id,
   })
-  return response.status(201).json({ comment })
+  return sendData(response, { comment }, 201)
 })
 
 app.post('/api/projects/:slug/download-requests', async (request, response) => {
   const project = await projectStore.getProject(staticProjects, request.params.slug)
 
   if (!project) {
-    return response.status(404).json({
-      error: 'Project not found.',
-    })
+    return sendError(response, API_ERROR_CODES.PROJECT_NOT_FOUND, 'Project not found.', 404)
   }
 
   const user = await getOptionalUser(request)
@@ -1220,9 +1312,12 @@ app.post('/api/projects/:slug/download-requests', async (request, response) => {
   const currentAccessLevel = user?.accessLevel || 'guest'
 
   if (!name || !emailPattern.test(email) || !purpose) {
-    return response.status(400).json({
-      error: 'Please provide a valid name, email, and usage purpose.',
-    })
+    return sendError(
+      response,
+      API_ERROR_CODES.VALIDATION_ERROR,
+      'Please provide a valid name, email, and usage purpose.',
+      400,
+    )
   }
 
   const downloadRequest = await downloadRequestsStore.addRequest({
@@ -1238,19 +1333,23 @@ app.post('/api/projects/:slug/download-requests', async (request, response) => {
     ip: request.ip,
   })
 
-  return response.status(201).json({
-    ok: true,
-    request: {
-      id: downloadRequest.id,
-      status: downloadRequest.status,
-      createdAt: downloadRequest.createdAt,
+  return sendData(
+    response,
+    {
+      ok: true,
+      request: {
+        id: downloadRequest.id,
+        status: downloadRequest.status,
+        createdAt: downloadRequest.createdAt,
+      },
+      access: {
+        allowed: canAccess(user, requiredAccessLevel),
+        current: currentAccessLevel,
+        required: requiredAccessLevel,
+      },
     },
-    access: {
-      allowed: canAccess(user, requiredAccessLevel),
-      current: currentAccessLevel,
-      required: requiredAccessLevel,
-    },
-  })
+    201,
+  )
 })
 
 app.get('/api/experience', (_request, response) => {
@@ -1267,15 +1366,17 @@ app.post('/api/contact', async (request, response) => {
   }
 
   if (!normalized.name || !normalized.email || !normalized.message) {
-    return response.status(400).json({
-      ok: false,
-      error: 'Please provide a valid name, email, and message.',
-    })
+    return sendError(
+      response,
+      API_ERROR_CODES.VALIDATION_ERROR,
+      'Please provide a valid name, email, and message.',
+      400,
+    )
   }
 
   await contactMessagesStore.addMessage(normalized)
 
-  return response.status(201).json({ ok: true })
+  return sendData(response, { ok: true }, 201)
 })
 
 app.get('/api/admin/summary', requireAdmin, async (_request, response) => {

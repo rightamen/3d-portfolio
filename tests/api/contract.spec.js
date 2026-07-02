@@ -80,6 +80,16 @@ const getJson = async (path) => {
   return { payload, response }
 }
 
+const postJson = async (path, body) => {
+  const response = await fetch(`${baseURL}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body ?? {}),
+  })
+  const payload = await response.json()
+  return { payload, response }
+}
+
 test.describe('api contract envelope', () => {
   test('GET /api/health returns envelope with legacy compatibility', async () => {
     const { payload, response } = await getJson('/api/health')
@@ -211,5 +221,98 @@ test.describe('api contract envelope', () => {
     expect(activity.payload.comments).toEqual([])
     expect(activity.payload.posts).toEqual([])
     expect(activity.payload.resources).toEqual([])
+  })
+
+  // --- Write / auth endpoint envelopes ---
+  //
+  // The API test server runs without DATABASE_URL, so authStore/communityStore
+  // are absent. Every auth and community write endpoint is gated by
+  // requireAuthStore, which short-circuits to a SERVICE_UNAVAILABLE envelope
+  // before the per-request auth check runs. That means the unauthenticated
+  // AUTH_REQUIRED path is not reachable here — the store gate wins first — so we
+  // assert the coded 503 envelope these endpoints actually return in this
+  // configuration. The file-backed project/contact write endpoints have no such
+  // gate and exercise the real success + validation envelopes below.
+
+  test('POST /api/auth/{register,login} return coded envelopes when local auth store is absent', async () => {
+    for (const endpoint of ['register', 'login']) {
+      const { payload, response } = await postJson(`/api/auth/${endpoint}`, {})
+
+      expect(response.status, endpoint).toBe(503)
+      expectContractShape(payload)
+      expect(payload.error.code, endpoint).toBe('SERVICE_UNAVAILABLE')
+    }
+  })
+
+  test('POST community write endpoints return coded envelopes when local stores are absent', async () => {
+    const post = await postJson('/api/community/posts', { title: 't', message: 'm' })
+    expect(post.response.status).toBe(503)
+    expectContractShape(post.payload)
+    expect(post.payload.error.code).toBe('SERVICE_UNAVAILABLE')
+
+    const comment = await postJson('/api/community/posts/any-id/comments', { message: 'm' })
+    expect(comment.response.status).toBe(503)
+    expectContractShape(comment.payload)
+    expect(comment.payload.error.code).toBe('SERVICE_UNAVAILABLE')
+  })
+
+  test('POST /api/projects/:slug/comments returns success and failure envelopes', async () => {
+    const list = await getJson('/api/projects')
+    const slug = list.payload.data.projects[0].slug
+
+    const created = await postJson(`/api/projects/${slug}/comments`, {
+      author: 'Contract Test',
+      message: 'contract envelope probe',
+    })
+    expect(created.response.status).toBe(201)
+    expectContractShape(created.payload, { legacyKeys: ['comment'] })
+    expect(created.payload.data.comment).toBeTruthy()
+    expect(created.payload.comment).toBeTruthy()
+    expect(created.payload.data.comment.id).toBe(created.payload.comment.id)
+
+    const invalid = await postJson(`/api/projects/${slug}/comments`, { author: '' })
+    expect(invalid.response.status).toBe(400)
+    expectContractShape(invalid.payload)
+    expect(invalid.payload.error.code).toBe('VALIDATION_ERROR')
+
+    const missing = await postJson('/api/projects/not-a-real-project/comments', {
+      author: 'a',
+      message: 'm',
+    })
+    expect(missing.response.status).toBe(404)
+    expectContractShape(missing.payload)
+    expect(missing.payload.error.code).toBe('PROJECT_NOT_FOUND')
+  })
+
+  test('POST /api/projects/:slug/like returns coded failure envelopes', async () => {
+    const list = await getJson('/api/projects')
+    const slug = list.payload.data.projects[0].slug
+
+    const noVisitor = await postJson(`/api/projects/${slug}/like`, {})
+    expect(noVisitor.response.status).toBe(400)
+    expectContractShape(noVisitor.payload)
+    expect(noVisitor.payload.error.code).toBe('VALIDATION_ERROR')
+
+    const missing = await postJson('/api/projects/not-a-real-project/like', { visitorId: 'v1' })
+    expect(missing.response.status).toBe(404)
+    expectContractShape(missing.payload)
+    expect(missing.payload.error.code).toBe('PROJECT_NOT_FOUND')
+  })
+
+  test('POST /api/contact returns success and failure envelopes with legacy mirror', async () => {
+    const created = await postJson('/api/contact', {
+      name: 'Contract Test',
+      email: 'contract@example.com',
+      message: 'contract envelope probe',
+    })
+    expect(created.response.status).toBe(201)
+    expectContractShape(created.payload, { legacyKeys: ['ok'] })
+    expect(created.payload.data.ok).toBe(true)
+    expect(created.payload.ok).toBe(true)
+
+    const invalid = await postJson('/api/contact', {})
+    expect(invalid.response.status).toBe(400)
+    expectContractShape(invalid.payload)
+    expect(invalid.payload.error.code).toBe('VALIDATION_ERROR')
   })
 })
