@@ -1,5 +1,64 @@
 # mrright.blog 项目进度记录
 
+## 2026-07-03：C++ 跨平台迁移前架构审查 + API v1 freeze 文档化
+
+结论：纯文档轮次，零代码/零 API 行为改动。三项状态标记：
+
+1. **API envelope migration 已完成**（2026-07-02 审计确认，全部业务路由经 sendData/sendPage/sendError，25 contract 测试通过）。
+2. **当前进入 API v1 freeze 文档化阶段**（freeze 规范已定稿，freeze 本身未宣告，见 docs/API_V1_FREEZE_PLAN.md §21 checklist）。
+3. **C++ App 迁移目标已升级为跨平台客户端**：Windows 10/11 / macOS (Apple Silicon + Intel) / Linux x86_64 三端 P0，从第一版起为架构约束（SDK、缓存、路径、token、下载、日志、打包、CI、3D viewer 全部按三端一致性设计），不是后期移植。
+
+完成内容：
+
+- 项目重新定位：以稳定 API 契约为核心的 3D 内容/资源/社区/账号权限平台；Web 负责展示、社区、账号中心与 admin；API 承载全部权限与分发决策；C++ 跨平台 App 负责高性能资源消费（模型查看、下载、本地缓存、离线库）。不是"用 C++ 重写网站"。
+- 现有架构评分 7/10；识别十大问题，最高优先级三项：
+  1. /uploads 为 express.static 公开直出，downloadPolicy 未在文件层执行（需受控下载端点 + Range/ETag）；
+  2. 无 /api/v1 版本前缀；
+  3. 未捕获异常仍落 Express 默认 HTML 500（无 INTERNAL_ERROR envelope 兜底，2026-07-02 待办复核确认未完成）。
+- API v1 freeze 规范定稿：/api/v1 双挂载策略（v1 下不带 legacy 顶层镜像）、envelope/success/error 规范、26+1 错误码冻结表（含待实现 INTERNAL_ERROR）、pagination 六字段规范与补齐清单、auth token 生命周期决策项、permission/downloadPolicy 枚举化、Asset Model（含 checksum/downloadUrl）、upload 错误规范、additive-only 兼容策略、deprecation 策略、DB-backed contract test 方案、OpenAPI 漂移检测策略、C++ SDK model 映射规则、freeze 前 11 项 checklist。
+- C++ 迁移五阶段路线图：Phase 1 API v1 freeze → Phase 2 三平台 prototype（登录/token 安全存储/项目/受控下载/缓存/日志，三平台 CI 第一 commit 起全绿）→ Phase 3 跨平台 3D viewer（GLB + Qt RHI）→ Phase 4 打包（NSIS/.dmg+notarization/AppImage）→ Phase 5 离线+同步。
+- 技术栈结论：Qt 6.8 LTS + Qt Quick/QML；CMake + CMakePresets；vcpkg（manifest）；Qt Network（藏于可替换 HttpBackend 接口后）；SQLite + content-addressed 文件缓存；3D 走 Qt RHI（Quick 3D 起步）；tinygltf 起步（服务端统一转 GLB）、Assimp 后置；手写 C++ SDK（OpenAPI 仅作 spec/漂移检测）；QtKeychain（Credential Manager/Keychain/Secret Service，加密文件仅降级）；spdlog；crashpad 推迟 Phase 4；GitHub Actions 三平台 matrix。
+- 跨平台设计：AppPaths/Config/Cache/Log/Download/Temp 六 provider 三平台路径映射（AppData/LocalAppData、Application Support/Caches/Logs、XDG）；token 禁止明文落盘；构建矩阵 MSVC/Clang/GCC + Debug/Release/RelWithDebInfo；20 项跨平台风险按严重度排序并附规避策略。
+- 用户补充跨平台强制要求（P0 Win/macOS/Linux、P1 Steam Deck/portable、P2 移动端不承诺）逐条核对：技术栈 10 项、目录抽象、构建/打包矩阵、SDK 解耦、10 项风险、章节与五阶段路线图均已在文档中覆盖；唯一缺口为显式 "Phase-by-phase Platform Support" 章节，已补 §20.1（各阶段 × 各平台验收矩阵 + P1 不阻塞 P0 / P2 仅架构兼容规则）。
+
+修改文件：
+
+- docs/CPP_APP_MIGRATION_PLAN.md（新建）
+- docs/API_V1_FREEZE_PLAN.md（新建）
+- PROJECT_PROGRESS.md
+
+commit：docs(api): define v1 freeze and cross-platform cpp app plan（最终 hash 以 git log 为准）
+
+build/lint/test 结果：见下（验证通过后回填）。
+
+- npm run lint：通过
+- npm run build：通过
+- npm run test:api：通过（25 passed）
+
+是否部署 VPS：否（纯文档，无需备份）。
+
+验证接口状态：未涉及线上，无变化。
+
+待办事项（下一批，按优先级）：
+
+1. INTERNAL_ERROR / unhandled API errors envelope 兜底（确认尚未完成；唯一 freeze 前服务端小改动）
+2. DB-backed admin 200 contract tests（一次性 PostgreSQL，绝不指向生产库）
+3. DB-backed real upload multer error E2E（FILE_TOO_LARGE / INVALID_FILE_TYPE 端到端）
+4. /api/v1 双挂载 + 无镜像模式 + 反向镜像断言
+5. token storage 与 refresh 策略评估（v1 建议长效 token + 无 refresh，决策写入 freeze 文档）
+6. 受控资产下载端点设计定稿（Range/ETag/checksum）+ asset/download metadata 补全
+7. OpenAPI / typed client 抽取 + CI 漂移检测
+8. C++ SDK data model extraction（从冻结表映射 struct 草案）
+9. C++ cross-platform prototype skeleton（cpp-app/ 骨架）
+10. CI build matrix 规划（GitHub Actions win/mac/linux，第一 commit 起）
+11. packaging strategy spike（NSIS / dmg+notarization / AppImage 各走通一次）
+
+安全说明：
+
+- 本轮未部署 VPS、未 push GitHub、未修改数据库、未修改任何 API 行为或业务代码。
+- 本轮未读取、修改或输出 .env、ADMIN_TOKEN、DATABASE_URL、密钥或任何 secret。
+- 本轮未开发任何 C++ UI 代码（仅文档）。
+
 ## 2026-07-02：API envelope 最终审计（v1 freeze 准备）
 
 结论：后端 API response envelope 化已完整闭环。本轮为审计 + 必要注释，无业务逻辑改动。
