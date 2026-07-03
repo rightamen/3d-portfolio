@@ -1,5 +1,75 @@
 # mrright.blog 项目进度记录
 
+## 2026-07-03：DB-backed contract tests（一次性 PostgreSQL）— freeze checklist #2/#3 完成
+
+结论：新增 `npm run test:api:db` DB-backed contract 套件（12 用例全通过），锁定此前不可达的三类路径：admin 200 成功形状 + 真实 sendPage pagination、真实 multipart multer 错误端到端、store 存在时的 AUTH_REQUIRED(401)。上一轮待办第 1、2 项完成（原 #1 admin 200 与 #2 upload E2E 合并在同一 suite），并顺带补掉历史遗留的"store 存在时 401 路径"。
+
+完成内容：
+
+- scripts/run-api-db-tests.mjs（新建）：一次性 PostgreSQL provisioner。
+  - 未提供 `API_TEST_DATABASE_URL` 时：用本机 PostgreSQL 二进制（PG_TEST_BIN → /usr/lib/postgresql/<v>/bin → PATH）在 os.tmpdir 临时目录 `initdb` 一次性集群（loopback、随机空闲端口、trust auth、fsync=off；root 环境经 `su postgres` 执行），`createdb mrright_api_contract_test`，跑完 `pg_ctl stop -m immediate` 并删除整个集群目录。
+  - 提供 `API_TEST_DATABASE_URL`（CI service container 场景）时直接使用，不 provisioning、不 teardown。
+  - 双层安全闸（脚本与 suite 各自独立校验）：库名必须含 test/e2e/local/dev，且不得含 `mrright_portfolio`；不读取、不复用生产 DATABASE_URL。
+- tests/api/contract.db.spec.js（新建，12 用例）：
+  - seed 只经公开 API（register → verify-email devCode → login → community post → contact），不写直连 SQL；schema 由 server 启动 ensureSchema 自建；ADMIN_TOKEN 为进程内随机 throwaway 值，不落日志。
+  - admin 200：summary / visitors 列表（pagination 六字段 hasNext/hasPrevious/limit/page/pages/total 精确断言 + limit=1 分页数学）/ visitor 详情 / 5 个详情子分页（items + 真实 pagination）/ 8 个列表端点（legacy 镜像 deep-equal，含 seed 数据非空断言）。
+  - admin 写：PATCH profile-visibility 404 VISITOR_NOT_FOUND envelope + 对测试 visitor 的 disable→restore 200 往返（profileAdminDisabled 断言）。
+  - store 存在时鉴权：错误 admin token → 401 ADMIN_AUTH_REQUIRED；/api/account/profile|downloads|comments 未登录 → 401 AUTH_REQUIRED（历史遗留补测）；登录后 profile → 200。
+  - 真实 multer 错误 E2E：3MiB jpg 上传 avatar（限 2MiB）→ 413 FILE_TOO_LARGE envelope；.txt 上传 community uploads → 400 INVALID_FILE_TYPE envelope（error 非字符串）。
+  - 无 `API_TEST_DATABASE_URL` 时整个文件 test.skip，不报错。
+- playwright.api.db.config.js（新建）：独立 config，workers=1（共享 server + seed fixture）。
+- playwright.api.config.js：`testIgnore: '**/contract.db.spec.js'`，`npm run test:api` 保持无 DB 基线。
+- package.json：新增 `test:api:db` 脚本。
+- docs/API_V1_FREEZE_PLAN.md：§17 补已实现说明；§21 checklist #1（上轮已完成的 INTERNAL_ERROR 兜底）、#2、#3 置 ✅。
+
+修改文件：
+
+- scripts/run-api-db-tests.mjs（新建）
+- tests/api/contract.db.spec.js（新建）
+- playwright.api.db.config.js（新建）
+- playwright.api.config.js
+- package.json
+- docs/API_V1_FREEZE_PLAN.md
+- PROJECT_PROGRESS.md
+
+commit：test(api): add db-backed contract suite with disposable postgres（最终 hash 以 git log 为准）
+
+build/lint/test 结果：
+
+- npm run lint：通过
+- npm run build：通过（dist/ 构建产物已 git restore/clean 还原，未提交）
+- npm run test:api：通过（28 passed，基线不受影响）
+- npm run test:api:db：通过（12 passed，一次性集群已销毁）
+- git diff --check：通过
+
+是否部署 VPS：否。
+
+验证接口状态：未涉及线上，无变化。
+
+数据库说明：所有写操作仅发生在临时目录内一次性集群的 mrright_api_contract_test 库（seed 2 个测试 visitor、1 条社区帖、1 条联系消息、1 次 profile_admin_disabled 翻转并还原），测试结束整个集群目录已删除。未连接、未修改生产库。
+
+待办事项（下一批，按优先级）：
+
+1. /api/v1 双挂载 + 无镜像模式 + 反向镜像断言（freeze checklist #4）
+2. token storage 与 refresh 策略评估（v1 建议长效 token + 无 refresh，决策写入 freeze 文档；checklist #5）
+3. 受控资产下载端点设计定稿（Range/ETag/checksum）+ asset/download metadata 补全（checklist #6/#7）
+4. 公共列表 pagination 补齐方案（checklist #8）
+5. §7 错误码表与 API_ERROR_CODES 一致性复核（checklist #11，1–5+11 齐后可宣告 freeze）
+6. OpenAPI / typed client 抽取 + CI 漂移检测
+7. C++ SDK data model extraction（从冻结表映射 struct 草案）
+8. C++ cross-platform prototype skeleton（cpp-app/ 骨架）
+9. CI build matrix 规划（GitHub Actions win/mac/linux，第一 commit 起；test:api:db 可用 postgres service container 直接接入）
+10. packaging strategy spike（NSIS / dmg+notarization / AppImage 各走通一次）
+
+技术备注（非本轮改动，供后续参考）：avatar/banner 的 fileFilter 错误消息（'Only JPG, PNG, and WebP images are allowed.'）不匹配 describeUploadError 的 'Unsupported file type.' 分支，会落到 INTERNAL_ERROR 500 而非 INVALID_FILE_TYPE 400；如需修正属 additive 语义微调，建议并入 checklist #11 复核时一起处理。
+
+安全说明：
+
+- 本轮未部署 VPS、未 push GitHub、未连接或修改生产数据库。
+- 本轮未读取、修改或输出 .env、ADMIN_TOKEN、DATABASE_URL、密钥或任何 secret（测试用 ADMIN_TOKEN 为随机 throwaway 值，仅存在于测试进程内存）。
+- 本轮未修改任何 server 业务代码/auth/admin/token 判定逻辑（仅测试、脚本与配置）。
+- 本轮未提交 dist/ 或任何构建产物。
+
 ## 2026-07-03：INTERNAL_ERROR / unhandled API errors envelope 兜底（freeze 前唯一服务端小改动）
 
 结论：/api/* 未捕获异常与 JSON body parse 错误全部收敛到统一 envelope，Express 默认 HTML 500 不再可达。上一轮待办第 1 项完成。
