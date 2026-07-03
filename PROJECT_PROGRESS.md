@@ -1,5 +1,73 @@
 # mrright.blog 项目进度记录
 
+## 2026-07-03：INTERNAL_ERROR / unhandled API errors envelope 兜底（freeze 前唯一服务端小改动）
+
+结论：/api/* 未捕获异常与 JSON body parse 错误全部收敛到统一 envelope，Express 默认 HTML 500 不再可达。上一轮待办第 1 项完成。
+
+完成内容：
+
+- server/responses.js：API_ERROR_CODES 新增两个错误码（与 freeze 文档 26+1 冻结表对齐）：
+  - `INTERNAL_ERROR`（未捕获 API 异常 → HTTP 500）
+  - `REQUEST_BODY_INVALID`（JSON body parse 失败 → HTTP 400）
+- server/index.js：在既有 upload error middleware 之后、express.static/SPA fallback 之前新增最终 API error-handling middleware：
+  - 仅对 path 为 `/api` 或 `/api/*` 的请求生效；非 API 请求 `next(error)` 落回 Express 原有行为，静态资源与 SPA fallback 不受影响。
+  - express.json 抛出的 parse 错误（`type === 'entity.parse.failed'` 或带 body 的 SyntaxError/400）→ `sendError(response, REQUEST_BODY_INVALID, ..., 400)`。
+  - 其余未捕获错误 → server-side `console.error`（含完整 error/stack，仅落日志）+ `sendError(response, INTERNAL_ERROR, 'Internal server error.', 500)`；响应体不含 stack trace、SQL、路径等内部细节。
+  - `headersSent` 时委托给 Express 默认处理，避免二次写响应。
+  - 不改动既有 upload/multer error middleware（describeUploadError 命中仍优先返回 FILE_* envelope）。
+- server/index.js：新增测试专用路由 `/api/__test__/throw`（同步 throw），仅 `NODE_ENV === 'test'` 时注册，production 不存在；代码注释注明仅供 contract test 使用。
+- tests/api/contract.spec.js：主测试服务器改为 `NODE_ENV: 'test'` 启动；第二个服务器（admin 授权套件）显式 `NODE_ENV: 'production'`。新增 3 个测试（25 → 28）：
+  1. malformed JSON POST /api/contact → 400 + data === null + pagination 为对象 + error.code === REQUEST_BODY_INVALID + error.message 非空 + error 非字符串。
+  2. GET /api/__test__/throw（test 模式）→ 500 + INTERNAL_ERROR envelope + raw body 断言不含 stack 帧（`    at `）、原始错误文本、`server/index.js` 路径、HTML。
+  3. GET /api/__test__/throw（production 模式服务器）→ 非 500 且不含 INTERNAL_ERROR，证明测试路由未在 production 注册。
+
+非 API 行为确认：
+
+- 静态资源仍由 `express.static(distDir)` 处理，未变。
+- SPA fallback 仍 `sendFile(distIndexPath)`，未变。
+- 非 /api/* 错误不强制 envelope（next(error) 透传）。
+- /api/health 仍返回 envelope（contract test 覆盖，未变）。
+
+修改文件：
+
+- server/index.js
+- server/responses.js
+- tests/api/contract.spec.js
+- PROJECT_PROGRESS.md
+
+commit：refactor(api): envelope unhandled API errors（最终 hash 以 git log 为准）
+
+build/lint/test 结果：
+
+- git diff --check：通过
+- npm run lint：通过
+- npm run build：通过（构建产物 dist/ 已 git restore 还原，未提交）
+- npm run test:api：通过（28 passed）
+
+是否部署 VPS：否。
+
+验证接口状态：未涉及线上，无变化。
+
+待办事项（下一批，按优先级）：
+
+1. DB-backed admin 200 contract tests（一次性 PostgreSQL，绝不指向生产库）
+2. DB-backed real upload multer error E2E（FILE_TOO_LARGE / INVALID_FILE_TYPE 端到端）
+3. /api/v1 双挂载 + 无镜像模式 + 反向镜像断言
+4. token storage 与 refresh 策略评估（v1 建议长效 token + 无 refresh，决策写入 freeze 文档）
+5. 受控资产下载端点设计定稿（Range/ETag/checksum）+ asset/download metadata 补全
+6. OpenAPI / typed client 抽取 + CI 漂移检测
+7. C++ SDK data model extraction（从冻结表映射 struct 草案）
+8. C++ cross-platform prototype skeleton（cpp-app/ 骨架）
+9. CI build matrix 规划（GitHub Actions win/mac/linux，第一 commit 起）
+10. packaging strategy spike（NSIS / dmg+notarization / AppImage 各走通一次）
+
+安全说明：
+
+- 本轮未部署 VPS、未 push GitHub、未修改数据库。
+- 本轮未读取、修改或输出 .env、ADMIN_TOKEN、DATABASE_URL、密钥或任何 secret。
+- 本轮未修改 auth/admin/token/db 判定逻辑。
+- 本轮未提交 dist/ 或任何构建产物。
+
 ## 2026-07-03：C++ 跨平台迁移前架构审查 + API v1 freeze 文档化
 
 结论：纯文档轮次，零代码/零 API 行为改动。三项状态标记：

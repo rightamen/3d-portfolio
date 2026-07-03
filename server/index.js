@@ -1890,6 +1890,17 @@ app.delete('/api/admin/community-comments/:id', requireAdmin, async (request, re
   return sendData(response, { ok: true })
 })
 
+// Test-only route: lets tests/api/contract.spec.js exercise the final
+// INTERNAL_ERROR envelope handler below with a deterministic uncaught
+// exception. Registered only when NODE_ENV === 'test' — it does not exist in
+// production (or any other environment) and must never be relied on outside
+// the contract tests.
+if (process.env.NODE_ENV === 'test') {
+  app.get('/api/__test__/throw', () => {
+    throw new Error('Deliberate uncaught contract-test error.')
+  })
+}
+
 app.use((error, _request, response, next) => {
   if (!error) return next()
 
@@ -1899,6 +1910,39 @@ app.use((error, _request, response, next) => {
   }
 
   return next(error)
+})
+
+// Final API error handler: any error that escapes a route handler or
+// middleware on an /api/* request must surface as the JSON envelope, never
+// Express's default HTML error page. Malformed JSON bodies rejected by
+// express.json arrive as SyntaxErrors flagged `entity.parse.failed` and map to
+// 400 REQUEST_BODY_INVALID; every other uncaught error maps to 500
+// INTERNAL_ERROR. The response body carries only the fixed code/message —
+// stack traces, driver errors, and file paths stay in the server-side log.
+// Non-API requests fall through to Express so the static/SPA pipeline below
+// keeps its existing behavior.
+app.use((error, request, response, next) => {
+  if (!error) return next()
+  if (response.headersSent) return next(error)
+
+  const requestPath = request.path || request.originalUrl || ''
+  if (!(requestPath === '/api' || requestPath.startsWith('/api/'))) return next(error)
+
+  const isBodyParseError =
+    error.type === 'entity.parse.failed' ||
+    (error instanceof SyntaxError && error.status === 400 && 'body' in error)
+
+  if (isBodyParseError) {
+    return sendError(
+      response,
+      API_ERROR_CODES.REQUEST_BODY_INVALID,
+      'Request body is not valid JSON.',
+      400,
+    )
+  }
+
+  console.error(`[API INTERNAL ERROR] ${request.method} ${request.originalUrl}`, error)
+  return sendError(response, API_ERROR_CODES.INTERNAL_ERROR, 'Internal server error.', 500)
 })
 
 // Non-API responses below intentionally bypass the JSON envelope

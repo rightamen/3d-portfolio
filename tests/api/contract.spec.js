@@ -31,6 +31,9 @@ test.beforeAll(async () => {
     env: {
       ...process.env,
       PORT: String(port),
+      // Enables the test-only /api/__test__/throw route so the final
+      // INTERNAL_ERROR envelope handler can be exercised deterministically.
+      NODE_ENV: 'test',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
@@ -386,6 +389,54 @@ test.describe('api contract envelope', () => {
     expect(payload.error.code).toBe('SERVICE_UNAVAILABLE')
     expect(typeof payload.error).not.toBe('string')
   })
+
+  // --- Final API error handler (REQUEST_BODY_INVALID / INTERNAL_ERROR) ---
+  //
+  // These exercise the end-of-app /api/* error middleware: malformed JSON
+  // bodies rejected by express.json, and uncaught route exceptions. Both must
+  // return the JSON envelope — never Express's default HTML 500 — and must not
+  // leak internals (stack traces, paths) into the response body.
+
+  test('malformed JSON body on /api/* returns coded 400 REQUEST_BODY_INVALID envelope', async () => {
+    const response = await fetch(`${baseURL}/api/contact`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{"name": "broken json",',
+    })
+    const payload = await response.json()
+
+    expect(response.status).toBe(400)
+    expectContractShape(payload)
+    expect(payload.data).toBeNull()
+    expect(payload.pagination).toEqual(expect.any(Object))
+    expect(typeof payload.error).not.toBe('string')
+    expect(payload.error.code).toBe('REQUEST_BODY_INVALID')
+    expect(payload.error.message).toEqual(expect.any(String))
+    expect(payload.error.message.length).toBeGreaterThan(0)
+  })
+
+  test('uncaught API exception returns coded 500 INTERNAL_ERROR envelope without internals', async () => {
+    // /api/__test__/throw exists only when the server runs with
+    // NODE_ENV === 'test' (as this suite's server does) and throws
+    // synchronously so the request reaches the final error middleware.
+    const response = await fetch(`${baseURL}/api/__test__/throw`)
+    const rawBody = await response.text()
+    const payload = JSON.parse(rawBody)
+
+    expect(response.status).toBe(500)
+    expectContractShape(payload)
+    expect(payload.data).toBeNull()
+    expect(payload.pagination).toEqual(expect.any(Object))
+    expect(typeof payload.error).not.toBe('string')
+    expect(payload.error.code).toBe('INTERNAL_ERROR')
+    expect(payload.error.message).toEqual(expect.any(String))
+
+    // No leaked internals: stack frames, the original error text, or HTML.
+    expect(rawBody).not.toContain('    at ')
+    expect(rawBody).not.toContain('Deliberate uncaught contract-test error.')
+    expect(rawBody).not.toContain('server/index.js')
+    expect(rawBody).not.toContain('<html')
+  })
 })
 
 // Boots a second server WITH a known ADMIN_TOKEN but with DATABASE_URL forced
@@ -408,6 +459,10 @@ test.describe('admin contract envelope (authenticated, store unavailable)', () =
         PORT: String(adminPort),
         ADMIN_TOKEN: adminToken,
         DATABASE_URL: '',
+        // Pinned to production so this server also verifies that the
+        // test-only /api/__test__/throw route is NOT registered outside
+        // NODE_ENV === 'test'.
+        NODE_ENV: 'production',
       },
       stdio: ['ignore', 'pipe', 'pipe'],
     })
@@ -457,6 +512,17 @@ test.describe('admin contract envelope (authenticated, store unavailable)', () =
     expect(response.status).toBe(503)
     expectContractShape(payload)
     expect(payload.error.code).toBe('SERVICE_UNAVAILABLE')
+  })
+
+  test('test-only /api/__test__/throw route is not registered in production', async () => {
+    // This server runs with NODE_ENV=production, so the route must not exist.
+    // The request falls through to the SPA pipeline instead of throwing, so it
+    // must NOT produce the INTERNAL_ERROR 500 the test-mode server produces.
+    const response = await fetch(`${adminBaseURL}/api/__test__/throw`)
+    const rawBody = await response.text()
+
+    expect(response.status).not.toBe(500)
+    expect(rawBody).not.toContain('INTERNAL_ERROR')
   })
 })
 
