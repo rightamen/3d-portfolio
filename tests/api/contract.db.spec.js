@@ -357,6 +357,45 @@ test.describe('db-backed admin 200 contract', () => {
   })
 })
 
+// Reverse-mirror pagination contract for the /api/v1 dual mount (freeze plan
+// §3/§16): a real sendPage endpoint must keep its top-level legacy mirror on
+// /api/* while /api/v1/* stays strict (data/pagination/error only) with the
+// SAME six-field pagination object. Lives in the DB suite because real
+// pagination is only reachable with a configured adminStore. Uses the
+// admin/visitors route mechanically — admin remains Web-only and is NOT part
+// of the C++ v1 contract.
+test.describe('db-backed /api/v1 strict pagination (reverse mirror)', () => {
+  test('legacy /api keeps visitors mirror; /api/v1 keeps only the strict envelope', async () => {
+    const legacy = await getJson('/api/admin/visitors?page=1&limit=1', adminToken)
+    const v1 = await getJson('/api/v1/admin/visitors?page=1&limit=1', adminToken)
+
+    expect(legacy.response.status).toBe(200)
+    expect(v1.response.status).toBe(200)
+
+    // Legacy: mirror present and identical to data.visitors.
+    expectContractShape(legacy.payload, { legacyKeys: ['visitors'] })
+    expect(legacy.payload.visitors).toEqual(legacy.payload.data.visitors)
+
+    // Strict v1: exactly data/pagination/error, no visitors/items at top level.
+    expect(Object.keys(v1.payload).sort()).toEqual(['data', 'error', 'pagination'])
+    expect(v1.payload.data.visitors).toEqual(legacy.payload.data.visitors)
+
+    // Real pagination survives unchanged in the strict envelope.
+    expectRealPagination(v1.payload.pagination)
+    expect(v1.payload.pagination).toEqual(legacy.payload.pagination)
+    expect(v1.payload.pagination.limit).toBe(1)
+  })
+
+  test('visitor detail sub-page on /api/v1 drops the items mirror, keeps pagination', async () => {
+    const v1 = await getJson(`/api/v1/admin/visitors/${visitorA.id}/posts`, adminToken)
+
+    expect(v1.response.status).toBe(200)
+    expect(Object.keys(v1.payload).sort()).toEqual(['data', 'error', 'pagination'])
+    expect(Array.isArray(v1.payload.data.items)).toBe(true)
+    expectRealPagination(v1.payload.pagination)
+  })
+})
+
 test.describe('db-backed auth contract', () => {
   test('account endpoints return AUTH_REQUIRED when the store exists', async () => {
     for (const path of ['/api/account/profile', '/api/account/downloads', '/api/account/comments']) {

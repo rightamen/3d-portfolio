@@ -439,6 +439,152 @@ test.describe('api contract envelope', () => {
   })
 })
 
+// --- /api/v1 strict envelope (no legacy mirror) ---
+//
+// The /api/v1/* prefix is the frozen contract for the future C++ cross-platform
+// App (API_V1_FREEZE_PLAN.md §3). Both prefixes share the same handlers via a
+// URL-rewrite dual mount; the ONLY difference is the response mode:
+//   - legacy /api/*   → envelope + top-level data mirror + code/message mirror
+//   - strict /api/v1/* → envelope ONLY: top-level keys are exactly
+//     data / pagination / error, nothing else, success or failure.
+// The reverse-mirror assertions below pin BOTH sides of that contract so a
+// future change can neither drop the legacy mirror (breaking the Web client)
+// nor leak it into v1 (freezing migration debt into the native SDK).
+test.describe('api v1 strict envelope (no legacy mirror)', () => {
+  // Strict v1 responses may not carry ANY top-level key beyond the envelope.
+  const expectStrictV1Shape = (payload) => {
+    expect(Object.keys(payload).sort()).toEqual(['data', 'error', 'pagination'])
+    expect(payload.pagination).toEqual(expect.any(Object))
+
+    if (payload.error !== null) {
+      expect(payload.data).toBeNull()
+      expect(typeof payload.error).not.toBe('string')
+      expect(payload.error).toEqual(
+        expect.objectContaining({
+          code: expect.any(String),
+          message: expect.any(String),
+        }),
+      )
+      expect(payload.error.code.length).toBeGreaterThan(0)
+    }
+  }
+
+  // Fetches the same path via both prefixes and asserts the reverse-mirror
+  // pair: legacy /api keeps the top-level mirror keys, strict /api/v1 must not
+  // have them, and the data payloads stay identical (same handler, no drift).
+  const expectReverseMirror = async (path, mirrorKeys) => {
+    const legacy = await getJson(`/api${path}`)
+    const v1 = await getJson(`/api/v1${path}`)
+
+    expect(v1.response.status, `status parity for ${path}`).toBe(legacy.response.status)
+    expect(v1.payload.data, `data parity for ${path}`).toEqual(legacy.payload.data)
+    expectStrictV1Shape(v1.payload)
+
+    for (const key of mirrorKeys) {
+      expect(legacy.payload, `legacy /api${path} must keep mirror '${key}'`).toHaveProperty(key)
+      expect(
+        Object.prototype.hasOwnProperty.call(v1.payload, key),
+        `strict /api/v1${path} must NOT mirror '${key}'`,
+      ).toBe(false)
+    }
+  }
+
+  test('GET /api/v1/health returns strict envelope while /api/health keeps mirror', async () => {
+    await expectReverseMirror('/health', ['ok', 'service'])
+
+    const { payload, response } = await getJson('/api/v1/health')
+    expect(response.status).toBe(200)
+    expect(payload.data.ok).toBe(true)
+  })
+
+  test('GET /api/v1/projects has data.projects but no top-level projects mirror', async () => {
+    await expectReverseMirror('/projects', ['projects'])
+
+    const { payload } = await getJson('/api/v1/projects')
+    expect(Array.isArray(payload.data.projects)).toBe(true)
+    expect(payload.data.projects.length).toBeGreaterThan(0)
+  })
+
+  test('public read endpoints drop legacy mirrors on /api/v1', async () => {
+    await expectReverseMirror('/profile', ['profile', 'skills'])
+    await expectReverseMirror('/experience', ['experience'])
+    await expectReverseMirror('/community/posts', ['posts'])
+    await expectReverseMirror('/community/uploads', ['uploads'])
+    await expectReverseMirror('/users/not-exist-test-handle/activity', [
+      'comments',
+      'posts',
+      'resources',
+    ])
+  })
+
+  test('v1 error responses carry only data/pagination/error (no code/message mirror)', async () => {
+    // Legacy errors mirror code/message at the top level; strict v1 must not.
+    await expectReverseMirror('/projects/not-a-real-project', ['code', 'message'])
+
+    const { payload, response } = await getJson('/api/v1/projects/not-a-real-project')
+    expect(response.status).toBe(404)
+    expectStrictV1Shape(payload)
+    expect(payload.error.code).toBe('PROJECT_NOT_FOUND')
+
+    // Store-gated account endpoint: same 503 code, strict shape.
+    const account = await getJson('/api/v1/account/profile')
+    expect(account.response.status).toBe(503)
+    expectStrictV1Shape(account.payload)
+    expect(account.payload.error.code).toBe('SERVICE_UNAVAILABLE')
+  })
+
+  test('v1 write endpoints return strict success and error envelopes', async () => {
+    const created = await postJson('/api/v1/contact', {
+      name: 'Contract Test',
+      email: 'contract-v1@example.com',
+      message: 'v1 strict envelope probe',
+    })
+    expect(created.response.status).toBe(201)
+    expectStrictV1Shape(created.payload)
+    expect(created.payload.data.ok).toBe(true)
+    expect(Object.prototype.hasOwnProperty.call(created.payload, 'ok')).toBe(false)
+
+    const invalid = await postJson('/api/v1/contact', {})
+    expect(invalid.response.status).toBe(400)
+    expectStrictV1Shape(invalid.payload)
+    expect(invalid.payload.error.code).toBe('VALIDATION_ERROR')
+  })
+
+  test('malformed JSON on /api/v1/* returns strict REQUEST_BODY_INVALID envelope', async () => {
+    // Exercises middleware ordering: the v1 rewrite runs before express.json,
+    // so even body-parse failures must come back in strict v1 shape.
+    const response = await fetch(`${baseURL}/api/v1/contact`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{"name": "broken json",',
+    })
+    const payload = await response.json()
+
+    expect(response.status).toBe(400)
+    expectStrictV1Shape(payload)
+    expect(payload.error.code).toBe('REQUEST_BODY_INVALID')
+  })
+
+  test('admin routes answer on /api/v1 with strict envelopes (Web-only, not C++ contract)', async () => {
+    // The dual mount covers /api/v1/admin/* mechanically, but admin stays a
+    // Web-only surface authenticated by the static ADMIN_TOKEN — it is NOT
+    // part of the v1 contract the C++ App may depend on (freeze plan §9).
+    const { payload, response } = await getJson('/api/v1/admin/summary')
+
+    expect(response.status).toBe(401)
+    expectStrictV1Shape(payload)
+    expect(payload.error.code).toBe('ADMIN_AUTH_REQUIRED')
+  })
+
+  test('the v1 prefix only matches an exact /api/v1 path segment', async () => {
+    // /api/v1x... must NOT be rewritten; it falls through past the API routes
+    // (SPA fallback), proving the rewrite cannot mangle unrelated paths.
+    const response = await fetch(`${baseURL}/api/v1x-not-a-version/health`)
+    const contentType = response.headers.get('content-type') || ''
+    expect(contentType).not.toContain('application/json')
+  })
+})
+
 // Boots a second server WITH a known ADMIN_TOKEN but with DATABASE_URL forced
 // empty, so a correctly-authenticated admin request passes requireAdmin's token
 // check and then hits the missing-store branch. This exercises the valid-token

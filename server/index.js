@@ -90,6 +90,25 @@ const app = express()
 const port = process.env.PORT || 4173
 
 app.use(cors({ origin: process.env.CORS_ORIGIN || true }))
+
+// /api/v1 dual mount (docs/API_V1_FREEZE_PLAN.md §3). Requests to /api/v1/*
+// are tagged apiVersion='v1' and rewritten to the matching /api/* path so both
+// prefixes share the exact same route handlers — no duplicated business logic,
+// no drift. The only behavioral difference lives in server/responses.js: v1
+// responses use the strict envelope (data/pagination/error only), while legacy
+// /api/* keeps the top-level data mirror and code/message compatibility keys
+// for the current Web front end. Registered BEFORE express.json so that body
+// parse errors on /api/v1/* also surface as strict envelopes. request.originalUrl
+// keeps the /api/v1 prefix for logging.
+const V1_PREFIX = /^\/api\/v1(?=\/|\?|$)/
+app.use((request, _response, next) => {
+  if (V1_PREFIX.test(request.url)) {
+    request.apiVersion = 'v1'
+    request.url = request.url.replace(V1_PREFIX, '/api')
+  }
+  next()
+})
+
 app.use(express.json({ limit: '96kb' }))
 app.use('/uploads', express.static(path.join(rootDir, 'public', 'uploads')))
 

@@ -52,7 +52,27 @@ const warnContractIssues = (response, payload, options) => {
   console.warn(`[API CONTRACT WARNING] ${route}\n${result.issues.join('\n')}`)
 }
 
+// Requests that arrived via the /api/v1/* prefix are tagged by the dual-mount
+// rewrite middleware in server/index.js. v1 responses use the STRICT envelope:
+// the top-level keys are exactly data/pagination/error — no legacy data mirror
+// (withLegacyData) and no top-level code/message compatibility mirror. Legacy
+// /api/* keeps both mirrors until the Web front end migrates to v1.
+// See docs/API_V1_FREEZE_PLAN.md §3/§4/§14.
+const isStrictV1 = (response) => response.req?.apiVersion === 'v1'
+
+const sendStrictV1 = (response, payload, httpStatus) => {
+  warnContractIssues(response, payload, {
+    allowCompatibilityKeys: false,
+    allowLegacyKeys: false,
+  })
+  return response.status(httpStatus).json(payload)
+}
+
 export const sendData = (response, data = {}, httpStatus = 200) => {
+  if (isStrictV1(response)) {
+    return sendStrictV1(response, { data, pagination: {}, error: null }, httpStatus)
+  }
+
   const legacyKeys = hasPlainObjectData(data) ? Object.keys(data) : []
   const payload = {
     ...withLegacyData(data),
@@ -65,6 +85,10 @@ export const sendData = (response, data = {}, httpStatus = 200) => {
 }
 
 export const sendPage = (response, data = {}, pagination = {}, httpStatus = 200) => {
+  if (isStrictV1(response)) {
+    return sendStrictV1(response, { data, pagination, error: null }, httpStatus)
+  }
+
   const legacyKeys = hasPlainObjectData(data) ? Object.keys(data) : []
   const payload = {
     ...withLegacyData(data),
@@ -77,6 +101,14 @@ export const sendPage = (response, data = {}, pagination = {}, httpStatus = 200)
 }
 
 export const sendError = (response, code, message, httpStatus = 400) => {
+  if (isStrictV1(response)) {
+    return sendStrictV1(
+      response,
+      { data: null, pagination: {}, error: { code, message } },
+      httpStatus,
+    )
+  }
+
   const payload = {
     data: null,
     pagination: {},

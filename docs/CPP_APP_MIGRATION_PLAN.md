@@ -70,11 +70,11 @@ Status: 迁移前架构审查结论 + 跨平台客户端设计基线（2026-07-0
 | # | 问题 | 影响 | 修复时机 |
 | - | --- | --- | --- |
 | 1 | **`/uploads` 是 `express.static` 公开直出**（server/index.js:94）。downloadPolicy 只挡"申请"不挡"文件"；知道 URL 即可下载任何已上传文件 | C++ App 的授权下载、断点续传、缓存校验都无处落脚 | v1 freeze 前设计、Phase 2 前实现受控下载端点 |
-| 2 | **无 `/api/v1` 前缀**。冻结的对象没有版本身份，未来破坏性变更无处安放 | SDK 无法声明兼容目标 | v1 freeze |
+| 2 | **无 `/api/v1` 前缀**。冻结的对象没有版本身份，未来破坏性变更无处安放 | SDK 无法声明兼容目标 | ✅ 已修复（2026-07-04）：`/api/v1/*` 双挂载上线，strict envelope（无 legacy 镜像），C++ App 只消费 `/api/v1/*`；admin 端点虽机械可达但**不进入** C++ v1 契约。详见 API_V1_FREEZE_PLAN.md §3 |
 | 3 | **未捕获异常落到 Express 默认 HTML 500**（error 中间件只分类 upload 错误后 `next(error)`）。无 `INTERNAL_ERROR` 码 | C++ 客户端遇 500 时解析 HTML 失败，错误处理链路断裂 | v1 freeze 前（已在待办） |
 | 4 | **无统一 Asset Model**。community 上传暴露 `fileUrl/fileSize/fileType/previewUrl`，admin 上传返回 `file+conversion`，项目图片/模型是内嵌字符串；无 checksum、mimeType 不稳定 | 本地缓存无法做完整性校验，SDK 模型无法固化 | v1 freeze 定义，实现可分批 |
 | 5 | **列表接口普遍无分页**（projects、community posts/uploads、account 列表全量返回；仅 admin visitors 有真实 `sendPage`） | C++ 列表页 / 增量同步没有稳定翻页语义 | v1 freeze 定义 spec，公共列表接口补齐 |
-| 6 | **legacy 顶层镜像**（`withLegacyData` 把 data 键摊到顶层）。有保留字碰撞风险（data/pagination/error/code/message），payload 体积翻倍 | SDK 若照抄顶层字段会把迁移债固化进原生客户端 | v1 路由下不镜像；legacy 路由维持 |
+| 6 | **legacy 顶层镜像**（`withLegacyData` 把 data 键摊到顶层）。有保留字碰撞风险（data/pagination/error/code/message），payload 体积翻倍 | SDK 若照抄顶层字段会把迁移债固化进原生客户端 | ✅ 已修复（2026-07-04）：`/api/v1/*` 下不镜像（顶层固定 data/pagination/error），legacy `/api/*` 维持镜像供 Web 使用；反向镜像断言防止镜像回流 v1 |
 | 7 | **token 生命周期未定义**：不透明 session token（服务端 hash 存储，设计正确），但无文档化过期、无 refresh、无多设备会话管理语义 | C++ App 是长驻进程，必须知道 token 何时失效、401 后如何恢复 | v1 freeze 评估并文档化 |
 | 8 | **无 OpenAPI / typed contract**。契约只存在于 markdown + 测试断言中 | C++ SDK 只能手抄字段，漂移无法机器检测 | freeze 后立即抽取 |
 | 9 | **contract 测试无 DB 路径**：admin 200 成功响应、真实 multer 错误（FILE_TOO_LARGE 等）不可达，未被断言 | 冻结的"成功形状"实际未被测试锁定 | freeze 前（已在待办） |

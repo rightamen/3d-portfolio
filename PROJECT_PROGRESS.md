@@ -1,5 +1,66 @@
 # mrright.blog 项目进度记录
 
+## 2026-07-04：/api/v1 双挂载 + strict envelope（无镜像）+ 反向镜像断言 — freeze checklist #4 完成
+
+结论：`/api/v1/*` 稳定入口上线。`/api/*` 保持 legacy-compatible（顶层 data 镜像 + code/message 兼容镜像，Web 前端零影响）；`/api/v1/*` 使用 strict envelope，顶层键固定为 data/pagination/error 三个，成功与失败一致。两前缀共用同一 handler（URL-rewrite 双挂载），零业务复制、零行为分叉。C++ App 未来只消费 `/api/v1/*`。上一轮待办第 1 项完成。
+
+实现方式：
+
+- server/index.js：在 `express.json` 之前注册 v1 rewrite 中间件——命中 `^/api/v1(?=/|?|$)` 的请求打 `request.apiVersion = 'v1'` 标记并把 `request.url` 重写为 `/api/...`，之后走既有全部路由（含 upload 错误中间件与 REQUEST_BODY_INVALID/INTERNAL_ERROR 兜底）。`originalUrl` 保留 v1 前缀供日志。非精确前缀（如 `/api/v1x...`）不重写。这是本轮唯一 server/index.js 改动，无 handler 复制、无大重构。
+- server/responses.js：`sendData/sendPage/sendError` 检测 `response.req.apiVersion === 'v1'` 走 strict 分支——不做 `withLegacyData` 顶层展开、不带顶层 code/message；分页对象原样保留在 envelope `pagination`，`items`/`visitors` 等 legacy 键不上顶层；runtime contract 校验以 `allowCompatibilityKeys=false, allowLegacyKeys=false` 运行。legacy 分支代码路径与行为完全不变。
+- 进入 v1 的接口：全部 `/api/*` 路由自动获得 v1 别名（health、profile、projects+interactions、community、auth、account、users、download-requests、contact、experience、admin、uploads）。
+- admin 边界结论：`/api/v1/admin/*` 因双挂载机械可达且 strict envelope 生效，但 admin 是 Web-only 面（静态 ADMIN_TOKEN 认证），**不属于 C++ App 可依赖的 v1 公开契约**；C++ SDK 不得调用 admin 端点。已写入 freeze 文档 §3。
+
+反向镜像断言（防止 legacy mirror 回流 v1 / v1 模式误伤 legacy）：
+
+- tests/api/contract.spec.js 新增 8 用例（28 → 36）：`expectReverseMirror` helper 对同一路径同时请求两前缀，断言 legacy 侧必须保留顶层镜像键、v1 侧顶层 keys 精确等于 `[data, error, pagination]`（`Object.keys` 排序全等）、两侧 data deep-equal（同 handler 无漂移）、status 一致。覆盖：health（ok/service）、projects、profile/experience/community/users-activity 只读、404 PROJECT_NOT_FOUND（code/message 镜像不入 v1）、503 SERVICE_UNAVAILABLE、contact 成功 201 + VALIDATION_ERROR 400、v1 malformed JSON → strict REQUEST_BODY_INVALID（验证中间件先于 body parser）、admin 401 strict envelope、`/api/v1x...` 非精确前缀不被重写。
+- tests/api/contract.db.spec.js 新增 2 用例（12 → 14）：真实 `sendPage` 分页（admin/visitors limit=1、visitor posts 子分页）在 v1 下六字段 pagination 原样保留、顶层无 visitors/items 镜像、与 legacy 侧 pagination/data deep-equal。
+
+修改文件：
+
+- server/index.js
+- server/responses.js
+- tests/api/contract.spec.js
+- tests/api/contract.db.spec.js
+- docs/API_V1_FREEZE_PLAN.md（§3 补已实现说明；§21 checklist #4 置 ✅）
+- docs/CPP_APP_MIGRATION_PLAN.md（十大问题表 #2、#6 置已修复）
+- PROJECT_PROGRESS.md
+
+commit：refactor(api): add strict v1 envelope routes（最终 hash 以 git log 为准）
+
+build/lint/test 结果：
+
+- git diff --check：通过
+- npm run lint：通过
+- npm run build：通过（dist/ 构建产物已还原，未提交）
+- npm run test:api：通过（36 passed）
+- npm run test:api:db：通过（14 passed，一次性集群已销毁）
+
+是否部署 VPS：否。
+
+验证接口状态：未涉及线上，无变化。
+
+数据库说明：仅 test:api:db 在临时目录一次性集群内写测试数据，跑完销毁。未连接、未修改生产库。
+
+待办事项（下一批，按优先级）：
+
+1. token storage 与 refresh 策略评估（v1 建议长效 token + 无 refresh，决策写入 freeze 文档；checklist #5）
+2. 受控资产下载端点设计定稿（Range/ETag/checksum）+ asset/download metadata 补全（checklist #6/#7）
+3. 公共列表 pagination 补齐方案（checklist #8）
+4. §7 错误码表与 API_ERROR_CODES 一致性复核（checklist #11，完成后 1–5+11 齐备可宣告 freeze）
+5. OpenAPI / typed client 抽取 + CI 漂移检测
+6. C++ SDK data model extraction（从冻结表映射 struct 草案）
+7. C++ cross-platform prototype skeleton（cpp-app/ 骨架）
+8. CI build matrix 规划（GitHub Actions win/mac/linux）
+9. packaging strategy spike（NSIS / dmg+notarization / AppImage）
+
+安全说明：
+
+- 本轮未部署 VPS、未 push GitHub、未连接或修改生产数据库。
+- 本轮未读取、修改或输出 .env、ADMIN_TOKEN、DATABASE_URL、密钥或任何 secret。
+- 本轮未改任何业务行为/auth/权限判定（仅 API mounting + response mode + tests + docs；legacy /api/* 响应字节级不变）。
+- 本轮未提交 dist/ 或任何构建产物。
+
 ## 2026-07-03：DB-backed contract tests（一次性 PostgreSQL）— freeze checklist #2/#3 完成
 
 结论：新增 `npm run test:api:db` DB-backed contract 套件（12 用例全通过），锁定此前不可达的三类路径：admin 200 成功形状 + 真实 sendPage pagination、真实 multipart multer 错误端到端、store 存在时的 AUTH_REQUIRED(401)。上一轮待办第 1、2 项完成（原 #1 admin 200 与 #2 upload E2E 合并在同一 suite），并顺带补掉历史遗留的"store 存在时 401 路径"。
