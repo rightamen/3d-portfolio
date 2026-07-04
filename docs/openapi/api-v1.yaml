@@ -1,0 +1,2114 @@
+openapi: 3.0.3
+info:
+  title: mrright.blog API v1
+  version: "1.0.0"
+  description: |
+    Strict-envelope contract for `/api/v1/*`, frozen for the future C++
+    cross-platform App (see `docs/API_V1_FREEZE_PLAN.md` and
+    `docs/CPP_APP_MIGRATION_PLAN.md`).
+
+    Scope and provenance:
+    - This spec documents ONLY endpoints that exist in `server/index.js` today
+      and are covered by `tests/api/contract.spec.js` and/or
+      `tests/api/contract.db.spec.js`. No field below is invented; every
+      response schema is derived from the actual `sendData`/`sendPage`
+      handler payloads and, where DB-backed, from `server/postgresStores.js`
+      row mappers.
+    - `/api/v1/*` and legacy `/api/*` share the exact same route handlers via
+      a URL-rewrite dual mount (`server/index.js`). The ONLY behavioral
+      difference is the response envelope shape (see below). This spec
+      documents the `/api/v1` strict shape; the legacy `/api/*` mirror
+      behavior is documented in `docs/API_CONTRACT.md`.
+    - Fields/endpoints that exist but whose shape is not yet fully sample-
+      verified are flagged inline with `x-gap` and cross-referenced in
+      `docs/API_V1_GAPS.md`. Nothing in `docs/API_V1_GAPS.md` is guessed at
+      here — gaps are omitted or marked, never fabricated.
+
+    Response envelope (strict, `/api/v1/*` only):
+    - Top-level keys are ALWAYS exactly `data`, `pagination`, `error` — no
+      more, no fewer. Enforced by `server/contracts/responseValidator.js`
+      with `allowCompatibilityKeys=false, allowLegacyKeys=false`, and by the
+      reverse-mirror contract tests in `tests/api/contract.spec.js`.
+    - Success: `error` is `null`, `data` is an object (never a bare array),
+      `pagination` is `{}` unless the endpoint paginates.
+    - Failure: `data` is `null`, `error` is `{ code, message }`, `pagination`
+      is still an object (`{}` unless the endpoint paginates).
+
+    C++ SDK consumption rule: the C++ App consumes `/api/v1/*` ONLY. Legacy
+    `/api/*` (with its top-level data/code/message mirrors) exists solely for
+    the current Web front end and MUST NOT be used by the SDK. Endpoints
+    tagged `Admin (Web-only)` are mechanically reachable under `/api/v1/admin/*`
+    (the dual mount covers them) but are NOT part of the C++ SDK public
+    surface — see `x-cpp-sdk: false` on each admin operation.
+  contact:
+    name: mrright.blog
+    url: https://mrright.blog
+servers:
+  - url: https://mrright.blog/api/v1
+    description: Production (strict v1 envelope)
+  - url: http://localhost:4173/api/v1
+    description: Local dev server (strict v1 envelope)
+
+tags:
+  - name: Health
+  - name: Auth
+    description: Visitor account authentication. Public-surface, part of the C++ SDK contract.
+  - name: Projects
+    description: Public portfolio project catalog and per-project interactions.
+  - name: Account
+    description: Signed-in visitor's own profile/content. Requires bearer visitor token.
+  - name: Profile Upload
+    description: Avatar/banner multipart uploads for the signed-in visitor.
+  - name: Community
+    description: Public community posts/uploads and authenticated write actions.
+  - name: Users
+    description: Public profile pages by handle.
+  - name: Downloads
+    description: Project download request submission and status.
+  - name: Contact
+    description: Public contact form.
+  - name: Admin (Web-only)
+    description: |
+      Mechanically reachable at `/api/v1/admin/*` via the dual mount, and
+      returns the strict envelope like every other v1 route. NOT part of the
+      C++ SDK public surface: authenticated by a static Web-only ADMIN_TOKEN,
+      not the visitor bearer token, and not intended for native client
+      consumption. See docs/API_V1_FREEZE_PLAN.md §3/§9.
+
+security: []
+
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      tags: [Health]
+      summary: Liveness/service identity check.
+      x-cpp-sdk: true
+      responses:
+        "200":
+          description: Service is up.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResponseEnvelope"
+              example:
+                data: { ok: true, service: mrright-portfolio }
+                pagination: {}
+                error: null
+
+  /auth/me:
+    get:
+      operationId: getCurrentVisitor
+      tags: [Auth]
+      summary: Get the current visitor from the bearer token, or null if unauthenticated.
+      x-cpp-sdk: true
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: |
+            Always 200. `data.user` is `null` when no token is supplied or the
+            token does not resolve to a session.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ResponseEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          user:
+                            oneOf:
+                              - $ref: "#/components/schemas/User"
+                              - type: "null"
+
+  /auth/register:
+    post:
+      operationId: registerVisitor
+      tags: [Auth]
+      summary: Register a new visitor account and send an email verification code.
+      x-cpp-sdk: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [displayName, email, password]
+              properties:
+                displayName: { type: string, maxLength: 80 }
+                email: { type: string, format: email, maxLength: 180 }
+                password: { type: string, minLength: 8 }
+      responses:
+        "201":
+          description: Account created; verification email queued.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ResponseEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          user: { $ref: "#/components/schemas/User" }
+                          verification:
+                            type: object
+                            description: |
+                              `devCode` is only present when NODE_ENV !==
+                              'production' (dev/test convenience so the flow
+                              can be completed without SMTP). Never rely on it
+                              in production clients.
+                            properties:
+                              delivery: { type: string }
+                              expiresAt: { type: string, format: date-time }
+                              required: { type: boolean }
+                              devCode: { type: string, description: "dev/test only" }
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "409":
+          description: Email already registered.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+              example:
+                data: null
+                pagination: {}
+                error: { code: EMAIL_ALREADY_REGISTERED, message: "This email is already registered." }
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+  /auth/resend-verification:
+    post:
+      operationId: resendVisitorVerification
+      tags: [Auth]
+      summary: Resend the email verification code for an unverified account.
+      x-cpp-sdk: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, format: email }
+      responses:
+        "200":
+          description: Verification code resent.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ResponseEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          verification:
+                            type: object
+                            properties:
+                              delivery: { type: string }
+                              expiresAt: { type: string, format: date-time }
+                              required: { type: boolean }
+                              devCode: { type: string, description: "dev/test only" }
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "404":
+          description: Email not registered.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+        "409":
+          description: Email already verified.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+  /auth/login:
+    post:
+      operationId: loginVisitor
+      tags: [Auth]
+      summary: Sign in with email + password and receive a bearer session token.
+      x-cpp-sdk: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
+      responses:
+        "200":
+          description: Signed in.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ResponseEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          session: { $ref: "#/components/schemas/Session" }
+                          user: { $ref: "#/components/schemas/AccountProfile" }
+        "401":
+          description: Incorrect email or password.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+              example:
+                data: null
+                pagination: {}
+                error: { code: VALIDATION_ERROR, message: "Email or password is incorrect." }
+        "403":
+          description: Email not verified yet.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+              example:
+                data: null
+                pagination: {}
+                error: { code: EMAIL_NOT_VERIFIED, message: "Please verify your email before signing in." }
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+  /auth/verify-email:
+    post:
+      operationId: verifyVisitorEmail
+      tags: [Auth]
+      summary: Confirm an email verification code and receive a bearer session token.
+      x-cpp-sdk: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, code]
+              properties:
+                email: { type: string, format: email }
+                code: { type: string, maxLength: 12 }
+      responses:
+        "200":
+          description: Email verified; session created.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ResponseEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          session: { $ref: "#/components/schemas/Session" }
+                          user: { $ref: "#/components/schemas/User" }
+        "400":
+          description: Missing fields, or code invalid/expired.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+  /auth/logout:
+    post:
+      operationId: logoutVisitor
+      tags: [Auth]
+      summary: Revoke the current bearer session token, if any.
+      x-cpp-sdk: true
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Always 200, whether or not a session was revoked.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ResponseEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          ok: { type: boolean, enum: [true] }
+
+  /profile:
+    get:
+      operationId: getSiteProfile
+      tags: [Health]
+      summary: Static site owner profile + skills (portfolio content, not a visitor account).
+      x-cpp-sdk: true
+      responses:
+        "200":
+          description: OK.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ResponseEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          profile:
+                            type: object
+                            description: |
+                              Static content object from server/content.js
+                              (name, handle, domain, intro/about text in
+                              zh/en/ja, highlights, socials). Field set is
+                              stable but not yet enumerated field-by-field in
+                              this spec — see docs/API_V1_GAPS.md.
+                          skills:
+                            type: array
+                            items: {}
+
+  /experience:
+    get:
+      operationId: getExperience
+      tags: [Health]
+      summary: Static work-experience timeline content.
+      x-cpp-sdk: true
+      responses:
+        "200":
+          description: OK.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ResponseEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          experience:
+                            type: array
+                            items: {}
+                            description: "Static content array; see docs/API_V1_GAPS.md."
+
+  /projects:
+    get:
+      operationId: listProjects
+      tags: [Projects]
+      summary: List public portfolio projects.
+      x-cpp-sdk: true
+      responses:
+        "200":
+          description: OK.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ResponseEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          projects:
+                            type: array
+                            items: { $ref: "#/components/schemas/Project" }
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+  /projects/{slug}:
+    get:
+      operationId: getProject
+      tags: [Projects]
+      summary: Get one project by slug.
+      x-cpp-sdk: true
+      parameters:
+        - $ref: "#/components/parameters/ProjectSlug"
+      responses:
+        "200":
+          description: OK.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ResponseEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          project: { $ref: "#/components/schemas/Project" }
+        "404":
+          description: Project not found.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+              example:
+                data: null
+                pagination: {}
+                error: { code: PROJECT_NOT_FOUND, message: "Project not found." }
+
+  /projects/{slug}/interactions:
+    get:
+      operationId: getProjectInteractions
+      tags: [Projects]
+      summary: Get a project's public comments and like count.
+      x-cpp-sdk: true
+      parameters:
+        - $ref: "#/components/parameters/ProjectSlug"
+      responses:
+        "200":
+          description: OK.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ResponseEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          comments:
+                            type: array
+                            items: { $ref: "#/components/schemas/ProjectComment" }
+                          likeCount: { type: integer }
+        "404":
+          description: Project not found.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+
+  /projects/{slug}/like:
+    post:
+      operationId: toggleProjectLike
+      tags: [Projects]
+      summary: Toggle a visitor's like on a project. Public write (no auth required); visitorId is a client-generated identifier.
+      x-cpp-sdk: true
+      security:
+        - bearerAuth: []
+        - {}
+      parameters:
+        - $ref: "#/components/parameters/ProjectSlug"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [visitorId]
+              properties:
+                visitorId:
+                  type: string
+                  description: Client-generated anonymous visitor identifier (not the account id).
+      responses:
+        "200":
+          description: Like toggled.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ResponseEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          liked: { type: boolean }
+                          likeCount: { type: integer }
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "404":
+          description: Project not found.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+
+  /projects/{slug}/comments:
+    post:
+      operationId: addProjectComment
+      tags: [Projects]
+      summary: Add a public comment to a project. Works signed-in or as a guest (author name supplied in body).
+      x-cpp-sdk: true
+      security:
+        - bearerAuth: []
+        - {}
+      parameters:
+        - $ref: "#/components/parameters/ProjectSlug"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [message]
+              properties:
+                author:
+                  type: string
+                  description: Required if not signed in; ignored/overridden by the visitor's displayName when a bearer token resolves.
+                message: { type: string, maxLength: 1000 }
+      responses:
+        "201":
+          description: Comment created.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ResponseEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          comment: { $ref: "#/components/schemas/ProjectComment" }
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "404":
+          description: Project not found.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+
+  /projects/{slug}/download-requests:
+    post:
+      operationId: requestProjectDownload
+      tags: [Downloads]
+      summary: Submit a download request for a project's protected asset.
+      x-cpp-sdk: true
+      security:
+        - bearerAuth: []
+        - {}
+      parameters:
+        - $ref: "#/components/parameters/ProjectSlug"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email, purpose]
+              properties:
+                name: { type: string, maxLength: 120 }
+                email: { type: string, format: email, maxLength: 180 }
+                purpose: { type: string, maxLength: 1200 }
+      responses:
+        "201":
+          description: Request recorded.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ResponseEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          ok: { type: boolean, enum: [true] }
+                          request:
+                            type: object
+                            properties:
+                              id: { type: string }
+                              status: { $ref: "#/components/schemas/DownloadRequestStatus" }
+                              createdAt: { type: string, format: date-time }
+                          access:
+                            type: object
+                            description: |
+                              Server-computed authorization decision. The
+                              client must branch only on `allowed` — it must
+                              not re-derive downloadPolicy rules locally (see
+                              API_V1_FREEZE_PLAN.md §10).
+                            properties:
+                              allowed: { type: boolean }
+                              current: { $ref: "#/components/schemas/AccessLevel" }
+                              required: { $ref: "#/components/schemas/AccessLevel" }
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "404":
+          description: Project not found.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+
+  /account/profile:
+    get:
+      operationId: getAccountProfile
+      tags: [Account]
+      summary: Get the signed-in visitor's own account profile.
+      x-cpp-sdk: true
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ResponseEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          profile: { $ref: "#/components/schemas/AccountProfile" }
+        "401":
+          $ref: "#/components/responses/AuthRequired"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+    put:
+      operationId: updateAccountProfile
+      tags: [Account]
+      summary: Update the signed-in visitor's account profile.
+      x-cpp-sdk: true
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [displayName, handle]
+              properties:
+                displayName: { type: string, minLength: 2, maxLength: 40 }
+                handle:
+                  type: string
+                  description: "3-30 lowercase letters, numbers, hyphens, underscores."
+                bio: { type: string, maxLength: 300 }
+                location: { type: string, maxLength: 120 }
+                website: { type: string, format: uri, maxLength: 300 }
+                publicEmail: { type: string, format: email, maxLength: 180 }
+                profilePublic: { type: boolean }
+                activityPublic: { type: boolean }
+                contactsPublic: { type: boolean }
+                contactLinks:
+                  type: object
+                  description: |
+                    Keyed by wechat/telegram/twitter/github/bilibili/youtube/
+                    artstation; each value is `{ public, url, value }`. See
+                    server/index.js normalizeContactLinks.
+      responses:
+        "200":
+          description: Profile updated.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ResponseEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          profile: { $ref: "#/components/schemas/AccountProfile" }
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/AuthRequired"
+        "409":
+          description: Handle already taken.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+              example:
+                data: null
+                pagination: {}
+                error: { code: HANDLE_TAKEN, message: "This handle is already taken." }
+
+  /account/avatar:
+    post:
+      operationId: uploadAccountAvatar
+      tags: [Profile Upload]
+      summary: Upload/replace the signed-in visitor's avatar image.
+      x-cpp-sdk: true
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: "JPG/PNG/WebP only, max 2 MiB (avatarUploadLimit)."
+      responses:
+        "201":
+          description: Avatar updated.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ResponseEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          avatarUrl: { type: string }
+                          profile: { $ref: "#/components/schemas/AccountProfile" }
+        "400":
+          description: |
+            Missing file (VALIDATION_ERROR) or unsupported file type
+            (INVALID_FILE_TYPE — see docs/PROJECT_PROGRESS.md 2026-07-04 fix).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+        "401":
+          $ref: "#/components/responses/AuthRequired"
+        "413":
+          description: File exceeds the 2 MiB avatar limit.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+              example:
+                data: null
+                pagination: {}
+                error: { code: FILE_TOO_LARGE, message: "File too large" }
+
+  /account/banner:
+    post:
+      operationId: uploadAccountBanner
+      tags: [Profile Upload]
+      summary: Upload/replace the signed-in visitor's profile banner image.
+      x-cpp-sdk: true
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: "JPG/PNG/WebP only, max 5 MiB (bannerUploadLimit)."
+      responses:
+        "201":
+          description: Banner updated.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ResponseEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          bannerUrl: { type: string }
+                          profile: { $ref: "#/components/schemas/AccountProfile" }
+        "400":
+          description: Missing file or unsupported file type (INVALID_FILE_TYPE).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+        "401":
+          $ref: "#/components/responses/AuthRequired"
+        "413":
+          description: File exceeds the 5 MiB banner limit.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+
+  /account/community:
+    get:
+      operationId: getAccountCommunity
+      tags: [Account]
+      summary: List the signed-in visitor's own community posts and uploads.
+      x-cpp-sdk: true
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ResponseEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          posts:
+                            type: array
+                            items: { $ref: "#/components/schemas/CommunityPost" }
+                          uploads:
+                            type: array
+                            items: { $ref: "#/components/schemas/CommunityUpload" }
+        "401":
+          $ref: "#/components/responses/AuthRequired"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+  /account/downloads:
+    get:
+      operationId: getAccountDownloads
+      tags: [Account]
+      summary: List the signed-in visitor's own download requests.
+      x-cpp-sdk: true
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: |
+            OK. Not yet paginated (see API_V1_FREEZE_PLAN.md §8 backlog /
+            docs/API_V1_GAPS.md) — returns the full list.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ResponseEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          requests:
+                            type: array
+                            items: { $ref: "#/components/schemas/DownloadRequest" }
+        "401":
+          $ref: "#/components/responses/AuthRequired"
+
+  /account/comments:
+    get:
+      operationId: getAccountComments
+      tags: [Account]
+      summary: List the signed-in visitor's own project comments and total like count given.
+      x-cpp-sdk: true
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: "OK. Not yet paginated (see docs/API_V1_GAPS.md)."
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ResponseEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          comments:
+                            type: array
+                            items:
+                              type: object
+                              description: |
+                                Row shape not yet fully enumerated for the
+                                account-scoped listing — see
+                                docs/API_V1_GAPS.md.
+                          likeCount: { type: integer }
+        "401":
+          $ref: "#/components/responses/AuthRequired"
+
+  /account/community/uploads/{id}:
+    delete:
+      operationId: deleteAccountCommunityUpload
+      tags: [Account]
+      summary: Delete one of the signed-in visitor's own community uploads.
+      x-cpp-sdk: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "200":
+          description: Deleted.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ResponseEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          ok: { type: boolean, enum: [true] }
+        "401":
+          $ref: "#/components/responses/AuthRequired"
+        "404":
+          description: Upload not found (or not owned by this visitor).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+  /account/community/posts/{id}:
+    delete:
+      operationId: deleteAccountCommunityPost
+      tags: [Account]
+      summary: Delete one of the signed-in visitor's own community posts.
+      x-cpp-sdk: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "200":
+          description: Deleted.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ResponseEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          ok: { type: boolean, enum: [true] }
+        "401":
+          $ref: "#/components/responses/AuthRequired"
+        "404":
+          description: Post not found (or not owned by this visitor).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+  /community/uploads:
+    get:
+      operationId: listCommunityUploads
+      tags: [Community]
+      summary: List publicly approved community uploads.
+      x-cpp-sdk: true
+      responses:
+        "200":
+          description: |
+            OK. Returns `{ uploads: [] }` when the community store is not
+            configured, never an error. Not yet paginated (docs/API_V1_GAPS.md).
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ResponseEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          uploads:
+                            type: array
+                            items: { $ref: "#/components/schemas/CommunityUpload" }
+    post:
+      operationId: uploadCommunityResource
+      tags: [Community]
+      summary: Upload a community resource (image or 3D model file).
+      x-cpp-sdk: true
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, title, description]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: "Image or model extension only (see imageExtensions/modelExtensions), max 120 MiB."
+                title: { type: string, maxLength: 160 }
+                description: { type: string, maxLength: 1200 }
+                assetCategory: { $ref: "#/components/schemas/AssetCategory" }
+      responses:
+        "201":
+          description: Upload created.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ResponseEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          upload: { $ref: "#/components/schemas/CommunityUpload" }
+        "400":
+          description: Missing file/title/description, or INVALID_FILE_TYPE.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+        "401":
+          $ref: "#/components/responses/AuthRequired"
+        "413":
+          description: File exceeds the 120 MiB shared upload limit.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+  /community/posts:
+    get:
+      operationId: listCommunityPosts
+      tags: [Community]
+      summary: List community posts.
+      x-cpp-sdk: true
+      responses:
+        "200":
+          description: |
+            OK. Returns `{ posts: [] }` when the community store is not
+            configured. Not yet paginated (docs/API_V1_GAPS.md).
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ResponseEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          posts:
+                            type: array
+                            items: { $ref: "#/components/schemas/CommunityPost" }
+    post:
+      operationId: createCommunityPost
+      tags: [Community]
+      summary: Create a community post.
+      x-cpp-sdk: true
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title, message]
+              properties:
+                title: { type: string, maxLength: 160 }
+                message: { type: string, maxLength: 1800 }
+                topic: { $ref: "#/components/schemas/CommunityTopic" }
+      responses:
+        "201":
+          description: Post created.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ResponseEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          post: { $ref: "#/components/schemas/CommunityPost" }
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/AuthRequired"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+  /community/posts/{id}:
+    get:
+      operationId: getCommunityPost
+      tags: [Community]
+      summary: Get one community post by id.
+      x-cpp-sdk: true
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "200":
+          description: OK.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ResponseEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          post: { $ref: "#/components/schemas/CommunityPost" }
+        "404":
+          description: Post not found (or community store not configured).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+              example:
+                data: null
+                pagination: {}
+                error: { code: COMMUNITY_POST_NOT_FOUND, message: "Community post not found." }
+
+  /community/posts/{id}/comments:
+    get:
+      operationId: listCommunityComments
+      tags: [Community]
+      summary: List comments on a community post.
+      x-cpp-sdk: true
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [newest, top]
+            default: newest
+      responses:
+        "200":
+          description: |
+            OK. Returns `{ comments: [] }` when the community store is not
+            configured (never errors in that case).
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ResponseEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          comments:
+                            type: array
+                            items: { $ref: "#/components/schemas/CommunityComment" }
+        "404":
+          description: Post not found (only when the community store IS configured but the post id does not exist).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+    post:
+      operationId: createCommunityComment
+      tags: [Community]
+      summary: Add a comment (optionally a reply) to a community post.
+      x-cpp-sdk: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [message]
+              properties:
+                message: { type: string, maxLength: 1800 }
+                parentId:
+                  type: string
+                  nullable: true
+                  description: Id of the parent comment when replying.
+      responses:
+        "201":
+          description: Comment created.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ResponseEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          comment: { $ref: "#/components/schemas/CommunityComment" }
+        "400":
+          description: Missing message, or parentId does not resolve to an existing comment.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+        "401":
+          $ref: "#/components/responses/AuthRequired"
+        "404":
+          description: Post not found.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+  /community/comments/{id}/like:
+    post:
+      operationId: toggleCommunityCommentLike
+      tags: [Community]
+      summary: Toggle the signed-in visitor's like on a community comment.
+      x-cpp-sdk: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "200":
+          description: |
+            Like toggled. `data` shape is the store's raw toggle result
+            (liked/likeCount fields) — see docs/API_V1_GAPS.md for exact
+            field enumeration pending a DB-backed sample.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ResponseEnvelope" }
+        "401":
+          $ref: "#/components/responses/AuthRequired"
+        "404":
+          description: Comment not found.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+  /community/comments/{id}:
+    delete:
+      operationId: deleteCommunityComment
+      tags: [Community]
+      summary: Delete the signed-in visitor's own community comment.
+      x-cpp-sdk: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "200":
+          description: Deleted.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ResponseEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          ok: { type: boolean, enum: [true] }
+        "401":
+          $ref: "#/components/responses/AuthRequired"
+        "404":
+          description: Comment not found (or not owned by this visitor).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+  /users/{handle}:
+    get:
+      operationId: getPublicUserProfile
+      tags: [Users]
+      summary: Get a visitor's public profile by handle.
+      description: |
+        Deliberately returns `RESOURCE_FORBIDDEN` + 404 for every
+        "cannot show this handle" case (missing store, invalid handle
+        format, non-existent profile) to prevent handle enumeration — see
+        server/index.js comment above this route.
+      x-cpp-sdk: true
+      parameters:
+        - $ref: "#/components/parameters/Handle"
+      responses:
+        "200":
+          description: |
+            OK. If the profile exists but `profilePublic` is false, `data`
+            contains only `{ handle, profilePublic: false }` — no other
+            fields are present in that case.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ResponseEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          profile: { $ref: "#/components/schemas/PublicProfile" }
+        "403":
+          description: Profile disabled by an administrator.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+              example:
+                data: null
+                pagination: {}
+                error: { code: PROFILE_ADMIN_DISABLED, message: "This public profile is currently unavailable." }
+        "404":
+          description: Profile not found, invalid handle, or anti-enumeration response for a private/nonexistent handle.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+              example:
+                data: null
+                pagination: {}
+                error: { code: RESOURCE_FORBIDDEN, message: "User profile not found." }
+
+  /users/{handle}/resources:
+    get:
+      operationId: getPublicUserResources
+      tags: [Users]
+      summary: List a visitor's public community uploads.
+      x-cpp-sdk: true
+      parameters:
+        - $ref: "#/components/parameters/Handle"
+      responses:
+        "200":
+          description: |
+            OK. Returns `{ resources: [] }` for private/disabled profiles,
+            missing stores, or invalid activityPublic/profilePublic state —
+            never an error in those cases.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ResponseEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          resources:
+                            type: array
+                            items: { $ref: "#/components/schemas/PublicUpload" }
+        "403":
+          description: Profile disabled by an administrator.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+        "404":
+          description: Invalid handle or profile not found.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+
+  /users/{handle}/posts:
+    get:
+      operationId: getPublicUserPosts
+      tags: [Users]
+      summary: List a visitor's public community posts.
+      x-cpp-sdk: true
+      parameters:
+        - $ref: "#/components/parameters/Handle"
+      responses:
+        "200":
+          description: "OK. Returns `{ posts: [] }` for private/disabled profiles or missing stores."
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ResponseEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          posts:
+                            type: array
+                            items: { $ref: "#/components/schemas/PublicPost" }
+        "403":
+          description: Profile disabled by an administrator.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+        "404":
+          description: Invalid handle or profile not found.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+
+  /users/{handle}/activity:
+    get:
+      operationId: getPublicUserActivity
+      tags: [Users]
+      summary: Combined feed of a visitor's public comments, posts, and resources.
+      x-cpp-sdk: true
+      parameters:
+        - $ref: "#/components/parameters/Handle"
+      responses:
+        "200":
+          description: |
+            OK. Returns `{ comments: [], posts: [], resources: [] }` for
+            private/disabled profiles or missing stores.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ResponseEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          comments:
+                            type: array
+                            items: { $ref: "#/components/schemas/PublicComment" }
+                          posts:
+                            type: array
+                            items: { $ref: "#/components/schemas/PublicPost" }
+                          resources:
+                            type: array
+                            items: { $ref: "#/components/schemas/PublicUpload" }
+        "403":
+          description: Profile disabled by an administrator.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+        "404":
+          description: Invalid handle or profile not found.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+
+  /contact:
+    post:
+      operationId: sendContactMessage
+      tags: [Contact]
+      summary: Submit a public contact form message.
+      x-cpp-sdk: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email, message]
+              properties:
+                name: { type: string, maxLength: 120 }
+                email: { type: string, format: email, maxLength: 180 }
+                message: { type: string, maxLength: 2000 }
+      responses:
+        "201":
+          description: Message recorded.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ResponseEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          ok: { type: boolean, enum: [true] }
+        "400":
+          $ref: "#/components/responses/ValidationError"
+
+  # --- Admin (Web-only). Mechanically reachable under /api/v1/admin/* via the
+  # dual mount; NOT part of the C++ SDK public surface. Every operation below
+  # is tagged x-cpp-sdk: false. Only a representative subset is documented in
+  # full detail (the rest follow the identical requireAdmin + strict-envelope
+  # pattern); see docs/API_V1_GAPS.md for the complete admin route inventory
+  # and docs/API_CONTRACT.md for the legacy /api/admin/* behavior.
+  /admin/summary:
+    get:
+      operationId: getAdminSummary
+      tags: [Admin (Web-only)]
+      summary: Aggregate counts for the admin dashboard. Web-only.
+      x-cpp-sdk: false
+      security:
+        - adminToken: []
+      responses:
+        "200":
+          description: OK.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ResponseEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          summary:
+                            type: object
+                            description: |
+                              Counts object (comments/likes/download_requests/
+                              pending_downloads/contact_messages/visitors/
+                              community_posts/community_comments/
+                              community_uploads/pending_community_uploads).
+                              See server/postgresStores.js getSummary.
+        "401":
+          $ref: "#/components/responses/AdminAuthRequired"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+  /admin/visitors:
+    get:
+      operationId: listAdminVisitors
+      tags: [Admin (Web-only)]
+      summary: Paginated visitor search. Web-only, real sendPage pagination.
+      x-cpp-sdk: false
+      security:
+        - adminToken: []
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+        - name: query
+          in: query
+          schema: { type: string }
+        - name: verified
+          in: query
+          schema: { type: string, enum: [true, false] }
+        - name: accessLevel
+          in: query
+          schema: { $ref: "#/components/schemas/AccessLevel" }
+        - name: profileStatus
+          in: query
+          schema: { type: string, enum: [public, private, disabled] }
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [createdAt, updatedAt, lastLoginAt, displayName]
+            default: createdAt
+      responses:
+        "200":
+          description: OK, with real six-field pagination.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ResponseEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          visitors:
+                            type: array
+                            items: { $ref: "#/components/schemas/AdminVisitor" }
+                      pagination: { $ref: "#/components/schemas/Pagination" }
+        "401":
+          $ref: "#/components/responses/AdminAuthRequired"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+  /admin/visitors/{id}:
+    get:
+      operationId: getAdminVisitor
+      tags: [Admin (Web-only)]
+      summary: Get one visitor's detail + recent moderation actions. Web-only.
+      x-cpp-sdk: false
+      security:
+        - adminToken: []
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "200":
+          description: OK.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ResponseEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          visitor: { $ref: "#/components/schemas/AdminVisitor" }
+                          recentActions:
+                            type: array
+                            items: { $ref: "#/components/schemas/AdminVisitorAction" }
+        "401":
+          $ref: "#/components/responses/AdminAuthRequired"
+        "404":
+          description: Visitor not found.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+              example:
+                data: null
+                pagination: {}
+                error: { code: VISITOR_NOT_FOUND, message: "Visitor not found." }
+
+  /admin/visitors/{id}/profile-visibility:
+    patch:
+      operationId: setAdminVisitorProfileVisibility
+      tags: [Admin (Web-only)]
+      summary: Enable/disable a visitor's public profile. Web-only.
+      x-cpp-sdk: false
+      security:
+        - adminToken: []
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [disabled]
+              properties:
+                disabled: { type: boolean }
+                reason: { type: string, maxLength: 500 }
+      responses:
+        "200":
+          description: Updated.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ResponseEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          visitor: { $ref: "#/components/schemas/AdminVisitor" }
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/AdminAuthRequired"
+        "404":
+          description: Visitor not found.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: |
+        Visitor session token (opaque random string; server stores only its
+        hash). Part of the C++ SDK public contract — see
+        API_V1_FREEZE_PLAN.md §9. Token lifetime/refresh semantics are NOT
+        yet frozen (checklist #5, still open).
+    adminToken:
+      type: http
+      scheme: bearer
+      description: |
+        Static ADMIN_TOKEN Bearer credential, Web-only. NOT part of the C++
+        SDK public contract — the SDK must never implement or store this
+        credential. See API_V1_FREEZE_PLAN.md §9/§3.
+
+  parameters:
+    ProjectSlug:
+      name: slug
+      in: path
+      required: true
+      schema: { type: string }
+    ResourceId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+    Handle:
+      name: handle
+      in: path
+      required: true
+      schema: { type: string }
+
+  responses:
+    ValidationError:
+      description: Request validation failed.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+          example:
+            data: null
+            pagination: {}
+            error: { code: VALIDATION_ERROR, message: "Please provide valid input." }
+    AuthRequired:
+      description: Visitor authentication required.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+          example:
+            data: null
+            pagination: {}
+            error: { code: AUTH_REQUIRED, message: "Please sign in to continue." }
+    AdminAuthRequired:
+      description: Admin authentication required. Web-only; the C++ SDK should never encounter this.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+          example:
+            data: null
+            pagination: {}
+            error: { code: ADMIN_AUTH_REQUIRED, message: "Admin authorization is required." }
+    ServiceUnavailable:
+      description: A required backend store is not configured.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+          example:
+            data: null
+            pagination: {}
+            error: { code: SERVICE_UNAVAILABLE, message: "Service is not configured." }
+
+  schemas:
+    ResponseEnvelope:
+      type: object
+      description: |
+        Strict v1 envelope. Top-level keys are EXACTLY data/pagination/error
+        — nothing else, on success or failure. Enforced by
+        server/contracts/responseValidator.js and the reverse-mirror contract
+        tests.
+      required: [data, pagination, error]
+      properties:
+        data:
+          description: Object on success, `null` on failure. Never a bare top-level array.
+          nullable: true
+          type: object
+        pagination:
+          $ref: "#/components/schemas/Pagination"
+        error:
+          nullable: true
+          oneOf:
+            - type: "null"
+            - $ref: "#/components/schemas/ApiError"
+      additionalProperties: false
+
+    ErrorEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/ResponseEnvelope"
+        - type: object
+          properties:
+            data:
+              type: "null"
+            error:
+              $ref: "#/components/schemas/ApiError"
+
+    ApiError:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          $ref: "#/components/schemas/ApiErrorCode"
+        message:
+          type: string
+          description: Human-readable, may change without notice. Clients must branch on `code`, never on `message`.
+
+    ApiErrorCode:
+      type: string
+      description: |
+        Stable machine-readable codes. Mirrors API_ERROR_CODES in
+        server/responses.js (26 values, includes INTERNAL_ERROR). Clients
+        must treat unknown future codes as a generic failure keyed off HTTP
+        status, not crash.
+      enum:
+        - ADMIN_AUTH_REQUIRED
+        - AUTH_REQUIRED
+        - COMMENT_NOT_FOUND
+        - COMMUNITY_COMMENT_NOT_FOUND
+        - COMMUNITY_POST_NOT_FOUND
+        - COMMUNITY_UPLOAD_NOT_FOUND
+        - CONTACT_MESSAGE_NOT_FOUND
+        - DOWNLOAD_REQUEST_NOT_FOUND
+        - EMAIL_ALREADY_REGISTERED
+        - EMAIL_ALREADY_VERIFIED
+        - EMAIL_NOT_REGISTERED
+        - EMAIL_NOT_VERIFIED
+        - FILE_TOO_LARGE
+        - FILE_UPLOAD_ERROR
+        - HANDLE_TAKEN
+        - INTERNAL_ERROR
+        - INVALID_FILE_TYPE
+        - INVALID_TOKEN
+        - PROFILE_ADMIN_DISABLED
+        - PROJECT_NOT_FOUND
+        - PROJECT_SLUG_TAKEN
+        - RATE_LIMITED
+        - REQUEST_BODY_INVALID
+        - RESOURCE_FORBIDDEN
+        - SERVICE_UNAVAILABLE
+        - VALIDATION_ERROR
+        - VISITOR_NOT_FOUND
+
+    Pagination:
+      type: object
+      description: |
+        Always an object. `{}` for non-paginated endpoints. The six-field
+        shape below is only populated by `sendPage` (currently
+        /api/admin/visitors and its visitor detail sub-pages — see
+        API_V1_FREEZE_PLAN.md §8 for the backlog of public endpoints still
+        needing pagination).
+      properties:
+        page: { type: integer }
+        limit: { type: integer }
+        total: { type: integer }
+        pages: { type: integer }
+        hasNext: { type: boolean }
+        hasPrevious: { type: boolean }
+      additionalProperties: false
+
+    AccessLevel:
+      type: string
+      enum: [guest, member, approved]
+
+    AssetCategory:
+      type: string
+      enum:
+        - generic
+        - next-gen-prop
+        - next-gen-character
+        - next-gen-scene
+        - hand-painted-character
+        - hand-painted-scene
+
+    CommunityTopic:
+      type: string
+      enum: [general, showcase, help, feedback]
+
+    DownloadRequestStatus:
+      type: string
+      enum: [pending, approved, rejected]
+
+    User:
+      type: object
+      description: Session-resolved visitor identity (GET /auth/me shape).
+      properties:
+        id: { type: string }
+        email: { type: string, format: email }
+        displayName: { type: string }
+        accessLevel: { $ref: "#/components/schemas/AccessLevel" }
+        emailVerified: { type: boolean }
+        handle: { type: string }
+        avatarUrl: { type: string }
+        bannerUrl: { type: string }
+        bio: { type: string }
+        location: { type: string }
+        website: { type: string }
+        profilePublic: { type: boolean }
+        activityPublic: { type: boolean }
+        profileAdminDisabled: { type: boolean }
+        createdAt: { type: string, format: date-time }
+      x-source: server/postgresStores.js toPublicUser
+
+    AccountProfile:
+      description: |
+        Extended profile returned to the signed-in owner only (adds
+        contactLinks, contactsPublic, publicEmail, stats, lastLoginAt —
+        never returned to other visitors).
+      allOf:
+        - $ref: "#/components/schemas/User"
+        - type: object
+          properties:
+            contactLinks:
+              type: object
+              additionalProperties: true
+            contactsPublic: { type: boolean }
+            publicEmail: { type: string }
+            lastLoginAt: { type: string, format: date-time, nullable: true }
+            updatedAt: { type: string, format: date-time, nullable: true }
+            stats:
+              type: object
+              properties:
+                commentCount: { type: integer }
+                downloadRequestCount: { type: integer }
+                likeCount: { type: integer }
+                postCount: { type: integer }
+                uploadCount: { type: integer }
+      x-source: server/postgresStores.js toAccountProfile
+
+    PublicProfile:
+      description: Profile shape returned to OTHER visitors via /users/{handle} (no email/contactLinks unless contactsPublic).
+      allOf:
+        - $ref: "#/components/schemas/User"
+        - type: object
+          properties:
+            publicEmail:
+              type: string
+              description: Only present/non-empty when contactsPublic is true.
+            stats:
+              type: object
+              nullable: true
+              description: null when activityPublic is false.
+      x-source: server/postgresStores.js toPublicProfile
+
+    Session:
+      type: object
+      properties:
+        token: { type: string }
+        expiresAt: { type: string, format: date-time }
+      x-source: server/index.js createSession
+
+    Project:
+      type: object
+      description: |
+        Static portfolio project content (server/content.js), optionally
+        overridden per-slug via the admin projectStore. `id` distinct from
+        `slug` is NOT yet present (see API_V1_GAPS.md /
+        CPP_APP_MIGRATION_PLAN.md §16).
+      properties:
+        slug: { type: string }
+        title: { type: string }
+        titleZh: { type: string }
+        titleEn: { type: string }
+        titleJa: { type: string }
+        summary: { type: string }
+        summaryZh: { type: string }
+        summaryEn: { type: string }
+        summaryJa: { type: string }
+        workflow: { type: string }
+        image: { type: string }
+        modelUrl: { type: string }
+        format: { type: string }
+        modelSize: { type: string }
+        downloadPolicy:
+          type: string
+          description: |
+            Free-text policy string today (e.g. "Authorization required"),
+            NOT yet the frozen enum from API_V1_FREEZE_PLAN.md §10/§11 — see
+            docs/API_V1_GAPS.md.
+        assetCategory: { $ref: "#/components/schemas/AssetCategory" }
+        viewerFeatures:
+          type: array
+          items: { type: string }
+        stack:
+          type: array
+          items: { type: string }
+        year: { type: string }
+        isPublic: { type: boolean }
+      x-source: server/content.js, server/postgresStores.js mergeProject
+
+    ProjectComment:
+      type: object
+      properties:
+        id: { type: string }
+        author: { type: string }
+        message: { type: string }
+        createdAt: { type: string, format: date-time }
+      x-source: server/interactionsStore.js addComment / server/postgresStores.js toComment
+
+    CommunityUpload:
+      type: object
+      properties:
+        id: { type: string }
+        title: { type: string }
+        description: { type: string }
+        assetCategory: { $ref: "#/components/schemas/AssetCategory" }
+        fileType: { type: string, enum: [image, model] }
+        fileUrl: { type: string }
+        fileSize:
+          type: integer
+          description: Only present on the owner-scoped /account/community listing and admin shapes, not the public toPublicUploadPayload projection.
+        previewUrl: { type: string, nullable: true }
+        status:
+          type: string
+          enum: [pending, approved, rejected]
+          description: Only present on owner/admin-scoped listings, not the public projection.
+        createdAt: { type: string, format: date-time }
+      x-source: server/postgresStores.js toCommunityUpload / server/index.js toPublicUploadPayload
+
+    CommunityPost:
+      type: object
+      properties:
+        id: { type: string }
+        title: { type: string }
+        message: { type: string }
+        topic: { $ref: "#/components/schemas/CommunityTopic" }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      x-source: server/postgresStores.js toCommunityPost
+
+    CommunityComment:
+      type: object
+      properties:
+        id: { type: string }
+        postId: { type: string }
+        author: { type: string }
+        message: { type: string }
+        parentId: { type: string, nullable: true }
+        likeCount: { type: integer }
+        liked: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      x-source: server/postgresStores.js toCommunityComment
+
+    PublicPost:
+      type: object
+      description: Reduced projection of CommunityPost used for /users/{handle}/posts and activity.
+      properties:
+        id: { type: string }
+        title: { type: string }
+        message: { type: string }
+        topic: { $ref: "#/components/schemas/CommunityTopic" }
+        createdAt: { type: string, format: date-time }
+      x-source: server/index.js toPublicPostPayload
+
+    PublicComment:
+      type: object
+      description: Reduced projection used for /users/{handle}/activity.
+      properties:
+        id: { type: string }
+        message: { type: string }
+        projectSlug: { type: string }
+        createdAt: { type: string, format: date-time }
+      x-source: server/index.js toPublicCommentPayload
+
+    PublicUpload:
+      type: object
+      description: Reduced projection of CommunityUpload used for /users/{handle}/resources and activity.
+      properties:
+        id: { type: string }
+        title: { type: string }
+        description: { type: string }
+        assetCategory: { $ref: "#/components/schemas/AssetCategory" }
+        fileType: { type: string, enum: [image, model] }
+        fileUrl: { type: string }
+        previewUrl: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+      x-source: server/index.js toPublicUploadPayload
+
+    DownloadRequest:
+      type: object
+      properties:
+        id: { type: string }
+        status: { $ref: "#/components/schemas/DownloadRequestStatus" }
+        projectSlug: { type: string }
+        projectTitle: { type: string }
+        purpose: { type: string }
+        visitorAccessLevel: { $ref: "#/components/schemas/AccessLevel" }
+        createdAt: { type: string, format: date-time }
+      x-source: server/postgresStores.js downloadRequestsStore.listUserRequests
+
+    AdminVisitor:
+      type: object
+      description: |
+        Admin-only extended visitor row (Web-only; NOT part of the C++ SDK
+        contract). Superset of AccountProfile with moderation fields.
+      allOf:
+        - $ref: "#/components/schemas/AccountProfile"
+        - type: object
+          properties:
+            profileAdminDisabledAt: { type: string, format: date-time, nullable: true }
+      x-source: server/postgresStores.js adminStore.listVisitors / getVisitor
+
+    AdminVisitorAction:
+      type: object
+      description: Admin moderation audit log entry. Web-only.
+      properties:
+        id: { type: string }
+        visitorUserId: { type: string }
+        action: { type: string }
+        fields:
+          type: array
+          items: { type: string }
+        reason: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+      x-source: server/postgresStores.js admin_user_actions table

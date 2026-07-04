@@ -8,6 +8,9 @@ Status: 迁移前架构审查结论 + 跨平台客户端设计基线（2026-07-0
 - `docs/API_CONTRACT.md` — 现行 API 契约
 - `docs/API_ERRORS.md` — 错误码注册表
 - `docs/ARCHITECTURE.md` — 平台架构方向
+- `docs/openapi/api-v1.yaml` — v1 端点 OpenAPI 初稿；**C++ SDK 开工前的机器可读契约起点**
+- `docs/API_V1_MODEL_MAPPING.md` — TS/C++ model mapping 初稿；**C++ Prototype（Phase 2）的 `sdk/core/models/` 应直接从此文档的 struct 草图开始，不再重新设计字段**
+- `docs/API_V1_GAPS.md` — 尚未冻结/未验证字段清单；Phase 2 动工前必须先看这份，避免把 gap 当成已定形状写死进编译产物
 
 ---
 
@@ -388,10 +391,10 @@ NSIS + portable zip、.app/.dmg + codesign + notarization、AppImage + deb、自
 
 ## 22. 哪些事情必须优先做（顺序即优先级）
 
-1. `INTERNAL_ERROR` 全局 envelope 兜底（唯一的 freeze 前服务端代码改动，小而关键）。
-2. `API_V1_FREEZE_PLAN.md` checklist 执行：DB-backed admin 200 contract tests + 真实 multer 错误 E2E。
-3. 受控资产下载端点设计定稿（含 Range/ETag/checksum），写入 v1 契约。
-4. token 生命周期（过期/刷新/多设备）评估并文档化。
-5. OpenAPI spec 抽取 + CI 漂移检测。
-6. C++ SDK model 头文件草案（从 §16 冻结表直接映射）。
+1. `INTERNAL_ERROR` 全局 envelope 兜底（唯一的 freeze 前服务端代码改动，小而关键）。✅
+2. `API_V1_FREEZE_PLAN.md` checklist 执行：DB-backed admin 200 contract tests + 真实 multer 错误 E2E。✅
+3. 受控资产下载端点设计定稿（含 Range/ETag/checksum），写入 v1 契约。❌（checklist #6，仍待办）
+4. token 生命周期（过期/刷新/多设备）评估并文档化。❌（checklist #5，仍待办）
+5. OpenAPI spec 抽取 + CI 漂移检测。🟡 spec 初稿已完成（`docs/openapi/api-v1.yaml`），**CI 自动漂移检测尚未接入**——仍是本项剩余工作。
+6. C++ SDK model 头文件草案（从 §16 冻结表直接映射）。🟡 `docs/API_V1_MODEL_MAPPING.md` 已给出 struct 草图（非可编译头文件），真正的 `sdk/core/models/*.h` 骨架仍属 Phase 2 cpp-app/ 工作，未开工。
 7. cpp-app 骨架 + 三平台 CI matrix（哪怕只编译一个 hello-sdk target）。

@@ -1,5 +1,95 @@
 # mrright.blog 项目进度记录
 
+## 2026-07-05：OpenAPI v1 初稿 + C++ SDK model mapping 抽取（freeze checklist #9/#10 初稿）
+
+结论：把已被 `tests/api/contract.spec.js`/`tests/api/contract.db.spec.js` 锁住的 `/api/v1` strict envelope 契约，沉淀为正式 OpenAPI 规范初稿与 TS/C++ model mapping 文档。纯文档/契约抽取批次，**零 API 行为改动、零 C++ 代码、零 C++ UI**。
+
+完成内容：
+
+- 新建 `docs/openapi/api-v1.yaml`（OpenAPI 3.0.3）：
+  - 38 paths / 42 operations，`servers` 均以 `/api/v1` 为 base path。
+  - 覆盖 Health、Auth（register/login/logout/verify-email/resend-verification/me）、Projects（含 interactions/like/comments/download-requests）、Account（profile 读写、avatar/banner multipart 上传、community/downloads/comments 只读、删除 upload/post）、Community（posts/uploads 读写、comments、like、delete）、Users（profile/resources/posts/activity）、Contact；另加 4 个代表性 Admin 端点（summary、visitors 分页列表、visitor 详情、profile-visibility）演示 Web-only 边界。
+  - 全部端点仅取自 `server/index.js` 真实路由 + 已被 contract 测试或 `src/lib/api.js` 实际消费的形状；不确定字段（如 `community/comments/:id/like` 精确返回 key、`account/comments` 行形状、`Project.downloadPolicy` 未来枚举）在 spec 中留白/注明，转记到新建的 `docs/API_V1_GAPS.md`，**不编造**。
+  - `components.schemas.ApiErrorCode.enum`（27 个）与 `server/responses.js` 的 `API_ERROR_CODES` 用一次性脚本比对：逐一致，零缺失零多余。
+  - 全部 admin operation 显式 `x-cpp-sdk: false`，独立 tag `Admin (Web-only)`；`adminToken` security scheme 的 description 明确写"SDK 不得实现或存储此凭证"。
+  - strict envelope 规则在 `ResponseEnvelope`/`ErrorEnvelope` schema 中硬编码：顶层仅 `data`/`pagination`/`error`（`additionalProperties: false`）。
+- 新建 `docs/API_V1_GAPS.md`：记录 7 类缺口——(1) 缺 DB-backed sample 的端点、(2) admin 路由未逐条枚举的清单与理由、(3) Asset/download 字段按上传类型的逐字段缺失对照表（checksum/mimeType/downloadUrl 等）、(4) `Project.downloadPolicy` 尚非冻结枚举、(5) pagination 缺口清单（与 freeze 文档 §8 一致）、(6) token 生命周期未定（freeze checklist #5）、(7) 刻意排除在 C++ SDK 外的端点边界（admin）。
+- 新建 `docs/API_V1_MODEL_MAPPING.md`：
+  - Web `normalizeApiPayload` 与 strict v1 envelope 关系说明（结论：该函数隐含依赖 legacy 顶层镜像做兼容展开，未针对纯 strict payload 验证过；Web 暂不切 v1，本轮不改前端代码）。
+  - TypeScript 类型草图（`ApiResponse<T>`/`ApiError`/`Pagination`/`User`/`AccountProfile`/`Project`/`Asset`/`CommunityPost`/`Comment`/`DownloadRequest`/`UploadError`）——仅文档参考，不引入 TS 编译，不迁移前端。
+  - C++ struct 草图（`ResponseEnvelope<T>`/`ApiError`+`ApiErrorCode` enum/`Pagination`/`User`/`AccountProfile`/`Project`/`Asset`(aspirational，标注未实现)/`CommunityPost`/`Comment`/`DownloadRequest`/`LocalAsset`/`DownloadTask`/`SyncStatus`），字段与 OpenAPI schema 一一对应。
+  - 字段类型映射表（string/number/boolean/ISO datetime/nullable/array/object → JS/TS/C++ 三栏对照）。
+  - 明确写死：SDK 不依赖 legacy 顶层镜像字段、不消费 admin 端点。
+  - upload/download 错误 → `Result<T, ApiError>` 映射表；pagination → `PageRequest`/`Pagination` 请求响应模型映射；asset cache 仍缺失字段清单（与 API_V1_GAPS.md 交叉引用）。
+- 更新 `docs/API_V1_FREEZE_PLAN.md`：§18/§19 补"已实现"说明；§21 checklist #9/#10 从 ❌ 改为 🟡（初稿完成，CI 自动漂移检测与"定稿"状态仍未达成，原因已注明）；关联文档列表补三个新文件。
+- 更新 `docs/CPP_APP_MIGRATION_PLAN.md`：关联文档列表补三个新文件并注明 C++ Prototype 应从 model mapping 文档的 struct 草图开始而非重新设计；§22 优先级列表逐项标注当前完成状态（1/2 已完成，5/6 部分完成并注明剩余缺口，3/4 仍未开始）。
+
+哪些接口进入了 `/api/v1`（C++ SDK public surface，`x-cpp-sdk: true`）：
+
+- Health/Auth/Projects/Account/Profile Upload/Community/Users/Downloads/Contact 全部公开只读与已鉴权写接口，共 38 个 operation。
+
+admin 是否进入 v1 SDK：**否**。`/api/v1/admin/*` 机械可达（双挂载天然覆盖）且 strict envelope 生效，但认证方式是 Web-only 静态 `ADMIN_TOKEN`，与 C++ App 使用的 visitor bearer token 完全不同凭证体系；spec 中所有 admin operation 标 `x-cpp-sdk: false`，SDK 的 `ApiClient` 不应实现任何 admin 方法。
+
+C++ SDK model mapping 核心结论：
+
+- 一个 JSON 形状对应一个 struct，不做客户端侧改名；`std::optional` 表达缺失字段，未知 JSON key 忽略（前向兼容），未知 `error.code` 落 `ApiErrorCode::Unknown` 且保留原始字符串。
+- 统一 Asset Model 仍是"目标形状"而非"现状"——`Asset` struct 标注 aspirational，所有新字段（checksum/mimeType/downloadUrl/version/etag）在 SDK 落地前必须先等 freeze checklist #6/#7 完成。
+- `Project` 暂无独立于 `slug` 的稳定 `id`；受控下载端点 `GET /api/v1/assets/:id/download` 尚未实现，SDK 的 `DownloadManager`/`CacheManager` 设计需以 `docs/API_V1_GAPS.md` §3/§8 的缺口表为起点，而非假设字段已存在。
+
+仍缺哪些字段/sample（详见 `docs/API_V1_GAPS.md`）：
+
+1. `community/comments/:id/like`、`account/comments` 的精确响应形状缺 DB-backed 断言。
+2. Asset 统一模型：checksum、mimeType、downloadUrl、version、etag 全部端点均未populate。
+3. `Project.downloadPolicy` 仍是自由文本，非冻结枚举。
+4. 6 类公共列表端点仍无真实分页（与 freeze 文档 §8 待办一致）。
+5. token 生命周期（过期/刷新/多设备）未定义（freeze checklist #5）。
+
+修改文件：
+
+- docs/openapi/api-v1.yaml（新建）
+- docs/API_V1_MODEL_MAPPING.md（新建）
+- docs/API_V1_GAPS.md（新建）
+- docs/API_V1_FREEZE_PLAN.md
+- docs/CPP_APP_MIGRATION_PLAN.md
+- PROJECT_PROGRESS.md
+
+commit：docs(api): extract v1 openapi and sdk model mapping（最终 hash 以 git log 为准）
+
+build/lint/test 结果：
+
+- git diff --check：通过
+- npm run lint：通过
+- npm run build：通过（dist/ 构建产物已还原，未提交）
+- npm run test:api：通过（38 passed，无 API 行为改动）
+- npm run test:api:db：通过（18 passed，一次性集群已销毁）
+
+OpenAPI 校验方式说明（未新增重量级依赖）：用项目已有的传递依赖 `js-yaml` 写了一次性脚本（`scripts/validate-openapi-tmp.mjs`，运行验证后已删除，未提交），确认：YAML 可解析、全部 `$ref` 可解析、`ApiErrorCode` 枚举与 `API_ERROR_CODES` 逐一致（27/27，零缺失零多余）。未安装 OpenAPI validator 类重量依赖。
+
+是否部署 VPS：否。
+
+验证接口状态：未涉及线上，无变化。
+
+数据库说明：本轮未连接、未修改任何数据库（含测试用一次性集群，仅复用既有 test:api:db 基础设施跑现有用例，未新增数据库写操作）。
+
+待办事项（下一批，按优先级，延续 freeze checklist）：
+
+1. OpenAPI CI 自动漂移检测接入（checklist #9 剩余部分——把本轮的一次性人工校验脚本变成可重复运行的 CI 步骤）
+2. token storage 与 refresh 策略评估并文档化（checklist #5）
+3. 受控资产下载端点设计定稿（Range/ETag/checksum）+ asset/download metadata 补全（checklist #6/#7）
+4. 公共列表 pagination 补齐方案（checklist #8）
+5. §7 错误码表与 API_ERROR_CODES 一致性复核（checklist #11，完成后 1–5+11 齐备可宣告 freeze）
+6. C++ SDK `sdk/core/models/*.h` 真实头文件骨架（本轮只有 markdown struct 草图，非可编译代码）
+7. cpp-app/ 骨架 + 三平台 CI matrix
+8. packaging strategy spike
+
+安全说明：
+
+- 本轮未部署 VPS、未 push GitHub、未连接或修改生产数据库。
+- 本轮未读取、修改或输出 .env、ADMIN_TOKEN、DATABASE_URL、密钥或任何 secret。
+- 本轮未改任何 API 行为（server/index.js、server/responses.js 均未改动，仅新增/修改文档）。
+- 本轮未开发任何 C++ 代码或 C++ UI（仅 markdown 中的 struct 草图，非可编译产物，无 cpp-app/ 目录生成）。
+- 本轮未提交 dist/ 或任何构建产物；临时验证脚本 `scripts/validate-openapi-tmp.mjs` 与临时 package.json script 均已在提交前删除/还原，未进入 git 历史。
+
 ## 2026-07-04：修复 avatar/banner upload 文件类型错误分类 bug（freeze 前错误码一致性）
 
 结论：确认并修复 bug——avatar/banner 非法文件类型真实触发时会被误分类为 `INTERNAL_ERROR` 500，而非契约要求的 `INVALID_FILE_TYPE` 400。此风险在 2026-07-03 的技术备注中已记录（见下方历史记录），本轮排查确认属实并修复。不改任何业务行为，只修正错误分类；community/admin 上传现有行为不变。
