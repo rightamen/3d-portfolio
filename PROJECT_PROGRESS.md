@@ -1,5 +1,77 @@
 # mrright.blog 项目进度记录
 
+## 2026-07-04：修复 avatar/banner upload 文件类型错误分类 bug（freeze 前错误码一致性）
+
+结论：确认并修复 bug——avatar/banner 非法文件类型真实触发时会被误分类为 `INTERNAL_ERROR` 500，而非契约要求的 `INVALID_FILE_TYPE` 400。此风险在 2026-07-03 的技术备注中已记录（见下方历史记录），本轮排查确认属实并修复。不改任何业务行为，只修正错误分类；community/admin 上传现有行为不变。
+
+Bug 确认：
+
+- server/index.js 中两处 `fileFilter`：
+  - 通用上传（community/admin，line ~138）拒绝时抛 `new Error('Unsupported file type.')`。
+  - profile 头像/封面上传（`createProfileImageUpload`，line ~162）拒绝时抛 `new Error('Only JPG, PNG, and WebP images are allowed.')`——消息不同。
+- server/responses.js 的 `describeUploadError` 此前只按 `error.message === 'Unsupported file type.'` 匹配，avatar/banner 分支永远匹配不到，`next(error)` 落到 index.js 末尾的 INTERNAL_ERROR 兜底 → 500，而不是 400 INVALID_FILE_TYPE。
+
+修复方式：
+
+- 不再依赖脆弱的 message 字符串。两处 `fileFilter` 拒绝时均附加稳定 `error.code = 'INVALID_FILE_TYPE'`（与 `API_ERROR_CODES.INVALID_FILE_TYPE` 同值），消息文案本身不变（仍分别是各自原有的用户可读文案）。
+- `describeUploadError` 判定顺序调整为：MulterError 分支不变 → 新增 `error.code === 'INVALID_FILE_TYPE'` 判定（优先）→ 原 message 字符串匹配降级为兜底（保留，避免其他未打 code 的调用方漏判）。
+- community/admin 上传现有行为逐字节不变（同一 error.code 命中同一分支，仍输出 400 + 原消息）。
+- strict `/api/v1/*` 下该错误同样只输出 data/pagination/error 三个顶层键（复用 checklist #4 的 response mode 机制，未新增代码路径）。
+
+新增测试：
+
+- tests/api/contract.spec.js（+1 单测，37→38 total）：`describeUploadError` 对携带 `error.code = 'INVALID_FILE_TYPE'` 但消息文案不同（avatar/banner 文案）的错误正确分类，独立于 message 字符串。
+- tests/api/contract.db.spec.js（+4 用例，14→18 total）：
+  - avatar 非法文件类型 → legacy `/api/account/avatar` 400 INVALID_FILE_TYPE（非 500/INTERNAL_ERROR，`error` 非字符串）。
+  - avatar 非法文件类型 → strict `/api/v1/account/avatar` 顶层仅 data/pagination/error，`error.code === INVALID_FILE_TYPE`。
+  - banner 同上两条（legacy + strict v1）。
+  - 均为端到端真实 multipart 触发（复用既有 DB-backed 环境，无需新增 fixture）。
+
+修改文件：
+
+- server/index.js
+- server/responses.js
+- tests/api/contract.spec.js
+- tests/api/contract.db.spec.js
+- docs/API_V1_FREEZE_PLAN.md（§12 补已修复说明）
+- PROJECT_PROGRESS.md
+
+commit：fix(api): classify profile upload file type errors（最终 hash 以 git log 为准）
+
+build/lint/test 结果：
+
+- git diff --check：通过
+- npm run lint：通过
+- npm run build：通过（dist/ 构建产物已还原，未提交）
+- npm run test:api：通过（38 passed）
+- npm run test:api:db：通过（18 passed，一次性集群已销毁）
+
+是否部署 VPS：否。
+
+验证接口状态：未涉及线上，无变化。
+
+数据库说明：仅 test:api:db 在临时目录一次性集群内写测试数据（含本轮新增的 avatar/banner 非法文件上传探针），跑完销毁。未连接、未修改生产库。
+
+待办事项（下一批，按优先级，延续 freeze checklist）：
+
+1. token storage 与 refresh 策略评估（checklist #5）
+2. 受控资产下载端点设计定稿（Range/ETag/checksum）+ asset/download metadata 补全（checklist #6/#7）
+3. 公共列表 pagination 补齐方案（checklist #8）
+4. §7 错误码表与 API_ERROR_CODES 一致性复核（checklist #11，完成后 1–5+11 齐备可宣告 freeze）
+5. OpenAPI / typed client 抽取 + CI 漂移检测
+6. C++ SDK data model extraction
+7. C++ cross-platform prototype skeleton（cpp-app/ 骨架）
+8. CI build matrix 规划
+9. packaging strategy spike
+
+安全说明：
+
+- 本轮未部署 VPS、未 push GitHub、未连接或修改生产数据库。
+- 本轮未读取、修改或输出 .env、ADMIN_TOKEN、DATABASE_URL、密钥或任何 secret。
+- 本轮未改任何业务行为，只修正错误分类逻辑（fileFilter 拒绝仍是同样的拒绝，仅错误对象多了一个 code 属性；describeUploadError 输出的 HTTP status/code 语义未变，只是让 avatar/banner 路径命中正确分支）。
+- 本轮未混入 OpenAPI / C++ SDK / 新功能改动。
+- 本轮未提交 dist/ 或任何构建产物。
+
 ## 2026-07-04：/api/v1 双挂载 + strict envelope（无镜像）+ 反向镜像断言 — freeze checklist #4 完成
 
 结论：`/api/v1/*` 稳定入口上线。`/api/*` 保持 legacy-compatible（顶层 data 镜像 + code/message 兼容镜像，Web 前端零影响）；`/api/v1/*` 使用 strict envelope，顶层键固定为 data/pagination/error 三个，成功与失败一致。两前缀共用同一 handler（URL-rewrite 双挂载），零业务复制、零行为分叉。C++ App 未来只消费 `/api/v1/*`。上一轮待办第 1 项完成。

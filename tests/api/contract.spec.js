@@ -708,6 +708,21 @@ test.describe('describeUploadError mapping (shared upload error handler)', () =>
     })
   })
 
+  test('a stable error.code of INVALID_FILE_TYPE classifies regardless of message (avatar/banner fileFilter)', () => {
+    // Regression: avatar/banner fileFilter rejects with a different message
+    // ("Only JPG, PNG, and WebP images are allowed.") than the community/admin
+    // fileFilter ("Unsupported file type."). Message-only matching missed this
+    // path and let it fall through to INTERNAL_ERROR. Both fileFilters now set
+    // error.code = 'INVALID_FILE_TYPE', which this checks independent of message.
+    const error = new Error('Only JPG, PNG, and WebP images are allowed.')
+    error.code = 'INVALID_FILE_TYPE'
+    expect(describeUploadError(error)).toEqual({
+      code: 'INVALID_FILE_TYPE',
+      message: 'Only JPG, PNG, and WebP images are allowed.',
+      httpStatus: 400,
+    })
+  })
+
   test('unrelated errors are not classified as upload errors', () => {
     expect(describeUploadError(null)).toBeNull()
     expect(describeUploadError(new Error('Something unrelated blew up'))).toBeNull()

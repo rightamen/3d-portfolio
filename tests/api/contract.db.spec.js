@@ -454,4 +454,56 @@ test.describe('db-backed real multer upload errors', () => {
     expect(payload.error.code).toBe('INVALID_FILE_TYPE')
     expect(typeof payload.error).not.toBe('string')
   })
+
+  // Regression coverage: the avatar/banner fileFilter rejects with a DIFFERENT
+  // message ("Only JPG, PNG, and WebP images are allowed.") than the
+  // community/admin fileFilter ("Unsupported file type."). describeUploadError
+  // used to match on message only, so this path fell through to the final
+  // error middleware and returned INTERNAL_ERROR 500 instead of
+  // INVALID_FILE_TYPE 400 (see PROJECT_PROGRESS.md 2026-07-03 technical note).
+  // Both routes now attach a stable error.code, checked here on both the
+  // legacy /api/* mirror and the strict /api/v1/* envelope.
+  for (const { field, path } of [
+    { field: 'avatar', path: '/api/account/avatar' },
+    { field: 'banner', path: '/api/account/banner' },
+  ]) {
+    test(`unsupported ${field} upload returns INVALID_FILE_TYPE, never INTERNAL_ERROR (legacy /api)`, async () => {
+      const form = new FormData()
+      form.append(
+        'file',
+        new Blob(['not an image'], { type: 'text/plain' }),
+        `contract-test-${field}.txt`,
+      )
+
+      const { payload, response } = await postForm(path, form, visitorA.sessionToken)
+
+      expect(response.status).toBe(400)
+      expectContractShape(payload)
+      expect(payload.error.code).toBe('INVALID_FILE_TYPE')
+      expect(typeof payload.error).not.toBe('string')
+      expect(response.status).not.toBe(500)
+      expect(payload.error.code).not.toBe('INTERNAL_ERROR')
+    })
+
+    test(`unsupported ${field} upload returns strict v1 INVALID_FILE_TYPE envelope (no legacy mirror)`, async () => {
+      const form = new FormData()
+      form.append(
+        'file',
+        new Blob(['not an image'], { type: 'text/plain' }),
+        `contract-test-${field}-v1.txt`,
+      )
+
+      const { payload, response } = await postForm(
+        `/api/v1${path.replace('/api', '')}`,
+        form,
+        visitorA.sessionToken,
+      )
+
+      expect(response.status).toBe(400)
+      expect(Object.keys(payload).sort()).toEqual(['data', 'error', 'pagination'])
+      expect(payload.data).toBeNull()
+      expect(typeof payload.error).not.toBe('string')
+      expect(payload.error.code).toBe('INVALID_FILE_TYPE')
+    })
+  }
 })

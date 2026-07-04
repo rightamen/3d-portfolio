@@ -129,7 +129,12 @@ export const sendError = (response, code, message, httpStatus = 400) => {
 // error (so callers fall through to the next error handler). Kept multer-free
 // so it can be unit-tested without spinning up a server: multer raises
 // instances whose `name` is 'MulterError' (limits, unexpected fields), while
-// fileFilter rejections arrive as plain Errors with a known message.
+// fileFilter rejections arrive as plain Errors. fileFilter callbacks attach a
+// stable `error.code === 'INVALID_FILE_TYPE'` (see server/index.js) so
+// classification does not depend on the human-readable message — different
+// upload routes (community/admin vs. avatar/banner) use different messages
+// for the same rejection. The message check below is kept only as a fallback
+// for any error that reaches here without the stable code.
 export const describeUploadError = (error) => {
   if (!error) return null
 
@@ -149,7 +154,7 @@ export const describeUploadError = (error) => {
     }
   }
 
-  if (error.message === 'Unsupported file type.') {
+  if (error.code === 'INVALID_FILE_TYPE' || error.message === 'Unsupported file type.') {
     return {
       code: API_ERROR_CODES.INVALID_FILE_TYPE,
       message: error.message,

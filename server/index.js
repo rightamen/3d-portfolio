@@ -139,7 +139,13 @@ const upload = multer({
     const extension = path.extname(file.originalname).toLowerCase()
     const allowed = imageExtensions.has(extension) || modelExtensions.has(extension)
 
-    callback(allowed ? null : new Error('Unsupported file type.'), allowed)
+    if (allowed) return callback(null, true)
+
+    // Stable code consumed by describeUploadError (server/responses.js) so
+    // classification does not depend on this message string.
+    const error = new Error('Unsupported file type.')
+    error.code = 'INVALID_FILE_TYPE'
+    callback(error, false)
   },
 })
 
@@ -165,7 +171,13 @@ const createProfileImageUpload = ({ folder, limit }) =>
         profileImageExtensions.has(extension) &&
         ['image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype)
 
-      callback(allowed ? null : new Error('Only JPG, PNG, and WebP images are allowed.'), allowed)
+      if (allowed) return callback(null, true)
+
+      // Stable code consumed by describeUploadError (server/responses.js) so
+      // classification does not depend on this message string.
+      const error = new Error('Only JPG, PNG, and WebP images are allowed.')
+      error.code = 'INVALID_FILE_TYPE'
+      callback(error, false)
     },
   })
 
