@@ -27,8 +27,8 @@ pure SDK layer or Qt date/time types at the UI binding boundary.
 
 ## Build
 
-Local builds require CMake 3.20+ and a C++20-capable compiler. The skeleton
-has no Qt or network dependencies.
+Local builds require CMake 3.20+ and a C++20-capable compiler. The default
+build has no Qt, libcurl, or other network dependencies.
 
 From the repository root:
 
@@ -89,8 +89,15 @@ c++ -std=c++20 -Wall -Wextra -Wpedantic -Icpp-app \
   and the aspirational Asset model.
 - `sdk/core`: `ApiResult`, `ApiClient`, `TokenStore`, and client stubs for
   Auth, Project, Community, and Asset workflows. `AuthClient::login`,
-  `ProjectClient::listProjects`, and `ProjectClient::getProject` now exercise
-  the `HttpClient` abstraction against mock responses.
+  `AuthClient::logout`, `AuthClient::me`, `ProjectClient::listProjects`,
+  `ProjectClient::getProject`, `ProjectClient::likeProject`,
+  `ProjectClient::createComment`, and first-pass community read/comment
+  methods exercise the `HttpClient` abstraction against mock responses.
+- `sdk/core/ApiClientConfig.hpp`: in-memory HTTP client configuration:
+  `baseUrl`, `apiPrefix` (defaults to `/api/v1`), `timeoutMs`, `userAgent`,
+  and optional bearer token. No production domain is hard-coded; for local
+  development use a value such as `http://localhost:3000`. Tokens live only
+  in memory here and are never persisted by the SDK.
 - `sdk/core/JsonValue.hpp`: a deliberately small, dependency-free JSON parser
   used only to support current contract fixtures. It is not a full OpenAPI
   client generator and should be revisited during the dependency strategy
@@ -99,7 +106,9 @@ c++ -std=c++20 -Wall -Wextra -Wpedantic -Icpp-app \
   `ApiError`, `Pagination`, unknown error-code fallback, and rejection of
   legacy top-level mirrors.
 - `sdk/network`: an interface-only `HttpClient`, `NullHttpClient`, and
-  `MockHttpClient` for typed client tests. None of them performs real HTTP.
+  `MockHttpClient` for typed client tests. `RealHttpClient` is present as a
+  replaceable backend placeholder, but it intentionally returns
+  `REAL_HTTP_BACKEND_NOT_ENABLED` and performs no network I/O in this batch.
 - `app/platform`: `AppPaths` placeholders for config, cache, data, logs,
   downloads, and temp paths across Windows/macOS/Linux.
 - `src/main.cpp`: a no-network smoke binary that constructs example
@@ -110,7 +119,7 @@ c++ -std=c++20 -Wall -Wextra -Wpedantic -Icpp-app \
 ## What Is Not Included
 
 - No Qt UI or QML.
-- No real HTTP backend and no real API calls.
+- No implemented real HTTP transport and no real API calls.
 - No production-grade JSON dependency or generated OpenAPI client.
 - No admin endpoints.
 - No legacy `/api/*` support.
@@ -123,7 +132,9 @@ c++ -std=c++20 -Wall -Wextra -Wpedantic -Icpp-app \
    parser only for fixtures, or adopt a header-only library through the future
    C++ dependency manager.
 2. Implement a replaceable real HTTP backend for `/api/v1/*` using Qt Network
-   or libcurl behind `sdk/network/HttpClient`.
+   or libcurl behind `sdk/network/HttpClient`. `MRRIGHT_ENABLE_CURL_HTTP` is
+   currently reserved and defaults to `OFF`; enabling it intentionally fails
+   until the dependency strategy is implemented.
 3. Expand JSON serialization/deserialization tests against contract fixtures.
 4. Spike OpenAPI-generated client/types only as a comparison point, not as the
    default SDK implementation.

@@ -3,11 +3,14 @@
 #include "sdk/core/ApiClient.hpp"
 #include "sdk/core/ApiResult.hpp"
 #include "sdk/core/EnvelopeParser.hpp"
+#include "sdk/core/InteractionTypes.hpp"
 #include "sdk/core/JsonValue.hpp"
 #include "sdk/models/Comment.hpp"
 #include "sdk/models/Project.hpp"
 
+#include <map>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace mrright::sdk::core {
@@ -65,6 +68,54 @@ class ProjectClient : public ApiClient {
     return notImplemented<std::vector<models::Comment>>();
   }
 
+  ApiResult<LikeResult> likeProject(
+    const std::string& slug,
+    const std::string& visitorId,
+    const std::string& visitorToken = {}
+  ) {
+    const auto body = std::string("{\"visitorId\":\"") + escapeJsonString(visitorId) + "\"}";
+    auto response = sendJson("POST", "/projects/" + slug + "/like", body, bearerHeaders(visitorToken));
+    if (response.isError()) return ApiResult<LikeResult>::err(*response.error());
+
+    return parseResponseEnvelope<LikeResult>(
+      response.value()->body,
+      response.value()->statusCode,
+      [](const JsonValue& data, const models::Pagination&) {
+        return ApiResult<LikeResult>::ok({
+          jsonBool(data, "liked").value_or(false),
+          jsonInt(data, "likeCount").value_or(0),
+        });
+      }
+    );
+  }
+
+  ApiResult<models::Comment> createComment(
+    const std::string& slug,
+    const ProjectCommentRequest& request,
+    const std::string& visitorToken = {}
+  ) {
+    std::string body = "{\"message\":\"" + escapeJsonString(request.message) + "\"";
+    if (!request.author.empty()) {
+      body += ",\"author\":\"" + escapeJsonString(request.author) + "\"";
+    }
+    body += "}";
+
+    auto response = sendJson("POST", "/projects/" + slug + "/comments", body, bearerHeaders(visitorToken));
+    if (response.isError()) return ApiResult<models::Comment>::err(*response.error());
+
+    return parseResponseEnvelope<models::Comment>(
+      response.value()->body,
+      response.value()->statusCode,
+      [](const JsonValue& data, const models::Pagination&) {
+        const auto* comment = data.get("comment");
+        if (!comment || !comment->isObject()) {
+          return ApiResult<models::Comment>::err(contractError("Project comment response must contain comment object."));
+        }
+        return ApiResult<models::Comment>::ok(decodeComment(*comment));
+      }
+    );
+  }
+
  private:
   static models::ApiError notImplementedError() {
     return {"CLIENT_NOT_IMPLEMENTED", models::ApiErrorCode::Unknown, "ProjectClient method is not implemented in this batch.", 0};
@@ -119,6 +170,20 @@ class ProjectClient : public ApiClient {
     project.year = jsonString(value, "year").value_or("");
     project.isPublic = jsonBool(value, "isPublic").value_or(false);
     return project;
+  }
+
+  static std::map<std::string, std::string> bearerHeaders(const std::string& visitorToken) {
+    if (visitorToken.empty()) return {};
+    return {{"Authorization", "Bearer " + visitorToken}};
+  }
+
+  static models::Comment decodeComment(const JsonValue& value) {
+    models::Comment comment;
+    comment.id = jsonString(value, "id").value_or("");
+    comment.author = jsonString(value, "author").value_or("");
+    comment.message = jsonString(value, "message").value_or("");
+    comment.createdAt = jsonString(value, "createdAt").value_or("");
+    return comment;
   }
 };
 

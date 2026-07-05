@@ -11,9 +11,15 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+option(MRRIGHT_ENABLE_CURL_HTTP "Enable future libcurl-backed HttpClient implementation" OFF)
+
 add_library(mrright_sdk_core INTERFACE)
 target_include_directories(mrright_sdk_core INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_features(mrright_sdk_core INTERFACE cxx_std_20)
+
+if(MRRIGHT_ENABLE_CURL_HTTP)
+  message(FATAL_ERROR "MRRIGHT_ENABLE_CURL_HTTP is reserved for a future libcurl backend and is not implemented in this dependency-free batch.")
+endif()
 
 add_library(mrright_app_platform STATIC
   app/platform/AppPaths.cpp

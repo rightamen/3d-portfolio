@@ -1,5 +1,6 @@
 #pragma once
 
+#include "sdk/core/ApiClientConfig.hpp"
 #include "sdk/core/ApiResult.hpp"
 #include "sdk/network/HttpClient.hpp"
 
@@ -11,22 +12,17 @@
 
 namespace mrright::sdk::core {
 
-struct ApiClientOptions {
-  // Relative by default so callers provide their own host, e.g.
-  // https://example.test + /api/v1. No production domain is hard-coded.
-  std::string basePath = "/api/v1";
-};
-
 class ApiClient {
  public:
   explicit ApiClient(
     std::shared_ptr<network::HttpClient> httpClient,
-    ApiClientOptions options = {}
+    ApiClientConfig config = {}
   )
     : httpClient_(std::move(httpClient)),
-      options_(std::move(options)) {}
+      config_(std::move(config)) {}
 
-  [[nodiscard]] const std::string& basePath() const { return options_.basePath; }
+  [[nodiscard]] const ApiClientConfig& config() const { return config_; }
+  [[nodiscard]] const std::string& apiPrefix() const { return config_.apiPrefix; }
 
  protected:
   ApiResult<network::HttpResponse> sendJson(
@@ -35,10 +31,17 @@ class ApiClient {
     std::string body = {},
     std::map<std::string, std::string> headers = {}
   ) const {
-    const auto pathResult = v1Path(path);
+    const auto pathResult = buildPath(path);
     if (pathResult.isError()) return ApiResult<network::HttpResponse>::err(*pathResult.error());
 
-    if (!body.empty()) headers.emplace("Content-Type", "application/json");
+    headers.emplace("Accept", "application/json");
+    headers.emplace("User-Agent", config_.userAgent);
+    if (!body.empty() && (method == "POST" || method == "PUT" || method == "PATCH")) {
+      headers.emplace("Content-Type", "application/json");
+    }
+    if (config_.bearerToken && !config_.bearerToken->empty()) {
+      headers.emplace("Authorization", "Bearer " + *config_.bearerToken);
+    }
 
     return httpClient().send({
       std::move(method),
@@ -48,7 +51,7 @@ class ApiClient {
     });
   }
 
-  [[nodiscard]] ApiResult<std::string> v1Path(std::string_view path) const {
+  [[nodiscard]] ApiResult<std::string> buildPath(std::string_view path) const {
     if (path.empty() || path.front() != '/') {
       path = std::string_view{};
     }
@@ -69,14 +72,30 @@ class ApiClient {
         0
       });
     }
-    return ApiResult<std::string>::ok(options_.basePath + relativePath);
+    if (config_.apiPrefix.empty() || config_.apiPrefix == "/api" || config_.apiPrefix.starts_with("/api/") == false) {
+      return ApiResult<std::string>::err({
+        "CLIENT_CONFIG_INVALID",
+        models::ApiErrorCode::Unknown,
+        "SDK apiPrefix must be /api/v1 or another explicit versioned /api/v* prefix.",
+        0
+      });
+    }
+    if (config_.apiPrefix != "/api/v1") {
+      return ApiResult<std::string>::err({
+        "CLIENT_CONFIG_INVALID",
+        models::ApiErrorCode::Unknown,
+        "This SDK build only supports the strict /api/v1 prefix.",
+        0
+      });
+    }
+    return ApiResult<std::string>::ok(config_.baseUrl + config_.apiPrefix + relativePath);
   }
 
   [[nodiscard]] network::HttpClient& httpClient() const { return *httpClient_; }
 
  private:
   std::shared_ptr<network::HttpClient> httpClient_;
-  ApiClientOptions options_;
+  ApiClientConfig config_;
 };
 
 } // namespace mrright::sdk::core

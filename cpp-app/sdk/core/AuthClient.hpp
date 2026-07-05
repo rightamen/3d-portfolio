@@ -52,23 +52,42 @@ class AuthClient : public ApiClient {
   }
 
   ApiResult<void> logout(const std::string& visitorToken) {
-    (void)visitorToken;
-    return ApiResult<void>::err(notImplementedError());
+    auto response = sendJson("POST", "/auth/logout", "{}", bearerHeaders(visitorToken));
+    if (response.isError()) return ApiResult<void>::err(*response.error());
+
+    return parseResponseEnvelope<void>(
+      response.value()->body,
+      response.value()->statusCode,
+      [](const JsonValue&, const models::Pagination&) {
+        return ApiResult<void>::ok();
+      }
+    );
   }
 
   ApiResult<models::User> me(const std::string& visitorToken) {
-    (void)visitorToken;
-    return notImplemented<models::User>();
+    auto response = sendJson("GET", "/auth/me", {}, bearerHeaders(visitorToken));
+    if (response.isError()) return ApiResult<models::User>::err(*response.error());
+
+    return parseResponseEnvelope<models::User>(
+      response.value()->body,
+      response.value()->statusCode,
+      [](const JsonValue& data, const models::Pagination&) {
+        const auto* user = data.get("user");
+        if (!user || user->isNull()) {
+          return ApiResult<models::User>::ok(models::User{});
+        }
+        if (!user->isObject()) {
+          return ApiResult<models::User>::err(contractError("Auth me data.user must be an object or null."));
+        }
+        return ApiResult<models::User>::ok(decodeUser(*user));
+      }
+    );
   }
 
  private:
-  static models::ApiError notImplementedError() {
-    return {"CLIENT_NOT_IMPLEMENTED", models::ApiErrorCode::Unknown, "AuthClient method is not implemented in this batch.", 0};
-  }
-
-  template <typename T>
-  static ApiResult<T> notImplemented() {
-    return ApiResult<T>::err(notImplementedError());
+  static std::map<std::string, std::string> bearerHeaders(const std::string& visitorToken) {
+    if (visitorToken.empty()) return {};
+    return {{"Authorization", "Bearer " + visitorToken}};
   }
 
   static models::User decodeUser(const JsonValue& value) {

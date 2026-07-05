@@ -1,5 +1,87 @@
 # mrright.blog 项目进度记录
 
+## 2026-07-05：C++ SDK HTTP client configuration / backend abstraction 第一批
+
+结论：在现有 `MockHttpClient` / `EnvelopeParser` / typed clients 基础上，完成真实 HTTP backend 的可替换接口层第一批：新增 `ApiClientConfig`、统一请求构造、内存 bearer token header、`RealHttpClient` 占位实现、更多 typed client 方法和请求构造测试。默认构建仍不依赖 Qt/libcurl，不做真实联网。**未开发 UI、未接 SQLite、未改 Web/API 行为、未改数据库、未部署、未 push**。
+
+完成内容：
+
+- 新增 `cpp-app/sdk/core/ApiClientConfig.hpp`：
+  - `baseUrl`：默认空，不硬编码生产域名；README 示例使用 `http://localhost:3000`。
+  - `apiPrefix`：默认 `/api/v1`。
+  - `timeoutMs`：默认 30000。
+  - `userAgent`：默认 `mrright-cpp-sdk/0.1`。
+  - `bearerToken`：可选，仅内存配置，不落盘。
+- 更新 `ApiClient`：
+  - 所有业务 path 统一由 `ApiClient` 构造。
+  - 自动拼接 `baseUrl + /api/v1 + path`。
+  - 自动设置 `Accept: application/json`。
+  - POST/PUT/PATCH 且 body 非空时自动设置 `Content-Type: application/json`。
+  - `ApiClientConfig.bearerToken` 存在时自动设置 `Authorization: Bearer <token>`。
+  - 继续拒绝 `/admin...` 与 legacy `/api/...` path。
+  - 明确只支持 strict `/api/v1`，拒绝非 `/api/v1` prefix。
+- 新增 `cpp-app/sdk/network/RealHttpClient.hpp`：
+  - 可替换真实 backend 占位实现。
+  - 当前不联网，返回 `REAL_HTTP_BACKEND_NOT_ENABLED`。
+  - 后续可在同一 `HttpClient` interface 后接 Qt Network 或 libcurl。
+- 更新 `cpp-app/CMakeLists.txt`：
+  - 新增 `MRRIGHT_ENABLE_CURL_HTTP` option，默认 OFF。
+  - 当前启用该 option 会明确失败，避免误以为 libcurl backend 已实现；默认构建不依赖外部 HTTP 包。
+- typed clients 扩展：
+  - `AuthClient::logout(token)`：mockable `POST /api/v1/auth/logout`。
+  - `AuthClient::me(token)`：mockable `GET /api/v1/auth/me`。
+  - `ProjectClient::likeProject(slug, visitorId, token)`：mockable `POST /api/v1/projects/{slug}/like`。
+  - `ProjectClient::createComment(slug, request, token)`：mockable `POST /api/v1/projects/{slug}/comments`。
+  - `CommunityClient::listPosts()`、`getPost(id)`、`listComments(postId)`、`createComment(...)`、`likeComment(...)` 第一批 mockable 方法。
+  - 未实现不确定 endpoint 的完整业务流；未调用 admin；未编造 OpenAPI 未确认字段。
+- 新增/扩展 C++ tests：
+  - `ApiClientConfig` 默认 `apiPrefix == /api/v1`，`baseUrl` 不硬编码生产域名。
+  - `ProjectClient::listProjects` 构造 `GET /api/v1/projects`。
+  - `AuthClient::login` 构造 `POST /api/v1/auth/login`。
+  - POST 请求设置 `Content-Type`。
+  - bearer token 只进入 `Authorization` header。
+  - legacy `/api` path 被拒绝。
+  - `/admin` path 被拒绝。
+  - error envelope 让 typed client 返回 `ApiResult` error。
+  - invalid/non-envelope JSON 返回 contract error。
+  - `RealHttpClient` 当前返回 backend-not-enabled error，不联网。
+
+本地 CMake 状态：
+
+- 本地仍无 `cmake` 命令；未安装新依赖，未执行正式 CMake configure/build/ctest。
+- 使用直接 `c++` compile 验证：
+  - `mrright_cpp_smoke`：通过。
+  - `mrright_cpp_sdk_tests`：通过。
+- CI workflow 负责三平台 CMake configure/build/smoke 验证；默认构建无 Qt/libcurl 依赖。
+
+仍未实现 / 后续待办：
+
+1. real libcurl or Qt Network backend
+2. JSON parser dependency decision
+3. OpenAPI generated client spike
+4. SQLite cache
+5. secure TokenStore implementation
+6. Qt/QML prototype
+7. packaging strategy spike
+
+验证结果：
+
+- `git diff --check`：通过。
+- `c++` 直接编译 smoke + SDK tests：通过（`SDK contract tests passed.`）。
+- `npm run lint`：通过。
+- `npm run build`：通过（`dist/` 构建产物已还原，未提交）。
+- `npm run test:api`：通过（37 passed）。
+- `npm run test:api:db`：通过（18 passed，一次性 PostgreSQL cluster 已销毁）。
+- `npm run test:openapi`：通过（200 个本地 `$ref` 可解析；27 个 API error code 与 OpenAPI enum 一致）。
+
+安全说明：
+
+- 未部署 VPS、未 push GitHub。
+- 未读取、修改或输出 `.env`、ADMIN_TOKEN、DATABASE_URL、token、secret。
+- 未连接或修改数据库。
+- 未改 Web/API 行为。
+- 未提交 dist/build/node_modules/cpp-app/build 或其他构建产物。
+
 ## 2026-07-05：C++ SDK JSON / HTTP abstraction 第一批（mock-driven typed client）
 
 结论：把 `cpp-app` SDK 从纯 skeleton 推进到可测试的 typed client 基础层。新增无外部依赖的最小 JSON/envelope decoding 边界、`HttpClient` mock、`AuthClient::login` / `ProjectClient::{listProjects,getProject}` 的 mock-driven 行为，以及 C++ unit test binary。**未实现真实 HTTP、未接 Qt/libcurl、未开发 UI、未改 Web/API 行为、未改数据库、未部署、未 push**。
