@@ -1,5 +1,70 @@
 # mrright.blog 项目进度记录
 
+## 2026-07-05：C++ SDK local dev server API smoke test entrypoint
+
+结论：新增 C++ SDK local/dev API smoke test 入口，用于通过 `CurlHttpClient` 真实请求本地开发服务器的 `/api/v1` strict envelope API。该入口默认关闭，普通 no-dependency CMake build 和普通 CTest 不构建、不运行、不联网；只有显式开启 `MRRIGHT_ENABLE_CURL_HTTP=ON` 与 `MRRIGHT_ENABLE_LOCAL_API_SMOKE=ON` 时才构建并注册 CTest。运行时必须设置 `MRRIGHT_API_BASE_URL`，并且只允许 `http://localhost`、`http://127.0.0.1` 或 `http://[::1]`（可带端口）。**未部署、未 push、未改数据库、未读取或修改 `.env`/token/secret、未访问生产 API、未改 Web/API 行为、未做 Qt/QML、未做 SQLite cache、未实现 secure TokenStore、未替换 nlohmann/json、未做 packaging**。
+
+完成内容：
+
+- 新增 `cpp-app/tests/integration/local_api_smoke.cpp`：
+  - 使用 `CurlHttpClient` 执行真实 HTTP 请求。
+  - `MRRIGHT_API_BASE_URL` 未设置时以 CTest skip code `77` 跳过，并输出清晰说明。
+  - `MRRIGHT_API_BASE_URL` 不是 loopback HTTP URL 时拒绝运行。
+  - 不读取 `.env`，不使用 token，不登录、不注册、不上传、不调用 admin endpoint、不做写操作。
+  - 覆盖 `GET /api/v1/health`：HTTP 200、strict `data`/`pagination`/`error` envelope、`error: null`、`data.ok === true`。
+  - 覆盖 `GET /api/v1/projects`：允许 HTTP 200 或当前 local store 不可用时的明确 API error envelope；拒绝 legacy 顶层 `projects` 镜像，并通过 `ProjectClient::listProjects()` / `EnvelopeParser` 解析。
+  - 覆盖不存在 project 的 `GET /api/v1/projects/__mrright_cpp_smoke_missing_project__`：验证 404 strict error envelope 且 `error.code` / `error.message` 存在。
+- 更新 `cpp-app/CMakeLists.txt`：
+  - 新增 `MRRIGHT_ENABLE_LOCAL_API_SMOKE=OFF`。
+  - ON 时要求 `MRRIGHT_ENABLE_CURL_HTTP=ON`，否则 CMake fatal error。
+  - ON 且 curl backend 可用时构建 `mrright_cpp_local_api_smoke` 并注册 CTest。
+  - 默认 OFF 时不构建、不注册 local API smoke test，不破坏默认无依赖 build。
+- 更新 `cpp-app/README.md`：
+  - 增加 local API smoke 的配置、构建、运行命令。
+  - 明确只允许 localhost/127.0.0.1/[::1]。
+  - 明确不访问生产、不读取 `.env`、不做写操作。
+- 更新 `docs/CPP_APP_MIGRATION_PLAN.md`：
+  - 标记 local/dev API smoke test 入口已加入。
+  - 保留后续待办。
+
+后续待办保留：
+
+1. nlohmann/json replacement
+2. SQLite cache
+3. secure TokenStore
+4. Qt/QML prototype
+5. packaging strategy spike
+
+本轮验证结果：
+
+- `git diff --check`：通过。
+- `npm run lint`：首次在 fresh clone 环境中因缺少本地 `node_modules` 而调用系统 ESLint 6.4 失败；执行 `npm ci` 安装本地依赖后重跑通过。`node_modules/` 未提交。
+- `npm run build`：通过；产生的 `dist/` 变动已 `git restore dist/`，未提交。
+- `npm run test:api`：通过（37 passed）。
+- `npm run test:api:db`：通过（18 passed，一次性 PostgreSQL cluster 已销毁）。
+- `npm run test:openapi`：通过（200 个本地 `$ref` 可解析；27 个 API error code 与 OpenAPI enum 一致）。
+- 默认无依赖 CMake：
+  - `cmake -S cpp-app -B cpp-app/build -G Ninja -DCMAKE_BUILD_TYPE=Debug`：通过。
+  - `cmake --build cpp-app/build`：通过。
+  - `ctest --test-dir cpp-app/build --output-on-failure`：通过（`mrright_cpp_smoke` passed；`mrright_cpp_sdk_tests` passed；2/2 tests passed）。
+- 本地 libcurl/local API smoke build：
+  - 本机未发现可用 `vcpkg`，`VCPKG_ROOT` 为空，`$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake` 不存在。
+  - 按要求未自动安装 vcpkg，未在仓库内创建 `build-curl-smoke`。
+  - 额外尝试在 `/tmp/mrright-cpp-build-curl-smoke` 配置 opt-in smoke target；CMake 因缺少 `CURL::libcurl` 按预期失败并给出需要 vcpkg toolchain 或 curl development package 的错误。
+  - `c++ -std=c++20 -Wall -Wextra -Wpedantic -Icpp-app -fsyntax-only cpp-app/tests/integration/local_api_smoke.cpp`：通过。
+  - 未启动 local dev server，未访问生产 API。
+
+安全说明：
+
+- 未部署 VPS。
+- 未 push GitHub。
+- 未读取、修改或输出 `.env`、ADMIN_TOKEN、DATABASE_URL、token、secret。
+- 未连接或修改数据库。
+- 未访问生产 API。
+- 未改 Web/API 行为。
+- 未提交 `cpp-app/build`、`cpp-app/build-curl`、`cpp-app/build-curl-smoke`、`vcpkg_installed`、`dist`、`build`、`node_modules` 或其他构建产物。
+- 未做下一步任务：Qt/QML、SQLite cache、secure TokenStore、nlohmann/json replacement、packaging。
+
 ## 2026-07-05：C++ libcurl-enabled build with vcpkg validation
 
 结论：完成 optional libcurl backend 的 vcpkg validation 路径。本机未配置可用 `vcpkg`（`VCPKG_ROOT` 为空，未找到 `$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake`），按要求未自动安装；已改由独立 GitHub Actions job `cpp-app-curl-vcpkg` 在 Ubuntu runner 上 bootstrap vcpkg、解析 `cpp-app/vcpkg.json` manifest、以 `MRRIGHT_ENABLE_CURL_HTTP=ON` 配置/build/CTest。默认 no-dependency CMake build 保持独立路径。**未部署、未 push、未改数据库、未读取或修改 `.env`/token/secret、未访问生产 API、未做 local API smoke test、未开发 UI、未做 SQLite cache、未替换 nlohmann/json、未实现 secure TokenStore、未做 packaging、未改 Web/API 行为**。
