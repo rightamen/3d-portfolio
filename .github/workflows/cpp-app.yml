@@ -36,3 +36,34 @@ jobs:
 
       - name: Smoke test
         run: ctest --test-dir cpp-app/build --build-config Debug --output-on-failure
+
+  cpp-app-curl-vcpkg:
+    name: libcurl backend with vcpkg (ubuntu-latest)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build
+
+      - name: Bootstrap vcpkg
+        run: |
+          git clone --depth 1 https://github.com/microsoft/vcpkg.git "$RUNNER_TEMP/vcpkg"
+          "$RUNNER_TEMP/vcpkg/bootstrap-vcpkg.sh" -disableMetrics
+
+      - name: Configure with libcurl backend
+        run: |
+          cmake -S cpp-app -B cpp-app/build-curl -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DMRRIGHT_ENABLE_CURL_HTTP=ON \
+            -DCMAKE_TOOLCHAIN_FILE="$RUNNER_TEMP/vcpkg/scripts/buildsystems/vcpkg.cmake"
+
+      - name: Build with libcurl backend
+        run: cmake --build cpp-app/build-curl
+
+      - name: Test with libcurl backend
+        run: ctest --test-dir cpp-app/build-curl --output-on-failure

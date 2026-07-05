@@ -1,5 +1,78 @@
 # mrright.blog 项目进度记录
 
+## 2026-07-05：C++ libcurl-enabled build with vcpkg validation
+
+结论：完成 optional libcurl backend 的 vcpkg validation 路径。本机未配置可用 `vcpkg`（`VCPKG_ROOT` 为空，未找到 `$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake`），按要求未自动安装；已改由独立 GitHub Actions job `cpp-app-curl-vcpkg` 在 Ubuntu runner 上 bootstrap vcpkg、解析 `cpp-app/vcpkg.json` manifest、以 `MRRIGHT_ENABLE_CURL_HTTP=ON` 配置/build/CTest。默认 no-dependency CMake build 保持独立路径。**未部署、未 push、未改数据库、未读取或修改 `.env`/token/secret、未访问生产 API、未做 local API smoke test、未开发 UI、未做 SQLite cache、未替换 nlohmann/json、未实现 secure TokenStore、未做 packaging、未改 Web/API 行为**。
+
+完成内容：
+
+- 更新 `.github/workflows/cpp-app.yml`：
+  - 保留原有 Windows/macOS/Linux 默认 no-dependency C++ skeleton matrix。
+  - 新增 `cpp-app-curl-vcpkg` job，先覆盖 `ubuntu-latest`。
+  - CI 手动 clone Microsoft vcpkg 到 `$RUNNER_TEMP/vcpkg`，bootstrap 后使用 vcpkg toolchain。
+  - 使用 `cpp-app/vcpkg.json` manifest 解析 `curl`。
+  - 以 `MRRIGHT_ENABLE_CURL_HTTP=ON` 配置 `cpp-app/build-curl`、构建并运行 CTest。
+  - 不上传构建产物、不读取 secrets、不访问生产 API、不运行 local API smoke test。
+- 更新 `cpp-app/CMakeLists.txt`：
+  - `MRRIGHT_ENABLE_CURL_HTTP` 仍默认 `OFF`。
+  - 默认 OFF 时仍不 `find_package(CURL)`，不需要 vcpkg/libcurl。
+  - ON 时 `CurlHttpClient.cpp` 继续编译进 `mrright_sdk_curl_http`。
+  - ON 时新增 no-network compile/link CTest binary `mrright_cpp_curl_compile_tests`，用于确认 curl backend 真实进入 target 构建链路。
+- 新增 `cpp-app/tests/unit/curl_http_compile_tests.cpp`：
+  - 只构造 `CurlHttpClient` 并检查 `ApiClientConfig` 保留。
+  - 不发送请求、不访问真实 API、不读取 token。
+- 更新 `cpp-app/README.md`：
+  - 补充 `VCPKG_ROOT` + `MRRIGHT_ENABLE_CURL_HTTP=ON` 本地验证命令。
+  - 说明默认 build 仍不需要 vcpkg/libcurl。
+  - 说明 CI 有单独 `cpp-app-curl-vcpkg` job。
+  - 说明 curl-enabled CTest 是 compile/link-only，不访问真实 API。
+- 更新 `docs/CPP_APP_MIGRATION_PLAN.md`：
+  - 标记 libcurl-enabled build validation 已加入 CI。
+  - 说明 CMake/CTest 会验证 optional backend 进入构建链路。
+
+本地 vcpkg 状态：
+
+- `which vcpkg`：未找到。
+- `VCPKG_ROOT`：空。
+- `$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake`：不存在。
+- 按要求未自动安装 vcpkg；本地 `build-curl` configure/build/CTest 未运行，改由 CI workflow 验证。
+
+本轮验证结果：
+
+- `git diff --check`：通过（仅提示既有前端文件 CRLF 将被 Git 规范化；本轮未修改这些文件）。
+- `npm run lint`：通过。
+- `npm run build`：通过；产生的 `dist/` 变动已 `git restore dist/`，未提交。
+- `npm run test:api`：通过（37 passed）。
+- `npm run test:api:db`：通过（18 passed，一次性 PostgreSQL cluster 已销毁）。
+- `npm run test:openapi`：通过（200 个本地 `$ref` 可解析；27 个 API error code 与 OpenAPI enum 一致）。
+- 默认无依赖 CMake：
+  - `cmake -S cpp-app -B cpp-app/build -G Ninja -DCMAKE_BUILD_TYPE=Debug`：通过。
+  - `cmake --build cpp-app/build`：通过。
+  - `ctest --test-dir cpp-app/build --output-on-failure`：通过（`mrright_cpp_smoke` passed；`mrright_cpp_sdk_tests` passed；2/2 tests passed）。
+- libcurl-enabled CMake：
+  - 本地因缺少 vcpkg 未运行。
+  - 已加入 CI `cpp-app-curl-vcpkg` 验证 manifest、libcurl dependency resolve、`MRRIGHT_ENABLE_CURL_HTTP=ON` configure、build、CTest。
+
+后续待办保留：
+
+1. local dev server API smoke test
+2. nlohmann/json replacement
+3. SQLite cache
+4. secure TokenStore
+5. Qt/QML prototype
+6. packaging strategy spike
+
+安全说明：
+
+- 未部署 VPS。
+- 未 push GitHub。
+- 未读取、修改或输出 `.env`、ADMIN_TOKEN、DATABASE_URL、token、secret。
+- 未连接或修改数据库。
+- 未访问生产 API。
+- 未做 local API smoke test。
+- 未提交 `cpp-app/build`、`cpp-app/build-curl`、`vcpkg_installed`、`dist`、`build`、`node_modules` 或其他构建产物。
+- 未做下一步任务：nlohmann/json replacement、SQLite cache、secure TokenStore、Qt/QML prototype、packaging。
+
 ## 2026-07-05：C++ SDK skeleton branch pushed / PR ready
 
 结论：当前分支 `feat/cpp-sdk-skeleton` 已成功 push 到 GitHub，并已设置 upstream：`origin/feat/cpp-sdk-skeleton`。GitHub 已提示可创建 PR：`https://github.com/rightamen/3d-portfolio/pull/new/feat/cpp-sdk-skeleton`。本轮只记录进度，**未改代码、未改 Web/API/C++ 实现、未改数据库、未部署、未 push**。
