@@ -120,6 +120,9 @@ c++ -std=c++20 -Wall -Wextra -Wpedantic -Icpp-app \
   `MockHttpClient` for typed client tests. `RealHttpClient` is present as a
   replaceable backend placeholder, but it intentionally returns
   `REAL_HTTP_BACKEND_NOT_ENABLED` and performs no network I/O in this batch.
+  The real backend strategy is recorded in
+  `docs/adr/ADR_CPP_HTTP_BACKEND_STRATEGY.md`: keep the abstraction, spike an
+  optional libcurl backend next, and defer Qt Network to the Qt/QML phase.
 - `app/platform`: `AppPaths` placeholders for config, cache, data, logs,
   downloads, and temp paths across Windows/macOS/Linux.
 - `src/main.cpp`: a no-network smoke binary that constructs example
@@ -137,12 +140,31 @@ c++ -std=c++20 -Wall -Wextra -Wpedantic -Icpp-app \
 - No token persistence implementation and no plaintext token storage.
 - No SQLite cache, download manager, Range/ETag handling, or packaging logic.
 
+## HTTP Backend Strategy
+
+The SDK currently validates request construction and strict-envelope parsing
+with `MockHttpClient`. `RealHttpClient` is still a no-network placeholder and
+must not be treated as a production transport.
+
+The accepted strategy is:
+
+- Business clients depend only on `sdk/network/HttpClient`.
+- The next real backend spike should be an optional libcurl backend controlled
+  by CMake/dependency-manager configuration.
+- Qt Network should be added later as a second backend during the Qt/QML UI
+  prototype phase.
+- SDK core should not directly depend on Qt.
+- API smoke tests should point at a local/dev `baseUrl`, not production by
+  default.
+- Tokens must stay in memory or a future secure `TokenStore`; do not write
+  bearer tokens to config files or logs.
+
 ## Next Steps
 
-1. Implement a replaceable real HTTP backend for `/api/v1/*` using Qt Network
-   or libcurl behind `sdk/network/HttpClient`. `MRRIGHT_ENABLE_CURL_HTTP` is
-   currently reserved and defaults to `OFF`; enabling it intentionally fails
-   until the dependency strategy is implemented.
+1. Spike a replaceable libcurl HTTP backend for `/api/v1/*` behind
+   `sdk/network/HttpClient`. `MRRIGHT_ENABLE_CURL_HTTP` is currently reserved
+   and defaults to `OFF`; enabling it intentionally fails until the dependency
+   strategy is implemented.
 2. Replace the temporary JSON parser with `nlohmann/json` after the C++
    dependency manager is in place. The decision is recorded in
    `docs/adr/ADR_CPP_JSON_STRATEGY.md`; this batch intentionally does not

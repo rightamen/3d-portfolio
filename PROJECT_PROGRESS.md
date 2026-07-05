@@ -1,5 +1,63 @@
 # mrright.blog 项目进度记录
 
+## 2026-07-05：C++ SDK HTTP backend strategy ADR
+
+结论：完成 C++ SDK HTTP backend 策略 ADR。最终路线是继续保持 `HttpClient` abstraction，业务 client 不依赖具体网络库；短期 `RealHttpClient` 仍是 placeholder，不实现真实网络；下一批优先做可选 libcurl backend spike；Qt Network backend 后置到 Qt/QML prototype 阶段。**未实现真实 HTTP、未接 Qt、未接 libcurl、未开发 UI、未改 Web/API 行为、未改数据库、未部署、未 push**。
+
+完成内容：
+
+- 新增 `docs/adr/ADR_CPP_HTTP_BACKEND_STRATEGY.md`：
+  - 记录当前 `HttpClient` / `MockHttpClient` / `RealHttpClient` / `/api/v1` request construction / `EnvelopeParser` 状态。
+  - 比较 libcurl first、Qt Network first、继续 placeholder、抽象 + libcurl first + Qt later 四种方案。
+  - 接受推荐方案：`HttpClient` abstraction + optional libcurl backend first + Qt backend later。
+  - 明确 `ApiClient`、`HttpClient backend`、`EnvelopeParser`、typed clients 的职责边界。
+  - 明确 backend/network error 与 `/api/v1` envelope API error 的区别。
+  - 明确 token 只通过内存配置或未来 `TokenStore`，`HttpClient` 不持久化 token，日志不得输出 `Authorization`。
+  - 明确 `MRRIGHT_ENABLE_CURL_HTTP` 当前默认 OFF，后续 libcurl 通过 vcpkg manifest 或 Conan 管理，不 vendoring。
+- 更新 `cpp-app/README.md`：
+  - 说明 `RealHttpClient` 当前仍是 no-network placeholder。
+  - 说明 `MockHttpClient` 用于 request construction 和 envelope parsing 测试。
+  - 链接 HTTP backend strategy ADR。
+  - 说明当前不访问生产 API，token 不写入配置文件或日志。
+- 更新 `docs/CPP_APP_MIGRATION_PLAN.md`：
+  - 标记 HTTP backend strategy 已决策。
+  - 下一步调整为 libcurl backend spike / dependency manager decision。
+
+本地 WSL CMake 状态：
+
+- 已记录并继续有效：`cmake -S cpp-app -B cpp-app/build -G Ninja -DCMAKE_BUILD_TYPE=Debug`、`cmake --build cpp-app/build`、`ctest --test-dir cpp-app/build --output-on-failure` 均已通过。
+- 本批会重新运行 CMake configure/build/CTest；`cpp-app/build/` 不提交。
+
+仍未实现 / 后续待办：
+
+1. libcurl backend spike
+2. dependency manager strategy：vcpkg vs Conan
+3. real API smoke test against local dev server
+4. JSON parser replacement with nlohmann/json
+5. SQLite cache
+6. secure TokenStore implementation
+7. Qt/QML prototype
+
+验证结果：
+
+- `git diff --check`：通过。
+- `npm run lint`：通过。
+- `npm run build`：通过（`dist/` 构建产物已还原，未提交）。
+- `npm run test:api`：通过（37 passed）。
+- `npm run test:api:db`：通过（18 passed，一次性 PostgreSQL cluster 已销毁）。
+- `npm run test:openapi`：通过（200 个本地 `$ref` 可解析；27 个 API error code 与 OpenAPI enum 一致）。
+- `cmake -S cpp-app -B cpp-app/build -G Ninja -DCMAKE_BUILD_TYPE=Debug`：通过。
+- `cmake --build cpp-app/build`：通过（`ninja: no work to do.`）。
+- `ctest --test-dir cpp-app/build --output-on-failure`：通过（`mrright_cpp_smoke` passed；`mrright_cpp_sdk_tests` passed；2/2 tests passed）。
+
+安全说明：
+
+- 未部署 VPS、未 push GitHub。
+- 未读取、修改或输出 `.env`、ADMIN_TOKEN、DATABASE_URL、token、secret。
+- 未连接或修改数据库。
+- 未改 Web/API 行为。
+- 未提交 dist/build/node_modules/cpp-app/build 或其他构建产物。
+
 ## 2026-07-05：C++ local WSL CMake validation
 
 结论：已在 `/mnt/g/Code/3d-portfolio` 下完成 `cpp-app` 本地 WSL Ninja Debug CMake 验证。`mrright_cpp_smoke` 与 `mrright_cpp_sdk_tests` 均通过，CTest 结果为 `2/2 tests passed`。本批只更新验证记录文档，**未改代码、未改 Web/API 行为、未改数据库、未部署、未 push**。
