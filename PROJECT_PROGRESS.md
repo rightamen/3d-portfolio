@@ -1,5 +1,38 @@
 # mrright.blog 项目进度记录
 
+## 2026-07-05：C++ local WSL CMake validation
+
+结论：已在 `/mnt/g/Code/3d-portfolio` 下完成 `cpp-app` 本地 WSL Ninja Debug CMake 验证。`mrright_cpp_smoke` 与 `mrright_cpp_sdk_tests` 均通过，CTest 结果为 `2/2 tests passed`。本批只更新验证记录文档，**未改代码、未改 Web/API 行为、未改数据库、未部署、未 push**。
+
+执行记录：
+
+- CMake configure：`cmake -S cpp-app -B cpp-app/build -G Ninja -DCMAKE_BUILD_TYPE=Debug`
+- CMake build：`cmake --build cpp-app/build`
+- CTest：`ctest --test-dir cpp-app/build --output-on-failure`
+
+测试结果：
+
+- `mrright_cpp_smoke`：passed。
+- `mrright_cpp_sdk_tests`：passed。
+- `2/2 tests passed`。
+
+Git / 构建产物状态：
+
+- `git status --short --branch` 保持干净：`## feat/cpp-sdk-skeleton`。
+- `cpp-app/build/` 未提交，已由 `.gitignore` 忽略。
+- 未提交 `dist` / `build` / `node_modules` / `cpp-app/build`。
+
+验证结果：
+
+- `git diff --check`：待运行。
+
+安全说明：
+
+- 未部署 VPS、未 push GitHub。
+- 未读取、修改或输出 `.env`、ADMIN_TOKEN、DATABASE_URL、token、secret。
+- 未连接或修改数据库。
+- 未改 Web/API 行为。
+
 ## 2026-07-05：C++ SDK JSON parser dependency decision
 
 结论：完成 C++ SDK JSON 解析策略决策。短期保留当前 `JsonValue.hpp` temporary parser，仅用于 early SDK prototype / mock-driven strict-envelope tests，并继续把 JSON 边界收敛在 `EnvelopeParser.hpp`；长期选择通过未来 C++ dependency manager 接入 `nlohmann/json`。本批不新增第三方依赖、不 vendored 大文件、不让 CMake 默认联网下载依赖。**未实现真实 HTTP、未开发 UI、未接 SQLite、未改 Web/API 行为、未改数据库、未部署、未 push**。

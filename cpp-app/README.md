@@ -66,9 +66,21 @@ new dependencies just for this skeleton batch. Use the `C++ App Skeleton`
 GitHub Actions workflow as the cross-platform validation entry; it configures,
 builds, and runs the smoke test on Ubuntu, macOS, and Windows.
 
-Current local note: this workspace had `c++` 13.3.0 available but no `cmake`
-command, so the formal CMake configure/build could not be run here. The smoke
-source can still be syntax-checked locally with:
+Current local WSL validation note: this workspace has completed a Ninja Debug
+CMake configure/build/CTest pass from the repository root:
+
+```bash
+cmake -S cpp-app -B cpp-app/build -G Ninja -DCMAKE_BUILD_TYPE=Debug
+cmake --build cpp-app/build
+ctest --test-dir cpp-app/build --output-on-failure
+```
+
+Both CTest targets passed: `mrright_cpp_smoke` and
+`mrright_cpp_sdk_tests` (`2/2 tests passed`). `cpp-app/build/` is ignored and
+must not be committed.
+
+For minimal syntax checks without CMake, the same smoke and SDK test sources
+can still be compiled directly with:
 
 ```bash
 c++ -std=c++20 -Wall -Wextra -Wpedantic -Icpp-app \
