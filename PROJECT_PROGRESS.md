@@ -1,5 +1,69 @@
 # mrright.blog 项目进度记录
 
+## 2026-07-05：C++ SDK skeleton branch pushed / PR ready
+
+结论：当前分支 `feat/cpp-sdk-skeleton` 已成功 push 到 GitHub，并已设置 upstream：`origin/feat/cpp-sdk-skeleton`。GitHub 已提示可创建 PR：`https://github.com/rightamen/3d-portfolio/pull/new/feat/cpp-sdk-skeleton`。本轮只记录进度，**未改代码、未改 Web/API/C++ 实现、未改数据库、未部署、未 push**。
+
+当前分支状态：
+
+- 本地分支：`feat/cpp-sdk-skeleton`
+- 远程 upstream：`origin/feat/cpp-sdk-skeleton`
+- `git status --short --branch`：`## feat/cpp-sdk-skeleton...origin/feat/cpp-sdk-skeleton`
+- 当前分支可创建 PR：`feat/cpp-sdk-skeleton -> main` 或对应目标分支。
+
+当前阶段已完成：
+
+- API v1 strict envelope
+- OpenAPI contract extraction
+- OpenAPI auto validation
+- C++ cross-platform SDK skeleton
+- C++ CMake skeleton
+- GitHub Actions C++ skeleton workflow
+- MockHttpClient
+- strict envelope parser
+- typed clients
+- ApiClientConfig
+- HTTP backend strategy ADR
+- dependency manager strategy ADR
+- optional libcurl backend spike
+
+已验证：
+
+- `npm run lint`
+- `npm run build`
+- `npm run test:api`
+- `npm run test:api:db`
+- `npm run test:openapi`
+- local WSL CMake configure/build/CTest
+- default no-dependency C++ build
+- libcurl-enabled build 在缺少 libcurl 时按预期失败并给出清晰错误
+
+当前仍未完成：
+
+1. 等待 GitHub Actions 三平台 C++ workflow 结果
+2. libcurl-enabled build with vcpkg
+3. local dev server API smoke test
+4. nlohmann/json replacement
+5. SQLite cache
+6. secure TokenStore implementation
+7. Qt/QML prototype
+8. packaging strategy spike
+
+下一步建议：
+
+1. 先检查 GitHub Actions 是否通过。
+2. 再开 PR review。
+3. PR 通过后再继续下一批：vcpkg/libcurl-enabled build 验证或 local API smoke test。
+
+安全说明：
+
+- 未部署 VPS。
+- 未执行新的 push。
+- 未读取、修改或输出 `.env`、ADMIN_TOKEN、DATABASE_URL、token、secret。
+- 未连接或修改数据库。
+- 未改 Web/API/C++ 源码。
+- 未提交 build/dist/node_modules/cpp-app/build/cpp-app/build-curl/vcpkg_installed 或其他构建产物。
+
 ## 2026-07-05：C++ optional libcurl HTTP backend spike
 
 结论：完成 optional libcurl HTTP backend spike。新增 `cpp-app/vcpkg.json`（仅 `curl`）、可选 `CurlHttpClient` concrete backend，以及 `MRRIGHT_ENABLE_CURL_HTTP` CMake wiring。默认 build 仍为无外部依赖路径：不查找 libcurl、不要求 vcpkg、`MockHttpClient` 和 SDK tests 继续构建通过。**未做 local API smoke test、未访问生产 API、未接 Qt、未替换 JSON parser、未实现 SQLite cache、未实现 secure TokenStore、未开发 UI、未改 Web/API 行为、未改数据库、未部署、未 push**。
