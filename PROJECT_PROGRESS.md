@@ -1,5 +1,57 @@
 # mrright.blog 项目进度记录
 
+## 2026-07-05：OpenAPI 自动校验工具接入（API v1 freeze 工程化）
+
+结论：把 `docs/openapi/api-v1.yaml` 从静态文档升级为可自动校验的 contract artifact。新增 `scripts/validate-openapi.mjs` 与 `npm run test:openapi`，校验 YAML、`$ref`、strict envelope、response envelope 使用方式以及 `API_ERROR_CODES` 与 OpenAPI enum 一致性。**未改 Web/API 行为、未改数据库、未部署、未 push**。
+
+完成内容：
+
+- 新建 `scripts/validate-openapi.mjs`：
+  - 使用项目现有依赖树中的 `js-yaml` 解析 `docs/openapi/api-v1.yaml`，不新增重量级依赖。
+  - 校验 YAML 可解析。
+  - 校验顶层 `openapi` 存在。
+  - 校验 `paths` 存在且非空。
+  - 校验 `components.schemas` 存在。
+  - 校验 `components.schemas.ResponseEnvelope` / `ApiError` / `Pagination` 存在。
+  - 遍历并解析全部本地 `$ref`，缺失路径会失败。
+  - 校验所有 `application/json` response schema 必须通过 `ResponseEnvelope` 或 `ErrorEnvelope`，避免裸返回业务模型。
+  - 校验 strict `/api/v1` envelope 顶层只允许 `data` / `pagination` / `error`，且 `additionalProperties: false`。
+  - 从 `server/responses.js` 读取 `API_ERROR_CODES`，与 OpenAPI `components.schemas.ApiErrorCode.enum` 做集合一致性比对；缺失或多余 code 都会失败。
+- 更新 `package.json`：
+  - 新增 `"test:openapi": "node scripts/validate-openapi.mjs"`。
+- 更新 `docs/API_V1_FREEZE_PLAN.md`：
+  - §18 标记 OpenAPI 自动校验脚本已接入。
+  - checklist #9 标记为 ✅，说明已校验 YAML、`$ref`、response envelope、strict envelope 顶层键、error code enum。
+- CI 说明：
+  - 当前仓库只有独立的 C++ App Skeleton workflow，没有现成 Web/API lint/build/test workflow；本批未混改 C++ workflow。
+  - 后续新增 Web/API CI 时，应把 `npm run test:openapi` 与 lint/build/API contract tests 放入同一质量门。
+
+仍未实现 / 后续待办：
+
+1. C++ HTTP backend
+2. JSON parser/serialization
+3. Qt/QML UI prototype
+4. SQLite cache
+5. secure TokenStore implementation
+6. packaging strategy spike
+
+验证结果：
+
+- `git diff --check`：通过。
+- `npm run lint`：通过。
+- `npm run build`：通过（`dist/` 构建产物已还原，未提交）。
+- `npm run test:api`：通过（37 passed）。
+- `npm run test:api:db`：通过（18 passed，一次性 PostgreSQL cluster 已销毁）。
+- `npm run test:openapi`：通过（YAML 可解析；200 个本地 `$ref` 可解析；27 个 API error code 与 OpenAPI enum 一致）。
+
+安全说明：
+
+- 未部署 VPS、未 push GitHub。
+- 未读取、修改或输出 `.env`、ADMIN_TOKEN、DATABASE_URL、token、secret。
+- 未连接或修改数据库。
+- 未改 Web/API 行为。
+- 未提交 dist/build/node_modules/cpp-app/build 或其他构建产物。
+
 ## 2026-07-05：C++ cross-platform skeleton 工程化验证批次（CI matrix / ignore / docs）
 
 结论：在不实现真实 HTTP、不开发 UI、不改 Web/API 行为的前提下，完成 `cpp-app` skeleton 的工程化验证入口补强。新增三平台 GitHub Actions matrix、补 CMake 构建产物 ignore 规则，并更新 README / 迁移计划 / 进度记录。
