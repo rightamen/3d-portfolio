@@ -404,4 +404,5 @@ NSIS + portable zip、.app/.dmg + codesign + notarization、AppImage + deb、自
 9. HTTP backend abstraction 第一批。✅ 已新增 `ApiClientConfig`（`baseUrl`、`apiPrefix=/api/v1`、timeout、userAgent、内存 bearer token）、统一请求构造（Accept/User-Agent/Content-Type/Authorization）、`RealHttpClient` 可替换占位实现，以及更多 mock-driven typed client 请求构造测试。默认构建仍不依赖 Qt/libcurl；`MRRIGHT_ENABLE_CURL_HTTP` 预留且默认 OFF。
 10. JSON parser strategy。✅ 已创建 `docs/adr/ADR_CPP_JSON_STRATEGY.md`：短期保留 `JsonValue.hpp` 作为 internal temporary parser，JSON 入口继续收敛在 `EnvelopeParser`；长期通过未来 C++ dependency manager 接入 `nlohmann/json`，本批不 vendored 大文件、不用 CMake 默认联网下载依赖。
 11. HTTP backend strategy。✅ 已创建 `docs/adr/ADR_CPP_HTTP_BACKEND_STRATEGY.md`：保持 `HttpClient` abstraction，下一批优先做可选 libcurl backend spike，Qt Network backend 后置到 Qt/QML prototype；SDK core 不直接依赖 Qt，真实 API smoke 默认指向 local/dev server。
-12. 下一步：libcurl backend spike / dependency manager decision。HTTP backend 必须只消费 `/api/v1/*` strict envelope；需要明确 vcpkg manifest 或 Conan 路线；Qt/QML 应在 SDK 边界稳定后接入。
+12. Dependency manager strategy。✅ 已创建 `docs/adr/ADR_CPP_DEPENDENCY_MANAGER_STRATEGY.md`：首选 vcpkg manifest 管理 libcurl、nlohmann-json、sqlite3 等 SDK/backend 依赖；当前批次不新增实际依赖、不改 CMake 依赖 wiring，保持无依赖 mock build。
+13. 下一步：libcurl backend spike + vcpkg manifest。HTTP backend 必须只消费 `/api/v1/*` strict envelope；libcurl 通过 CMake option 控制，默认不破坏无依赖构建；Qt/QML 应在 SDK 边界稳定后接入。

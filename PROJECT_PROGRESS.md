@@ -1,5 +1,56 @@
 # mrright.blog 项目进度记录
 
+## 2026-07-05：C++ dependency manager strategy ADR
+
+结论：完成 C++ dependency manager 策略 ADR。最终选择 vcpkg manifest mode 作为 SDK/backend native dependencies 的首选策略；本批不新增实际依赖、不新增 `vcpkg.json`、不改 CMake 依赖 wiring，继续保持当前无外部依赖 mock build。下一批 libcurl backend spike 时再引入 vcpkg manifest。**未实现 libcurl backend、未接 Qt、未替换 JSON parser、未改 C++ SDK 代码、未改 Web/API 行为、未改数据库、未部署、未 push**。
+
+完成内容：
+
+- 新增 `docs/adr/ADR_CPP_DEPENDENCY_MANAGER_STRATEGY.md`：
+  - 记录当前 `cpp-app` CMake skeleton 无外部 runtime 依赖。
+  - 记录 JSON 长期倾向 `nlohmann/json`、HTTP backend 下一步倾向 libcurl。
+  - 比较 vcpkg manifest、Conan、系统包、CMake `FetchContent`、vendoring。
+  - 接受推荐方案：vcpkg manifest 管理 libcurl、nlohmann-json、sqlite3 等 SDK/backend 依赖。
+  - 明确 Qt 在 Qt/QML 阶段单独评估，可用 vcpkg、Qt 官方安装器或 aqtinstall，但本批不引入。
+  - 明确不提交 `vcpkg_installed/`、依赖缓存、第三方源码或构建产物。
+- 更新 `cpp-app/README.md`：
+  - 增加 dependency strategy 简述。
+  - 说明当前 skeleton 无外部 C++ runtime 依赖。
+  - 说明后续 libcurl / nlohmann-json / sqlite3 倾向 vcpkg manifest 管理。
+- 更新 `docs/CPP_APP_MIGRATION_PLAN.md`：
+  - 标记 dependency manager strategy 已决策。
+  - 下一步调整为 libcurl backend spike + vcpkg manifest。
+
+仍未实现 / 后续待办：
+
+1. libcurl backend spike
+2. vcpkg manifest
+3. local API smoke test
+4. nlohmann/json replacement
+5. SQLite cache
+6. secure TokenStore
+7. Qt/QML prototype
+
+验证结果：
+
+- `git diff --check`：通过。
+- `npm run lint`：通过。
+- `npm run build`：通过（`dist/` 构建产物已还原，未提交）。
+- `npm run test:api`：通过（37 passed）。
+- `npm run test:api:db`：通过（18 passed，一次性 PostgreSQL cluster 已销毁）。
+- `npm run test:openapi`：通过（200 个本地 `$ref` 可解析；27 个 API error code 与 OpenAPI enum 一致）。
+- `cmake -S cpp-app -B cpp-app/build -G Ninja -DCMAKE_BUILD_TYPE=Debug`：通过。
+- `cmake --build cpp-app/build`：通过（`ninja: no work to do.`）。
+- `ctest --test-dir cpp-app/build --output-on-failure`：通过（`mrright_cpp_smoke` passed；`mrright_cpp_sdk_tests` passed；2/2 tests passed）。
+
+安全说明：
+
+- 未部署 VPS、未 push GitHub。
+- 未读取、修改或输出 `.env`、ADMIN_TOKEN、DATABASE_URL、token、secret。
+- 未连接或修改数据库。
+- 未改 Web/API 行为。
+- 未提交 dist/build/node_modules/cpp-app/build 或其他构建产物。
+
 ## 2026-07-05：C++ SDK HTTP backend strategy ADR
 
 结论：完成 C++ SDK HTTP backend 策略 ADR。最终路线是继续保持 `HttpClient` abstraction，业务 client 不依赖具体网络库；短期 `RealHttpClient` 仍是 placeholder，不实现真实网络；下一批优先做可选 libcurl backend spike；Qt Network backend 后置到 Qt/QML prototype 阶段。**未实现真实 HTTP、未接 Qt、未接 libcurl、未开发 UI、未改 Web/API 行为、未改数据库、未部署、未 push**。

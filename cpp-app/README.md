@@ -159,12 +159,32 @@ The accepted strategy is:
 - Tokens must stay in memory or a future secure `TokenStore`; do not write
   bearer tokens to config files or logs.
 
+## Dependency Strategy
+
+The current skeleton has no external C++ runtime dependencies. It should keep
+building with plain CMake and a C++20 compiler so `MockHttpClient` tests remain
+available without package setup.
+
+The accepted dependency strategy is recorded in
+`docs/adr/ADR_CPP_DEPENDENCY_MANAGER_STRATEGY.md`:
+
+- Use vcpkg manifest mode as the preferred strategy for SDK/backend
+  dependencies.
+- Introduce the first `vcpkg.json` with the future libcurl backend spike, not
+  in this documentation-only batch.
+- Manage future libcurl, `nlohmann-json`, sqlite3, and similar backend
+  libraries through vcpkg unless a concrete blocker appears.
+- Evaluate Qt separately during the Qt/QML phase; it may use vcpkg, the
+  official Qt installer, or aqtinstall.
+- Do not commit `vcpkg_installed/`, dependency caches, build outputs, or
+  vendored third-party source.
+
 ## Next Steps
 
-1. Spike a replaceable libcurl HTTP backend for `/api/v1/*` behind
-   `sdk/network/HttpClient`. `MRRIGHT_ENABLE_CURL_HTTP` is currently reserved
-   and defaults to `OFF`; enabling it intentionally fails until the dependency
-   strategy is implemented.
+1. Add the first `vcpkg.json` and spike a replaceable libcurl HTTP backend for
+   `/api/v1/*` behind `sdk/network/HttpClient`. `MRRIGHT_ENABLE_CURL_HTTP` is
+   currently reserved and defaults to `OFF`; enabling it intentionally fails
+   until the dependency strategy is implemented.
 2. Replace the temporary JSON parser with `nlohmann/json` after the C++
    dependency manager is in place. The decision is recorded in
    `docs/adr/ADR_CPP_JSON_STRATEGY.md`; this batch intentionally does not
