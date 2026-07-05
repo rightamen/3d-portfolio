@@ -25,13 +25,21 @@ add_executable(mrright_cpp_smoke
 )
 target_link_libraries(mrright_cpp_smoke PRIVATE mrright_sdk_core mrright_app_platform)
 
+add_executable(mrright_cpp_sdk_tests
+  tests/unit/sdk_contract_tests.cpp
+)
+target_link_libraries(mrright_cpp_sdk_tests PRIVATE mrright_sdk_core)
+
 enable_testing()
 add_test(NAME mrright_cpp_smoke COMMAND mrright_cpp_smoke)
+add_test(NAME mrright_cpp_sdk_tests COMMAND mrright_cpp_sdk_tests)
 
 if(MSVC)
   target_compile_options(mrright_app_platform PRIVATE /W4 /utf-8)
   target_compile_options(mrright_cpp_smoke PRIVATE /W4 /utf-8)
+  target_compile_options(mrright_cpp_sdk_tests PRIVATE /W4 /utf-8)
 else()
   target_compile_options(mrright_app_platform PRIVATE -Wall -Wextra -Wpedantic)
   target_compile_options(mrright_cpp_smoke PRIVATE -Wall -Wextra -Wpedantic)
+  target_compile_options(mrright_cpp_sdk_tests PRIVATE -Wall -Wextra -Wpedantic)
 endif()

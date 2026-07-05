@@ -1,5 +1,88 @@
 # mrright.blog 项目进度记录
 
+## 2026-07-05：C++ SDK JSON / HTTP abstraction 第一批（mock-driven typed client）
+
+结论：把 `cpp-app` SDK 从纯 skeleton 推进到可测试的 typed client 基础层。新增无外部依赖的最小 JSON/envelope decoding 边界、`HttpClient` mock、`AuthClient::login` / `ProjectClient::{listProjects,getProject}` 的 mock-driven 行为，以及 C++ unit test binary。**未实现真实 HTTP、未接 Qt/libcurl、未开发 UI、未改 Web/API 行为、未改数据库、未部署、未 push**。
+
+完成内容：
+
+- 新增 `cpp-app/sdk/core/JsonValue.hpp`：
+  - header-only 最小 JSON AST/parser，只覆盖当前 strict envelope contract fixture 需要的 object/array/string/number/bool/null。
+  - 不引入第三方 JSON 库、不新增 npm 依赖、不 vendored 大文件、不依赖系统包。
+  - Unicode escape 仅作为占位保留，真实 parser 作为后续 dependency strategy 决策。
+- 新增 `cpp-app/sdk/core/EnvelopeParser.hpp`：
+  - 统一解析 strict `/api/v1` envelope，业务 client 不直接散落 JSON 解析逻辑。
+  - 支持成功 envelope：`data` object、`pagination` object、`error: null`。
+  - 支持错误 envelope：`data: null`、`error.code` / `error.message`。
+  - 支持 `Pagination` 六字段基础解析。
+  - 未知 `error.code` 映射到 `ApiErrorCode::Unknown`，保留原始 code 字符串。
+  - 非 strict envelope / legacy 顶层镜像返回 `RESPONSE_CONTRACT_ERROR`。
+- 更新 `cpp-app/sdk/network/HttpClient.hpp`：
+  - `HttpRequest`：`method`、`path`、`headers`、`body`。
+  - `HttpResponse`：`statusCode`、`headers`、`body`。
+  - `HttpClient::send(HttpRequest) -> ApiResult<HttpResponse>`。
+  - `NullHttpClient` 保持不联网。
+  - 新增 `MockHttpClient`：队列式固定响应、记录 requests，用于 typed client 单测。
+- 更新 typed clients：
+  - `ApiClient` 统一拼接 `/api/v1` path，拒绝 `/admin...` 与 `/api/...` path。
+  - `AuthClient::login(...)` 通过 `HttpClient` 发送 mockable `POST /api/v1/auth/login`，解析 `session.token` / `expiresAt` / `user`。
+  - `ProjectClient::listProjects()` 发送 `GET /api/v1/projects` 并解析 `projects[]`。
+  - `ProjectClient::getProject(slug)` 发送 `GET /api/v1/projects/{slug}` 并解析 `project`。
+  - 不实现 admin endpoint，不支持 legacy `/api/*`，不读取 token。
+- 新增 `cpp-app/tests/unit/sdk_contract_tests.cpp`：
+  - 成功 envelope 可以解析。
+  - 错误 envelope 可以解析。
+  - unknown `error.code` 保留原始字符串并映射 Unknown。
+  - legacy mirror / 非 strict envelope 被拒绝。
+  - `MockHttpClient` 能驱动 `ProjectClient::listProjects`。
+  - `ProjectClient` 构造 `/api/v1/projects`，不是 legacy `/api/projects`。
+  - admin path 在 `ApiClient` 层被拒绝，且不会调用 `HttpClient::send`。
+- 更新 `cpp-app/CMakeLists.txt`：
+  - 新增 `mrright_cpp_sdk_tests` binary。
+  - CTest 增加 `mrright_cpp_sdk_tests`。
+  - smoke binary 保留。
+- 更新 `cpp-app/README.md` 与 `docs/CPP_APP_MIGRATION_PLAN.md`：
+  - 说明当前支持 mock-driven typed client tests。
+  - 说明尚无真实 HTTP backend。
+  - 说明 JSON parser 当前为无依赖最小 parser，后续需做依赖策略决策。
+  - 下一步为真实 HTTP backend / dependency strategy。
+
+本地 CMake 状态：
+
+- 本地仍无 `cmake` 命令；未安装新依赖，未执行正式 CMake configure/build/ctest。
+- 使用直接 `c++` compile 尽量验证：
+  - `mrright_cpp_smoke`：通过。
+  - `mrright_cpp_sdk_tests`：通过。
+- CI workflow 负责三平台 CMake configure/build/smoke 验证；本批新增 test binary 已接入 CMake/CTest，后续 CI 会一并构建运行。
+
+仍未实现 / 后续待办：
+
+1. Real HTTP backend
+2. JSON parser dependency decision
+3. OpenAPI generated client spike
+4. SQLite cache
+5. secure TokenStore implementation
+6. Qt/QML prototype
+7. packaging strategy spike
+
+验证结果：
+
+- `git diff --check`：通过。
+- `c++` 直接编译 smoke + SDK tests：通过（`SDK contract tests passed.`）。
+- `npm run lint`：通过。
+- `npm run build`：通过（`dist/` 构建产物已还原，未提交）。
+- `npm run test:api`：通过（37 passed）。
+- `npm run test:api:db`：通过（18 passed，一次性 PostgreSQL cluster 已销毁）。
+- `npm run test:openapi`：通过（200 个本地 `$ref` 可解析；27 个 API error code 与 OpenAPI enum 一致）。
+
+安全说明：
+
+- 未部署 VPS、未 push GitHub。
+- 未读取、修改或输出 `.env`、ADMIN_TOKEN、DATABASE_URL、token、secret。
+- 未连接或修改数据库。
+- 未改 Web/API 行为。
+- 未提交 dist/build/node_modules/cpp-app/build 或其他构建产物。
+
 ## 2026-07-05：OpenAPI 自动校验工具接入（API v1 freeze 工程化）
 
 结论：把 `docs/openapi/api-v1.yaml` 从静态文档升级为可自动校验的 contract artifact。新增 `scripts/validate-openapi.mjs` 与 `npm run test:openapi`，校验 YAML、`$ref`、strict envelope、response envelope 使用方式以及 `API_ERROR_CODES` 与 OpenAPI enum 一致性。**未改 Web/API 行为、未改数据库、未部署、未 push**。
