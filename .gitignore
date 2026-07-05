@@ -32,3 +32,11 @@ server-local*.log
 .playwright-mcp/
 test-results/
 playwright-report/
+
+# CMake / C++ app build artifacts
+cpp-app/build/
+cpp-app/out/
+cpp-app/.cache/
+CMakeFiles/
+CMakeCache.txt
+compile_commands.json

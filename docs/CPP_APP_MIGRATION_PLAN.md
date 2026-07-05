@@ -12,6 +12,7 @@ Status: 迁移前架构审查结论 + 跨平台客户端设计基线（2026-07-0
 - `docs/API_V1_MODEL_MAPPING.md` — TS/C++ model mapping 初稿；**C++ Prototype（Phase 2）的 `sdk/core/models/` 应直接从此文档的 struct 草图开始，不再重新设计字段**
 - `docs/API_V1_GAPS.md` — 尚未冻结/未验证字段清单；Phase 2 动工前必须先看这份，避免把 gap 当成已定形状写死进编译产物
 - `cpp-app/` — C++ cross-platform prototype skeleton（CMake + SDK headers + smoke CLI），已创建；当前不含真实 HTTP、Qt UI、缓存、下载器或打包实现
+- `.github/workflows/cpp-app.yml` — C++ App Skeleton CI matrix，已加入 Windows/macOS/Linux configure + build + smoke test 入口；不部署、不读取 secrets、不上传构建产物
 
 ---
 
@@ -398,5 +399,5 @@ NSIS + portable zip、.app/.dmg + codesign + notarization、AppImage + deb、自
 4. token 生命周期（过期/刷新/多设备）评估并文档化。❌（checklist #5，仍待办）
 5. OpenAPI spec 抽取 + CI 漂移检测。🟡 spec 初稿已完成（`docs/openapi/api-v1.yaml`），**CI 自动漂移检测尚未接入**——仍是本项剩余工作。
 6. C++ SDK model 头文件草案（从 §16 冻结表直接映射）。✅ 已创建第一批可编译头文件骨架：`cpp-app/sdk/models/*.hpp`、`sdk/core/ApiResult.hpp`、`ApiClient`/各 client stub；不含 JSON parser 或真实网络。
-7. cpp-app 骨架 + 三平台 CI matrix（哪怕只编译一个 hello-sdk target）。🟡 `cpp-app/` CMake skeleton + smoke CLI 已创建；**三平台 CI matrix 尚未接入**。
-8. 下一步：真实 HTTP backend / Qt integration / CI matrix。HTTP backend 必须只消费 `/api/v1/*` strict envelope；Qt/QML 应在 SDK 边界稳定后接入；CI 至少覆盖 Windows/macOS/Linux configure + build。
+7. cpp-app 骨架 + 三平台 CI matrix（哪怕只编译一个 hello-sdk target）。✅ `cpp-app/` CMake skeleton + smoke CLI 已创建；`.github/workflows/cpp-app.yml` 已加入 Windows/macOS/Linux configure + build + smoke test。
+8. 下一步：HTTP backend / JSON parser / OpenAPI validation。HTTP backend 必须只消费 `/api/v1/*` strict envelope；JSON parser/serialization 需用 contract fixture 锁定 envelope 与 model mapping；OpenAPI 自动校验需进入 CI 以防 spec 与实现漂移。Qt/QML 应在 SDK 边界稳定后接入。

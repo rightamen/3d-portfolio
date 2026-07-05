@@ -26,29 +26,46 @@ pure SDK layer or Qt date/time types at the UI binding boundary.
 
 ## Build
 
+Local builds require CMake 3.20+ and a C++20-capable compiler. The skeleton
+has no Qt or network dependencies.
+
 From the repository root:
 
 ```bash
 cmake -S cpp-app -B cpp-app/build -DCMAKE_BUILD_TYPE=Debug
-cmake --build cpp-app/build
-./cpp-app/build/mrright_cpp_smoke
+cmake --build cpp-app/build --config Debug
+ctest --test-dir cpp-app/build --build-config Debug --output-on-failure
 ```
 
-Or, with presets:
+The smoke test runs `mrright_cpp_smoke`. It only verifies that the SDK
+skeleton models, platform path abstraction, and no-network CLI binary compile
+and execute. It does not call `/api/v1`, read tokens, or test real business
+flows.
+
+## CMake Presets
+
+The project also supports CMakePresets:
 
 ```bash
 cmake --preset debug
 cmake --build --preset debug
-./cpp-app/build/debug/mrright_cpp_smoke
+ctest --test-dir cpp-app/build/debug --build-config Debug --output-on-failure
 ```
 
-If the local machine does not have CMake or a C++20 compiler, do not install
-new dependencies just for this skeleton batch. The follow-up CI matrix should
-run configure/build on Windows, macOS, and Linux.
+Available configure/build presets:
 
-Current local note for this batch: this workspace had `c++` 13.3.0 available
-but no `cmake` command, so the formal CMake configure/build could not be run
-here. The smoke source was still syntax-checked with:
+- `debug`
+- `release`
+- `relwithdebinfo`
+
+If the local machine does not have CMake or a C++20 compiler, do not install
+new dependencies just for this skeleton batch. Use the `C++ App Skeleton`
+GitHub Actions workflow as the cross-platform validation entry; it configures,
+builds, and runs the smoke test on Ubuntu, macOS, and Windows.
+
+Current local note: this workspace had `c++` 13.3.0 available but no `cmake`
+command, so the formal CMake configure/build could not be run here. The smoke
+source can still be syntax-checked locally with:
 
 ```bash
 c++ -std=c++20 -Wall -Wextra -Wpedantic -Icpp-app \

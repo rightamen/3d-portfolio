@@ -1,5 +1,76 @@
 # mrright.blog 项目进度记录
 
+## 2026-07-05：C++ cross-platform skeleton 工程化验证批次（CI matrix / ignore / docs）
+
+结论：在不实现真实 HTTP、不开发 UI、不改 Web/API 行为的前提下，完成 `cpp-app` skeleton 的工程化验证入口补强。新增三平台 GitHub Actions matrix、补 CMake 构建产物 ignore 规则，并更新 README / 迁移计划 / 进度记录。
+
+CMake skeleton 审查结果：
+
+- `cpp-app/CMakeLists.txt` 已包含 `app/platform/AppPaths.cpp`，并通过 `mrright_app_platform` 静态库链接到 `mrright_cpp_smoke`。
+- include 目录使用 `${CMAKE_CURRENT_SOURCE_DIR}`，与当前 include 写法（`#include "sdk/..."`、`#include "app/..."`）匹配。
+- C++20 设置清晰：`CMAKE_CXX_STANDARD 20`、`CMAKE_CXX_STANDARD_REQUIRED ON`、`CMAKE_CXX_EXTENSIONS OFF`，同时 `mrright_sdk_core` 暴露 `cxx_std_20`。
+- warning flags 跨平台安全：MSVC 使用 `/W4 /utf-8`，其他编译器使用 `-Wall -Wextra -Wpedantic`。
+- `CMakePresets.json` 保留 `debug`、`release`、`relwithdebinfo`，不强绑单一 generator，适合 Windows/macOS/Linux 用各自默认生成器。
+- build 输出目录为 `cpp-app/build` 或 preset 下的 `cpp-app/build/<preset>`；本批已在 `.gitignore` 排除，不污染 git。
+- README 构建命令已改为跨平台更稳的 `cmake --build ... --config Debug` + `ctest --test-dir ... --build-config Debug`，避免直接写死单配置生成器下的可执行文件路径。
+
+完成内容：
+
+- 新增 `.github/workflows/cpp-app.yml`：
+  - workflow 名称：`C++ App Skeleton`
+  - matrix：`ubuntu-latest`、`macos-latest`、`windows-latest`
+  - 每个平台执行：
+    - `cmake -S cpp-app -B cpp-app/build -DCMAKE_BUILD_TYPE=Debug`
+    - `cmake --build cpp-app/build --config Debug`
+    - `ctest --test-dir cpp-app/build --build-config Debug --output-on-failure`
+  - 不部署、不读取 secrets、不 push、不上传构建产物。
+- 更新 `.gitignore`：
+  - `cpp-app/build/`
+  - `cpp-app/out/`
+  - `cpp-app/.cache/`
+  - `CMakeFiles/`
+  - `CMakeCache.txt`
+  - `compile_commands.json`
+- 更新 `cpp-app/README.md`：
+  - 说明本地需要 CMake 3.20+ 与 C++20 compiler。
+  - 说明无本地 CMake 时可用 GitHub Actions CI 验证。
+  - 说明支持 CMakePresets：`debug`、`release`、`relwithdebinfo`。
+  - 说明 smoke binary 只验证 SDK skeleton / platform paths / no-network CLI，不调用 `/api/v1`、不读取 token、不测试真实业务。
+- 更新 `docs/CPP_APP_MIGRATION_PLAN.md`：
+  - 标记 C++ App Skeleton CI matrix 已加入。
+  - 下一步明确为 HTTP backend / JSON parser / OpenAPI validation；Qt/QML 后置到 SDK 边界稳定后。
+
+本地 CMake 状态：
+
+- 本地仍无 `cmake` 命令；未安装新依赖，未执行正式 CMake configure/build。
+- CI workflow 已提供 Windows/macOS/Linux 验证入口。
+
+仍未实现 / 后续待办：
+
+1. OpenAPI 自动校验工具接入
+2. C++ HTTP backend
+3. JSON parser/serialization
+4. Qt/QML UI prototype
+5. SQLite cache
+6. secure TokenStore implementation
+7. packaging strategy spike
+
+验证结果：
+
+- `git diff --check`：通过。
+- `npm run lint`：通过。
+- `npm run build`：通过（`dist/` 构建产物已还原，未提交）。
+- `npm run test:api`：通过（37 passed）。
+- `npm run test:api:db`：通过（18 passed，一次性 PostgreSQL cluster 已销毁）。
+
+安全说明：
+
+- 未部署 VPS、未 push GitHub。
+- 未读取、修改或输出 `.env`、ADMIN_TOKEN、DATABASE_URL、token、secret。
+- 未连接或修改数据库。
+- 未改 Web/API 行为。
+- 未提交 build/dist/node_modules/cpp-app/build 或其他构建产物。
+
 ## 2026-07-05：C++ cross-platform skeleton 第一批（SDK / CMake / smoke CLI）
 
 结论：从零创建 `cpp-app/`，完成 C++ cross-platform prototype skeleton 第一批。范围严格限定为 SDK/架构骨架、CMake、平台路径抽象、TokenStore 接口和最小 smoke binary；**未开发正式 UI、未实现真实 HTTP、未改 Web/API 行为、未改数据库、未部署、未 push**。
