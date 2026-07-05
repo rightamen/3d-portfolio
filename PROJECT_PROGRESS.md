@@ -1,5 +1,55 @@
 # mrright.blog 项目进度记录
 
+## 2026-07-05：C++ local API smoke actual run blocked by missing vcpkg
+
+结论：本轮尝试实际运行 C++ local API smoke test，但在环境检查阶段被本地缺少 vcpkg 阻塞。当前仓库工作区开始时干净，后端本地启动命令已确认：`npm run dev:server`（`node server/index.js`）。按要求未自动安装 vcpkg、未修改代码绕过 libcurl/vcpkg、未启动本地 API server、未运行 C++ local smoke、未访问生产 API。**未部署、未 push、未改生产数据库、未读取或修改 `.env`/token/secret、未改 Web/API 行为、未做 Qt/QML、未做 SQLite、未做 TokenStore、未做 packaging**。
+
+环境检查：
+
+- `git status --short --branch`：开始时干净，当前分支 `test/cpp-run-local-api-smoke`。
+- `package.json` scripts：
+  - 优先后端/API 启动命令：`npm run dev:server` -> `node server/index.js`。
+  - 全栈命令：`npm run dev:full`。
+- vcpkg/libcurl toolchain 检查：
+  - `which vcpkg`：未找到。
+  - `VCPKG_ROOT`：空。
+  - `$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake`：不存在。
+- 阻塞原因：缺少 vcpkg/toolchain，无法按要求配置
+  `MRRIGHT_ENABLE_CURL_HTTP=ON` + `MRRIGHT_ENABLE_LOCAL_API_SMOKE=ON`
+  的 `cpp-app/build-curl-smoke`。
+
+未执行内容：
+
+- 未启动 local API server。
+- 未请求 `http://127.0.0.1:3000/api/v1/health`。
+- 未配置 `cpp-app/build-curl-smoke`。
+- 未运行 C++ local API smoke CTest。
+- 未访问生产域名。
+
+本轮验证结果：
+
+- `git diff --check`：通过。
+- `npm run lint`：通过。
+- `npm run build`：通过；产生的 `dist/` 变动已 `git restore dist/`，未提交。
+- `npm run test:api`：通过（37 passed）。
+- `npm run test:api:db`：通过（18 passed，一次性 PostgreSQL cluster 已销毁）。
+- `npm run test:openapi`：通过（200 个本地 `$ref` 可解析；27 个 API error code 与 OpenAPI enum 一致）。
+- 默认无依赖 CMake：
+  - `cmake -S cpp-app -B cpp-app/build -G Ninja -DCMAKE_BUILD_TYPE=Debug`：通过。
+  - `cmake --build cpp-app/build`：通过（`ninja: no work to do.`）。
+  - `ctest --test-dir cpp-app/build --output-on-failure`：通过（`mrright_cpp_smoke` passed；`mrright_cpp_sdk_tests` passed；2/2 tests passed）。
+- C++ local API smoke：
+  - 未配置 libcurl-enabled CMake。
+  - 未运行 CTest。
+  - 未覆盖 `/api/v1/health`、`/api/v1/projects`、missing project 404；原因是本地缺少 vcpkg/toolchain。
+
+后续需要：
+
+1. 安装或配置 vcpkg。
+2. 设置 `VCPKG_ROOT` 指向 vcpkg 根目录。
+3. 确认 `$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake` 存在。
+4. 重新运行 local API smoke actual validation。
+
 ## 2026-07-05：C++ SDK local dev server API smoke test entrypoint
 
 结论：新增 C++ SDK local/dev API smoke test 入口，用于通过 `CurlHttpClient` 真实请求本地开发服务器的 `/api/v1` strict envelope API。该入口默认关闭，普通 no-dependency CMake build 和普通 CTest 不构建、不运行、不联网；只有显式开启 `MRRIGHT_ENABLE_CURL_HTTP=ON` 与 `MRRIGHT_ENABLE_LOCAL_API_SMOKE=ON` 时才构建并注册 CTest。运行时必须设置 `MRRIGHT_API_BASE_URL`，并且只允许 `http://localhost`、`http://127.0.0.1` 或 `http://[::1]`（可带端口）。**未部署、未 push、未改数据库、未读取或修改 `.env`/token/secret、未访问生产 API、未改 Web/API 行为、未做 Qt/QML、未做 SQLite cache、未实现 secure TokenStore、未替换 nlohmann/json、未做 packaging**。
