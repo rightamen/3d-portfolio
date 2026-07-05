@@ -1,5 +1,80 @@
 # mrright.blog 项目进度记录
 
+## 2026-07-05：C++ cross-platform skeleton 第一批（SDK / CMake / smoke CLI）
+
+结论：从零创建 `cpp-app/`，完成 C++ cross-platform prototype skeleton 第一批。范围严格限定为 SDK/架构骨架、CMake、平台路径抽象、TokenStore 接口和最小 smoke binary；**未开发正式 UI、未实现真实 HTTP、未改 Web/API 行为、未改数据库、未部署、未 push**。
+
+完成内容：
+
+- 新建 `cpp-app/` 目录结构：
+  - `CMakeLists.txt`、`CMakePresets.json`、`README.md`
+  - `cmake/`、`include/`
+  - `src/main.cpp`
+  - `sdk/core/`、`sdk/network/`、`sdk/models/`、`sdk/cache/`、`sdk/download/`
+  - `app/platform/`、`app/ui/`
+  - `tests/unit/`
+  - `packaging/windows/`、`packaging/macos/`、`packaging/linux/`
+- CMake：
+  - 默认只构建 `mrright_cpp_smoke` CLI smoke binary，不引入 Qt UI。
+  - `CMakePresets.json` 包含 `debug`、`release`、`relwithdebinfo`。
+  - `ctest` 注册 smoke test（后续 CI 可直接跑 configure + build + test）。
+- SDK model headers（来自 `docs/openapi/api-v1.yaml` 与 `docs/API_V1_MODEL_MAPPING.md`）：
+  - `ApiError.hpp`、`Pagination.hpp`、`ResponseEnvelope.hpp`
+  - `User.hpp`、`Profile.hpp`、`Project.hpp`
+  - `Asset.hpp`、`CommunityPost.hpp`、`Comment.hpp`、`DownloadRequest.hpp`
+  - nullable 使用 `std::optional`，array 使用 `std::vector`，datetime 暂用 ISO-8601 `std::string` 占位；README 说明后续再决定 `std::chrono` 或 Qt 边界类型。
+  - `Asset` 明确标注 aspirational target model：受控 `downloadUrl`、`checksum`、`mimeType`、`etag` 等字段尚未由 API 完整实现。
+  - 未把 admin-only model 放入 SDK public surface。
+- SDK core/network interfaces：
+  - `ApiResult.hpp`：Result-style 返回，不把 exception 作为主路径。
+  - `ApiClient.hpp`：默认 base path 为相对 `/api/v1`，不硬编码生产域名。
+  - `AuthClient.hpp`、`ProjectClient.hpp`、`CommunityClient.hpp`、`AssetClient.hpp`：只定义最小 stub，不发真实 HTTP。
+  - `HttpClient.hpp`：网络抽象 + `NullHttpClient`，真实 backend 后续实现。
+  - `TokenStore.hpp`：只定义接口；注释明确未来使用 Windows Credential Manager、macOS Keychain、Linux Secret Service 或显式加密文件降级；禁止普通配置文件明文存 token。
+  - `ApiError` 保留 raw `code` 字符串，同时映射到 enum；未知错误码落 `ApiErrorCode::Unknown`。
+- 平台路径抽象：
+  - `app/platform/AppPaths.hpp/.cpp` 定义 `configDir()`、`cacheDir()`、`dataDir()`、`logDir()`、`downloadDir()`、`tempDir()`。
+  - Windows/macOS/Linux 使用条件编译占位；当前基于 HOME/XDG/APPDATA/LOCALAPPDATA 的安全占位，不写死 Windows-only 路径。
+  - README 说明后续替换为 Qt StandardPaths 或平台原生 API。
+- `src/main.cpp`：
+  - 打印 SDK skeleton 名称和版本。
+  - 构造 `Pagination` / `ApiError` / `ResponseEnvelope` 示例。
+  - 不联网、不读取 secret。
+
+验证结果：
+
+- `c++ -std=c++20 -Wall -Wextra -Wpedantic -Icpp-app cpp-app/src/main.cpp cpp-app/app/platform/AppPaths.cpp -o /tmp/mrright_cpp_smoke && /tmp/mrright_cpp_smoke`：通过。
+- 本地 `cmake --version`：失败（当前环境无 `cmake` 命令），因此未执行正式 `cmake -S cpp-app -B cpp-app/build -DCMAKE_BUILD_TYPE=Debug` / `cmake --build cpp-app/build`。未安装新依赖；README 已记录后续本地/CI 验证方式。
+- `git diff --check`：通过。
+- `npm run lint`：通过。
+- `npm run build`：通过（`dist/` 构建产物已还原，未提交）。
+- `npm run test:api`：通过（37 passed）。
+- `npm run test:api:db`：通过（18 passed，一次性 PostgreSQL cluster 已销毁）。
+
+修改文件：
+
+- `cpp-app/`（新建）
+- `docs/CPP_APP_MIGRATION_PLAN.md`
+- `PROJECT_PROGRESS.md`
+
+仍未实现 / 后续待办：
+
+1. OpenAPI 自动校验工具接入
+2. C++ HTTP backend
+3. Qt/QML UI prototype
+4. SQLite cache
+5. secure TokenStore implementation
+6. CI build matrix
+7. packaging strategy spike
+
+安全说明：
+
+- 未部署 VPS、未 push GitHub。
+- 未读取、修改或输出 `.env`、ADMIN_TOKEN、DATABASE_URL、token、secret。
+- 未连接或修改数据库。
+- 未改 Web/API 行为。
+- 未提交 build/dist/node_modules 或 C++ build 产物。
+
 ## 2026-07-05：OpenAPI v1 初稿 + C++ SDK model mapping 抽取（freeze checklist #9/#10 初稿）
 
 结论：把已被 `tests/api/contract.spec.js`/`tests/api/contract.db.spec.js` 锁住的 `/api/v1` strict envelope 契约，沉淀为正式 OpenAPI 规范初稿与 TS/C++ model mapping 文档。纯文档/契约抽取批次，**零 API 行为改动、零 C++ 代码、零 C++ UI**。

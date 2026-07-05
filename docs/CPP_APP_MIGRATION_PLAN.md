@@ -11,6 +11,7 @@ Status: 迁移前架构审查结论 + 跨平台客户端设计基线（2026-07-0
 - `docs/openapi/api-v1.yaml` — v1 端点 OpenAPI 初稿；**C++ SDK 开工前的机器可读契约起点**
 - `docs/API_V1_MODEL_MAPPING.md` — TS/C++ model mapping 初稿；**C++ Prototype（Phase 2）的 `sdk/core/models/` 应直接从此文档的 struct 草图开始，不再重新设计字段**
 - `docs/API_V1_GAPS.md` — 尚未冻结/未验证字段清单；Phase 2 动工前必须先看这份，避免把 gap 当成已定形状写死进编译产物
+- `cpp-app/` — C++ cross-platform prototype skeleton（CMake + SDK headers + smoke CLI），已创建；当前不含真实 HTTP、Qt UI、缓存、下载器或打包实现
 
 ---
 
@@ -396,5 +397,6 @@ NSIS + portable zip、.app/.dmg + codesign + notarization、AppImage + deb、自
 3. 受控资产下载端点设计定稿（含 Range/ETag/checksum），写入 v1 契约。❌（checklist #6，仍待办）
 4. token 生命周期（过期/刷新/多设备）评估并文档化。❌（checklist #5，仍待办）
 5. OpenAPI spec 抽取 + CI 漂移检测。🟡 spec 初稿已完成（`docs/openapi/api-v1.yaml`），**CI 自动漂移检测尚未接入**——仍是本项剩余工作。
-6. C++ SDK model 头文件草案（从 §16 冻结表直接映射）。🟡 `docs/API_V1_MODEL_MAPPING.md` 已给出 struct 草图（非可编译头文件），真正的 `sdk/core/models/*.h` 骨架仍属 Phase 2 cpp-app/ 工作，未开工。
-7. cpp-app 骨架 + 三平台 CI matrix（哪怕只编译一个 hello-sdk target）。
+6. C++ SDK model 头文件草案（从 §16 冻结表直接映射）。✅ 已创建第一批可编译头文件骨架：`cpp-app/sdk/models/*.hpp`、`sdk/core/ApiResult.hpp`、`ApiClient`/各 client stub；不含 JSON parser 或真实网络。
+7. cpp-app 骨架 + 三平台 CI matrix（哪怕只编译一个 hello-sdk target）。🟡 `cpp-app/` CMake skeleton + smoke CLI 已创建；**三平台 CI matrix 尚未接入**。
+8. 下一步：真实 HTTP backend / Qt integration / CI matrix。HTTP backend 必须只消费 `/api/v1/*` strict envelope；Qt/QML 应在 SDK 边界稳定后接入；CI 至少覆盖 Windows/macOS/Linux configure + build。
