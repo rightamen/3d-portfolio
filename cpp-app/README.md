@@ -171,13 +171,20 @@ To compile the optional `CurlHttpClient`, use a separate build directory and a
 vcpkg toolchain or another CMake-visible libcurl development package:
 
 ```bash
+export VCPKG_ROOT=/path/to/vcpkg
 cmake -S cpp-app -B cpp-app/build-curl -G Ninja \
   -DCMAKE_BUILD_TYPE=Debug \
   -DMRRIGHT_ENABLE_CURL_HTTP=ON \
-  -DCMAKE_TOOLCHAIN_FILE=/path/to/vcpkg/scripts/buildsystems/vcpkg.cmake
+  -DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake
 cmake --build cpp-app/build-curl
 ctest --test-dir cpp-app/build-curl --output-on-failure
 ```
+
+If `vcpkg` is not already installed locally, do not install it just for the
+default skeleton build. The normal build above remains dependency-free and the
+GitHub Actions workflow has a separate `cpp-app-curl-vcpkg` job that bootstraps
+vcpkg on Ubuntu, resolves the `cpp-app/vcpkg.json` manifest, configures CMake
+with `MRRIGHT_ENABLE_CURL_HTTP=ON`, builds, and runs CTest.
 
 `CurlHttpClient` sends `HttpRequest` values and returns raw `HttpResponse`
 values. It supports GET, POST, PUT, DELETE, and PATCH, request headers, request
@@ -186,6 +193,11 @@ configuration from `ApiClientConfig`. It does not parse business JSON, does
 not know project/user/community models, does not save tokens, and does not
 construct `/api/v1` paths; `ApiClient` remains responsible for path and header
 construction.
+
+The curl-enabled CTest path includes a compile/link-only
+`mrright_cpp_curl_compile_tests` target. It verifies that the optional backend
+is actually compiled and linked when the option is enabled, but it does not
+perform network I/O or contact any real API.
 
 Do not commit `cpp-app/build/`, `cpp-app/build-curl/`, `vcpkg_installed/`, or
 dependency caches. Real API smoke tests are not part of this batch; when added,

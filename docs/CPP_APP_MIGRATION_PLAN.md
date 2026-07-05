@@ -12,7 +12,7 @@ Status: 迁移前架构审查结论 + 跨平台客户端设计基线（2026-07-0
 - `docs/API_V1_MODEL_MAPPING.md` — TS/C++ model mapping 初稿；**C++ Prototype（Phase 2）的 `sdk/core/models/` 应直接从此文档的 struct 草图开始，不再重新设计字段**
 - `docs/API_V1_GAPS.md` — 尚未冻结/未验证字段清单；Phase 2 动工前必须先看这份，避免把 gap 当成已定形状写死进编译产物
 - `cpp-app/` — C++ cross-platform prototype skeleton（CMake + SDK headers + smoke CLI + mock-driven SDK contract tests），已创建；当前不含真实 HTTP、Qt UI、缓存、下载器或打包实现
-- `.github/workflows/cpp-app.yml` — C++ App Skeleton CI matrix，已加入 Windows/macOS/Linux configure + build + smoke test 入口；不部署、不读取 secrets、不上传构建产物
+- `.github/workflows/cpp-app.yml` — C++ App Skeleton CI matrix，已加入 Windows/macOS/Linux configure + build + smoke test 入口；另有独立 Ubuntu `cpp-app-curl-vcpkg` job 验证 vcpkg manifest + optional libcurl backend configure/build/CTest；不部署、不读取 secrets、不上传构建产物
 
 ---
 
@@ -406,4 +406,5 @@ NSIS + portable zip、.app/.dmg + codesign + notarization、AppImage + deb、自
 11. HTTP backend strategy。✅ 已创建 `docs/adr/ADR_CPP_HTTP_BACKEND_STRATEGY.md`：保持 `HttpClient` abstraction，下一批优先做可选 libcurl backend spike，Qt Network backend 后置到 Qt/QML prototype；SDK core 不直接依赖 Qt，真实 API smoke 默认指向 local/dev server。
 12. Dependency manager strategy。✅ 已创建 `docs/adr/ADR_CPP_DEPENDENCY_MANAGER_STRATEGY.md`：首选 vcpkg manifest 管理 libcurl、nlohmann-json、sqlite3 等 SDK/backend 依赖；当前批次不新增实际依赖、不改 CMake 依赖 wiring，保持无依赖 mock build。
 13. Optional libcurl backend spike。✅ 已新增 `cpp-app/vcpkg.json`（仅 `curl`）、`CurlHttpClient` concrete backend、`MRRIGHT_ENABLE_CURL_HTTP` CMake option wiring；默认 OFF 时不找 libcurl、不要求 vcpkg，mock build/tests 继续无依赖通过。未做 local API smoke、未访问生产 API。
-14. 下一步：local/dev API smoke test（后续批次）。HTTP backend 必须只消费 `/api/v1/*` strict envelope；真实 smoke 必须指向 local/dev server；Qt/QML 应在 SDK 边界稳定后接入。
+14. libcurl-enabled build validation。✅ 已加入独立 CI job `cpp-app-curl-vcpkg`：Ubuntu runner 手动 bootstrap vcpkg，使用 manifest 解析 `curl`，以 `MRRIGHT_ENABLE_CURL_HTTP=ON` 配置 `cpp-app/build-curl`，构建并运行 CTest。CMake 在 option 开启时会编译/link `mrright_sdk_curl_http` 和 no-network `mrright_cpp_curl_compile_tests`，验证 curl backend 进入构建链路但不访问真实 API。
+15. 下一步：local/dev API smoke test（后续批次）。HTTP backend 必须只消费 `/api/v1/*` strict envelope；真实 smoke 必须指向 local/dev server；Qt/QML 应在 SDK 边界稳定后接入。
