@@ -1,12 +1,16 @@
 import { useState } from 'react'
 import { motion as Motion } from 'motion/react'
+import AccountMenu from '../components/AccountMenu'
+import { languages } from '../lib/i18n'
 
-function Navigation({ onNavigate }) {
+function Navigation({ onNavigate, copy }) {
   const navItems = [
-    { label: 'Home', href: '#home' },
-    { label: 'About', href: '#about' },
-    { label: 'Work', href: '#projects' },
-    { label: 'Contact', href: '#contact' },
+    { label: copy.navHome, href: '#home' },
+    { label: copy.navAbout, href: '#about' },
+    { label: copy.navProjects, href: '#projects' },
+    { label: copy.navCommunity, href: '/community' },
+    { label: copy.navExperience, href: '#experience' },
+    { label: copy.navContact, href: '#contact' },
   ]
 
   return (
@@ -22,36 +26,81 @@ function Navigation({ onNavigate }) {
   )
 }
 
-const Navbar = () => {
+const LanguageSwitch = ({ language, onLanguageChange, copy }) => (
+  <div className="language-switch" aria-label={copy.toggleLanguage}>
+    {languages.map((item) => (
+      <button
+        key={item.code}
+        type="button"
+        className={language === item.code ? 'language-switch-active' : 'language-switch-button'}
+        onClick={() => onLanguageChange(item.code)}
+        title={item.label}
+      >
+        {item.shortLabel}
+      </button>
+    ))}
+  </div>
+)
+
+const Navbar = ({
+  authStatus,
+  copy,
+  language,
+  onLanguageChange,
+  onVisitorLogin,
+  onVisitorLogout,
+  onVisitorRegister,
+  visitorUser,
+}) => {
   const [isOpen, setIsOpen] = useState(false)
 
   return (
-    <div className="fixed inset-x-0 z-20 w-full bg-primary/40 backdrop-blur-lg">
+    <div className="fixed inset-x-0 z-20 w-full border-b border-white/10 bg-[#050616]/70 backdrop-blur-lg">
       <div className="mx-auto c-space max-w-7xl">
         <div className="flex items-center justify-between py-2 sm:py-0">
           <a
             href="#home"
-            className="text-xl font-bold text-neutral-400 transition-colors hover:text-white"
+            className="text-xl font-bold text-neutral-300 transition-colors hover:text-white"
           >
-            Right
+            mrright.blog
           </a>
+
+          <div className="hidden items-center gap-5 sm:flex">
+            <nav>
+              <Navigation copy={copy} />
+            </nav>
+
+            <div className="hidden sm:block">
+              <LanguageSwitch
+                language={language}
+                onLanguageChange={onLanguageChange}
+                copy={copy}
+              />
+            </div>
+
+            <AccountMenu
+              authStatus={authStatus}
+              copy={copy}
+              language={language}
+              onLogin={onVisitorLogin}
+              onLogout={onVisitorLogout}
+              onRegister={onVisitorRegister}
+              visitorUser={visitorUser}
+            />
+          </div>
 
           <button
             type="button"
             onClick={() => setIsOpen((prev) => !prev)}
             className="flex cursor-pointer text-neutral-400 hover:text-white focus:outline-none sm:hidden"
-            aria-label="Toggle menu"
+            aria-label={copy.toggleMenu}
           >
             <img
               src={isOpen ? '/assets/close.svg' : '/assets/menu.svg'}
               className="h-6 w-6"
-              alt="menu"
+              alt=""
             />
           </button>
-
-          <nav className="hidden sm:flex">
-            <Navigation />
-          </nav>
         </div>
       </div>
 
@@ -63,8 +112,26 @@ const Navbar = () => {
           transition={{ duration: 0.3 }}
           style={{ maxHeight: '100vh' }}
         >
-          <nav className="pb-5">
-            <Navigation onNavigate={() => setIsOpen(false)} />
+          <nav className="grid gap-4 pb-5">
+            <Navigation copy={copy} onNavigate={() => setIsOpen(false)} />
+            <div className="mx-auto">
+              <LanguageSwitch
+                language={language}
+                onLanguageChange={onLanguageChange}
+                copy={copy}
+              />
+            </div>
+            <div className="mx-auto w-full max-w-sm px-5">
+              <AccountMenu
+                authStatus={authStatus}
+                copy={copy}
+                language={language}
+                onLogin={onVisitorLogin}
+                onLogout={onVisitorLogout}
+                onRegister={onVisitorRegister}
+                visitorUser={visitorUser}
+              />
+            </div>
           </nav>
         </Motion.div>
       )}

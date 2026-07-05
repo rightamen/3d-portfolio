@@ -7,6 +7,19 @@ export const FlipWords = ({
   words,
   duration = 3000,
   className
+}) => (
+  <FlipWordsInner
+    key={words.join("|")}
+    words={words}
+    duration={duration}
+    className={className}
+  />
+);
+
+const FlipWordsInner = ({
+  words,
+  duration = 3000,
+  className
 }) => {
   const [currentWord, setCurrentWord] = useState(words[0]);
   const [isAnimating, setIsAnimating] = useState(false);

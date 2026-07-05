@@ -1,13 +1,11 @@
-import { FlipWords } from '../components/FlipWords'
 import { motion as Motion } from 'motion/react'
+import { FlipWords } from './FlipWords'
+import { pickLocalized } from '../lib/i18n'
 
-const HeroText = () => {
-  const words = [
-    'High-Quality 3D Models',
-    'Optimized Game Assets',
-    'Realistic Textures',
-    'Creative 3D Designs',
-  ]
+const HeroText = ({ profile, status, language, copy }) => {
+  const words = copy.heroWords
+  const name = profile?.name || 'Right'
+  const title = pickLocalized(profile, 'title', language) || copy.heroTitle
 
   const variants = {
     hidden: { opacity: 0, x: -50 },
@@ -15,72 +13,97 @@ const HeroText = () => {
   }
 
   return (
-    <div className="z-10 mt-20 rounded-3xl bg-clip-text text-center md:mt-40 md:text-left">
-      <div className="c-space hidden flex-col md:flex">
+    <div className="hero-copy relative z-10 mt-20 max-w-4xl rounded-3xl bg-clip-text text-center drop-shadow-[0_3px_18px_rgba(0,0,0,0.65)] md:mt-40 md:text-left">
+      <div className="hidden flex-col md:flex">
+        <Motion.span
+          className="hero-eyebrow"
+          variants={variants}
+          initial="hidden"
+          animate="visible"
+          transition={{ delay: 0.8 }}
+        >
+          mrright.blog / {copy.projectsKicker}
+        </Motion.span>
         <Motion.h1
-          className="text-4xl font-medium"
+          className="hero-greeting text-4xl font-medium"
           variants={variants}
           initial="hidden"
           animate="visible"
           transition={{ delay: 1 }}
         >
-          Hi, I&apos;m Right
+          {copy.heroGreeting} {name}
         </Motion.h1>
 
         <div className="flex flex-col items-start">
           <Motion.p
-            className="text-5xl font-medium text-neutral-300"
+            className="hero-statement mt-5 text-5xl font-medium text-neutral-300"
             variants={variants}
             initial="hidden"
             animate="visible"
             transition={{ delay: 1.2 }}
           >
-            A 3D Artist
+            {copy.heroLine1}
             <br />
-            Dedicated to crafting
+            {copy.heroLine2}
           </Motion.p>
 
           <Motion.div
+            className="hero-flip"
             variants={variants}
             initial="hidden"
             animate="visible"
             transition={{ delay: 1.5 }}
           >
-            <FlipWords words={words} className="text-6xl font-black text-white" />
+            <FlipWords key={language} words={words} className="text-6xl font-black text-white" />
           </Motion.div>
 
           <Motion.p
-            className="text-4xl font-medium text-neutral-300"
+            className="hero-subtitle mt-3 max-w-2xl text-2xl font-medium leading-relaxed text-neutral-300"
             variants={variants}
             initial="hidden"
             animate="visible"
             transition={{ delay: 1.8 }}
           >
-            Model Creation
+            {title}
           </Motion.p>
+          <Motion.div
+            className="mt-7 flex items-center gap-3"
+            variants={variants}
+            initial="hidden"
+            animate="visible"
+            transition={{ delay: 2 }}
+          >
+            <a href="#projects" className="primary-action">
+              {copy.heroProjects}
+            </a>
+            <a href="#contact" className="secondary-action">
+              {copy.heroContact}
+            </a>
+          </Motion.div>
         </div>
       </div>
 
-      <div className="flex flex-col space-y-6 md:hidden">
+      <div className="hero-mobile-copy flex max-w-[21rem] flex-col space-y-4 md:hidden">
+        <span className="hero-eyebrow">mrright.blog / {copy.projectsKicker}</span>
         <Motion.p
-          className="text-4xl font-medium"
+          className="text-3xl font-medium"
           variants={variants}
           initial="hidden"
           animate="visible"
           transition={{ delay: 1 }}
         >
-          Hi, I&apos;m Right
+          {copy.heroGreeting} {name}
         </Motion.p>
 
         <div>
           <Motion.p
-            className="text-4xl font-black text-neutral-300"
+            className="text-3xl font-black text-neutral-300"
             variants={variants}
             initial="hidden"
             animate="visible"
             transition={{ delay: 1.2 }}
           >
-            Crafting
+            {copy.heroMobileLine}
           </Motion.p>
 
           <Motion.div
@@ -89,19 +112,24 @@ const HeroText = () => {
             animate="visible"
             transition={{ delay: 1.5 }}
           >
-            <FlipWords words={words} className="text-5xl font-bold text-white" />
+            <FlipWords key={language} words={words} className="text-4xl font-bold text-white" />
           </Motion.div>
 
           <Motion.p
-            className="text-4xl font-black text-neutral-300"
+            className="text-2xl font-black text-neutral-300"
             variants={variants}
             initial="hidden"
             animate="visible"
             transition={{ delay: 1.8 }}
           >
-            Model Sculpture
+            {copy.heroMobileSubtitle}
           </Motion.p>
         </div>
+        <p className="mx-auto max-w-xs text-sm leading-relaxed text-neutral-200">
+          {status === 'error'
+            ? copy.heroError
+            : title}
+        </p>
       </div>
     </div>
   )

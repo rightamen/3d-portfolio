@@ -13,6 +13,7 @@ import { useFrame } from "@react-three/fiber";
 
 export function Astronaut(props) {
   const group = useRef();
+  const startY = props.position?.[1] ?? -1;
   const { nodes, materials, animations } = useGLTF(
     "/models/tenhun_falling_spaceman_fanart.glb",
   );
@@ -23,11 +24,11 @@ export function Astronaut(props) {
     }
   }, [actions, animations]);
 
-  const yPosition = useMotionValue(5);
+  const yPosition = useMotionValue(startY + 5);
   const ySpring = useSpring(yPosition, { damping: 30 });
   useEffect(() => {
-    yPosition.set(-1);
-  }, [yPosition]);
+    yPosition.set(startY);
+  }, [startY, yPosition]);
 
   useFrame(() => {
     if (group.current) {
