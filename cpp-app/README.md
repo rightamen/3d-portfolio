@@ -98,10 +98,9 @@ c++ -std=c++20 -Wall -Wextra -Wpedantic -Icpp-app \
   and optional bearer token. No production domain is hard-coded; for local
   development use a value such as `http://localhost:3000`. Tokens live only
   in memory here and are never persisted by the SDK.
-- `sdk/core/JsonValue.hpp`: a deliberately small, dependency-free JSON parser
-  used only to support current contract fixtures. It is not a full OpenAPI
-  client generator and should be revisited during the dependency strategy
-  decision.
+- `sdk/core/JsonValue.hpp`: a deliberately small, dependency-free temporary
+  JSON parser used only to support current contract fixtures. It is internal to
+  the early SDK prototype and must stay behind `EnvelopeParser`.
 - `sdk/core/EnvelopeParser.hpp`: strict `/api/v1` envelope decoding, including
   `ApiError`, `Pagination`, unknown error-code fallback, and rejection of
   legacy top-level mirrors.
@@ -128,13 +127,14 @@ c++ -std=c++20 -Wall -Wextra -Wpedantic -Icpp-app \
 
 ## Next Steps
 
-1. Decide the long-term JSON dependency strategy: keep expanding the small
-   parser only for fixtures, or adopt a header-only library through the future
-   C++ dependency manager.
-2. Implement a replaceable real HTTP backend for `/api/v1/*` using Qt Network
+1. Implement a replaceable real HTTP backend for `/api/v1/*` using Qt Network
    or libcurl behind `sdk/network/HttpClient`. `MRRIGHT_ENABLE_CURL_HTTP` is
    currently reserved and defaults to `OFF`; enabling it intentionally fails
    until the dependency strategy is implemented.
+2. Replace the temporary JSON parser with `nlohmann/json` after the C++
+   dependency manager is in place. The decision is recorded in
+   `docs/adr/ADR_CPP_JSON_STRATEGY.md`; this batch intentionally does not
+   vendor a large header or require CMake to fetch packages.
 3. Expand JSON serialization/deserialization tests against contract fixtures.
 4. Spike OpenAPI-generated client/types only as a comparison point, not as the
    default SDK implementation.

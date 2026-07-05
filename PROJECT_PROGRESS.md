@@ -1,5 +1,59 @@
 # mrright.blog 项目进度记录
 
+## 2026-07-05：C++ SDK JSON parser dependency decision
+
+结论：完成 C++ SDK JSON 解析策略决策。短期保留当前 `JsonValue.hpp` temporary parser，仅用于 early SDK prototype / mock-driven strict-envelope tests，并继续把 JSON 边界收敛在 `EnvelopeParser.hpp`；长期选择通过未来 C++ dependency manager 接入 `nlohmann/json`。本批不新增第三方依赖、不 vendored 大文件、不让 CMake 默认联网下载依赖。**未实现真实 HTTP、未开发 UI、未接 SQLite、未改 Web/API 行为、未改数据库、未部署、未 push**。
+
+方案比较结论：
+
+- 继续保留当前 `JsonValue` parser：跨平台和离线构建最好，适合当前 contract fixtures；但 Unicode、number、诊断、完整 JSON 兼容性不足，只能作为临时 parser。
+- `nlohmann/json`：长期首选。跨平台成熟、header-only 使用方便、CMake/vcpkg/Conan 集成简单，适合 SDK core typed model decoding，不依赖 Qt UI，也不妨碍未来 Qt/QML。
+- Boost.JSON：技术上可行，但为了 JSON 单独引入 Boost 生态偏重，不适合当前轻量 SDK 阶段。
+- Qt JSON：适合未来 Qt UI/network 层，但现在接入会让 SDK core 过早依赖 Qt。
+- simdjson：适合未来大规模 JSON 性能场景；当前 envelope/client 阶段过早。
+
+完成内容：
+
+- 新增 `docs/adr/ADR_CPP_JSON_STRATEGY.md`：
+  - 记录背景、当前 parser 限制、方案比较、最终决策、短期/长期策略、CMake/CI/SDK model 影响，以及明确不做事项。
+- 更新 `cpp-app/sdk/core/JsonValue.hpp`：
+  - 增加注释，标明它是 early SDK contract tests 的 temporary prototype JSON boundary。
+  - 明确不得扩展成 production JSON library，业务 client 不应直接散落 JSON 解析逻辑。
+- 更新 `cpp-app/README.md`：
+  - 说明当前 JSON 策略仍使用 temporary parser。
+  - 说明长期目标是通过未来 C++ dependency manager 引入 `nlohmann/json`。
+  - 说明本批不 vendored 大文件、不让 CMake 默认联网下载依赖。
+- 更新 `docs/CPP_APP_MIGRATION_PLAN.md`：
+  - 标记 JSON parser strategy 已决策。
+  - 保留后续真实 HTTP backend / Qt-vs-libcurl dependency strategy 作为下一步。
+
+仍未实现 / 后续待办：
+
+1. real libcurl or Qt Network backend
+2. OpenAPI generated client spike
+3. SQLite cache
+4. secure TokenStore implementation
+5. Qt/QML prototype
+6. packaging strategy spike
+
+验证结果：
+
+- `git diff --check`：通过。
+- `c++` 直接编译 smoke + SDK tests：通过（`SDK contract tests passed.`）。
+- `npm run lint`：通过。
+- `npm run build`：通过（`dist/` 构建产物已还原，未提交）。
+- `npm run test:api`：通过（37 passed）。
+- `npm run test:api:db`：通过（18 passed，一次性 PostgreSQL cluster 已销毁）。
+- `npm run test:openapi`：通过（200 个本地 `$ref` 可解析；27 个 API error code 与 OpenAPI enum 一致）。
+
+安全说明：
+
+- 未部署 VPS、未 push GitHub。
+- 未读取、修改或输出 `.env`、ADMIN_TOKEN、DATABASE_URL、token、secret。
+- 未连接或修改数据库。
+- 未改 Web/API 行为。
+- 未提交 dist/build/node_modules/cpp-app/build 或其他构建产物。
+
 ## 2026-07-05：C++ SDK HTTP client configuration / backend abstraction 第一批
 
 结论：在现有 `MockHttpClient` / `EnvelopeParser` / typed clients 基础上，完成真实 HTTP backend 的可替换接口层第一批：新增 `ApiClientConfig`、统一请求构造、内存 bearer token header、`RealHttpClient` 占位实现、更多 typed client 方法和请求构造测试。默认构建仍不依赖 Qt/libcurl，不做真实联网。**未开发 UI、未接 SQLite、未改 Web/API 行为、未改数据库、未部署、未 push**。

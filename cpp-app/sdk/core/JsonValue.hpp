@@ -15,6 +15,9 @@
 
 namespace mrright::sdk::core {
 
+// Temporary prototype JSON boundary for early SDK contract tests.
+// Keep JSON access behind EnvelopeParser/typed decoders; do not expand this
+// into a production JSON library. See docs/adr/ADR_CPP_JSON_STRATEGY.md.
 class JsonValue {
  public:
   using Object = std::map<std::string, JsonValue>;
