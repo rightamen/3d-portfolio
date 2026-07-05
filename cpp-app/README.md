@@ -203,6 +203,45 @@ Do not commit `cpp-app/build/`, `cpp-app/build-curl/`, `vcpkg_installed/`, or
 dependency caches. Real API smoke tests are not part of this batch; when added,
 they must point at a local/dev server and never production by default.
 
+### Local API Smoke Test
+
+The local API smoke test is opt-in and is not part of the default build or
+normal CTest run. It performs real HTTP requests through `CurlHttpClient`, so
+it requires both a local Web/API development server and a libcurl-enabled CMake
+build.
+
+Start the local Web/API dev server in a separate shell, then configure with
+both curl and the local smoke option enabled:
+
+```bash
+export VCPKG_ROOT=/path/to/vcpkg
+cmake -S cpp-app -B cpp-app/build-curl-smoke -G Ninja \
+  -DCMAKE_BUILD_TYPE=Debug \
+  -DMRRIGHT_ENABLE_CURL_HTTP=ON \
+  -DMRRIGHT_ENABLE_LOCAL_API_SMOKE=ON \
+  -DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake
+cmake --build cpp-app/build-curl-smoke
+MRRIGHT_API_BASE_URL=http://127.0.0.1:3000 \
+  ctest --test-dir cpp-app/build-curl-smoke --output-on-failure
+```
+
+`MRRIGHT_API_BASE_URL` is required at test runtime. The test refuses to run
+unless the URL is loopback-only: `http://localhost`, `http://127.0.0.1`, or
+`http://[::1]`, with an optional port. It does not read `.env`, does not use
+tokens, does not call admin endpoints, does not perform writes, and does not
+contact production.
+
+Current coverage:
+
+- `GET /api/v1/health`: HTTP 200, strict `data`/`pagination`/`error`
+  envelope, `error: null`, and `data.ok === true`.
+- `GET /api/v1/projects`: HTTP 200, or a strict API error envelope for a
+  currently unavailable local store; rejects legacy top-level `projects`
+  mirrors and exercises `ProjectClient::listProjects()` / `EnvelopeParser`.
+- `GET /api/v1/projects/__mrright_cpp_smoke_missing_project__`: optional
+  negative-path coverage for a 404 strict error envelope with `error.code` and
+  `error.message`.
+
 ## Dependency Strategy
 
 The current skeleton has no external C++ runtime dependencies. It should keep
@@ -225,18 +264,16 @@ The accepted dependency strategy is recorded in
 
 ## Next Steps
 
-1. Add local/dev API smoke coverage for the optional libcurl backend without
-   contacting production services.
-2. Replace the temporary JSON parser with `nlohmann/json` after the C++
+1. Replace the temporary JSON parser with `nlohmann/json` after the C++
    dependency manager is in place. The decision is recorded in
    `docs/adr/ADR_CPP_JSON_STRATEGY.md`; this batch intentionally does not
    vendor a large header or require CMake to fetch packages.
-3. Expand JSON serialization/deserialization tests against contract fixtures.
-4. Spike OpenAPI-generated client/types only as a comparison point, not as the
+2. Expand JSON serialization/deserialization tests against contract fixtures.
+3. Spike OpenAPI-generated client/types only as a comparison point, not as the
    default SDK implementation.
-5. Integrate Qt/QML once the SDK boundary is stable.
-6. Implement SQLite cache metadata and content-addressed blob storage.
-7. Implement secure `TokenStore` providers:
+4. Integrate Qt/QML once the SDK boundary is stable.
+5. Implement SQLite cache metadata and content-addressed blob storage.
+6. Implement secure `TokenStore` providers:
    Windows Credential Manager, macOS Keychain, Linux Secret Service, then an
    explicitly marked encrypted-file fallback.
-8. Spike packaging scripts for NSIS, dmg/notarization, and AppImage.
+7. Spike packaging scripts for NSIS, dmg/notarization, and AppImage.
