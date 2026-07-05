@@ -1,5 +1,77 @@
 # mrright.blog 项目进度记录
 
+## 2026-07-05：C++ optional libcurl HTTP backend spike
+
+结论：完成 optional libcurl HTTP backend spike。新增 `cpp-app/vcpkg.json`（仅 `curl`）、可选 `CurlHttpClient` concrete backend，以及 `MRRIGHT_ENABLE_CURL_HTTP` CMake wiring。默认 build 仍为无外部依赖路径：不查找 libcurl、不要求 vcpkg、`MockHttpClient` 和 SDK tests 继续构建通过。**未做 local API smoke test、未访问生产 API、未接 Qt、未替换 JSON parser、未实现 SQLite cache、未实现 secure TokenStore、未开发 UI、未改 Web/API 行为、未改数据库、未部署、未 push**。
+
+完成内容：
+
+- 新增 `cpp-app/vcpkg.json`：
+  - package name：`mrright-cpp-app`。
+  - 当前只声明 `curl` 依赖。
+  - 未加入 `nlohmann-json`、sqlite3、Qt 或其他依赖。
+- 更新 `cpp-app/CMakeLists.txt`：
+  - `MRRIGHT_ENABLE_CURL_HTTP` 继续默认 `OFF`。
+  - 默认 OFF 时不调用 `find_package(CURL)`，不链接 libcurl，默认 smoke/tests 保持无依赖构建。
+  - ON 时先尝试 `find_package(CURL CONFIG QUIET)`，再尝试 `find_package(CURL QUIET)`。
+  - 找不到 libcurl 时给出明确 fatal error，提示使用 vcpkg toolchain 或安装 curl development package。
+  - ON 且找到 libcurl 时构建 `mrright_sdk_curl_http`，链接 `CURL::libcurl`。
+- 新增 `cpp-app/sdk/network/CurlHttpClient.hpp` / `.cpp`：
+  - 实现 `HttpClient::send(HttpRequest)`。
+  - 支持 GET、POST、PUT、DELETE、PATCH。
+  - 支持 request URL/path、headers、body、`ApiClientConfig.timeoutMs`。
+  - 返回 `HttpResponse.statusCode`、body、best-effort response headers。
+  - 网络错误通过 `ApiResult` 返回，不以 throw 作为主路径。
+  - 不解析业务 JSON，不理解 Project/User/Community，不保存 token，不打印 `Authorization`，不写死 `/api/v1`。
+  - `ApiClient` 仍负责 `/api/v1` path、legacy/admin path 拒绝、通用 headers 和 bearer token header。
+- `RealHttpClient` 保持 placeholder：
+  - 默认继续返回 `REAL_HTTP_BACKEND_NOT_ENABLED`。
+  - 默认 build 下不依赖 libcurl。
+- 更新 `.gitignore`：
+  - 忽略 `cpp-app/build-curl/` 与 `cpp-app/vcpkg_installed/`。
+- 更新 `cpp-app/README.md` 与 `docs/CPP_APP_MIGRATION_PLAN.md`：
+  - 说明默认 build 不需要 libcurl。
+  - 说明如何用 vcpkg toolchain 启用 optional libcurl backend。
+  - 明确不提交 `vcpkg_installed`、`cpp-app/build`、`cpp-app/build-curl`。
+  - 明确 real API smoke test 不是本批任务，后续必须指向 local/dev server。
+
+仍未实现 / 后续待办：
+
+1. local API smoke test against dev server
+2. nlohmann/json replacement
+3. SQLite cache
+4. secure TokenStore
+5. Qt/QML prototype
+6. packaging strategy spike
+
+验证结果：
+
+- `git diff --check`：通过。
+- `npm run lint`：通过。
+- `npm run build`：通过（`dist/` 构建产物已还原，未提交）。
+- `npm run test:api`：通过（37 passed）。
+- `npm run test:api:db`：通过（18 passed，一次性 PostgreSQL cluster 已销毁）。
+- `npm run test:openapi`：通过（200 个本地 `$ref` 可解析；27 个 API error code 与 OpenAPI enum 一致）。
+- 默认无依赖 CMake：
+  - `cmake -S cpp-app -B cpp-app/build -G Ninja -DCMAKE_BUILD_TYPE=Debug`：通过。
+  - `cmake --build cpp-app/build`：通过（`ninja: no work to do.`）。
+  - `ctest --test-dir cpp-app/build --output-on-failure`：通过（`mrright_cpp_smoke` passed；`mrright_cpp_sdk_tests` passed；2/2 tests passed）。
+- libcurl-enabled build：
+  - 本机未发现可用 `vcpkg` / `curl-config` / pkg-config libcurl，未安装新依赖。
+  - 已验证 `MRRIGHT_ENABLE_CURL_HTTP=ON` 且缺少 libcurl 时 CMake 给出清晰错误：需要 vcpkg toolchain 或 curl development package 提供 `CURL::libcurl`。
+  - 因缺少本地 libcurl/vcpkg，未完成 `build-curl` 编译和 CTest；后续由 dependency-enabled 本地/CI 环境验证。
+
+安全说明：
+
+- 未部署 VPS、未 push GitHub。
+- 未读取、修改或输出 `.env`、ADMIN_TOKEN、DATABASE_URL、token、secret。
+- 未连接或修改数据库。
+- 未改 Web/API 行为。
+- 未访问生产 API。
+- 未做 local API smoke test。
+- 未提交 dist/build/node_modules/cpp-app/build/cpp-app/build-curl/vcpkg_installed 或其他构建/依赖产物。
+- 未做 nlohmann/json replacement、SQLite cache、secure TokenStore、Qt/QML prototype、packaging 等下一步任务。
+
 ## 2026-07-05：C++ dependency manager strategy ADR
 
 结论：完成 C++ dependency manager 策略 ADR。最终选择 vcpkg manifest mode 作为 SDK/backend native dependencies 的首选策略；本批不新增实际依赖、不新增 `vcpkg.json`、不改 CMake 依赖 wiring，继续保持当前无外部依赖 mock build。下一批 libcurl backend spike 时再引入 vcpkg manifest。**未实现 libcurl backend、未接 Qt、未替换 JSON parser、未改 C++ SDK 代码、未改 Web/API 行为、未改数据库、未部署、未 push**。

@@ -119,10 +119,12 @@ c++ -std=c++20 -Wall -Wextra -Wpedantic -Icpp-app \
 - `sdk/network`: an interface-only `HttpClient`, `NullHttpClient`, and
   `MockHttpClient` for typed client tests. `RealHttpClient` is present as a
   replaceable backend placeholder, but it intentionally returns
-  `REAL_HTTP_BACKEND_NOT_ENABLED` and performs no network I/O in this batch.
-  The real backend strategy is recorded in
-  `docs/adr/ADR_CPP_HTTP_BACKEND_STRATEGY.md`: keep the abstraction, spike an
-  optional libcurl backend next, and defer Qt Network to the Qt/QML phase.
+  `REAL_HTTP_BACKEND_NOT_ENABLED` and performs no network I/O in default
+  builds. `CurlHttpClient` is the first concrete backend, but it is compiled
+  only when `MRRIGHT_ENABLE_CURL_HTTP=ON`.
+  The backend strategy is recorded in
+  `docs/adr/ADR_CPP_HTTP_BACKEND_STRATEGY.md`: keep the abstraction, make
+  libcurl optional, and defer Qt Network to the Qt/QML phase.
 - `app/platform`: `AppPaths` placeholders for config, cache, data, logs,
   downloads, and temp paths across Windows/macOS/Linux.
 - `src/main.cpp`: a no-network smoke binary that constructs example
@@ -133,7 +135,7 @@ c++ -std=c++20 -Wall -Wextra -Wpedantic -Icpp-app \
 ## What Is Not Included
 
 - No Qt UI or QML.
-- No implemented real HTTP transport and no real API calls.
+- No real HTTP transport in the default build and no real API calls.
 - No production-grade JSON dependency or generated OpenAPI client.
 - No admin endpoints.
 - No legacy `/api/*` support.
@@ -159,6 +161,36 @@ The accepted strategy is:
 - Tokens must stay in memory or a future secure `TokenStore`; do not write
   bearer tokens to config files or logs.
 
+### Optional libcurl Backend
+
+`MRRIGHT_ENABLE_CURL_HTTP` defaults to `OFF`. With the default setting, CMake
+does not search for libcurl, does not require vcpkg, and still builds
+`mrright_cpp_smoke` plus `mrright_cpp_sdk_tests`.
+
+To compile the optional `CurlHttpClient`, use a separate build directory and a
+vcpkg toolchain or another CMake-visible libcurl development package:
+
+```bash
+cmake -S cpp-app -B cpp-app/build-curl -G Ninja \
+  -DCMAKE_BUILD_TYPE=Debug \
+  -DMRRIGHT_ENABLE_CURL_HTTP=ON \
+  -DCMAKE_TOOLCHAIN_FILE=/path/to/vcpkg/scripts/buildsystems/vcpkg.cmake
+cmake --build cpp-app/build-curl
+ctest --test-dir cpp-app/build-curl --output-on-failure
+```
+
+`CurlHttpClient` sends `HttpRequest` values and returns raw `HttpResponse`
+values. It supports GET, POST, PUT, DELETE, and PATCH, request headers, request
+body, response status/body, best-effort response header capture, and timeout
+configuration from `ApiClientConfig`. It does not parse business JSON, does
+not know project/user/community models, does not save tokens, and does not
+construct `/api/v1` paths; `ApiClient` remains responsible for path and header
+construction.
+
+Do not commit `cpp-app/build/`, `cpp-app/build-curl/`, `vcpkg_installed/`, or
+dependency caches. Real API smoke tests are not part of this batch; when added,
+they must point at a local/dev server and never production by default.
+
 ## Dependency Strategy
 
 The current skeleton has no external C++ runtime dependencies. It should keep
@@ -170,8 +202,8 @@ The accepted dependency strategy is recorded in
 
 - Use vcpkg manifest mode as the preferred strategy for SDK/backend
   dependencies.
-- Introduce the first `vcpkg.json` with the future libcurl backend spike, not
-  in this documentation-only batch.
+- `cpp-app/vcpkg.json` currently contains only the libcurl dependency needed
+  for the optional backend.
 - Manage future libcurl, `nlohmann-json`, sqlite3, and similar backend
   libraries through vcpkg unless a concrete blocker appears.
 - Evaluate Qt separately during the Qt/QML phase; it may use vcpkg, the
@@ -181,10 +213,8 @@ The accepted dependency strategy is recorded in
 
 ## Next Steps
 
-1. Add the first `vcpkg.json` and spike a replaceable libcurl HTTP backend for
-   `/api/v1/*` behind `sdk/network/HttpClient`. `MRRIGHT_ENABLE_CURL_HTTP` is
-   currently reserved and defaults to `OFF`; enabling it intentionally fails
-   until the dependency strategy is implemented.
+1. Add local/dev API smoke coverage for the optional libcurl backend without
+   contacting production services.
 2. Replace the temporary JSON parser with `nlohmann/json` after the C++
    dependency manager is in place. The decision is recorded in
    `docs/adr/ADR_CPP_JSON_STRATEGY.md`; this batch intentionally does not
