@@ -494,7 +494,11 @@ test.describe('api v1 strict envelope (no legacy mirror)', () => {
 
     const { payload, response } = await getJson('/api/v1/health')
     expect(response.status).toBe(200)
+    expect(response.headers.get('content-type')).toContain('application/json')
+    expect(Object.keys(payload).sort()).toEqual(['data', 'error', 'pagination'])
     expect(payload.data.ok).toBe(true)
+    expect(Object.prototype.hasOwnProperty.call(payload, 'ok')).toBe(false)
+    expect(Object.prototype.hasOwnProperty.call(payload, 'service')).toBe(false)
   })
 
   test('GET /api/v1/projects has data.projects but no top-level projects mirror', async () => {
@@ -579,7 +583,7 @@ test.describe('api v1 strict envelope (no legacy mirror)', () => {
   test('the v1 prefix only matches an exact /api/v1 path segment', async () => {
     // /api/v1x... must NOT be rewritten; it falls through past the API routes
     // (SPA fallback), proving the rewrite cannot mangle unrelated paths.
-    const response = await fetch(`${baseURL}/api/v1x-not-a-version/health`)
+    const response = await fetch(`${baseURL}/api/v1x/health`)
     const contentType = response.headers.get('content-type') || ''
     expect(contentType).not.toContain('application/json')
   })

@@ -1,5 +1,136 @@
 # mrright.blog 项目进度记录
 
+## 2026-07-06：C++ local API smoke actual validation passed
+
+结论：本地 C++ local API smoke 已实际跑通。本轮只记录验证结果，未改代码、未改 Web/API 行为、未改 C++ 实现、未部署、未 push、未改数据库、未读取或修改 `.env`/token/secret、未访问生产 API、未提交构建产物。
+
+本地 API server：
+
+- 启动命令：`npm run dev:server`
+- URL：`http://127.0.0.1:4173`
+
+代理注意事项：
+
+- 当前环境存在 `HTTP_PROXY` / `http_proxy`，会影响 localhost / 127.0.0.1 请求。
+- curl 验证需要使用 `--noproxy '*'`。
+- C++ smoke 需要 unset `HTTP_PROXY` / `http_proxy` / `HTTPS_PROXY` / `https_proxy` / `ALL_PROXY` / `all_proxy`，并设置：
+  `NO_PROXY=localhost,127.0.0.1,::1`
+
+curl 验证：
+
+- 命令：`curl --noproxy '*' http://127.0.0.1:4173/api/v1/health`
+- 返回 strict JSON envelope：
+  - `data.ok: true`
+  - `data.service: "mrright-portfolio"`
+  - `pagination: {}`
+  - `error: null`
+
+C++ local smoke：
+
+- `MRRIGHT_API_BASE_URL=http://127.0.0.1:4173`
+- 命令：`ctest --test-dir cpp-app/build-curl-smoke --output-on-failure`
+- 代理环境：unset HTTP/HTTPS/ALL proxy，并设置 `NO_PROXY=localhost,127.0.0.1,::1`
+- 结果：
+  - `mrright_cpp_smoke` passed
+  - `mrright_cpp_sdk_tests` passed
+  - `mrright_cpp_curl_compile_tests` passed
+  - `mrright_cpp_local_api_smoke` passed
+  - 4/4 tests passed
+
+覆盖 endpoints：
+
+- `GET /api/v1/health`
+- `GET /api/v1/projects`
+- missing project 404 strict envelope
+
+安全说明：
+
+- 未访问生产 API。
+- 未部署 VPS。
+- 未 push GitHub。
+- 未改代码。
+- 未改数据库、token、secret。
+- 未提交 `cpp-app/build-curl-smoke`、`dist`、`build`、`node_modules`、`vcpkg_installed` 或其他构建产物。
+
+## 2026-07-06：修复 /api/v1 dual mount rewrite
+
+结论：本轮只修复本地 `/api/v1` dual mount rewrite 和相关 API contract 测试。发现普通本地请求中 `/api/v1/health` 曾落到 SPA fallback，表现为返回 `text/html` index，而不是进入 `/api/health` handler。已将 `/api/v1` rewrite 改为明确的字符串匹配逻辑，确保 `/api/v1/*` 进入同一套 `/api/*` handler，并通过 `request.apiVersion = 'v1'` 保持 strict envelope mode。**未部署、未 push、未改数据库、未读取或修改 `.env`/token/secret、未访问生产 API、未运行 C++ local smoke、未改 C++ 代码、未改 Web 前端**。
+
+完成内容：
+
+- 修复 `server/index.js`：
+  - `/api/v1/health` rewrite 到 `/api/health`。
+  - `/api/v1/projects` rewrite 到 `/api/projects`。
+  - `/api/v1?x=1` rewrite 到 `/api?x=1`。
+  - `/api/v1x` 不 rewrite。
+  - rewrite 命中时继续设置 `request.apiVersion = 'v1'`，由 `server/responses.js` 输出 strict envelope。
+- 更新 `tests/api/contract.spec.js`：
+  - 强化 `GET /api/v1/health` JSON content-type 和 strict top-level keys 检查。
+  - 明确断言 `/api/v1/health` 不包含 legacy `ok` / `service` 顶层镜像。
+  - 将 v1 前缀误匹配覆盖改为 `/api/v1x/health`。
+
+本地 curl 验证：
+
+- `curl --noproxy '*' -i http://127.0.0.1:4173/api/health`：返回 `application/json`，保留 legacy-compatible 顶层 `ok` / `service` 镜像。
+- `curl --noproxy '*' -i http://127.0.0.1:4173/api/v1/health`：返回 `application/json` strict envelope，顶层只有 `data` / `pagination` / `error`。
+- `curl --noproxy '*' -i http://127.0.0.1:4173/api/v1x/health`：未 rewrite，返回 SPA HTML fallback。
+
+注意：当前 shell 设置了 `HTTP_PROXY` / `http_proxy`，且没有 `NO_PROXY`，普通 `curl http://127.0.0.1:4173/...` 可能经代理转发；本轮本地验证使用 `--noproxy '*'` 确认命中本机 dev server。
+
+后续需要：
+
+1. C++ local smoke 仍待下一步实际运行。
+
+## 2026-07-05：C++ local API smoke actual run blocked by missing vcpkg
+
+结论：本轮尝试实际运行 C++ local API smoke test，但在环境检查阶段被本地缺少 vcpkg 阻塞。当前仓库工作区开始时干净，后端本地启动命令已确认：`npm run dev:server`（`node server/index.js`）。按要求未自动安装 vcpkg、未修改代码绕过 libcurl/vcpkg、未启动本地 API server、未运行 C++ local smoke、未访问生产 API。**未部署、未 push、未改生产数据库、未读取或修改 `.env`/token/secret、未改 Web/API 行为、未做 Qt/QML、未做 SQLite、未做 TokenStore、未做 packaging**。
+
+环境检查：
+
+- `git status --short --branch`：开始时干净，当前分支 `test/cpp-run-local-api-smoke`。
+- `package.json` scripts：
+  - 优先后端/API 启动命令：`npm run dev:server` -> `node server/index.js`。
+  - 全栈命令：`npm run dev:full`。
+- vcpkg/libcurl toolchain 检查：
+  - `which vcpkg`：未找到。
+  - `VCPKG_ROOT`：空。
+  - `$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake`：不存在。
+- 阻塞原因：缺少 vcpkg/toolchain，无法按要求配置
+  `MRRIGHT_ENABLE_CURL_HTTP=ON` + `MRRIGHT_ENABLE_LOCAL_API_SMOKE=ON`
+  的 `cpp-app/build-curl-smoke`。
+
+未执行内容：
+
+- 未启动 local API server。
+- 未请求 `http://127.0.0.1:3000/api/v1/health`。
+- 未配置 `cpp-app/build-curl-smoke`。
+- 未运行 C++ local API smoke CTest。
+- 未访问生产域名。
+
+本轮验证结果：
+
+- `git diff --check`：通过。
+- `npm run lint`：通过。
+- `npm run build`：通过；产生的 `dist/` 变动已 `git restore dist/`，未提交。
+- `npm run test:api`：通过（37 passed）。
+- `npm run test:api:db`：通过（18 passed，一次性 PostgreSQL cluster 已销毁）。
+- `npm run test:openapi`：通过（200 个本地 `$ref` 可解析；27 个 API error code 与 OpenAPI enum 一致）。
+- 默认无依赖 CMake：
+  - `cmake -S cpp-app -B cpp-app/build -G Ninja -DCMAKE_BUILD_TYPE=Debug`：通过。
+  - `cmake --build cpp-app/build`：通过（`ninja: no work to do.`）。
+  - `ctest --test-dir cpp-app/build --output-on-failure`：通过（`mrright_cpp_smoke` passed；`mrright_cpp_sdk_tests` passed；2/2 tests passed）。
+- C++ local API smoke：
+  - 未配置 libcurl-enabled CMake。
+  - 未运行 CTest。
+  - 未覆盖 `/api/v1/health`、`/api/v1/projects`、missing project 404；原因是本地缺少 vcpkg/toolchain。
+
+后续需要：
+
+1. 安装或配置 vcpkg。
+2. 设置 `VCPKG_ROOT` 指向 vcpkg 根目录。
+3. 确认 `$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake` 存在。
+4. 重新运行 local API smoke actual validation。
+
 ## 2026-07-05：C++ SDK local dev server API smoke test entrypoint
 
 结论：新增 C++ SDK local/dev API smoke test 入口，用于通过 `CurlHttpClient` 真实请求本地开发服务器的 `/api/v1` strict envelope API。该入口默认关闭，普通 no-dependency CMake build 和普通 CTest 不构建、不运行、不联网；只有显式开启 `MRRIGHT_ENABLE_CURL_HTTP=ON` 与 `MRRIGHT_ENABLE_LOCAL_API_SMOKE=ON` 时才构建并注册 CTest。运行时必须设置 `MRRIGHT_API_BASE_URL`，并且只允许 `http://localhost`、`http://127.0.0.1` 或 `http://[::1]`（可带端口）。**未部署、未 push、未改数据库、未读取或修改 `.env`/token/secret、未访问生产 API、未改 Web/API 行为、未做 Qt/QML、未做 SQLite cache、未实现 secure TokenStore、未替换 nlohmann/json、未做 packaging**。

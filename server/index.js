@@ -100,11 +100,20 @@ app.use(cors({ origin: process.env.CORS_ORIGIN || true }))
 // for the current Web front end. Registered BEFORE express.json so that body
 // parse errors on /api/v1/* also surface as strict envelopes. request.originalUrl
 // keeps the /api/v1 prefix for logging.
-const V1_PREFIX = /^\/api\/v1(?=\/|\?|$)/
+const API_V1_PREFIX = '/api/v1'
+const rewriteApiV1Url = (url) => {
+  if (url === API_V1_PREFIX) return '/api'
+  if (url.startsWith(`${API_V1_PREFIX}/`) || url.startsWith(`${API_V1_PREFIX}?`)) {
+    return `/api${url.slice(API_V1_PREFIX.length)}`
+  }
+  return null
+}
+
 app.use((request, _response, next) => {
-  if (V1_PREFIX.test(request.url)) {
+  const rewrittenUrl = rewriteApiV1Url(request.url)
+  if (rewrittenUrl) {
     request.apiVersion = 'v1'
-    request.url = request.url.replace(V1_PREFIX, '/api')
+    request.url = rewrittenUrl
   }
   next()
 })
