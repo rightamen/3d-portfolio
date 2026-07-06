@@ -1,5 +1,57 @@
 # mrright.blog 项目进度记录
 
+## 2026-07-06：C++ local API smoke actual validation passed
+
+结论：本地 C++ local API smoke 已实际跑通。本轮只记录验证结果，未改代码、未改 Web/API 行为、未改 C++ 实现、未部署、未 push、未改数据库、未读取或修改 `.env`/token/secret、未访问生产 API、未提交构建产物。
+
+本地 API server：
+
+- 启动命令：`npm run dev:server`
+- URL：`http://127.0.0.1:4173`
+
+代理注意事项：
+
+- 当前环境存在 `HTTP_PROXY` / `http_proxy`，会影响 localhost / 127.0.0.1 请求。
+- curl 验证需要使用 `--noproxy '*'`。
+- C++ smoke 需要 unset `HTTP_PROXY` / `http_proxy` / `HTTPS_PROXY` / `https_proxy` / `ALL_PROXY` / `all_proxy`，并设置：
+  `NO_PROXY=localhost,127.0.0.1,::1`
+
+curl 验证：
+
+- 命令：`curl --noproxy '*' http://127.0.0.1:4173/api/v1/health`
+- 返回 strict JSON envelope：
+  - `data.ok: true`
+  - `data.service: "mrright-portfolio"`
+  - `pagination: {}`
+  - `error: null`
+
+C++ local smoke：
+
+- `MRRIGHT_API_BASE_URL=http://127.0.0.1:4173`
+- 命令：`ctest --test-dir cpp-app/build-curl-smoke --output-on-failure`
+- 代理环境：unset HTTP/HTTPS/ALL proxy，并设置 `NO_PROXY=localhost,127.0.0.1,::1`
+- 结果：
+  - `mrright_cpp_smoke` passed
+  - `mrright_cpp_sdk_tests` passed
+  - `mrright_cpp_curl_compile_tests` passed
+  - `mrright_cpp_local_api_smoke` passed
+  - 4/4 tests passed
+
+覆盖 endpoints：
+
+- `GET /api/v1/health`
+- `GET /api/v1/projects`
+- missing project 404 strict envelope
+
+安全说明：
+
+- 未访问生产 API。
+- 未部署 VPS。
+- 未 push GitHub。
+- 未改代码。
+- 未改数据库、token、secret。
+- 未提交 `cpp-app/build-curl-smoke`、`dist`、`build`、`node_modules`、`vcpkg_installed` 或其他构建产物。
+
 ## 2026-07-06：修复 /api/v1 dual mount rewrite
 
 结论：本轮只修复本地 `/api/v1` dual mount rewrite 和相关 API contract 测试。发现普通本地请求中 `/api/v1/health` 曾落到 SPA fallback，表现为返回 `text/html` index，而不是进入 `/api/health` handler。已将 `/api/v1` rewrite 改为明确的字符串匹配逻辑，确保 `/api/v1/*` 进入同一套 `/api/*` handler，并通过 `request.apiVersion = 'v1'` 保持 strict envelope mode。**未部署、未 push、未改数据库、未读取或修改 `.env`/token/secret、未访问生产 API、未运行 C++ local smoke、未改 C++ 代码、未改 Web 前端**。
