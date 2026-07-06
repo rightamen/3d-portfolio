@@ -1,5 +1,34 @@
 # mrright.blog 项目进度记录
 
+## 2026-07-06：修复 /api/v1 dual mount rewrite
+
+结论：本轮只修复本地 `/api/v1` dual mount rewrite 和相关 API contract 测试。发现普通本地请求中 `/api/v1/health` 曾落到 SPA fallback，表现为返回 `text/html` index，而不是进入 `/api/health` handler。已将 `/api/v1` rewrite 改为明确的字符串匹配逻辑，确保 `/api/v1/*` 进入同一套 `/api/*` handler，并通过 `request.apiVersion = 'v1'` 保持 strict envelope mode。**未部署、未 push、未改数据库、未读取或修改 `.env`/token/secret、未访问生产 API、未运行 C++ local smoke、未改 C++ 代码、未改 Web 前端**。
+
+完成内容：
+
+- 修复 `server/index.js`：
+  - `/api/v1/health` rewrite 到 `/api/health`。
+  - `/api/v1/projects` rewrite 到 `/api/projects`。
+  - `/api/v1?x=1` rewrite 到 `/api?x=1`。
+  - `/api/v1x` 不 rewrite。
+  - rewrite 命中时继续设置 `request.apiVersion = 'v1'`，由 `server/responses.js` 输出 strict envelope。
+- 更新 `tests/api/contract.spec.js`：
+  - 强化 `GET /api/v1/health` JSON content-type 和 strict top-level keys 检查。
+  - 明确断言 `/api/v1/health` 不包含 legacy `ok` / `service` 顶层镜像。
+  - 将 v1 前缀误匹配覆盖改为 `/api/v1x/health`。
+
+本地 curl 验证：
+
+- `curl --noproxy '*' -i http://127.0.0.1:4173/api/health`：返回 `application/json`，保留 legacy-compatible 顶层 `ok` / `service` 镜像。
+- `curl --noproxy '*' -i http://127.0.0.1:4173/api/v1/health`：返回 `application/json` strict envelope，顶层只有 `data` / `pagination` / `error`。
+- `curl --noproxy '*' -i http://127.0.0.1:4173/api/v1x/health`：未 rewrite，返回 SPA HTML fallback。
+
+注意：当前 shell 设置了 `HTTP_PROXY` / `http_proxy`，且没有 `NO_PROXY`，普通 `curl http://127.0.0.1:4173/...` 可能经代理转发；本轮本地验证使用 `--noproxy '*'` 确认命中本机 dev server。
+
+后续需要：
+
+1. C++ local smoke 仍待下一步实际运行。
+
 ## 2026-07-05：C++ local API smoke actual run blocked by missing vcpkg
 
 结论：本轮尝试实际运行 C++ local API smoke test，但在环境检查阶段被本地缺少 vcpkg 阻塞。当前仓库工作区开始时干净，后端本地启动命令已确认：`npm run dev:server`（`node server/index.js`）。按要求未自动安装 vcpkg、未修改代码绕过 libcurl/vcpkg、未启动本地 API server、未运行 C++ local smoke、未访问生产 API。**未部署、未 push、未改生产数据库、未读取或修改 `.env`/token/secret、未改 Web/API 行为、未做 Qt/QML、未做 SQLite、未做 TokenStore、未做 packaging**。
