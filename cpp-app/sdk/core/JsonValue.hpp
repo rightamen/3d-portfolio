@@ -1,5 +1,11 @@
 #pragma once
 
+#ifdef MRRIGHT_USE_NLOHMANN_JSON
+
+#include "sdk/core/NlohmannJsonValue.hpp"
+
+#else
+
 #include "sdk/core/ApiResult.hpp"
 
 #include <cctype>
@@ -313,3 +319,5 @@ inline std::string escapeJsonString(std::string_view value) {
 }
 
 } // namespace mrright::sdk::core
+
+#endif

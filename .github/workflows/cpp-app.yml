@@ -67,3 +67,34 @@ jobs:
 
       - name: Test with libcurl backend
         run: ctest --test-dir cpp-app/build-curl --output-on-failure
+
+  cpp-app-nlohmann-vcpkg:
+    name: nlohmann/json parser with vcpkg (ubuntu-latest)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build
+
+      - name: Bootstrap vcpkg
+        run: |
+          git clone --depth 1 https://github.com/microsoft/vcpkg.git "$RUNNER_TEMP/vcpkg"
+          "$RUNNER_TEMP/vcpkg/bootstrap-vcpkg.sh" -disableMetrics
+
+      - name: Configure with nlohmann/json backend
+        run: |
+          cmake -S cpp-app -B cpp-app/build-json -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DMRRIGHT_USE_NLOHMANN_JSON=ON \
+            -DCMAKE_TOOLCHAIN_FILE="$RUNNER_TEMP/vcpkg/scripts/buildsystems/vcpkg.cmake"
+
+      - name: Build with nlohmann/json backend
+        run: cmake --build cpp-app/build-json
+
+      - name: Test with nlohmann/json backend
+        run: ctest --test-dir cpp-app/build-json --output-on-failure
