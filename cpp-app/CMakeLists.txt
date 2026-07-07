@@ -78,6 +78,11 @@ add_executable(mrright_cpp_tokenstore_tests
 )
 target_link_libraries(mrright_cpp_tokenstore_tests PRIVATE mrright_sdk_core)
 
+add_executable(mrright_cpp_auth_session_tests
+  tests/unit/auth_session_tests.cpp
+)
+target_link_libraries(mrright_cpp_auth_session_tests PRIVATE mrright_sdk_core)
+
 if(NOT MRRIGHT_USE_TEMPORARY_JSON)
   add_executable(mrright_cpp_nlohmann_json_tests
     tests/unit/nlohmann_json_parser_tests.cpp
@@ -89,6 +94,7 @@ enable_testing()
 add_test(NAME mrright_cpp_smoke COMMAND mrright_cpp_smoke)
 add_test(NAME mrright_cpp_sdk_tests COMMAND mrright_cpp_sdk_tests)
 add_test(NAME mrright_cpp_tokenstore_tests COMMAND mrright_cpp_tokenstore_tests)
+add_test(NAME mrright_cpp_auth_session_tests COMMAND mrright_cpp_auth_session_tests)
 if(TARGET mrright_cpp_nlohmann_json_tests)
   add_test(NAME mrright_cpp_nlohmann_json_tests COMMAND mrright_cpp_nlohmann_json_tests)
 endif()
@@ -105,6 +111,7 @@ if(MSVC)
   target_compile_options(mrright_cpp_smoke PRIVATE /W4 /utf-8)
   target_compile_options(mrright_cpp_sdk_tests PRIVATE /W4 /utf-8)
   target_compile_options(mrright_cpp_tokenstore_tests PRIVATE /W4 /utf-8)
+  target_compile_options(mrright_cpp_auth_session_tests PRIVATE /W4 /utf-8)
   if(TARGET mrright_cpp_nlohmann_json_tests)
     target_compile_options(mrright_cpp_nlohmann_json_tests PRIVATE /W4 /utf-8)
   endif()
@@ -122,6 +129,7 @@ else()
   target_compile_options(mrright_cpp_smoke PRIVATE -Wall -Wextra -Wpedantic)
   target_compile_options(mrright_cpp_sdk_tests PRIVATE -Wall -Wextra -Wpedantic)
   target_compile_options(mrright_cpp_tokenstore_tests PRIVATE -Wall -Wextra -Wpedantic)
+  target_compile_options(mrright_cpp_auth_session_tests PRIVATE -Wall -Wextra -Wpedantic)
   if(TARGET mrright_cpp_nlohmann_json_tests)
     target_compile_options(mrright_cpp_nlohmann_json_tests PRIVATE -Wall -Wextra -Wpedantic)
   endif()
