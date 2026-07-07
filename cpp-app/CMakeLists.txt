@@ -13,7 +13,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(MRRIGHT_ENABLE_CURL_HTTP "Enable future libcurl-backed HttpClient implementation" OFF)
 option(MRRIGHT_ENABLE_LOCAL_API_SMOKE "Enable opt-in local/dev API smoke tests that perform loopback HTTP requests" OFF)
-option(MRRIGHT_USE_NLOHMANN_JSON "Enable the optional nlohmann/json parser backend" OFF)
+option(MRRIGHT_USE_TEMPORARY_JSON "Use the dependency-free temporary JsonValue parser fallback instead of the default nlohmann/json backend" OFF)
 
 if(MRRIGHT_ENABLE_LOCAL_API_SMOKE AND NOT MRRIGHT_ENABLE_CURL_HTTP)
   message(FATAL_ERROR "MRRIGHT_ENABLE_LOCAL_API_SMOKE=ON requires MRRIGHT_ENABLE_CURL_HTTP=ON.")
@@ -23,7 +23,9 @@ add_library(mrright_sdk_core INTERFACE)
 target_include_directories(mrright_sdk_core INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_features(mrright_sdk_core INTERFACE cxx_std_20)
 
-if(MRRIGHT_USE_NLOHMANN_JSON)
+if(MRRIGHT_USE_TEMPORARY_JSON)
+  target_compile_definitions(mrright_sdk_core INTERFACE MRRIGHT_USE_TEMPORARY_JSON)
+else()
   find_package(nlohmann_json CONFIG REQUIRED)
   target_compile_definitions(mrright_sdk_core INTERFACE MRRIGHT_USE_NLOHMANN_JSON)
   target_link_libraries(mrright_sdk_core INTERFACE nlohmann_json::nlohmann_json)
@@ -71,7 +73,7 @@ add_executable(mrright_cpp_sdk_tests
 )
 target_link_libraries(mrright_cpp_sdk_tests PRIVATE mrright_sdk_core)
 
-if(MRRIGHT_USE_NLOHMANN_JSON)
+if(NOT MRRIGHT_USE_TEMPORARY_JSON)
   add_executable(mrright_cpp_nlohmann_json_tests
     tests/unit/nlohmann_json_parser_tests.cpp
   )

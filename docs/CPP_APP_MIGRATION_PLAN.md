@@ -11,8 +11,8 @@ Status: 迁移前架构审查结论 + 跨平台客户端设计基线（2026-07-0
 - `docs/openapi/api-v1.yaml` — v1 端点 OpenAPI 初稿；**C++ SDK 开工前的机器可读契约起点**
 - `docs/API_V1_MODEL_MAPPING.md` — TS/C++ model mapping 初稿；**C++ Prototype（Phase 2）的 `sdk/core/models/` 应直接从此文档的 struct 草图开始，不再重新设计字段**
 - `docs/API_V1_GAPS.md` — 尚未冻结/未验证字段清单；Phase 2 动工前必须先看这份，避免把 gap 当成已定形状写死进编译产物
-- `cpp-app/` — C++ cross-platform prototype skeleton（CMake + SDK headers + smoke CLI + mock-driven SDK contract tests），已创建；当前不含 Qt UI、缓存、下载器或打包实现。C++ SDK strict envelope parser boundary 已加入 optional nlohmann/json backend，temporary parser 仍保留为 no-dependency fallback。
-- `.github/workflows/cpp-app.yml` — C++ App Skeleton CI matrix，已加入 Windows/macOS/Linux configure + build + smoke test 入口；另有独立 Ubuntu `cpp-app-curl-vcpkg` job 验证 vcpkg manifest + optional libcurl backend configure/build/CTest，以及 Ubuntu `cpp-app-nlohmann-vcpkg` job 验证 vcpkg manifest + optional nlohmann/json parser backend configure/build/CTest；不部署、不读取 secrets、不上传构建产物
+- `cpp-app/` — C++ cross-platform prototype skeleton（CMake + SDK headers + smoke CLI + mock-driven SDK contract tests），已创建；当前不含 Qt UI、缓存、下载器或打包实现。C++ SDK strict envelope parser boundary 已将 nlohmann/json 设为默认 backend，temporary parser 仍保留为显式 no-dependency fallback。
+- `.github/workflows/cpp-app.yml` — C++ App Skeleton CI matrix，已加入 Windows/macOS/Linux temporary parser fallback configure + build + smoke test 入口；另有独立 Ubuntu `cpp-app-curl-vcpkg` job 验证 vcpkg manifest + optional libcurl backend configure/build/CTest，以及 Ubuntu `cpp-app-nlohmann-vcpkg` job 验证默认 nlohmann/json parser backend configure/build/CTest；不部署、不读取 secrets、不上传构建产物
 
 ---
 
@@ -402,10 +402,10 @@ NSIS + portable zip、.app/.dmg + codesign + notarization、AppImage + deb、自
 7. cpp-app 骨架 + 三平台 CI matrix（哪怕只编译一个 hello-sdk target）。✅ `cpp-app/` CMake skeleton + smoke CLI 已创建；`.github/workflows/cpp-app.yml` 已加入 Windows/macOS/Linux configure + build + smoke test。
 8. SDK JSON / HTTP abstraction 第一批。✅ 已创建 `JsonValue.hpp` / `EnvelopeParser.hpp`、`HttpClient` + `MockHttpClient`、mock-driven `AuthClient::login` / `ProjectClient::{listProjects,getProject}`，并用 `mrright_cpp_sdk_tests` 覆盖 strict envelope、错误码、legacy mirror 拒绝、/api/v1 path 约束。当前仍无真实 HTTP backend，无 Qt/libcurl。
 9. HTTP backend abstraction 第一批。✅ 已新增 `ApiClientConfig`（`baseUrl`、`apiPrefix=/api/v1`、timeout、userAgent、内存 bearer token）、统一请求构造（Accept/User-Agent/Content-Type/Authorization）、`RealHttpClient` 可替换占位实现，以及更多 mock-driven typed client 请求构造测试。默认构建仍不依赖 Qt/libcurl；`MRRIGHT_ENABLE_CURL_HTTP` 预留且默认 OFF。
-10. JSON parser strategy。✅ 已创建 `docs/adr/ADR_CPP_JSON_STRATEGY.md`：短期保留 `JsonValue.hpp` 作为 internal temporary parser，JSON 入口继续收敛在 `EnvelopeParser`；长期通过未来 C++ dependency manager 接入 `nlohmann/json`，本批不 vendored 大文件、不用 CMake 默认联网下载依赖。
+10. JSON parser strategy。✅ 已创建 `docs/adr/ADR_CPP_JSON_STRATEGY.md`；当前 C++ SDK 已将 `nlohmann/json` 设为默认 parser backend，JSON 入口继续收敛在 `EnvelopeParser`，`JsonValue.hpp` temporary parser 保留为显式 no-dependency fallback。
 11. HTTP backend strategy。✅ 已创建 `docs/adr/ADR_CPP_HTTP_BACKEND_STRATEGY.md`：保持 `HttpClient` abstraction，下一批优先做可选 libcurl backend spike，Qt Network backend 后置到 Qt/QML prototype；SDK core 不直接依赖 Qt，真实 API smoke 默认指向 local/dev server。
 12. Dependency manager strategy。✅ 已创建 `docs/adr/ADR_CPP_DEPENDENCY_MANAGER_STRATEGY.md`：首选 vcpkg manifest 管理 libcurl、nlohmann-json、sqlite3 等 SDK/backend 依赖；当前批次不新增实际依赖、不改 CMake 依赖 wiring，保持无依赖 mock build。
 13. Optional libcurl backend spike。✅ 已新增 `cpp-app/vcpkg.json`（仅 `curl`）、`CurlHttpClient` concrete backend、`MRRIGHT_ENABLE_CURL_HTTP` CMake option wiring；默认 OFF 时不找 libcurl、不要求 vcpkg，mock build/tests 继续无依赖通过。未做 local API smoke、未访问生产 API。
 14. libcurl-enabled build validation。✅ 已加入独立 CI job `cpp-app-curl-vcpkg`：Ubuntu runner 手动 bootstrap vcpkg，使用 manifest 解析 `curl`，以 `MRRIGHT_ENABLE_CURL_HTTP=ON` 配置 `cpp-app/build-curl`，构建并运行 CTest。CMake 在 option 开启时会编译/link `mrright_sdk_curl_http` 和 no-network `mrright_cpp_curl_compile_tests`，验证 curl backend 进入构建链路但不访问真实 API。
 15. local/dev API smoke test 入口。✅ 已新增 opt-in `MRRIGHT_ENABLE_LOCAL_API_SMOKE=OFF` CMake option 和 `cpp-app/tests/integration/local_api_smoke.cpp`。只有同时开启 `MRRIGHT_ENABLE_CURL_HTTP=ON` 与 `MRRIGHT_ENABLE_LOCAL_API_SMOKE=ON` 时才构建/注册 CTest；运行时必须通过 `MRRIGHT_API_BASE_URL` 指向 `localhost`、`127.0.0.1` 或 `[::1]`，否则拒绝运行。覆盖 `/api/v1/health`、`/api/v1/projects` 和不存在 project 的 404 strict envelope；不登录、不注册、不调用 admin、不上传、不写数据库、不访问生产 API。
-16. 下一步：nlohmann/json replacement、SQLite cache、secure TokenStore、Qt/QML prototype、packaging strategy spike。
+16. 下一步：SQLite/local cache strategy、secure TokenStore、Qt/QML prototype、packaging strategy spike。
