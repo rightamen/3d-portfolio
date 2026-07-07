@@ -1,5 +1,64 @@
 # mrright.blog 项目进度记录
 
+## 2026-07-07：C++ macOS Keychain TokenStore backend
+
+结论：本轮新增 C++ SDK macOS Keychain TokenStore backend，并更新 `SecureTokenStore` 工厂：Windows 继续返回 Windows Credential Manager backend，macOS 返回 Keychain backend，Linux 继续 explicit unsupported（返回 `nullptr`）。`MemoryTokenStore` 仍仅用于 tests/dev session。**未部署、未改数据库、未读取或修改 `.env`/token/secret、未访问生产 API、未改 Web/API 行为、未做 Qt/QML、未做 SQLite cache、未做 Linux Secret Service、未做 packaging、未提交构建产物**。
+
+完成内容：
+
+- 新增 `cpp-app/sdk/platform/MacOSKeychainTokenStore.hpp` / `MacOSKeychainTokenStore.cpp`：
+  - 仅在 `__APPLE__` 下编译。
+  - 使用 Security.framework Keychain Services 保存 visitor token。
+  - 默认 service 为 `mrright.blog`，account 为 `visitor_token`。
+  - 支持 `saveVisitorToken`、`loadVisitorToken`、`clearVisitorToken`、`hasVisitorToken`。
+  - 不写普通文件、不读环境变量、不打印 token、不保存 admin token。
+- 更新 `cpp-app/sdk/platform/SecureTokenStore.cpp`：
+  - Windows 返回 `WindowsCredentialTokenStore`。
+  - macOS 返回 `MacOSKeychainTokenStore`。
+  - Linux/其他平台继续返回 `nullptr`。
+  - `isPlatformSecureTokenStoreSupported()` 在 Windows/macOS 为 true，Linux/其他平台为 false。
+- 更新 `cpp-app/CMakeLists.txt`：
+  - Windows 后端仍只在 `WIN32` 编译并链接 `Advapi32`。
+  - macOS 后端只在 `APPLE` 编译并链接 `Security.framework`。
+  - Linux 构建不新增平台后端源、不引入 Qt 或新 vcpkg 依赖。
+- 更新 `cpp-app/tests/unit/secure_tokenstore_tests.cpp`：
+  - Linux 继续验证 secure factory unsupported/nullptr。
+  - Windows guarded Credential Manager test 保持可用。
+  - macOS guarded Keychain test 使用独立 test service/account 和 fake token 覆盖 save/load/overwrite/clear。
+  - macOS CI 遇到 Keychain interaction/permission 类限制时返回 CTest skip code 77 并输出清晰 skip 信息，不伪造 secure backend 成功。
+- 更新 `cpp-app/README.md`：
+  - 说明 secure TokenStore 当前支持 Windows Credential Manager 与 macOS Keychain。
+  - 说明 Linux Secret Service 后续实现。
+  - 说明 `MemoryTokenStore` 仅用于 tests/dev session。
+  - 明确禁止明文 token 落盘，admin token 不进入 C++ SDK。
+- 更新 `docs/CPP_APP_MIGRATION_PLAN.md`：
+  - 标记 macOS Keychain TokenStore backend 完成。
+  - Linux Secret Service 后置。
+
+本轮验证结果：
+
+- `git diff --check`：通过。
+- `npm run lint`：通过。
+- `npm run build`：通过；产生的 `dist/` 变动已 `git restore dist`，未提交。
+- `npm run test:api`：通过（37 passed）。
+- `npm run test:api:db`：通过（18 passed，一次性 PostgreSQL cluster 已销毁）。
+- `npm run test:openapi`：通过（200 个本地 `$ref` 可解析；27 个 API error code 与 OpenAPI enum 一致）。
+- 默认 nlohmann/json CMake：
+  - `cmake -S cpp-app -B cpp-app/build-json -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake`：通过。
+  - `cmake --build cpp-app/build-json`：通过。
+  - `ctest --test-dir cpp-app/build-json --output-on-failure`：通过（`mrright_cpp_smoke` passed；`mrright_cpp_sdk_tests` passed；`mrright_cpp_tokenstore_tests` passed；`mrright_cpp_auth_session_tests` passed；`mrright_cpp_secure_tokenstore_tests` passed；`mrright_cpp_nlohmann_json_tests` passed；6/6 tests passed）。
+- temporary parser fallback CMake：
+  - `cmake -S cpp-app -B cpp-app/build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DMRRIGHT_USE_TEMPORARY_JSON=ON`：通过。
+  - `cmake --build cpp-app/build`：通过。
+  - `ctest --test-dir cpp-app/build --output-on-failure`：通过（`mrright_cpp_smoke` passed；`mrright_cpp_sdk_tests` passed；`mrright_cpp_tokenstore_tests` passed；`mrright_cpp_auth_session_tests` passed；`mrright_cpp_secure_tokenstore_tests` passed；5/5 tests passed）。
+
+后续待办保留：
+
+1. Linux Secret Service TokenStore
+2. local cache strategy
+3. Qt/QML prototype
+4. packaging strategy spike
+
 ## 2026-07-07：C++ secure platform TokenStore backend entrypoint
 
 结论：本轮新增 C++ SDK secure platform TokenStore 第一批入口。`SecureTokenStore` 工厂位于 `cpp-app/sdk/platform`，Windows 下返回 Windows Credential Manager backend，非 Windows 平台明确 unsupported（返回 `nullptr`），不会静默降级到 `MemoryTokenStore` 或明文文件。`MemoryTokenStore` 继续保留为 tests/dev session 实现。**未部署、未改数据库、未读取或修改 `.env`/token/secret、未访问生产 API、未改 Web/API 行为、未做 Qt/QML、未做 SQLite cache、未做 packaging、未提交构建产物**。

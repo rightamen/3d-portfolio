@@ -133,8 +133,8 @@ c++ -std=c++20 -Wall -Wextra -Wpedantic -Icpp-app \
   login/store-token, loading a stored token into request config, and
   logout/clear-session flows.
 - `sdk/platform/SecureTokenStore.hpp`: a platform secure TokenStore factory.
-  Windows currently returns a Credential Manager backend; macOS and Linux
-  return unsupported (`nullptr`) until Keychain and Secret Service backends are
+  Windows returns a Credential Manager backend, macOS returns a Keychain
+  backend, and Linux returns unsupported (`nullptr`) until Secret Service is
   implemented.
 - `sdk/core/JsonValue.hpp`: a deliberately small, dependency-free temporary
   JSON parser retained only as an explicit fallback for emergency
@@ -170,7 +170,7 @@ c++ -std=c++20 -Wall -Wextra -Wpedantic -Icpp-app \
 - No generated OpenAPI client.
 - No admin endpoints.
 - No legacy `/api/*` support.
-- No macOS Keychain or Linux Secret Service implementation yet.
+- No Linux Secret Service implementation yet.
 - No plaintext token storage.
 - No SQLite cache, download manager, Range/ETag handling, or packaging logic.
 
@@ -192,10 +192,15 @@ first backend entrypoint is `createPlatformSecureTokenStore()` in
 credential target `mrright.blog.visitor_token`. CMake links `Advapi32` only on
 Windows because the Credential Manager APIs live there.
 
-macOS Keychain and Linux Secret Service are still pending. On unsupported
-platforms, the secure-store factory returns `nullptr`; it does not silently
-fall back to plaintext files or `MemoryTokenStore`. QtKeychain may be evaluated
-during the Qt/QML phase as a wrapper over platform stores.
+On macOS, `createPlatformSecureTokenStore()` returns a
+`MacOSKeychainTokenStore` backed by Security.framework Keychain Services using
+service `mrright.blog` and account `visitor_token`. CMake links
+Security.framework only on macOS.
+
+Linux Secret Service is still pending. On unsupported platforms, the
+secure-store factory returns `nullptr`; it does not silently fall back to
+plaintext files or `MemoryTokenStore`. QtKeychain may be evaluated during the
+Qt/QML phase as a wrapper over platform stores.
 
 Plaintext token storage is forbidden. Do not write bearer tokens to normal
 JSON/config files, logs, diagnostics, examples, `PROJECT_PROGRESS.md`, or crash
@@ -222,9 +227,9 @@ Current mock-driven coverage includes:
 
 `MemoryTokenStore` remains only for tests and short-lived development sessions.
 Production session persistence must use a supported platform secure
-`TokenStore`; Windows Credential Manager is the first backend, while macOS
-Keychain and Linux Secret Service are still pending. Tokens must not be written
-to plaintext files or logs.
+`TokenStore`; Windows Credential Manager and macOS Keychain are currently
+supported, while Linux Secret Service is still pending. Tokens must not be
+written to plaintext files or logs.
 
 ## JSON Parser Backend
 
@@ -395,6 +400,6 @@ The accepted dependency strategy is recorded in
    default SDK implementation.
 3. Integrate Qt/QML once the SDK boundary is stable.
 4. Implement SQLite cache metadata and content-addressed blob storage.
-5. Implement remaining secure `TokenStore` providers: macOS Keychain and Linux
-   Secret Service. Any encrypted-file fallback requires a separate ADR.
+5. Implement the remaining secure `TokenStore` provider: Linux Secret Service.
+   Any encrypted-file fallback requires a separate ADR.
 6. Spike packaging scripts for NSIS, dmg/notarization, and AppImage.

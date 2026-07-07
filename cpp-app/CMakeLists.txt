@@ -72,6 +72,16 @@ if(WIN32)
     sdk/platform/WindowsCredentialTokenStore.cpp
   )
   target_link_libraries(mrright_sdk_platform_tokenstore PRIVATE Advapi32)
+elseif(APPLE)
+  find_library(SECURITY_FRAMEWORK Security REQUIRED)
+  find_library(COREFOUNDATION_FRAMEWORK CoreFoundation REQUIRED)
+  target_sources(mrright_sdk_platform_tokenstore PRIVATE
+    sdk/platform/MacOSKeychainTokenStore.cpp
+  )
+  target_link_libraries(mrright_sdk_platform_tokenstore PUBLIC
+    ${SECURITY_FRAMEWORK}
+    ${COREFOUNDATION_FRAMEWORK}
+  )
 endif()
 
 add_executable(mrright_cpp_smoke
@@ -112,6 +122,7 @@ add_test(NAME mrright_cpp_sdk_tests COMMAND mrright_cpp_sdk_tests)
 add_test(NAME mrright_cpp_tokenstore_tests COMMAND mrright_cpp_tokenstore_tests)
 add_test(NAME mrright_cpp_auth_session_tests COMMAND mrright_cpp_auth_session_tests)
 add_test(NAME mrright_cpp_secure_tokenstore_tests COMMAND mrright_cpp_secure_tokenstore_tests)
+set_tests_properties(mrright_cpp_secure_tokenstore_tests PROPERTIES SKIP_RETURN_CODE 77)
 if(TARGET mrright_cpp_nlohmann_json_tests)
   add_test(NAME mrright_cpp_nlohmann_json_tests COMMAND mrright_cpp_nlohmann_json_tests)
 endif()
