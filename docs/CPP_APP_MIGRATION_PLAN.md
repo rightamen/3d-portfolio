@@ -11,8 +11,8 @@ Status: 迁移前架构审查结论 + 跨平台客户端设计基线（2026-07-0
 - `docs/openapi/api-v1.yaml` — v1 端点 OpenAPI 初稿；**C++ SDK 开工前的机器可读契约起点**
 - `docs/API_V1_MODEL_MAPPING.md` — TS/C++ model mapping 初稿；**C++ Prototype（Phase 2）的 `sdk/core/models/` 应直接从此文档的 struct 草图开始，不再重新设计字段**
 - `docs/API_V1_GAPS.md` — 尚未冻结/未验证字段清单；Phase 2 动工前必须先看这份，避免把 gap 当成已定形状写死进编译产物
-- `cpp-app/` — C++ cross-platform prototype skeleton（CMake + SDK headers + smoke CLI + mock-driven SDK contract tests），已创建；当前不含真实 HTTP、Qt UI、缓存、下载器或打包实现
-- `.github/workflows/cpp-app.yml` — C++ App Skeleton CI matrix，已加入 Windows/macOS/Linux configure + build + smoke test 入口；另有独立 Ubuntu `cpp-app-curl-vcpkg` job 验证 vcpkg manifest + optional libcurl backend configure/build/CTest；不部署、不读取 secrets、不上传构建产物
+- `cpp-app/` — C++ cross-platform prototype skeleton（CMake + SDK headers + smoke CLI + mock-driven SDK contract tests），已创建；当前不含 Qt UI、缓存、下载器或打包实现。C++ SDK strict envelope parser boundary 已加入 optional nlohmann/json backend，temporary parser 仍保留为 no-dependency fallback。
+- `.github/workflows/cpp-app.yml` — C++ App Skeleton CI matrix，已加入 Windows/macOS/Linux configure + build + smoke test 入口；另有独立 Ubuntu `cpp-app-curl-vcpkg` job 验证 vcpkg manifest + optional libcurl backend configure/build/CTest，以及 Ubuntu `cpp-app-nlohmann-vcpkg` job 验证 vcpkg manifest + optional nlohmann/json parser backend configure/build/CTest；不部署、不读取 secrets、不上传构建产物
 
 ---
 

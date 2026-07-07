@@ -1,13 +1,7 @@
 #pragma once
 
-#ifdef MRRIGHT_USE_NLOHMANN_JSON
-
-#include "sdk/core/NlohmannEnvelopeParser.hpp"
-
-#else
-
 #include "sdk/core/ApiResult.hpp"
-#include "sdk/core/JsonValue.hpp"
+#include "sdk/core/NlohmannJsonValue.hpp"
 #include "sdk/models/Pagination.hpp"
 
 #include <set>
@@ -89,5 +83,3 @@ ApiResult<T> parseResponseEnvelope(const std::string& body, int httpStatus, Deco
 }
 
 } // namespace mrright::sdk::core
-
-#endif

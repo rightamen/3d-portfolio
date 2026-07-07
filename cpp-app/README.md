@@ -28,7 +28,7 @@ pure SDK layer or Qt date/time types at the UI binding boundary.
 ## Build
 
 Local builds require CMake 3.20+ and a C++20-capable compiler. The default
-build has no Qt, libcurl, or other network dependencies.
+build has no Qt, libcurl, nlohmann/json, or other network dependencies.
 
 From the repository root:
 
@@ -42,8 +42,9 @@ CTest runs two binaries: `mrright_cpp_smoke` and `mrright_cpp_sdk_tests`.
 The smoke binary verifies that the SDK skeleton models, platform path
 abstraction, and no-network CLI compile and execute. The SDK tests use
 `MockHttpClient` and fixed JSON bodies to verify strict `/api/v1` envelope
-decoding and typed client behavior. They do not perform real network I/O,
-read tokens, start the Node server, or touch a database.
+decoding and typed client behavior. By default, they still use the temporary
+dependency-free `JsonValue` parser. They do not perform real network I/O, read
+tokens, start the Node server, or touch a database.
 
 ## CMake Presets
 
@@ -113,9 +114,13 @@ c++ -std=c++20 -Wall -Wextra -Wpedantic -Icpp-app \
 - `sdk/core/JsonValue.hpp`: a deliberately small, dependency-free temporary
   JSON parser used only to support current contract fixtures. It is internal to
   the early SDK prototype and must stay behind `EnvelopeParser`.
+- `sdk/core/NlohmannJsonValue.hpp` and `sdk/core/NlohmannEnvelopeParser.hpp`:
+  an optional nlohmann/json parser backend wired behind the same parser
+  boundary. It is enabled only with `MRRIGHT_USE_NLOHMANN_JSON=ON`.
 - `sdk/core/EnvelopeParser.hpp`: strict `/api/v1` envelope decoding, including
   `ApiError`, `Pagination`, unknown error-code fallback, and rejection of
-  legacy top-level mirrors.
+  legacy top-level mirrors. It selects the temporary parser by default and the
+  nlohmann/json backend when the CMake option is enabled.
 - `sdk/network`: an interface-only `HttpClient`, `NullHttpClient`, and
   `MockHttpClient` for typed client tests. `RealHttpClient` is present as a
   replaceable backend placeholder, but it intentionally returns
@@ -136,11 +141,46 @@ c++ -std=c++20 -Wall -Wextra -Wpedantic -Icpp-app \
 
 - No Qt UI or QML.
 - No real HTTP transport in the default build and no real API calls.
-- No production-grade JSON dependency or generated OpenAPI client.
+- No generated OpenAPI client.
 - No admin endpoints.
 - No legacy `/api/*` support.
 - No token persistence implementation and no plaintext token storage.
 - No SQLite cache, download manager, Range/ETag handling, or packaging logic.
+
+## JSON Parser Backend
+
+The default build still uses the temporary dependency-free parser in
+`sdk/core/JsonValue.hpp`. This keeps the mock SDK tests and no-dependency CMake
+path available on machines without vcpkg or other C++ package setup.
+
+The optional nlohmann/json backend is available through vcpkg manifest mode and
+the `MRRIGHT_USE_NLOHMANN_JSON` CMake option. When the option is `OFF`, CMake
+does not call `find_package(nlohmann_json)` and the normal no-dependency build
+continues to use the temporary parser. When the option is `ON`, CMake requires
+`nlohmann_json`, defines `MRRIGHT_USE_NLOHMANN_JSON`, and the SDK tests compile
+against the nlohmann-backed parser boundary.
+
+From the repository root:
+
+```bash
+export VCPKG_ROOT=/path/to/vcpkg
+cmake -S cpp-app -B cpp-app/build-json -G Ninja \
+  -DCMAKE_BUILD_TYPE=Debug \
+  -DMRRIGHT_USE_NLOHMANN_JSON=ON \
+  -DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake
+cmake --build cpp-app/build-json
+ctest --test-dir cpp-app/build-json --output-on-failure
+```
+
+The nlohmann-enabled CTest path includes `mrright_cpp_sdk_tests` plus
+`mrright_cpp_nlohmann_json_tests`, covering strict success/error envelopes,
+pagination, unknown error-code preservation, invalid JSON, legacy mirror
+rejection, project list decoding through `ProjectClient`, and minimal
+auth/session decoding. It performs no network I/O and does not read tokens.
+
+The current plan is to keep the temporary parser as the default fallback until
+the nlohmann/json path is stable across local development and CI. After that,
+the project can decide whether to make nlohmann/json the default parser.
 
 ## HTTP Backend Strategy
 
@@ -254,7 +294,8 @@ The accepted dependency strategy is recorded in
 - Use vcpkg manifest mode as the preferred strategy for SDK/backend
   dependencies.
 - `cpp-app/vcpkg.json` currently contains only the libcurl dependency needed
-  for the optional backend.
+  for the optional backend plus `nlohmann-json` for the optional parser
+  backend.
 - Manage future libcurl, `nlohmann-json`, sqlite3, and similar backend
   libraries through vcpkg unless a concrete blocker appears.
 - Evaluate Qt separately during the Qt/QML phase; it may use vcpkg, the
@@ -264,10 +305,7 @@ The accepted dependency strategy is recorded in
 
 ## Next Steps
 
-1. Replace the temporary JSON parser with `nlohmann/json` after the C++
-   dependency manager is in place. The decision is recorded in
-   `docs/adr/ADR_CPP_JSON_STRATEGY.md`; this batch intentionally does not
-   vendor a large header or require CMake to fetch packages.
+1. Decide when to make the optional nlohmann/json backend the default parser.
 2. Expand JSON serialization/deserialization tests against contract fixtures.
 3. Spike OpenAPI-generated client/types only as a comparison point, not as the
    default SDK implementation.

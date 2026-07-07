@@ -1,5 +1,72 @@
 # mrright.blog 项目进度记录
 
+## 2026-07-07：C++ optional nlohmann/json parser backend
+
+结论：本轮在现有 temporary `JsonValue` parser / `EnvelopeParser` 边界基础上，接入 optional nlohmann/json parser backend。默认 CMake build 仍不依赖 vcpkg/nlohmann/json，继续使用 temporary parser；显式开启 `MRRIGHT_USE_NLOHMANN_JSON=ON` 时才 `find_package(nlohmann_json CONFIG REQUIRED)`、定义 `MRRIGHT_USE_NLOHMANN_JSON`，并让 SDK tests 使用 nlohmann-backed parser boundary。**未部署、未 push、未改数据库、未读取或修改 `.env`/token/secret、未访问生产 API、未做 Qt/QML、未做 SQLite cache、未做 secure TokenStore、未做 packaging、未改 Web/API 行为**。
+
+完成内容：
+
+- 更新 `cpp-app/vcpkg.json`：
+  - 保留 `curl`。
+  - 新增 `nlohmann-json`。
+  - 未加入 sqlite3 或 Qt。
+- 更新 `cpp-app/CMakeLists.txt`：
+  - 新增 `MRRIGHT_USE_NLOHMANN_JSON=OFF`。
+  - OFF 时不调用 `find_package(nlohmann_json)`，默认 no-dependency build 继续走 temporary parser。
+  - ON 时查找 `nlohmann_json`、链接 `nlohmann_json::nlohmann_json`、定义 `MRRIGHT_USE_NLOHMANN_JSON`，并构建 `mrright_cpp_nlohmann_json_tests`。
+  - 未破坏 `MRRIGHT_ENABLE_CURL_HTTP` 和 local API smoke 的 opt-in 边界。
+- 新增 parser backend 文件：
+  - `cpp-app/sdk/core/NlohmannJsonValue.hpp`
+  - `cpp-app/sdk/core/NlohmannEnvelopeParser.hpp`
+  - 解析 strict `/api/v1` envelope：`data` / `pagination` / `error`。
+  - 保留 unknown `error.code` raw string。
+  - 拒绝 invalid JSON、非 strict envelope、legacy mirror top-level key、缺少 `data`/`pagination`/`error` 的响应。
+- 新增 `cpp-app/tests/unit/nlohmann_json_parser_tests.cpp`：
+  - success envelope parse。
+  - error envelope parse。
+  - unknown error.code raw string 保留。
+  - legacy mirror 被拒绝。
+  - `ProjectClient::listProjects` 使用 nlohmann backend 解析 mock response。
+  - invalid JSON 返回 parse error。
+  - strict envelope 缺字段返回 contract error。
+  - auth/session 最小字段通过 `AuthClient::login` 覆盖。
+- 更新 `.github/workflows/cpp-app.yml`：
+  - 保留默认 no-dependency Windows/macOS/Linux matrix。
+  - 保留 libcurl/vcpkg job。
+  - 新增 Ubuntu `cpp-app-nlohmann-vcpkg` job，验证 vcpkg manifest、`MRRIGHT_USE_NLOHMANN_JSON=ON` configure/build/CTest。
+- 更新文档：
+  - `cpp-app/README.md` 说明默认 temporary parser、optional nlohmann/json backend、启用命令和后续默认化决策。
+  - `docs/CPP_APP_MIGRATION_PLAN.md` 记录 nlohmann/json parser backend 已进入验证，temporary parser 仍保留为 no-dependency fallback。
+
+本轮验证结果：
+
+- `git diff --check`：通过。
+- `npm run lint`：通过。
+- `npm run build`：通过；产生的 `dist/` 变动已 `git restore dist`，未提交。
+- `npm run test:api`：通过（37 passed）。
+- `npm run test:api:db`：通过（18 passed，一次性 PostgreSQL cluster 已销毁）。
+- `npm run test:openapi`：通过（200 个本地 `$ref` 可解析；27 个 API error code 与 OpenAPI enum 一致）。
+- 默认 no-dependency CMake：
+  - `cmake -S cpp-app -B cpp-app/build -G Ninja -DCMAKE_BUILD_TYPE=Debug`：通过。
+  - `cmake --build cpp-app/build`：通过。
+  - `ctest --test-dir cpp-app/build --output-on-failure`：通过（`mrright_cpp_smoke` passed；`mrright_cpp_sdk_tests` passed；2/2 tests passed）。
+- nlohmann-enabled vcpkg CMake：
+  - `cmake -S cpp-app -B cpp-app/build-json -G Ninja -DCMAKE_BUILD_TYPE=Debug -DMRRIGHT_USE_NLOHMANN_JSON=ON -DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake`：通过。
+  - `cmake --build cpp-app/build-json`：通过。
+  - `ctest --test-dir cpp-app/build-json --output-on-failure`：通过（`mrright_cpp_smoke` passed；`mrright_cpp_sdk_tests` passed；`mrright_cpp_nlohmann_json_tests` passed；3/3 tests passed）。
+- libcurl/vcpkg CMake regression check：
+  - `cmake -S cpp-app -B cpp-app/build-curl -G Ninja -DCMAKE_BUILD_TYPE=Debug -DMRRIGHT_ENABLE_CURL_HTTP=ON -DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake`：通过。
+  - `cmake --build cpp-app/build-curl`：通过。
+  - `ctest --test-dir cpp-app/build-curl --output-on-failure`：通过（`mrright_cpp_smoke` passed；`mrright_cpp_sdk_tests` passed；`mrright_cpp_curl_compile_tests` passed；3/3 tests passed）。
+
+后续待办保留：
+
+1. decide when to make nlohmann/json default
+2. SQLite/local cache strategy
+3. secure TokenStore
+4. Qt/QML prototype
+5. packaging strategy spike
+
 ## 2026-07-06：C++ local API smoke actual validation passed
 
 结论：本地 C++ local API smoke 已实际跑通。本轮只记录验证结果，未改代码、未改 Web/API 行为、未改 C++ 实现、未部署、未 push、未改数据库、未读取或修改 `.env`/token/secret、未访问生产 API、未提交构建产物。

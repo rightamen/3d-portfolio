@@ -2,6 +2,7 @@
   "name": "mrright-cpp-app",
   "version-string": "0.1.0",
   "dependencies": [
-    "curl"
+    "curl",
+    "nlohmann-json"
   ]
 }
