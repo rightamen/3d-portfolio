@@ -1,5 +1,7 @@
 #pragma once
 
+#include "sdk/core/TokenStore.hpp"
+
 #include <optional>
 #include <string>
 
@@ -14,5 +16,15 @@ struct ApiClientConfig {
   std::string userAgent = "mrright-cpp-sdk/0.1";
   std::optional<std::string> bearerToken;
 };
+
+inline ApiClientConfig withTokenStoreBearerToken(ApiClientConfig config, TokenStore& tokenStore) {
+  const auto token = tokenStore.loadVisitorToken();
+  if (token && !token->empty()) {
+    config.bearerToken = *token;
+  } else {
+    config.bearerToken.reset();
+  }
+  return config;
+}
 
 } // namespace mrright::sdk::core

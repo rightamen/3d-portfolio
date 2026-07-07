@@ -1,5 +1,64 @@
 # mrright.blog 项目进度记录
 
+## 2026-07-07：C++ Auth session flow
+
+结论：本轮新增 C++ SDK mock-driven Auth session flow。`AuthSession` 组合 `AuthClient`、`TokenStore`、`ApiClientConfig` 和 injected `HttpClient`；登录成功后可把 visitor token 保存到 `TokenStore`，后续 typed client 可通过 `configWithStoredToken()` 让 `ApiClient` 统一注入 `Authorization` header，logout/clear 后清理 `TokenStore`。全程只用 `MockHttpClient` 测试，不访问真实 API，不落盘、不打印 token、不调用 admin endpoints。**未部署、未 push、未改数据库、未读取或修改 `.env`/token/secret、未访问生产 API、未改 Web/API 行为、未做 Qt/QML、未做 SQLite cache、未做 secure platform TokenStore backend、未做 packaging**。
+
+完成内容：
+
+- 新增 `cpp-app/sdk/core/AuthSession.hpp`：
+  - `loginAndStoreToken(email, password)`：调用 `AuthClient::login`，成功后保存 visitor token 到注入的 `TokenStore`。
+  - `loadToken()` / `hasSession()` / `clearSession()`。
+  - `logoutAndClearSession()`：使用 stored token 构造 bearer config，调用 `AuthClient::logout()`，然后清理 `TokenStore`。
+  - `configWithStoredToken()`：从 `TokenStore` 读取 token 并写入 `ApiClientConfig::bearerToken`，让 `ApiClient` 统一注入 header。
+- 更新 `cpp-app/sdk/core/ApiClientConfig.hpp`：
+  - 新增 `withTokenStoreBearerToken(config, tokenStore)` helper。
+- 更新 `cpp-app/sdk/core/AuthClient.hpp`：
+  - 保留现有显式 token overload。
+  - 新增 `logout()` / `me()` overload，用于通过 `ApiClientConfig.bearerToken` 走统一 Authorization header 注入。
+- 新增 `cpp-app/tests/unit/auth_session_tests.cpp` 和 CTest target `mrright_cpp_auth_session_tests`：
+  - login 成功后 token 保存到 `MemoryTokenStore`。
+  - login 失败 strict envelope 不保存 token。
+  - authenticated request 使用 stored token 构造 `Authorization` header。
+  - token 不进入 request URL。
+  - token 不进入 request body。
+  - `clearSession()` 后 `hasSession()` false。
+  - logout 成功后清理 token。
+  - logout strict envelope error 时返回 `ApiResult` error 并清理 token。
+  - 全部使用 `MockHttpClient`，不访问网络、不调用 admin endpoint。
+- 更新 `cpp-app/README.md`：
+  - 说明当前 Auth session flow 为 mock-driven SDK flow。
+  - 说明 `MemoryTokenStore` 只用于 tests/dev session。
+  - 说明 production secure TokenStore 仍后置。
+  - 明确禁止明文 token 落盘。
+- 更新 `docs/CPP_APP_MIGRATION_PLAN.md`：
+  - 标记 Auth session flow 第一批完成。
+  - secure platform TokenStore implementation 后置。
+
+本轮验证结果：
+
+- `git diff --check`：通过。
+- `npm run lint`：通过。
+- `npm run build`：通过；产生的 `dist/` 变动已 `git restore dist`，未提交。
+- `npm run test:api`：通过（37 passed）。
+- `npm run test:api:db`：通过（18 passed，一次性 PostgreSQL cluster 已销毁）。
+- `npm run test:openapi`：通过（200 个本地 `$ref` 可解析；27 个 API error code 与 OpenAPI enum 一致）。
+- 默认 nlohmann/json CMake：
+  - `cmake -S cpp-app -B cpp-app/build-json -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake`：通过。
+  - `cmake --build cpp-app/build-json`：通过。
+  - `ctest --test-dir cpp-app/build-json --output-on-failure`：通过（`mrright_cpp_smoke` passed；`mrright_cpp_sdk_tests` passed；`mrright_cpp_tokenstore_tests` passed；`mrright_cpp_auth_session_tests` passed；`mrright_cpp_nlohmann_json_tests` passed；5/5 tests passed）。
+- temporary parser fallback CMake：
+  - `cmake -S cpp-app -B cpp-app/build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DMRRIGHT_USE_TEMPORARY_JSON=ON`：通过。
+  - `cmake --build cpp-app/build`：通过。
+  - `ctest --test-dir cpp-app/build --output-on-failure`：通过（`mrright_cpp_smoke` passed；`mrright_cpp_sdk_tests` passed；`mrright_cpp_tokenstore_tests` passed；`mrright_cpp_auth_session_tests` passed；4/4 tests passed）。
+
+后续待办保留：
+
+1. platform secure TokenStore implementation
+2. local cache strategy
+3. Qt/QML prototype
+4. packaging strategy spike
+
 ## 2026-07-07：C++ TokenStore strategy and MemoryTokenStore
 
 结论：本轮明确 C++ SDK TokenStore strategy，并新增 test/dev-session only 的 `MemoryTokenStore`。当前 `TokenStore` 抽象保持不破坏；`MemoryTokenStore` 只在内存中保存 visitor token，不落盘、不读环境变量、不打印 token、不访问网络。生产级 token 存储后置到平台安全凭证库。**未部署、未 push、未改数据库、未读取或修改 `.env`/token/secret、未访问生产 API、未改 Web/API 行为、未做 Qt/QML、未做 SQLite cache、未做 secure TokenStore backend、未做 packaging**。

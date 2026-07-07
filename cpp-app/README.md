@@ -128,6 +128,10 @@ c++ -std=c++20 -Wall -Wextra -Wpedantic -Icpp-app \
 - `sdk/core/MemoryTokenStore.hpp`: a test/dev-session implementation that
   stores a visitor token only in memory. It is not a production persistence
   backend.
+- `sdk/core/AuthSession.hpp`: a lightweight mock-driven session orchestration
+  layer that combines `AuthClient`, `TokenStore`, and `ApiClientConfig` for
+  login/store-token, loading a stored token into request config, and
+  logout/clear-session flows.
 - `sdk/core/JsonValue.hpp`: a deliberately small, dependency-free temporary
   JSON parser retained only as an explicit fallback for emergency
   no-dependency builds. It is internal to the SDK prototype and must stay
@@ -183,6 +187,29 @@ may be evaluated during the Qt/QML phase as a wrapper over those stores.
 Plaintext token storage is forbidden. Do not write bearer tokens to normal
 JSON/config files, logs, diagnostics, examples, `PROJECT_PROGRESS.md`, or crash
 reports. Admin tokens must never enter the C++ SDK.
+
+## Auth Session Flow
+
+`AuthSession` provides the first SDK session orchestration layer. It composes
+`AuthClient`, `TokenStore`, and `ApiClientConfig`; it does not depend on
+`CurlHttpClient`, does not access the network directly, and does not persist
+tokens by itself.
+
+Current mock-driven coverage includes:
+
+- `loginAndStoreToken(email, password)` calls `AuthClient::login` and saves the
+  visitor token to the injected `TokenStore` only after a successful strict
+  `/api/v1` envelope response.
+- `configWithStoredToken()` copies a stored visitor token into
+  `ApiClientConfig::bearerToken`, allowing `ApiClient` to inject the
+  `Authorization` header during normal request construction.
+- `clearSession()` clears the injected `TokenStore`.
+- `logoutAndClearSession()` sends logout with the stored visitor token through
+  `AuthClient` and clears the store after the logout attempt.
+
+`MemoryTokenStore` remains only for tests and short-lived development sessions.
+Production session persistence still requires a platform secure TokenStore
+implementation. Tokens must not be written to plaintext files or logs.
 
 ## JSON Parser Backend
 
