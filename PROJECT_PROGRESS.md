@@ -1,5 +1,62 @@
 # mrright.blog 项目进度记录
 
+## 2026-07-07：C++ TokenStore strategy and MemoryTokenStore
+
+结论：本轮明确 C++ SDK TokenStore strategy，并新增 test/dev-session only 的 `MemoryTokenStore`。当前 `TokenStore` 抽象保持不破坏；`MemoryTokenStore` 只在内存中保存 visitor token，不落盘、不读环境变量、不打印 token、不访问网络。生产级 token 存储后置到平台安全凭证库。**未部署、未 push、未改数据库、未读取或修改 `.env`/token/secret、未访问生产 API、未改 Web/API 行为、未做 Qt/QML、未做 SQLite cache、未做 secure TokenStore backend、未做 packaging**。
+
+完成内容：
+
+- 新增 `docs/adr/ADR_CPP_TOKENSTORE_STRATEGY.md`：
+  - 短期使用 `MemoryTokenStore` 仅支持 tests/dev session。
+  - 产品级存储目标为 Windows Credential Manager、macOS Keychain、Linux Secret Service。
+  - Qt/QML 阶段可评估 QtKeychain。
+  - 明文 JSON/config token persistence 禁止。
+  - encrypted local file fallback 需要单独 ADR。
+  - admin token 永远不进入 C++ SDK。
+- 新增 `cpp-app/sdk/core/MemoryTokenStore.hpp`：
+  - header-only。
+  - 实现 `TokenStore` interface。
+  - 支持 `saveVisitorToken`、`loadVisitorToken`、`clearVisitorToken` 和 `hasVisitorToken`。
+  - 不落盘、不读环境变量、不打印 token。
+- 新增 `cpp-app/tests/unit/tokenstore_tests.cpp` 和 CTest target `mrright_cpp_tokenstore_tests`：
+  - 初始无 token。
+  - save 后可 load。
+  - clear 后不可 load。
+  - 覆盖保存会替换旧 token。
+  - 不创建 token 相关文件。
+  - 不依赖网络或平台凭证库。
+- 更新 `cpp-app/README.md`：
+  - 说明 MemoryTokenStore 只用于 tests/dev session。
+  - 说明生产 token 存储必须使用平台安全凭证库。
+  - 明确禁止明文落盘。
+- 更新 `docs/CPP_APP_MIGRATION_PLAN.md`：
+  - 标记 TokenStore strategy 已决策。
+  - secure platform implementation 后置。
+
+本轮验证结果：
+
+- `git diff --check`：通过。
+- `npm run lint`：通过。
+- `npm run build`：通过；产生的 `dist/` 变动已 `git restore dist`，未提交。
+- `npm run test:api`：通过（37 passed）。
+- `npm run test:api:db`：通过（18 passed，一次性 PostgreSQL cluster 已销毁）。
+- `npm run test:openapi`：通过（200 个本地 `$ref` 可解析；27 个 API error code 与 OpenAPI enum 一致）。
+- 默认 nlohmann/json CMake：
+  - `cmake -S cpp-app -B cpp-app/build-json -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake`：通过。
+  - `cmake --build cpp-app/build-json`：通过。
+  - `ctest --test-dir cpp-app/build-json --output-on-failure`：通过（`mrright_cpp_smoke` passed；`mrright_cpp_sdk_tests` passed；`mrright_cpp_tokenstore_tests` passed；`mrright_cpp_nlohmann_json_tests` passed；4/4 tests passed）。
+- temporary parser fallback CMake：
+  - `cmake -S cpp-app -B cpp-app/build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DMRRIGHT_USE_TEMPORARY_JSON=ON`：通过。
+  - `cmake --build cpp-app/build`：通过。
+  - `ctest --test-dir cpp-app/build --output-on-failure`：通过（`mrright_cpp_smoke` passed；`mrright_cpp_sdk_tests` passed；`mrright_cpp_tokenstore_tests` passed；3/3 tests passed）。
+
+后续待办保留：
+
+1. platform secure TokenStore implementation
+2. local cache strategy
+3. Qt/QML prototype
+4. packaging strategy spike
+
 ## 2026-07-07：C++ nlohmann/json parser backend set as default
 
 结论：本轮将 C++ SDK parser 默认路径切换为 nlohmann/json，并保留 temporary `JsonValue` parser 作为显式 fallback。默认 CMake 路径现在需要通过 vcpkg manifest 找到 `nlohmann_json`；如需 no-dependency emergency fallback，可显式配置 `MRRIGHT_USE_TEMPORARY_JSON=ON`。JSON 解析仍集中在 `JsonValue.hpp` / `EnvelopeParser.hpp` 边界，typed clients 不直接解析 JSON。**未部署、未改数据库、未读取或修改 `.env`/token/secret、未访问生产 API、未做 Qt/QML、未做 SQLite cache、未做 secure TokenStore、未做 packaging、未改 Web/API 行为**。
