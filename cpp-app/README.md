@@ -123,6 +123,11 @@ c++ -std=c++20 -Wall -Wextra -Wpedantic -Icpp-app \
   and optional bearer token. No production domain is hard-coded; for local
   development use a value such as `http://localhost:3000`. Tokens live only
   in memory here and are never persisted by the SDK.
+- `sdk/core/TokenStore.hpp`: the SDK token storage boundary. Product builds
+  must back this interface with platform secure credential storage.
+- `sdk/core/MemoryTokenStore.hpp`: a test/dev-session implementation that
+  stores a visitor token only in memory. It is not a production persistence
+  backend.
 - `sdk/core/JsonValue.hpp`: a deliberately small, dependency-free temporary
   JSON parser retained only as an explicit fallback for emergency
   no-dependency builds. It is internal to the SDK prototype and must stay
@@ -159,6 +164,25 @@ c++ -std=c++20 -Wall -Wextra -Wpedantic -Icpp-app \
 - No legacy `/api/*` support.
 - No token persistence implementation and no plaintext token storage.
 - No SQLite cache, download manager, Range/ETag handling, or packaging logic.
+
+## Token Storage
+
+The token storage strategy is recorded in
+`docs/adr/ADR_CPP_TOKENSTORE_STRATEGY.md`.
+
+The SDK keeps `TokenStore` as the boundary for visitor token persistence.
+`MemoryTokenStore` is provided only for unit tests and short-lived development
+sessions. It stores fake or development visitor tokens in process memory,
+supports save/load/clear, and never writes files, reads environment variables,
+prints tokens, or contacts the network.
+
+Production token storage must use platform secure credential backends:
+Windows Credential Manager, macOS Keychain, and Linux Secret Service. QtKeychain
+may be evaluated during the Qt/QML phase as a wrapper over those stores.
+
+Plaintext token storage is forbidden. Do not write bearer tokens to normal
+JSON/config files, logs, diagnostics, examples, `PROJECT_PROGRESS.md`, or crash
+reports. Admin tokens must never enter the C++ SDK.
 
 ## JSON Parser Backend
 
