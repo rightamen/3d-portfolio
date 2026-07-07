@@ -28,23 +28,28 @@ pure SDK layer or Qt date/time types at the UI binding boundary.
 ## Build
 
 Local builds require CMake 3.20+ and a C++20-capable compiler. The default
-build has no Qt, libcurl, nlohmann/json, or other network dependencies.
+parser is nlohmann/json, so the default build should use the vcpkg toolchain
+and `cpp-app/vcpkg.json` manifest. The fallback build remains dependency-free
+by enabling `MRRIGHT_USE_TEMPORARY_JSON=ON`.
 
 From the repository root:
 
 ```bash
-cmake -S cpp-app -B cpp-app/build -DCMAKE_BUILD_TYPE=Debug
-cmake --build cpp-app/build --config Debug
-ctest --test-dir cpp-app/build --build-config Debug --output-on-failure
+export VCPKG_ROOT=/path/to/vcpkg
+cmake -S cpp-app -B cpp-app/build-json -G Ninja \
+  -DCMAKE_BUILD_TYPE=Debug \
+  -DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake
+cmake --build cpp-app/build-json
+ctest --test-dir cpp-app/build-json --output-on-failure
 ```
 
-CTest runs two binaries: `mrright_cpp_smoke` and `mrright_cpp_sdk_tests`.
-The smoke binary verifies that the SDK skeleton models, platform path
-abstraction, and no-network CLI compile and execute. The SDK tests use
-`MockHttpClient` and fixed JSON bodies to verify strict `/api/v1` envelope
-decoding and typed client behavior. By default, they still use the temporary
-dependency-free `JsonValue` parser. They do not perform real network I/O, read
-tokens, start the Node server, or touch a database.
+CTest runs `mrright_cpp_smoke`, `mrright_cpp_sdk_tests`, and
+`mrright_cpp_nlohmann_json_tests`. The smoke binary verifies that the SDK
+skeleton models, platform path abstraction, and no-network CLI compile and
+execute. The SDK tests use `MockHttpClient` and fixed JSON bodies to verify
+strict `/api/v1` envelope decoding and typed client behavior. They do not
+perform real network I/O, read tokens, start the Node server, or touch a
+database.
 
 ## CMake Presets
 
@@ -62,16 +67,23 @@ Available configure/build presets:
 - `release`
 - `relwithdebinfo`
 
-If the local machine does not have CMake or a C++20 compiler, do not install
-new dependencies just for this skeleton batch. Use the `C++ App Skeleton`
-GitHub Actions workflow as the cross-platform validation entry; it configures,
-builds, and runs the smoke test on Ubuntu, macOS, and Windows.
+The presets do not encode a vcpkg toolchain. Use them only in an environment
+where CMake can already find `nlohmann_json`, or configure the fallback path
+with `MRRIGHT_USE_TEMPORARY_JSON=ON`.
 
-Current local WSL validation note: this workspace has completed a Ninja Debug
-CMake configure/build/CTest pass from the repository root:
+If the local machine does not have CMake, a C++20 compiler, or vcpkg, do not
+install new dependencies just for fallback validation. Use the `C++ App
+Skeleton` GitHub Actions workflow as the cross-platform validation entry; it
+configures, builds, and runs the temporary parser fallback on Ubuntu, macOS,
+and Windows.
+
+Current local WSL fallback validation note: this workspace has completed a
+Ninja Debug CMake configure/build/CTest pass from the repository root:
 
 ```bash
-cmake -S cpp-app -B cpp-app/build -G Ninja -DCMAKE_BUILD_TYPE=Debug
+cmake -S cpp-app -B cpp-app/build -G Ninja \
+  -DCMAKE_BUILD_TYPE=Debug \
+  -DMRRIGHT_USE_TEMPORARY_JSON=ON
 cmake --build cpp-app/build
 ctest --test-dir cpp-app/build --output-on-failure
 ```
@@ -112,15 +124,16 @@ c++ -std=c++20 -Wall -Wextra -Wpedantic -Icpp-app \
   development use a value such as `http://localhost:3000`. Tokens live only
   in memory here and are never persisted by the SDK.
 - `sdk/core/JsonValue.hpp`: a deliberately small, dependency-free temporary
-  JSON parser used only to support current contract fixtures. It is internal to
-  the early SDK prototype and must stay behind `EnvelopeParser`.
+  JSON parser retained only as an explicit fallback for emergency
+  no-dependency builds. It is internal to the SDK prototype and must stay
+  behind `EnvelopeParser`.
 - `sdk/core/NlohmannJsonValue.hpp` and `sdk/core/NlohmannEnvelopeParser.hpp`:
-  an optional nlohmann/json parser backend wired behind the same parser
-  boundary. It is enabled only with `MRRIGHT_USE_NLOHMANN_JSON=ON`.
+  the default nlohmann/json parser backend wired behind the same parser
+  boundary.
 - `sdk/core/EnvelopeParser.hpp`: strict `/api/v1` envelope decoding, including
   `ApiError`, `Pagination`, unknown error-code fallback, and rejection of
-  legacy top-level mirrors. It selects the temporary parser by default and the
-  nlohmann/json backend when the CMake option is enabled.
+  legacy top-level mirrors. It selects nlohmann/json by default and the
+  temporary parser only when `MRRIGHT_USE_TEMPORARY_JSON=ON`.
 - `sdk/network`: an interface-only `HttpClient`, `NullHttpClient`, and
   `MockHttpClient` for typed client tests. `RealHttpClient` is present as a
   replaceable backend placeholder, but it intentionally returns
@@ -149,16 +162,13 @@ c++ -std=c++20 -Wall -Wextra -Wpedantic -Icpp-app \
 
 ## JSON Parser Backend
 
-The default build still uses the temporary dependency-free parser in
-`sdk/core/JsonValue.hpp`. This keeps the mock SDK tests and no-dependency CMake
-path available on machines without vcpkg or other C++ package setup.
+The default parser backend is nlohmann/json. JSON parsing remains behind
+`JsonValue.hpp` / `EnvelopeParser.hpp`, so typed clients still construct
+requests and decode typed models without taking a direct JSON dependency.
 
-The optional nlohmann/json backend is available through vcpkg manifest mode and
-the `MRRIGHT_USE_NLOHMANN_JSON` CMake option. When the option is `OFF`, CMake
-does not call `find_package(nlohmann_json)` and the normal no-dependency build
-continues to use the temporary parser. When the option is `ON`, CMake requires
-`nlohmann_json`, defines `MRRIGHT_USE_NLOHMANN_JSON`, and the SDK tests compile
-against the nlohmann-backed parser boundary.
+The default path uses vcpkg manifest mode and requires CMake to find
+`nlohmann_json`. It does not contact production, does not start the Node server,
+and does not read tokens.
 
 From the repository root:
 
@@ -166,7 +176,6 @@ From the repository root:
 export VCPKG_ROOT=/path/to/vcpkg
 cmake -S cpp-app -B cpp-app/build-json -G Ninja \
   -DCMAKE_BUILD_TYPE=Debug \
-  -DMRRIGHT_USE_NLOHMANN_JSON=ON \
   -DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake
 cmake --build cpp-app/build-json
 ctest --test-dir cpp-app/build-json --output-on-failure
@@ -178,9 +187,19 @@ pagination, unknown error-code preservation, invalid JSON, legacy mirror
 rejection, project list decoding through `ProjectClient`, and minimal
 auth/session decoding. It performs no network I/O and does not read tokens.
 
-The current plan is to keep the temporary parser as the default fallback until
-the nlohmann/json path is stable across local development and CI. After that,
-the project can decide whether to make nlohmann/json the default parser.
+The temporary parser is retained as an explicit fallback. It avoids vcpkg and
+nlohmann/json for emergency no-dependency validation only:
+
+```bash
+cmake -S cpp-app -B cpp-app/build -G Ninja \
+  -DCMAKE_BUILD_TYPE=Debug \
+  -DMRRIGHT_USE_TEMPORARY_JSON=ON
+cmake --build cpp-app/build
+ctest --test-dir cpp-app/build --output-on-failure
+```
+
+Fallback CTest runs `mrright_cpp_smoke` and `mrright_cpp_sdk_tests`, which keep
+minimum compile and strict-envelope coverage for the temporary parser path.
 
 ## HTTP Backend Strategy
 
@@ -294,7 +313,7 @@ The accepted dependency strategy is recorded in
 - Use vcpkg manifest mode as the preferred strategy for SDK/backend
   dependencies.
 - `cpp-app/vcpkg.json` currently contains only the libcurl dependency needed
-  for the optional backend plus `nlohmann-json` for the optional parser
+  for the optional backend plus `nlohmann-json` for the default parser
   backend.
 - Manage future libcurl, `nlohmann-json`, sqlite3, and similar backend
   libraries through vcpkg unless a concrete blocker appears.
@@ -305,13 +324,12 @@ The accepted dependency strategy is recorded in
 
 ## Next Steps
 
-1. Decide when to make the optional nlohmann/json backend the default parser.
-2. Expand JSON serialization/deserialization tests against contract fixtures.
-3. Spike OpenAPI-generated client/types only as a comparison point, not as the
+1. Expand JSON serialization/deserialization tests against contract fixtures.
+2. Spike OpenAPI-generated client/types only as a comparison point, not as the
    default SDK implementation.
-4. Integrate Qt/QML once the SDK boundary is stable.
-5. Implement SQLite cache metadata and content-addressed blob storage.
-6. Implement secure `TokenStore` providers:
+3. Integrate Qt/QML once the SDK boundary is stable.
+4. Implement SQLite cache metadata and content-addressed blob storage.
+5. Implement secure `TokenStore` providers:
    Windows Credential Manager, macOS Keychain, Linux Secret Service, then an
    explicitly marked encrypted-file fallback.
-7. Spike packaging scripts for NSIS, dmg/notarization, and AppImage.
+6. Spike packaging scripts for NSIS, dmg/notarization, and AppImage.

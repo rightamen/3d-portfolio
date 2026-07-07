@@ -1,10 +1,6 @@
 #pragma once
 
-#ifdef MRRIGHT_USE_NLOHMANN_JSON
-
-#include "sdk/core/NlohmannJsonValue.hpp"
-
-#else
+#ifdef MRRIGHT_USE_TEMPORARY_JSON
 
 #include "sdk/core/ApiResult.hpp"
 
@@ -319,5 +315,9 @@ inline std::string escapeJsonString(std::string_view value) {
 }
 
 } // namespace mrright::sdk::core
+
+#else
+
+#include "sdk/core/NlohmannJsonValue.hpp"
 
 #endif
