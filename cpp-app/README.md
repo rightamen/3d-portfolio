@@ -273,6 +273,7 @@ cmake -S cpp-app -B cpp-app/build-qt -G Ninja \
   -DMRRIGHT_ENABLE_QT_UI=ON \
   -DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake
 cmake --build cpp-app/build-qt --target mrright_qt_shell
+ctest --test-dir cpp-app/build-qt --output-on-failure -R mrright_qt_appcontroller_tests
 ```
 
 The shell creates a `QGuiApplication`, loads `Main.qml`, and exposes an
@@ -287,6 +288,15 @@ create `CurlHttpClient`, does not access the network, does not read or write
 TokenStore, does not persist tokens, does not call admin endpoints, and does
 not create local cache state. The password is never exposed as a property and
 is not stored by `AppController`.
+
+When `MRRIGHT_ENABLE_QT_UI=ON`, CMake also builds
+`mrright_qt_appcontroller_tests`. These unit tests exercise only
+`AppController` state transitions: initial signed-out state, successful mock
+login, input validation, logout, and message clearing. They use
+`QCoreApplication`, do not start a GUI window, do not perform real login, do
+not access API endpoints, do not read or write TokenStore, and do not persist
+tokens. Default SDK builds keep `MRRIGHT_ENABLE_QT_UI=OFF`, so they do not find
+Qt, build the Qt shell, or build the Qt tests.
 
 Production login remains a later integration step that should route through
 `AuthSession` and a supported secure platform `TokenStore`.

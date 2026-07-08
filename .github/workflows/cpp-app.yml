@@ -125,4 +125,7 @@ jobs:
             -DMRRIGHT_ENABLE_QT_UI=ON
 
       - name: Build Qt shell
-        run: cmake --build cpp-app/build-qt --target mrright_qt_shell
+        run: cmake --build cpp-app/build-qt
+
+      - name: Test Qt AppController
+        run: ctest --test-dir cpp-app/build-qt --output-on-failure -R mrright_qt_appcontroller_tests
