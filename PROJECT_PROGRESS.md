@@ -1,5 +1,63 @@
 # mrright.blog 项目进度记录
 
+## 2026-07-08：C++ Linux Secret Service TokenStore backend
+
+结论：本轮新增 C++ SDK Linux Secret Service TokenStore backend，并更新 `SecureTokenStore` 工厂：Windows 继续返回 Windows Credential Manager backend，macOS 继续返回 Keychain backend，Linux 在 `MRRIGHT_ENABLE_LINUX_SECRET_SERVICE=ON` 且已编译 libsecret backend 时返回 Secret Service backend。`MemoryTokenStore` 仍仅用于 tests/dev session。**未部署、未改数据库、未读取或修改 `.env`/token/secret、未访问生产 API、未改 Web/API 行为、未做 Qt/QML、未做 SQLite cache、未做 packaging、未提交构建产物**。
+
+完成内容：
+
+- 新增 `cpp-app/sdk/platform/LinuxSecretServiceTokenStore.hpp` / `LinuxSecretServiceTokenStore.cpp`：
+  - 仅在 `__linux__` 且 `MRRIGHT_ENABLE_LINUX_SECRET_SERVICE` 下编译。
+  - 使用 libsecret / Secret Service API 保存 visitor token。
+  - 默认 schema 为 `mrright.blog`，attribute 为 `account=visitor_token`。
+  - 支持 `saveVisitorToken`、`loadVisitorToken`、`clearVisitorToken`、`hasVisitorToken`。
+  - 不写普通文件、不读环境变量、不打印 token、不保存 admin token。
+- 更新 `cpp-app/sdk/platform/SecureTokenStore.cpp`：
+  - Windows 返回 `WindowsCredentialTokenStore`。
+  - macOS 返回 `MacOSKeychainTokenStore`。
+  - Linux 返回 `LinuxSecretServiceTokenStore` when compiled/enabled。
+  - unsupported 平台仍返回 `nullptr`，不降级到 `MemoryTokenStore` 或明文文件。
+- 更新 `cpp-app/CMakeLists.txt`：
+  - 新增 `MRRIGHT_ENABLE_LINUX_SECRET_SERVICE=ON` option。
+  - Linux 下通过 pkg-config 查找 system `libsecret-1` 并链接 `PkgConfig::LIBSECRET`。
+  - Linux option 开启但缺少 pkg-config 或 libsecret dev package 时 CMake 清晰失败。
+  - Windows/macOS backend 条件编译和系统库链接保持不变。
+- 更新 `cpp-app/tests/unit/secure_tokenstore_tests.cpp`：
+  - 保留 Windows Credential Manager guarded test。
+  - 保留 macOS Keychain guarded test。
+  - Linux enabled build 验证 factory support，并用 fake token 覆盖 save/load/overwrite/clear。
+  - 运行时 D-Bus session 或 desktop keyring 不可用时返回 CTest skip code 77 并输出清晰说明。
+- 更新 `.github/workflows/cpp-app.yml`：
+  - Ubuntu C++ jobs 安装 `libsecret-1-dev`，确保 compile/link 覆盖 Linux Secret Service backend。
+  - 保留 temporary parser fallback、default nlohmann/json with vcpkg、libcurl backend with vcpkg checks。
+- 更新 `cpp-app/README.md` 和 `docs/CPP_APP_MIGRATION_PLAN.md`：
+  - 说明 secure TokenStore 当前支持 Windows Credential Manager、macOS Keychain、Linux Secret Service。
+  - 说明 Linux 运行时可能需要 desktop keyring / D-Bus session。
+  - 明确 `MemoryTokenStore` 仅用于 tests/dev session，禁止明文 token 落盘，admin token 不进入 C++ SDK。
+
+本轮验证结果：
+
+- `git diff --check`：通过。
+- `npm run lint`：通过。
+- `npm run build`：通过；产生的 `dist/` 变动已 `git restore dist`，未提交。
+- `npm run test:api`：通过（37 passed）。
+- `npm run test:api:db`：通过（18 passed，一次性 PostgreSQL cluster 已销毁）。
+- `npm run test:openapi`：通过（200 个本地 `$ref` 可解析；27 个 API error code 与 OpenAPI enum 一致）。
+- 默认 nlohmann/json CMake：
+  - `cmake -S cpp-app -B cpp-app/build-json -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake`：通过。
+  - `cmake --build cpp-app/build-json`：通过。
+  - `ctest --test-dir cpp-app/build-json --output-on-failure`：通过（`mrright_cpp_smoke` passed；`mrright_cpp_sdk_tests` passed；`mrright_cpp_tokenstore_tests` passed；`mrright_cpp_auth_session_tests` passed；`mrright_cpp_secure_tokenstore_tests` skipped：本机 D-Bus session 或 desktop keyring 不可用；`mrright_cpp_nlohmann_json_tests` passed；6/6 tests passed, 1 skipped）。
+- temporary parser fallback CMake：
+  - `cmake -S cpp-app -B cpp-app/build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DMRRIGHT_USE_TEMPORARY_JSON=ON`：通过。
+  - `cmake --build cpp-app/build`：通过。
+  - `ctest --test-dir cpp-app/build --output-on-failure`：通过（`mrright_cpp_smoke` passed；`mrright_cpp_sdk_tests` passed；`mrright_cpp_tokenstore_tests` passed；`mrright_cpp_auth_session_tests` passed；`mrright_cpp_secure_tokenstore_tests` skipped：本机 D-Bus session 或 desktop keyring 不可用；5/5 tests passed, 1 skipped）。
+
+后续待办保留：
+
+1. local cache strategy
+2. Qt/QML prototype
+3. packaging strategy spike
+
 ## 2026-07-07：C++ macOS Keychain TokenStore backend
 
 结论：本轮新增 C++ SDK macOS Keychain TokenStore backend，并更新 `SecureTokenStore` 工厂：Windows 继续返回 Windows Credential Manager backend，macOS 返回 Keychain backend，Linux 继续 explicit unsupported（返回 `nullptr`）。`MemoryTokenStore` 仍仅用于 tests/dev session。**未部署、未改数据库、未读取或修改 `.env`/token/secret、未访问生产 API、未改 Web/API 行为、未做 Qt/QML、未做 SQLite cache、未做 Linux Secret Service、未做 packaging、未提交构建产物**。

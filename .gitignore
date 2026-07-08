@@ -35,7 +35,9 @@ playwright-report/
 
 # CMake / C++ app build artifacts
 cpp-app/build/
+cpp-app/build-json/
 cpp-app/build-curl/
+cpp-app/build-curl-smoke/
 cpp-app/vcpkg_installed/
 cpp-app/out/
 cpp-app/.cache/
