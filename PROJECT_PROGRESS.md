@@ -1,5 +1,60 @@
 # mrright.blog 项目进度记录
 
+## 2026-07-08：C++ Qt/QML desktop app shell 第一批
+
+结论：本轮新增可选 C++ Qt/QML desktop app shell 第一批。默认 SDK build 仍不依赖 Qt；只有显式 `MRRIGHT_ENABLE_QT_UI=ON` 时才查找 Qt6 并构建 `mrright_qt_shell`。Qt/QML 代码仅位于 `cpp-app/app/ui/qt`，SDK core 保持 Qt-free。本批只做最小可启动窗口和架构边界，不做真实登录、项目列表、下载、本地缓存或 packaging。**未部署、未改数据库、未读取或修改 `.env`/token/secret、未访问生产 API、未改 Web/API 行为、未做 SQLite cache、未做 secure TokenStore 新实现、未做正式安装包、未提交构建产物**。
+
+完成内容：
+
+- 新增 `cpp-app/app/ui/qt/main_qt.cpp`：
+  - 创建 `QGuiApplication` 和 `QQmlApplicationEngine`。
+  - 通过 `loadFromModule("Mrright.QtShell", "Main")` 加载 QML。
+  - 只注入只读 `AppController`，不创建网络 client，不读取 token，不调用 `AuthSession`。
+- 新增 `cpp-app/app/ui/qt/Main.qml`：
+  - 显示 app name、SDK version、API mode `/api/v1 strict`、status `UI shell only, no network`。
+  - 不包含登录、项目列表、下载、缓存或 admin 功能。
+- 新增 `cpp-app/app/ui/qt/AppController.hpp` / `.cpp`：
+  - 暴露只读 `appName`、`sdkVersion`、`apiPrefix`、`status`。
+  - 读取 `ApiClientConfig::apiPrefix` 作为 SDK 边界信息。
+  - 不把 Qt 类型传入 SDK core public API。
+- 更新 `cpp-app/CMakeLists.txt`：
+  - 新增 `MRRIGHT_ENABLE_QT_UI=OFF` option。
+  - 默认 OFF 时不调用 `find_package(Qt6)`，不构建 Qt target。
+  - ON 时 `find_package(Qt6 COMPONENTS Core Gui Qml Quick REQUIRED)`，构建 `mrright_qt_shell` 并链接 `Qt6::Core`、`Qt6::Gui`、`Qt6::Qml`、`Qt6::Quick`。
+- 更新 `.github/workflows/cpp-app.yml`：
+  - 保留 existing C++ checks。
+  - 新增独立 Ubuntu `optional Qt/QML shell` job，只安装 Qt dev 包并 configure/build `mrright_qt_shell`，不运行窗口、不上传构建产物、不读取 secrets、不访问 API。
+- 更新 `cpp-app/README.md` 和 `docs/CPP_APP_MIGRATION_PLAN.md`：
+  - 说明 Qt/QML shell opt-in、默认 build 不需要 Qt。
+  - 说明 SDK core 与 Qt UI 分层边界。
+  - 说明本批 Qt shell 不访问网络、不读取 token、不做缓存。
+
+本轮验证结果：
+
+- `git diff --check`：通过。
+- `npm run lint`：通过。
+- `npm run build`：通过；产生的 `dist/` 变动已 `git restore dist`，未提交。
+- `npm run test:api`：通过（37 passed）。
+- `npm run test:api:db`：通过（18 passed，一次性 PostgreSQL cluster 已销毁）。
+- `npm run test:openapi`：通过（200 个本地 `$ref` 可解析；27 个 API error code 与 OpenAPI enum 一致）。
+- 默认 nlohmann/json CMake：
+  - `cmake -S cpp-app -B cpp-app/build-json -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake`：通过。
+  - `cmake --build cpp-app/build-json`：通过。
+  - `ctest --test-dir cpp-app/build-json --output-on-failure`：通过（`mrright_cpp_smoke` passed；`mrright_cpp_sdk_tests` passed；`mrright_cpp_tokenstore_tests` passed；`mrright_cpp_auth_session_tests` passed；`mrright_cpp_secure_tokenstore_tests` skipped：本机 D-Bus session 或 desktop keyring 不可用；`mrright_cpp_nlohmann_json_tests` passed；6/6 tests passed, 1 skipped）。
+- temporary parser fallback CMake：
+  - `cmake -S cpp-app -B cpp-app/build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DMRRIGHT_USE_TEMPORARY_JSON=ON`：通过。
+  - `cmake --build cpp-app/build`：通过。
+  - `ctest --test-dir cpp-app/build --output-on-failure`：通过（`mrright_cpp_smoke` passed；`mrright_cpp_sdk_tests` passed；`mrright_cpp_tokenstore_tests` passed；`mrright_cpp_auth_session_tests` passed；`mrright_cpp_secure_tokenstore_tests` skipped：本机 D-Bus session 或 desktop keyring 不可用；5/5 tests passed, 1 skipped）。
+- 本地 Qt configure：未通过；本机没有 Qt6 CMake package（`Qt6Config.cmake` / `qt6-config.cmake`），按要求未安装新 Qt 依赖。Qt build 由独立 CI job 验证。
+- PR #17 初次 CI 失败原因：Ubuntu runner 使用 Qt 6.4.2，`QQmlApplicationEngine::loadFromModule()` 不可用，`mrright_qt_shell` 在 `main_qt.cpp` 编译时报错 `class QQmlApplicationEngine has no member named loadFromModule`。修复为 Qt 6.4 兼容的 `engine.load(QUrl("qrc:/qt/qml/Mrright/QtShell/Main.qml"))`，并在 CMake 中固定 `Main.qml` resource alias。
+
+后续待办保留：
+
+1. real Qt login screen
+2. project list UI
+3. local cache strategy
+4. packaging strategy spike
+
 ## 2026-07-08：C++ Linux Secret Service TokenStore backend
 
 结论：本轮新增 C++ SDK Linux Secret Service TokenStore backend，并更新 `SecureTokenStore` 工厂：Windows 继续返回 Windows Credential Manager backend，macOS 继续返回 Keychain backend，Linux 在 `MRRIGHT_ENABLE_LINUX_SECRET_SERVICE=ON` 且已编译 libsecret backend 时返回 Secret Service backend。`MemoryTokenStore` 仍仅用于 tests/dev session。**未部署、未改数据库、未读取或修改 `.env`/token/secret、未访问生产 API、未改 Web/API 行为、未做 Qt/QML、未做 SQLite cache、未做 packaging、未提交构建产物**。

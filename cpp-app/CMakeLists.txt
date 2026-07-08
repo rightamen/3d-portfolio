@@ -14,6 +14,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 option(MRRIGHT_ENABLE_CURL_HTTP "Enable future libcurl-backed HttpClient implementation" OFF)
 option(MRRIGHT_ENABLE_LOCAL_API_SMOKE "Enable opt-in local/dev API smoke tests that perform loopback HTTP requests" OFF)
 option(MRRIGHT_ENABLE_LINUX_SECRET_SERVICE "Enable Linux Secret Service TokenStore backend via system libsecret-1" ON)
+option(MRRIGHT_ENABLE_QT_UI "Enable optional Qt/QML desktop app shell" OFF)
 option(MRRIGHT_USE_TEMPORARY_JSON "Use the dependency-free temporary JsonValue parser fallback instead of the default nlohmann/json backend" OFF)
 
 if(MRRIGHT_ENABLE_LOCAL_API_SMOKE AND NOT MRRIGHT_ENABLE_CURL_HTTP)
@@ -153,6 +154,34 @@ if(TARGET mrright_cpp_local_api_smoke)
   set_tests_properties(mrright_cpp_local_api_smoke PROPERTIES SKIP_RETURN_CODE 77)
 endif()
 
+if(MRRIGHT_ENABLE_QT_UI)
+  find_package(Qt6 COMPONENTS Core Gui Qml Quick REQUIRED)
+  qt_standard_project_setup()
+
+  set_source_files_properties(app/ui/qt/Main.qml PROPERTIES
+    QT_RESOURCE_ALIAS Main.qml
+  )
+
+  qt_add_executable(mrright_qt_shell
+    app/ui/qt/main_qt.cpp
+    app/ui/qt/AppController.cpp
+    app/ui/qt/AppController.hpp
+  )
+  target_link_libraries(mrright_qt_shell PRIVATE
+    mrright_sdk_core
+    Qt6::Core
+    Qt6::Gui
+    Qt6::Qml
+    Qt6::Quick
+  )
+  qt_add_qml_module(mrright_qt_shell
+    URI Mrright.QtShell
+    VERSION 1.0
+    QML_FILES
+      app/ui/qt/Main.qml
+  )
+endif()
+
 if(MSVC)
   target_compile_options(mrright_app_platform PRIVATE /W4 /utf-8)
   target_compile_options(mrright_sdk_platform_tokenstore PRIVATE /W4 /utf-8)
@@ -173,6 +202,9 @@ if(MSVC)
   if(TARGET mrright_cpp_local_api_smoke)
     target_compile_options(mrright_cpp_local_api_smoke PRIVATE /W4 /utf-8)
   endif()
+  if(TARGET mrright_qt_shell)
+    target_compile_options(mrright_qt_shell PRIVATE /W4 /utf-8)
+  endif()
 else()
   target_compile_options(mrright_app_platform PRIVATE -Wall -Wextra -Wpedantic)
   target_compile_options(mrright_sdk_platform_tokenstore PRIVATE -Wall -Wextra -Wpedantic)
@@ -192,5 +224,8 @@ else()
   endif()
   if(TARGET mrright_cpp_local_api_smoke)
     target_compile_options(mrright_cpp_local_api_smoke PRIVATE -Wall -Wextra -Wpedantic)
+  endif()
+  if(TARGET mrright_qt_shell)
+    target_compile_options(mrright_qt_shell PRIVATE -Wall -Wextra -Wpedantic)
   endif()
 endif()

@@ -164,6 +164,8 @@ c++ -std=c++20 -Wall -Wextra -Wpedantic -Icpp-app \
   libcurl optional, and defer Qt Network to the Qt/QML phase.
 - `app/platform`: `AppPaths` placeholders for config, cache, data, logs,
   downloads, and temp paths across Windows/macOS/Linux.
+- `app/ui/qt`: an opt-in Qt/QML desktop shell. It is compiled only when
+  `MRRIGHT_ENABLE_QT_UI=ON`; the default SDK build does not find or link Qt.
 - `src/main.cpp`: a no-network smoke binary that constructs example
   `Pagination`, `ApiError`, and `ResponseEnvelope` values.
 - `tests/unit/sdk_contract_tests.cpp`: no-network SDK contract tests driven by
@@ -171,7 +173,8 @@ c++ -std=c++20 -Wall -Wextra -Wpedantic -Icpp-app \
 
 ## What Is Not Included
 
-- No Qt UI or QML.
+- No full Qt UI yet; only an opt-in shell can be built with
+  `MRRIGHT_ENABLE_QT_UI=ON`.
 - No real HTTP transport in the default build and no real API calls.
 - No generated OpenAPI client.
 - No admin endpoints.
@@ -252,6 +255,31 @@ Production session persistence must use a supported platform secure
 `TokenStore`; Windows Credential Manager, macOS Keychain, and Linux Secret
 Service are currently supported. Tokens must not be written to plaintext files
 or logs.
+
+## Qt/QML Shell
+
+The Qt/QML desktop shell is optional. Default SDK builds do not call
+`find_package(Qt6)`, do not compile QML, and do not link Qt. The SDK core
+remains Qt-free: Qt types stay under `app/ui/qt`, while the UI reads only small
+SDK-facing constants such as `ApiClientConfig::apiPrefix`.
+
+Enable the shell only in a separate build directory with a Qt 6 development
+installation available to CMake:
+
+```bash
+export VCPKG_ROOT=/path/to/vcpkg
+cmake -S cpp-app -B cpp-app/build-qt -G Ninja \
+  -DCMAKE_BUILD_TYPE=Debug \
+  -DMRRIGHT_ENABLE_QT_UI=ON \
+  -DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake
+cmake --build cpp-app/build-qt --target mrright_qt_shell
+```
+
+This first shell creates a `QGuiApplication`, loads `Main.qml`, and exposes a
+minimal read-only `AppController` with `appName`, `sdkVersion`, `apiPrefix`,
+and `status`. It does not call `AuthSession`, does not create
+`CurlHttpClient`, does not read tokens, does not access the network, does not
+call admin endpoints, and does not create local cache state.
 
 ## JSON Parser Backend
 
@@ -418,8 +446,9 @@ The accepted dependency strategy is recorded in
 - Use the distro/system `libsecret-1` development package for Linux Secret
   Service; do not add Qt or a vcpkg dependency for this backend in the current
   CMake path.
-- Evaluate Qt separately during the Qt/QML phase; it may use vcpkg, the
-  official Qt installer, or aqtinstall.
+- The optional Qt/QML shell is separate from SDK core. It can use an existing
+  Qt SDK, distro Qt packages, the official Qt installer, or a future dedicated
+  CI installer flow, but it is not required for default SDK builds.
 - Do not commit `vcpkg_installed/`, dependency caches, build outputs, or
   vendored third-party source.
 
@@ -428,7 +457,7 @@ The accepted dependency strategy is recorded in
 1. Expand JSON serialization/deserialization tests against contract fixtures.
 2. Spike OpenAPI-generated client/types only as a comparison point, not as the
    default SDK implementation.
-3. Integrate Qt/QML once the SDK boundary is stable.
-4. Implement SQLite cache metadata and content-addressed blob storage.
+3. Build the real Qt login screen on top of the shell boundary.
+4. Add a project list UI backed by the strict `/api/v1` SDK clients.
 5. Implement SQLite cache metadata and content-addressed blob storage.
 6. Spike packaging scripts for NSIS, dmg/notarization, and AppImage.

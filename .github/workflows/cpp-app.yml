@@ -103,3 +103,26 @@ jobs:
 
       - name: Test with nlohmann/json backend
         run: ctest --test-dir cpp-app/build-json --output-on-failure
+
+  cpp-app-qt-shell:
+    name: optional Qt/QML shell (ubuntu-latest)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Qt build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libsecret-1-dev qt6-base-dev qt6-declarative-dev
+
+      - name: Configure Qt shell
+        run: |
+          cmake -S cpp-app -B cpp-app/build-qt -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DMRRIGHT_USE_TEMPORARY_JSON=ON \
+            -DMRRIGHT_ENABLE_QT_UI=ON
+
+      - name: Build Qt shell
+        run: cmake --build cpp-app/build-qt --target mrright_qt_shell
