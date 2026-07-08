@@ -180,6 +180,20 @@ if(MRRIGHT_ENABLE_QT_UI)
     QML_FILES
       app/ui/qt/Main.qml
   )
+
+  add_executable(mrright_qt_appcontroller_tests
+    tests/unit/qt_appcontroller_tests.cpp
+    app/ui/qt/AppController.cpp
+    app/ui/qt/AppController.hpp
+  )
+  set_target_properties(mrright_qt_appcontroller_tests PROPERTIES
+    AUTOMOC ON
+  )
+  target_link_libraries(mrright_qt_appcontroller_tests PRIVATE
+    mrright_sdk_core
+    Qt6::Core
+  )
+  add_test(NAME mrright_qt_appcontroller_tests COMMAND mrright_qt_appcontroller_tests)
 endif()
 
 if(MSVC)
@@ -205,6 +219,9 @@ if(MSVC)
   if(TARGET mrright_qt_shell)
     target_compile_options(mrright_qt_shell PRIVATE /W4 /utf-8)
   endif()
+  if(TARGET mrright_qt_appcontroller_tests)
+    target_compile_options(mrright_qt_appcontroller_tests PRIVATE /W4 /utf-8)
+  endif()
 else()
   target_compile_options(mrright_app_platform PRIVATE -Wall -Wextra -Wpedantic)
   target_compile_options(mrright_sdk_platform_tokenstore PRIVATE -Wall -Wextra -Wpedantic)
@@ -227,5 +244,8 @@ else()
   endif()
   if(TARGET mrright_qt_shell)
     target_compile_options(mrright_qt_shell PRIVATE -Wall -Wextra -Wpedantic)
+  endif()
+  if(TARGET mrright_qt_appcontroller_tests)
+    target_compile_options(mrright_qt_appcontroller_tests PRIVATE -Wall -Wextra -Wpedantic)
   endif()
 endif()
