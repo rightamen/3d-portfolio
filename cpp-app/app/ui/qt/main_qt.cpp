@@ -4,6 +4,7 @@
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
+#include <QUrl>
 #include <Qt>
 
 #include <QObject>
@@ -24,7 +25,7 @@ int main(int argc, char* argv[]) {
     []() { QCoreApplication::exit(-1); },
     Qt::QueuedConnection
   );
-  engine.loadFromModule("Mrright.QtShell", "Main");
+  engine.load(QUrl(QStringLiteral("qrc:/qt/qml/Mrright/QtShell/Main.qml")));
 
   return app.exec();
 }

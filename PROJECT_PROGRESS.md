@@ -46,6 +46,7 @@
   - `cmake --build cpp-app/build`：通过。
   - `ctest --test-dir cpp-app/build --output-on-failure`：通过（`mrright_cpp_smoke` passed；`mrright_cpp_sdk_tests` passed；`mrright_cpp_tokenstore_tests` passed；`mrright_cpp_auth_session_tests` passed；`mrright_cpp_secure_tokenstore_tests` skipped：本机 D-Bus session 或 desktop keyring 不可用；5/5 tests passed, 1 skipped）。
 - 本地 Qt configure：未通过；本机没有 Qt6 CMake package（`Qt6Config.cmake` / `qt6-config.cmake`），按要求未安装新 Qt 依赖。Qt build 由独立 CI job 验证。
+- PR #17 初次 CI 失败原因：Ubuntu runner 使用 Qt 6.4.2，`QQmlApplicationEngine::loadFromModule()` 不可用，`mrright_qt_shell` 在 `main_qt.cpp` 编译时报错 `class QQmlApplicationEngine has no member named loadFromModule`。修复为 Qt 6.4 兼容的 `engine.load(QUrl("qrc:/qt/qml/Mrright/QtShell/Main.qml"))`，并在 CMake 中固定 `Main.qml` resource alias。
 
 后续待办保留：
 

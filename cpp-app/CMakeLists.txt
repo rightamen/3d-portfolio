@@ -158,6 +158,10 @@ if(MRRIGHT_ENABLE_QT_UI)
   find_package(Qt6 COMPONENTS Core Gui Qml Quick REQUIRED)
   qt_standard_project_setup()
 
+  set_source_files_properties(app/ui/qt/Main.qml PROPERTIES
+    QT_RESOURCE_ALIAS Main.qml
+  )
+
   qt_add_executable(mrright_qt_shell
     app/ui/qt/main_qt.cpp
     app/ui/qt/AppController.cpp
