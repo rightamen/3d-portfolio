@@ -275,11 +275,21 @@ cmake -S cpp-app -B cpp-app/build-qt -G Ninja \
 cmake --build cpp-app/build-qt --target mrright_qt_shell
 ```
 
-This first shell creates a `QGuiApplication`, loads `Main.qml`, and exposes a
-minimal read-only `AppController` with `appName`, `sdkVersion`, `apiPrefix`,
-and `status`. It does not call `AuthSession`, does not create
-`CurlHttpClient`, does not read tokens, does not access the network, does not
-call admin endpoints, and does not create local cache state.
+The shell creates a `QGuiApplication`, loads `Main.qml`, and exposes an
+`AppController` for UI-only state. `AppController` publishes `appName`,
+`sdkVersion`, `apiPrefix`, `status`, `isLoggedIn`, `currentUserLabel`, and
+`loginMessage`, plus mock-only `mockLogin(email, password)`, `logout()`, and
+`clearMessage()` actions.
+
+The current auth panel is a mock UI flow only. It updates visible UI state from
+the entered email and password, but it does not call `AuthSession`, does not
+create `CurlHttpClient`, does not access the network, does not read or write
+TokenStore, does not persist tokens, does not call admin endpoints, and does
+not create local cache state. The password is never exposed as a property and
+is not stored by `AppController`.
+
+Production login remains a later integration step that should route through
+`AuthSession` and a supported secure platform `TokenStore`.
 
 ## JSON Parser Backend
 
@@ -457,7 +467,7 @@ The accepted dependency strategy is recorded in
 1. Expand JSON serialization/deserialization tests against contract fixtures.
 2. Spike OpenAPI-generated client/types only as a comparison point, not as the
    default SDK implementation.
-3. Build the real Qt login screen on top of the shell boundary.
+3. Integrate the Qt login UI with `AuthSession` and secure TokenStore.
 4. Add a project list UI backed by the strict `/api/v1` SDK clients.
 5. Implement SQLite cache metadata and content-addressed blob storage.
 6. Spike packaging scripts for NSIS, dmg/notarization, and AppImage.
