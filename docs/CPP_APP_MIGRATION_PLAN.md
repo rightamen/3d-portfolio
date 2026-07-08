@@ -11,7 +11,7 @@ Status: 迁移前架构审查结论 + 跨平台客户端设计基线（2026-07-0
 - `docs/openapi/api-v1.yaml` — v1 端点 OpenAPI 初稿；**C++ SDK 开工前的机器可读契约起点**
 - `docs/API_V1_MODEL_MAPPING.md` — TS/C++ model mapping 初稿；**C++ Prototype（Phase 2）的 `sdk/core/models/` 应直接从此文档的 struct 草图开始，不再重新设计字段**
 - `docs/API_V1_GAPS.md` — 尚未冻结/未验证字段清单；Phase 2 动工前必须先看这份，避免把 gap 当成已定形状写死进编译产物
-- `docs/adr/ADR_CPP_TOKENSTORE_STRATEGY.md` — C++ SDK TokenStore strategy 已决策：短期提供 in-memory test/dev backend；secure backend 已接入 Windows Credential Manager 与 macOS Keychain，Linux Secret Service 后置；禁止普通配置文件明文存 token
+- `docs/adr/ADR_CPP_TOKENSTORE_STRATEGY.md` — C++ SDK TokenStore strategy 已决策：短期提供 in-memory test/dev backend；secure backend 已接入 Windows Credential Manager、macOS Keychain 与 Linux Secret Service；禁止普通配置文件明文存 token
 - `cpp-app/` — C++ cross-platform prototype skeleton（CMake + SDK headers + smoke CLI + mock-driven SDK contract tests），已创建；当前不含 Qt UI、缓存、下载器或打包实现。C++ SDK strict envelope parser boundary 已将 nlohmann/json 设为默认 backend，temporary parser 仍保留为显式 no-dependency fallback。
 - `.github/workflows/cpp-app.yml` — C++ App Skeleton CI matrix，已加入 Windows/macOS/Linux temporary parser fallback configure + build + smoke test 入口；另有独立 Ubuntu `cpp-app-curl-vcpkg` job 验证 vcpkg manifest + optional libcurl backend configure/build/CTest，以及 Ubuntu `cpp-app-nlohmann-vcpkg` job 验证默认 nlohmann/json parser backend configure/build/CTest；不部署、不读取 secrets、不上传构建产物
 
@@ -181,7 +181,7 @@ CMake 组织：
 | Linux | Secret Service（libsecret，GNOME Keyring / KWallet） |
 | 降级 | 加密文件（机器绑定密钥派生），**仅当 Secret Service 不可用**（headless / 精简发行版 / Steam Deck 游戏模式），且 UI 必须提示降级状态 |
 
-实现：`TokenStore` 接口在 `sdk/core`，平台实现经 **QtKeychain**（已封装以上三者）放在 `app/platform`。禁止：token 明文写入任何配置文件、日志、崩溃转储；日志层对 `Authorization` header 做统一脱敏。
+当前第一轮实现：`TokenStore` 接口在 `sdk/core`，平台 secure factory 位于 `cpp-app/sdk/platform`，Windows 使用 Credential Manager，macOS 使用 Keychain Services，Linux 使用 libsecret / Secret Service。QtKeychain 仍可在 Qt/QML 阶段评估为封装层。禁止：token 明文写入任何配置文件、日志、崩溃转储；日志层对 `Authorization` header 做统一脱敏。
 
 ## 12. Logging and Diagnostics
 
@@ -209,7 +209,7 @@ CMake 组织：
 | 3D 渲染 | **Qt RHI 路线**（Qt Quick 3D 起步）：Windows→D3D11、macOS→Metal、Linux→OpenGL/Vulkan 由 RHI 选择 | 手写三后端是本项目最大的不必要复杂度；RHI 把差异下沉给 Qt。若 Qt Quick 3D 能力不够，退路是自绘 OpenGL item，最后才考虑裸 Vulkan |
 | 模型加载 | **tinygltf 起步**（平台已倾向 GLB/GLTF），Assimp 作为后续多格式扩展（体积大、按需引入） | 服务端已有 modelConverter，优先让服务端统一转 GLB，客户端只吃一种格式 |
 | API SDK | **手写 C++ client SDK**（薄层），OpenAPI spec 用于文档/漂移检测/未来代码生成，而非现在就上 generator | openapi-generator 的 C++ 输出质量不稳，API 面积（~30 端点、App 用到 ~15）手写完全可控 |
-| Token 存储 | **QtKeychain**（封装 Credential Manager / Keychain / Secret Service） | 见 §11 |
+| Token 存储 | 第一轮使用平台 API：Credential Manager / Keychain Services / libsecret Secret Service；QtKeychain 后续评估 | 见 §11 |
 | 日志 | **spdlog**（SDK）+ Qt 桥接 | 见 §12 |
 | Crash | Phase 2 本地 dump；**crashpad 推迟 Phase 4** | 见 §12 |
 | CI | **GitHub Actions matrix（win/mac/linux），第一 commit 起** | 见 §9 |
@@ -337,7 +337,7 @@ cpp-app/
 | 10 | 三平台打包差异 | 中 | 打包脚本从 Phase 2 的 CI artifact 就开始演练，不留到 Phase 4 一次性做 |
 | 11 | Linux 发行版差异（glibc、桌面环境） | 中 | AppImage + 老 LTS 容器构建；Secret Service 缺失走加密文件降级 |
 | 12 | 自动更新跨平台复杂 | 中 | Phase 2-3 只做版本检查提示；Phase 4 再分平台实现 |
-| 13 | token 安全存储平台差异 | 中 | QtKeychain 统一封装 + 降级路径明确（§11） |
+| 13 | token 安全存储平台差异 | 中 | 第一轮 secure TokenStore 三平台 backend 已接入；QtKeychain 作为后续封装层评估，降级路径必须明确（§11） |
 | 14 | crash/logging 差异 | 中 | spdlog 统一格式；RelWithDebInfo 符号三平台都保存；crashpad 推迟 |
 | 15 | CI matrix 维护成本 | 中 | 只维护 3 个 P0 job；P1 平台复用 artifact 不加 job |
 | 16 | Qt 体积过大 | 低中 | 只链接所需模块；AppImage/installer 压缩；接受 ~40-80MB 的桌面现实 |
@@ -409,8 +409,9 @@ NSIS + portable zip、.app/.dmg + codesign + notarization、AppImage + deb、自
 13. TokenStore strategy。✅ 已创建 `docs/adr/ADR_CPP_TOKENSTORE_STRATEGY.md`：短期 `MemoryTokenStore` 仅用于 tests/dev session；生产实现使用平台安全凭证库；Qt 阶段可评估 QtKeychain；明文配置文件存 token 禁止；encrypted file fallback 需要单独 ADR。`cpp-app/sdk/core/MemoryTokenStore.hpp` 已加入并由 `mrright_cpp_tokenstore_tests` 覆盖。
 14. Auth session flow 第一批。✅ 已新增 `cpp-app/sdk/core/AuthSession.hpp`，组合 `AuthClient`、`TokenStore`、`ApiClientConfig` 和 injected `HttpClient`，支持 login 后存 token、从 TokenStore 生成 bearer config、clear session、logout 后清理 token。`mrright_cpp_auth_session_tests` 使用 `MockHttpClient` 覆盖 strict envelope 成功/失败、Authorization header 注入、token 不进入 URL/body、不调用 admin、不访问真实网络。
 15. Secure TokenStore backend 第一批。✅ 已新增 `cpp-app/sdk/platform/SecureTokenStore.hpp` 工厂入口和 Windows `WindowsCredentialTokenStore`，使用 Windows Credential Manager 保存 visitor token，credential target 为 `mrright.blog.visitor_token`；非 Windows 平台明确 unsupported（返回 `nullptr`），不降级到 `MemoryTokenStore` 或明文文件。`mrright_cpp_secure_tokenstore_tests` 覆盖 non-Windows unsupported 行为和 Windows guarded save/load/clear。
-16. macOS Keychain TokenStore backend。✅ 已新增 `cpp-app/sdk/platform/MacOSKeychainTokenStore.hpp` / `.cpp`，使用 Security.framework Keychain Services 保存 visitor token，service 为 `mrright.blog`，account 为 `visitor_token`；`SecureTokenStore` 工厂在 macOS 返回 Keychain backend，Linux 继续 explicit unsupported。测试覆盖 macOS factory support 和 guarded fake-token save/load/clear，Keychain interaction/permission 类 CI 限制会清晰 skip runtime round-trip。
+16. macOS Keychain TokenStore backend。✅ 已新增 `cpp-app/sdk/platform/MacOSKeychainTokenStore.hpp` / `.cpp`，使用 Security.framework Keychain Services 保存 visitor token，service 为 `mrright.blog`，account 为 `visitor_token`；`SecureTokenStore` 工厂在 macOS 返回 Keychain backend。测试覆盖 macOS factory support 和 guarded fake-token save/load/clear，Keychain interaction/permission 类 CI 限制会清晰 skip runtime round-trip。
 17. Optional libcurl backend spike。✅ 已新增 `cpp-app/vcpkg.json`（仅 `curl`）、`CurlHttpClient` concrete backend、`MRRIGHT_ENABLE_CURL_HTTP` CMake option wiring；默认 OFF 时不找 libcurl、不要求 vcpkg，mock build/tests 继续无依赖通过。未做 local API smoke、未访问生产 API。
 18. libcurl-enabled build validation。✅ 已加入独立 CI job `cpp-app-curl-vcpkg`：Ubuntu runner 手动 bootstrap vcpkg，使用 manifest 解析 `curl`，以 `MRRIGHT_ENABLE_CURL_HTTP=ON` 配置 `cpp-app/build-curl`，构建并运行 CTest。CMake 在 option 开启时会编译/link `mrright_sdk_curl_http` 和 no-network `mrright_cpp_curl_compile_tests`，验证 curl backend 进入构建链路但不访问真实 API。
 19. local/dev API smoke test 入口。✅ 已新增 opt-in `MRRIGHT_ENABLE_LOCAL_API_SMOKE=OFF` CMake option 和 `cpp-app/tests/integration/local_api_smoke.cpp`。只有同时开启 `MRRIGHT_ENABLE_CURL_HTTP=ON` 与 `MRRIGHT_ENABLE_LOCAL_API_SMOKE=ON` 时才构建/注册 CTest；运行时必须通过 `MRRIGHT_API_BASE_URL` 指向 `localhost`、`127.0.0.1` 或 `[::1]`，否则拒绝运行。覆盖 `/api/v1/health`、`/api/v1/projects` 和不存在 project 的 404 strict envelope；不登录、不注册、不调用 admin、不上传、不写数据库、不访问生产 API。
-20. 下一步：Linux Secret Service TokenStore、SQLite/local cache strategy、Qt/QML prototype、packaging strategy spike。
+20. Linux Secret Service TokenStore backend。✅ 已新增 `cpp-app/sdk/platform/LinuxSecretServiceTokenStore.hpp` / `.cpp`，Linux 下通过 system `libsecret-1` / Secret Service 保存 visitor token，schema 为 `mrright.blog`，attribute 为 `account=visitor_token`；`MRRIGHT_ENABLE_LINUX_SECRET_SERVICE=ON` 为 Linux 默认，缺少 dev package 时 CMake 清晰失败，显式关闭时 Linux secure backend 才 unsupported。运行时若 D-Bus session / desktop keyring 不可用，fake-token round-trip 测试清晰 skip，不伪造成 secure backend。
+21. 下一步：SQLite/local cache strategy、Qt/QML prototype、packaging strategy spike。

@@ -73,15 +73,19 @@ Explicitly rejected:
 ## 5. Testing Strategy
 
 - Unit tests may use fake token strings with `MemoryTokenStore`.
-- TokenStore tests must not access the network.
-- TokenStore tests must not depend on platform credential services.
-- TokenStore tests must assert save/load/clear/overwrite behavior and keep the
-  implementation file-free.
+- MemoryTokenStore tests must not access the network or depend on platform
+  credential services.
+- Secure platform backend tests may compile/link the OS credential backend and
+  use fake-token guarded runtime round-trips. If the OS credential session is
+  unavailable in CI, tests must clearly skip instead of falling back to memory
+  or plaintext storage.
+- TokenStore tests must assert save/load/clear/overwrite behavior and keep all
+  implementations file-free.
 
 ## 6. Future Work
 
-- Add platform secure TokenStore implementations after the app/platform layer
-  is ready.
+- Keep hardening platform secure TokenStore implementations after the first
+  Windows/macOS/Linux backend pass.
 - Decide whether QtKeychain is the right implementation layer during the
   Qt/QML prototype phase.
 - If Linux Secret Service is unavailable, design any fallback in a separate

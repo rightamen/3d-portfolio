@@ -13,6 +13,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(MRRIGHT_ENABLE_CURL_HTTP "Enable future libcurl-backed HttpClient implementation" OFF)
 option(MRRIGHT_ENABLE_LOCAL_API_SMOKE "Enable opt-in local/dev API smoke tests that perform loopback HTTP requests" OFF)
+option(MRRIGHT_ENABLE_LINUX_SECRET_SERVICE "Enable Linux Secret Service TokenStore backend via system libsecret-1" ON)
 option(MRRIGHT_USE_TEMPORARY_JSON "Use the dependency-free temporary JsonValue parser fallback instead of the default nlohmann/json backend" OFF)
 
 if(MRRIGHT_ENABLE_LOCAL_API_SMOKE AND NOT MRRIGHT_ENABLE_CURL_HTTP)
@@ -82,6 +83,24 @@ elseif(APPLE)
     ${SECURITY_FRAMEWORK}
     ${COREFOUNDATION_FRAMEWORK}
   )
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  if(MRRIGHT_ENABLE_LINUX_SECRET_SERVICE)
+    find_package(PkgConfig QUIET)
+    if(NOT PkgConfig_FOUND)
+      message(FATAL_ERROR "MRRIGHT_ENABLE_LINUX_SECRET_SERVICE=ON requires pkg-config to find system libsecret-1. Install pkg-config and libsecret-1 development headers, or configure with -DMRRIGHT_ENABLE_LINUX_SECRET_SERVICE=OFF for an explicit unsupported Linux secure TokenStore.")
+    endif()
+    pkg_check_modules(LIBSECRET IMPORTED_TARGET libsecret-1)
+    if(NOT LIBSECRET_FOUND)
+      message(FATAL_ERROR "MRRIGHT_ENABLE_LINUX_SECRET_SERVICE=ON requires system libsecret-1 development headers. Install libsecret-1-dev or the distro equivalent, or configure with -DMRRIGHT_ENABLE_LINUX_SECRET_SERVICE=OFF for an explicit unsupported Linux secure TokenStore.")
+    endif()
+    target_sources(mrright_sdk_platform_tokenstore PRIVATE
+      sdk/platform/LinuxSecretServiceTokenStore.cpp
+    )
+    target_compile_definitions(mrright_sdk_platform_tokenstore PUBLIC MRRIGHT_ENABLE_LINUX_SECRET_SERVICE)
+    target_link_libraries(mrright_sdk_platform_tokenstore PUBLIC PkgConfig::LIBSECRET)
+  else()
+    message(STATUS "Linux Secret Service TokenStore backend disabled by MRRIGHT_ENABLE_LINUX_SECRET_SERVICE=OFF.")
+  endif()
 endif()
 
 add_executable(mrright_cpp_smoke

@@ -4,6 +4,11 @@
 #include "sdk/platform/WindowsCredentialTokenStore.hpp"
 #elif defined(__APPLE__)
 #include "sdk/platform/MacOSKeychainTokenStore.hpp"
+#elif defined(__linux__) && defined(MRRIGHT_ENABLE_LINUX_SECRET_SERVICE)
+#include "sdk/platform/LinuxSecretServiceTokenStore.hpp"
+
+#include <gio/gio.h>
+#include <libsecret/secret.h>
 #endif
 
 #include <exception>
@@ -30,10 +35,14 @@ void testFactorySupportMatchesPlatform() {
   expect(mrright::sdk::platform::isPlatformSecureTokenStoreSupported(), "macOS reports secure TokenStore support");
   auto store = mrright::sdk::platform::createPlatformSecureTokenStore();
   expect(store != nullptr, "macOS factory returns a secure TokenStore");
-#else
-  expect(!mrright::sdk::platform::isPlatformSecureTokenStoreSupported(), "non-Windows reports secure TokenStore unsupported");
+#elif defined(__linux__) && defined(MRRIGHT_ENABLE_LINUX_SECRET_SERVICE)
+  expect(mrright::sdk::platform::isPlatformSecureTokenStoreSupported(), "Linux reports secure TokenStore support");
   auto store = mrright::sdk::platform::createPlatformSecureTokenStore();
-  expect(store == nullptr, "non-Windows factory returns nullptr instead of an insecure fallback");
+  expect(store != nullptr, "Linux factory returns a Secret Service TokenStore");
+#else
+  expect(!mrright::sdk::platform::isPlatformSecureTokenStoreSupported(), "platform reports secure TokenStore unsupported");
+  auto store = mrright::sdk::platform::createPlatformSecureTokenStore();
+  expect(store == nullptr, "unsupported platform factory returns nullptr instead of an insecure fallback");
 #endif
 }
 
@@ -115,6 +124,59 @@ void testMacOSKeychainStoreRoundTrip() {
     throw;
   }
 }
+#elif defined(__linux__) && defined(MRRIGHT_ENABLE_LINUX_SECRET_SERVICE)
+bool isSkippableSecretServiceError(const mrright::sdk::platform::LinuxSecretServiceError& error) {
+  if (error.domain() == SECRET_ERROR && error.code() == SECRET_ERROR_IS_LOCKED) return true;
+  if (error.domain() == G_DBUS_ERROR) return true;
+  if (error.domain() == G_IO_ERROR) {
+    return error.code() == G_IO_ERROR_DBUS_ERROR ||
+           error.code() == G_IO_ERROR_NOT_FOUND ||
+           error.code() == G_IO_ERROR_NOT_CONNECTED ||
+           error.code() == G_IO_ERROR_CONNECTION_REFUSED ||
+           error.code() == G_IO_ERROR_FAILED ||
+           error.code() == G_IO_ERROR_CANCELLED;
+  }
+  return false;
+}
+
+void testLinuxSecretServiceStoreRoundTrip() {
+  try {
+    mrright::sdk::platform::LinuxSecretServiceTokenStore store("visitor_token_test");
+    struct ClearTestSecretOnExit {
+      mrright::sdk::platform::LinuxSecretServiceTokenStore& store;
+      ~ClearTestSecretOnExit() {
+        try {
+          store.clearVisitorToken();
+        } catch (...) {
+        }
+      }
+    } cleanup{store};
+    const std::string firstToken = "mrright-test-visitor-token";
+    const std::string secondToken = "mrright-test-visitor-token-2";
+
+    store.clearVisitorToken();
+    expect(!store.hasVisitorToken(), "Linux Secret Service store starts empty after clear");
+
+    store.saveVisitorToken(firstToken);
+    expect(store.hasVisitorToken(), "Linux Secret Service store has token after save");
+    expect(store.loadVisitorToken().value_or("") == firstToken, "Linux Secret Service store loads saved token");
+
+    store.saveVisitorToken(secondToken);
+    expect(store.loadVisitorToken().value_or("") == secondToken, "Linux Secret Service store replaces saved token");
+
+    store.clearVisitorToken();
+    expect(!store.hasVisitorToken(), "Linux Secret Service store has no token after clear");
+    expect(!store.loadVisitorToken().has_value(), "Linux Secret Service store load returns empty after clear");
+  } catch (const mrright::sdk::platform::LinuxSecretServiceError& error) {
+    if (isSkippableSecretServiceError(error)) {
+      std::cout << "Linux Secret Service runtime round-trip skipped: D-Bus session or desktop keyring is not available. "
+                << error.what() << '\n';
+      skipped = true;
+      return;
+    }
+    throw;
+  }
+}
 #endif
 
 } // namespace
@@ -129,6 +191,13 @@ int main() {
   } catch (const std::exception& error) {
     ++failures;
     std::cerr << "FAIL: macOS Keychain runtime round-trip failed: " << error.what() << '\n';
+  }
+#elif defined(__linux__) && defined(MRRIGHT_ENABLE_LINUX_SECRET_SERVICE)
+  try {
+    testLinuxSecretServiceStoreRoundTrip();
+  } catch (const std::exception& error) {
+    ++failures;
+    std::cerr << "FAIL: Linux Secret Service runtime round-trip failed: " << error.what() << '\n';
   }
 #endif
 

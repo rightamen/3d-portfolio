@@ -29,8 +29,14 @@ pure SDK layer or Qt date/time types at the UI binding boundary.
 
 Local builds require CMake 3.20+ and a C++20-capable compiler. The default
 parser is nlohmann/json, so the default build should use the vcpkg toolchain
-and `cpp-app/vcpkg.json` manifest. The fallback build remains dependency-free
-by enabling `MRRIGHT_USE_TEMPORARY_JSON=ON`.
+and `cpp-app/vcpkg.json` manifest. The temporary parser fallback still avoids
+the JSON dependency by enabling `MRRIGHT_USE_TEMPORARY_JSON=ON`.
+
+On Linux, the secure TokenStore backend is enabled by default and requires the
+system `libsecret-1` development package plus pkg-config, for example
+`libsecret-1-dev` on Ubuntu/Debian. Configure with
+`-DMRRIGHT_ENABLE_LINUX_SECRET_SERVICE=OFF` only when you intentionally want
+Linux secure token storage to be explicit unsupported.
 
 From the repository root:
 
@@ -134,8 +140,8 @@ c++ -std=c++20 -Wall -Wextra -Wpedantic -Icpp-app \
   logout/clear-session flows.
 - `sdk/platform/SecureTokenStore.hpp`: a platform secure TokenStore factory.
   Windows returns a Credential Manager backend, macOS returns a Keychain
-  backend, and Linux returns unsupported (`nullptr`) until Secret Service is
-  implemented.
+  backend, and Linux returns a Secret Service backend when compiled with
+  `MRRIGHT_ENABLE_LINUX_SECRET_SERVICE=ON`.
 - `sdk/core/JsonValue.hpp`: a deliberately small, dependency-free temporary
   JSON parser retained only as an explicit fallback for emergency
   no-dependency builds. It is internal to the SDK prototype and must stay
@@ -170,7 +176,6 @@ c++ -std=c++20 -Wall -Wextra -Wpedantic -Icpp-app \
 - No generated OpenAPI client.
 - No admin endpoints.
 - No legacy `/api/*` support.
-- No Linux Secret Service implementation yet.
 - No plaintext token storage.
 - No SQLite cache, download manager, Range/ETag handling, or packaging logic.
 
@@ -197,10 +202,27 @@ On macOS, `createPlatformSecureTokenStore()` returns a
 service `mrright.blog` and account `visitor_token`. CMake links
 Security.framework only on macOS.
 
-Linux Secret Service is still pending. On unsupported platforms, the
-secure-store factory returns `nullptr`; it does not silently fall back to
-plaintext files or `MemoryTokenStore`. QtKeychain may be evaluated during the
-Qt/QML phase as a wrapper over platform stores.
+On Linux, `createPlatformSecureTokenStore()` returns a
+`LinuxSecretServiceTokenStore` backed by libsecret / Secret Service when
+compiled with `MRRIGHT_ENABLE_LINUX_SECRET_SERVICE=ON` (the Linux default).
+It uses schema `mrright.blog` and attribute `account=visitor_token`. The Linux
+build uses the system `libsecret-1` development package discovered through
+pkg-config; it does not add Qt or vcpkg dependencies. If `libsecret-1` headers
+are unavailable while this option is enabled, CMake fails clearly instead of
+pretending a secure backend exists. Developers can configure
+`-DMRRIGHT_ENABLE_LINUX_SECRET_SERVICE=OFF` only to make Linux explicitly
+unsupported for secure token storage.
+
+At runtime, Linux Secret Service usually requires a desktop keyring provider
+such as GNOME Keyring or KWallet plus a usable D-Bus session. In headless or
+minimal environments the runtime round-trip test may return CTest skip code 77
+with a clear message. That skip means the backend compiled and linked but the
+runtime Secret Service session is unavailable; it must not be treated as a
+plaintext or memory fallback.
+
+On unsupported platforms, the secure-store factory returns `nullptr`; it does
+not silently fall back to plaintext files or `MemoryTokenStore`. QtKeychain may
+be evaluated during the Qt/QML phase as a wrapper over platform stores.
 
 Plaintext token storage is forbidden. Do not write bearer tokens to normal
 JSON/config files, logs, diagnostics, examples, `PROJECT_PROGRESS.md`, or crash
@@ -227,9 +249,9 @@ Current mock-driven coverage includes:
 
 `MemoryTokenStore` remains only for tests and short-lived development sessions.
 Production session persistence must use a supported platform secure
-`TokenStore`; Windows Credential Manager and macOS Keychain are currently
-supported, while Linux Secret Service is still pending. Tokens must not be
-written to plaintext files or logs.
+`TokenStore`; Windows Credential Manager, macOS Keychain, and Linux Secret
+Service are currently supported. Tokens must not be written to plaintext files
+or logs.
 
 ## JSON Parser Backend
 
@@ -329,7 +351,8 @@ The curl-enabled CTest path includes a compile/link-only
 is actually compiled and linked when the option is enabled, but it does not
 perform network I/O or contact any real API.
 
-Do not commit `cpp-app/build/`, `cpp-app/build-curl/`, `vcpkg_installed/`, or
+Do not commit `cpp-app/build/`, `cpp-app/build-json/`,
+`cpp-app/build-curl/`, `cpp-app/build-curl-smoke/`, `vcpkg_installed/`, or
 dependency caches. Real API smoke tests are not part of this batch; when added,
 they must point at a local/dev server and never production by default.
 
@@ -374,9 +397,13 @@ Current coverage:
 
 ## Dependency Strategy
 
-The current skeleton has no external C++ runtime dependencies. It should keep
-building with plain CMake and a C++20 compiler so `MockHttpClient` tests remain
-available without package setup.
+The current skeleton keeps SDK core tests available without network access or
+production services. The default parser uses vcpkg-managed `nlohmann-json`, the
+optional curl backend uses vcpkg-managed curl, and the Linux secure TokenStore
+uses the system `libsecret-1` development package discovered through
+pkg-config. The temporary parser fallback avoids the JSON dependency but still
+compiles the Linux Secret Service backend unless
+`MRRIGHT_ENABLE_LINUX_SECRET_SERVICE=OFF` is configured explicitly.
 
 The accepted dependency strategy is recorded in
 `docs/adr/ADR_CPP_DEPENDENCY_MANAGER_STRATEGY.md`:
@@ -386,8 +413,11 @@ The accepted dependency strategy is recorded in
 - `cpp-app/vcpkg.json` currently contains only the libcurl dependency needed
   for the optional backend plus `nlohmann-json` for the default parser
   backend.
-- Manage future libcurl, `nlohmann-json`, sqlite3, and similar backend
-  libraries through vcpkg unless a concrete blocker appears.
+- Manage future libcurl, `nlohmann-json`, sqlite3, and similar portable
+  backend libraries through vcpkg unless a concrete blocker appears.
+- Use the distro/system `libsecret-1` development package for Linux Secret
+  Service; do not add Qt or a vcpkg dependency for this backend in the current
+  CMake path.
 - Evaluate Qt separately during the Qt/QML phase; it may use vcpkg, the
   official Qt installer, or aqtinstall.
 - Do not commit `vcpkg_installed/`, dependency caches, build outputs, or
@@ -400,6 +430,5 @@ The accepted dependency strategy is recorded in
    default SDK implementation.
 3. Integrate Qt/QML once the SDK boundary is stable.
 4. Implement SQLite cache metadata and content-addressed blob storage.
-5. Implement the remaining secure `TokenStore` provider: Linux Secret Service.
-   Any encrypted-file fallback requires a separate ADR.
+5. Implement SQLite cache metadata and content-addressed blob storage.
 6. Spike packaging scripts for NSIS, dmg/notarization, and AppImage.
