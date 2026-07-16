@@ -165,6 +165,8 @@ if(MRRIGHT_ENABLE_QT_UI)
   qt_add_executable(mrright_qt_shell
     app/ui/qt/main_qt.cpp
     app/ui/qt/AuthService.hpp
+    app/ui/qt/AuthSessionService.cpp
+    app/ui/qt/AuthSessionService.hpp
     app/ui/qt/AppController.cpp
     app/ui/qt/AppController.hpp
     app/ui/qt/MockAuthService.cpp
@@ -187,6 +189,8 @@ if(MRRIGHT_ENABLE_QT_UI)
   add_executable(mrright_qt_appcontroller_tests
     tests/unit/qt_appcontroller_tests.cpp
     app/ui/qt/AuthService.hpp
+    app/ui/qt/AuthSessionService.cpp
+    app/ui/qt/AuthSessionService.hpp
     app/ui/qt/AppController.cpp
     app/ui/qt/AppController.hpp
     app/ui/qt/MockAuthService.cpp
@@ -200,6 +204,18 @@ if(MRRIGHT_ENABLE_QT_UI)
     Qt6::Core
   )
   add_test(NAME mrright_qt_appcontroller_tests COMMAND mrright_qt_appcontroller_tests)
+
+  add_executable(mrright_qt_authsession_service_tests
+    tests/unit/qt_authsession_service_tests.cpp
+    app/ui/qt/AuthService.hpp
+    app/ui/qt/AuthSessionService.cpp
+    app/ui/qt/AuthSessionService.hpp
+  )
+  target_link_libraries(mrright_qt_authsession_service_tests PRIVATE
+    mrright_sdk_core
+    Qt6::Core
+  )
+  add_test(NAME mrright_qt_authsession_service_tests COMMAND mrright_qt_authsession_service_tests)
 endif()
 
 if(MSVC)
@@ -228,6 +244,9 @@ if(MSVC)
   if(TARGET mrright_qt_appcontroller_tests)
     target_compile_options(mrright_qt_appcontroller_tests PRIVATE /W4 /utf-8)
   endif()
+  if(TARGET mrright_qt_authsession_service_tests)
+    target_compile_options(mrright_qt_authsession_service_tests PRIVATE /W4 /utf-8)
+  endif()
 else()
   target_compile_options(mrright_app_platform PRIVATE -Wall -Wextra -Wpedantic)
   target_compile_options(mrright_sdk_platform_tokenstore PRIVATE -Wall -Wextra -Wpedantic)
@@ -253,5 +272,8 @@ else()
   endif()
   if(TARGET mrright_qt_appcontroller_tests)
     target_compile_options(mrright_qt_appcontroller_tests PRIVATE -Wall -Wextra -Wpedantic)
+  endif()
+  if(TARGET mrright_qt_authsession_service_tests)
+    target_compile_options(mrright_qt_authsession_service_tests PRIVATE -Wall -Wextra -Wpedantic)
   endif()
 endif()

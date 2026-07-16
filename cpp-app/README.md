@@ -273,7 +273,7 @@ cmake -S cpp-app -B cpp-app/build-qt -G Ninja \
   -DMRRIGHT_ENABLE_QT_UI=ON \
   -DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake
 cmake --build cpp-app/build-qt --target mrright_qt_shell
-ctest --test-dir cpp-app/build-qt --output-on-failure -R mrright_qt_appcontroller_tests
+ctest --test-dir cpp-app/build-qt --output-on-failure -R "mrright_qt_"
 ```
 
 The shell creates a `QGuiApplication`, loads `Main.qml`, and exposes an
@@ -295,6 +295,27 @@ endpoints, read environment variables, or create local cache state. Neither
 `MockAuthService` nor `AppController` stores or prints the password, and no
 password or token property is exposed to QML.
 
+`AuthSessionService` is now available as a second, injectable `AuthService`
+implementation in the Qt adapter layer. It owns an injected `HttpClient` and
+`TokenStore` for their full required lifetime and delegates session operations
+to an SDK `AuthSession`. It has no production default constructor: callers
+must supply the abstractions explicitly, so the adapter does not create
+`CurlHttpClient`, a platform `SecureTokenStore`, a base URL, or any other real
+network configuration.
+
+The adapter converts `QString` credentials only at the Qt/SDK boundary. On
+login success it displays the returned non-sensitive display name, handle, or
+email (in that order), then falls back to the trimmed submitted email. On SDK
+error it exposes `ApiError::message`, not the raw code, response body, token,
+or Authorization header. Its signed-in state always comes from
+`AuthSession::hasSession()` and therefore from the injected `TokenStore`; only
+the non-sensitive user label and UI message are cached. A stored session has no
+profile payload, so a newly constructed adapter uses the explicit generic
+label `Signed in` until a successful login supplies user data. A failed login
+does not clear an already stored session, matching the current `AuthSession`
+contract. Logout clears local session state even when the strict logout
+response is an error, also matching the SDK contract.
+
 When `MRRIGHT_ENABLE_QT_UI=ON`, CMake also builds
 `mrright_qt_appcontroller_tests`. These unit tests directly exercise
 `MockAuthService` state and validation, then inject a lightweight fake service
@@ -304,10 +325,20 @@ login, do not access API endpoints, do not read or write TokenStore, and do not
 persist tokens. Default SDK builds keep `MRRIGHT_ENABLE_QT_UI=OFF`, so they do
 not find Qt, build the Qt shell, or build the Qt tests.
 
-The next auth batch will add a real Qt `AuthService` adapter backed by
-`AuthSession` and a supported secure platform `TokenStore`. That adapter is not
-part of this batch. `AuthService` remains under `app/ui/qt`, and no Qt type or
-dependency enters the SDK core public API.
+CMake also builds `mrright_qt_authsession_service_tests` when Qt UI support is
+enabled. These tests use only `MockHttpClient`, `MemoryTokenStore`,
+`ApiClientConfig`, `AuthSession`, and `AuthSessionService`. They verify strict
+`/api/v1/auth/login` and `/api/v1/auth/logout` request construction, login and
+logout success/error behavior, stored-session restoration, safe parser and
+contract errors, message clearing, token placement, and `AuthService`
+polymorphism without a display server or real HTTP request.
+
+The Qt shell still constructs `AppController` with `MockAuthService` by
+default. Enabling real authentication remains a later task: local-only real
+`AuthSession` wiring, platform secure `TokenStore` injection, and asynchronous
+UI loading/error mapping must be designed before switching the shell. All Qt
+types remain under `app/ui/qt`; no Qt type or dependency enters the SDK core
+public API.
 
 ## JSON Parser Backend
 

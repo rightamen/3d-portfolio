@@ -127,5 +127,5 @@ jobs:
       - name: Build Qt shell
         run: cmake --build cpp-app/build-qt
 
-      - name: Test Qt AppController
-        run: ctest --test-dir cpp-app/build-qt --output-on-failure -R mrright_qt_appcontroller_tests
+      - name: Test Qt auth adapters
+        run: ctest --test-dir cpp-app/build-qt --output-on-failure -R "mrright_qt_"
