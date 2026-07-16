@@ -1,5 +1,56 @@
 # mrright.blog 项目进度记录
 
+## 2026-07-16：C++ Qt AuthSessionService adapter 第一批
+
+结论：本轮在 Qt UI adapter 层新增 `AuthSessionService`，实现现有 `AuthService` boundary 并复用 SDK `AuthSession`。adapter 不提供 production default backend，而是拥有显式注入的 `HttpClient` 与 `TokenStore`，从而保证 `AuthSession` 引用依赖的生命周期安全。测试仅使用 `MockHttpClient` + `MemoryTokenStore`，不创建 `CurlHttpClient`，不访问真实或本地 API。Qt shell 的 `main_qt.cpp` 未修改，默认实现继续是 `MockAuthService`。SDK core 继续 Qt-free。**未部署、未改数据库、未读取或修改 `.env`/token/secret、未访问 production API、未访问 local API、未启用真实网络、未改 Web/API/OpenAPI contract、未修改 QML/Qt 视觉、未做 cache、未做 packaging、未提交构建产物**。
+
+完成内容：
+
+- 新增 `cpp-app/app/ui/qt/AuthSessionService.hpp` / `.cpp`：
+  - 实现 `AuthService` 的 login、logout、session state、safe user label、message 和 clear-message 操作。
+  - 拥有 injected `std::shared_ptr<HttpClient>`、`std::unique_ptr<TokenStore>` 与基于它们创建的 `AuthSession`；不使用裸 owning pointer。
+  - `QString` / UTF-8 `std::string` 转换只发生在 Qt adapter 内；Qt 类型未进入 SDK core。
+  - `isLoggedIn()` 直接调用 `AuthSession::hasSession()`，不维护可能漂移的独立 bool；只缓存非敏感 user label 和 UI message。
+  - login success 使用 SDK user 的 displayName、handle、email 或 trimmed submitted email 作为安全 label；existing stored session 无 profile payload 时使用明确的 generic `Signed in` fallback。
+  - SDK error 集中使用 `ApiError.message` 映射为 UI message，不展示 raw code、response body、Authorization header 或 token。
+  - logout success/error 都遵守既有 `AuthSession::logoutAndClearSession()` 契约：本地 session 被清除，strict error message 仍可显示。
+- 新增 `cpp-app/tests/unit/qt_authsession_service_tests.cpp`：
+  - 使用 `QCoreApplication`，不启动 GUI/window，不运行 QML automation。
+  - 覆盖 empty/existing session、login success、strict error、failed replacement login、invalid JSON、non-envelope response、missing mock response、logout success/strict error、clearMessage 和 `AuthService` polymorphism。
+  - 验证 strict `POST /api/v1/auth/login` / `POST /api/v1/auth/logout` request construction，不使用 legacy/admin path。
+  - 验证 login body 精确只有 email/password；response token 只进入 `MemoryTokenStore`，logout 时只进入 Authorization header，不进入 URL/body/UI result/label/message。
+- 更新 `cpp-app/tests/unit/qt_appcontroller_tests.cpp`：
+  - 注入由 `MockHttpClient` + `MemoryTokenStore` 驱动的 `AuthSessionService`，确认 controller 继续只通过 `AuthService` polymorphism 工作。
+  - 确认 adapter-specific type 不进入 QML property surface。
+- 更新 `cpp-app/CMakeLists.txt` 和 `.github/workflows/cpp-app.yml`：
+  - `MRRIGHT_ENABLE_QT_UI=OFF` 默认行为不变；OFF 时不找 Qt、不构建 adapter/tests。
+  - ON 时 Qt shell 编译 adapter，但默认仍实例化 `MockAuthService`；新增并注册 `mrright_qt_authsession_service_tests`。
+  - Qt CI job 运行全部 `mrright_qt_` tests，不启动 GUI、Node server 或真实 HTTP backend。
+- 更新 `cpp-app/README.md` 和 `docs/CPP_APP_MIGRATION_PLAN.md`：
+  - 记录 AuthSession adapter 第一批完成、existing-session label 限制和既有 SDK login/logout session 契约。
+  - 后续保留 asynchronous auth API、local-only real login、platform SecureTokenStore injection、project list、cache 和 packaging。
+
+本轮本地验证结果：
+
+- `git diff --check`：通过。
+- `npm run lint`：通过。
+- `npm run build`：通过；产生的 tracked `dist/` 变动已 `git restore dist`，未提交。
+- `npm run test:api`：通过（37 passed）。
+- `npm run test:api:db`：通过（18 passed，一次性 PostgreSQL cluster 已销毁）。
+- `npm run test:openapi`：通过（200 个本地 `$ref` 可解析；27 个 API error code 与 OpenAPI enum 一致）。
+- 默认 nlohmann/json CMake：configure/build 通过；CTest 6/6 无失败，其中 `mrright_cpp_secure_tokenstore_tests` 因本机 D-Bus session / desktop keyring 不可用而 skipped。
+- temporary parser fallback CMake：configure/build 通过；CTest 5/5 无失败，其中 `mrright_cpp_secure_tokenstore_tests` 因本机 D-Bus session / desktop keyring 不可用而 skipped。
+- 本地 Qt configure：未通过；本机没有 Qt6 CMake package（`Qt6Config.cmake` / `qt6-config.cmake`）。按要求未安装新依赖、未伪造本地 Qt 成功；Qt shell、controller test 和新 adapter test 由 GitHub Actions optional Qt/QML shell job 验证。
+
+后续待办保留：
+
+1. asynchronous auth service API
+2. local-only real login integration
+3. platform SecureTokenStore injection
+4. project list UI
+5. local cache strategy
+6. packaging strategy spike
+
 ## 2026-07-16：C++ Qt UI AuthService integration boundary 第一批
 
 结论：本轮在现有 optional Qt/QML mock auth flow 上新增 Qt UI 层 `AuthService` boundary。`AppController` 不再保存或实现完整 mock authentication 状态逻辑，而是默认创建 `MockAuthService`，并支持注入 test fake / future adapter；登录、登出、状态读取和 message clearing 均通过 service 完成。此批只建立下一批真实 `AuthSession` adapter 所需边界，未调用真实 `AuthSession::login`。SDK core 继续 Qt-free；Qt build/tests 继续仅在 `MRRIGHT_ENABLE_QT_UI=ON` 时启用。**未部署、未改数据库、未读取或修改 `.env`/token/secret、未访问 production API、未访问 local API、未改 Web/API/OpenAPI contract 行为、未做 cache、未做 secure TokenStore 新实现、未做 packaging、未提交构建产物**。

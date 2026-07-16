@@ -1,6 +1,9 @@
 #include "app/ui/qt/AppController.hpp"
+#include "app/ui/qt/AuthSessionService.hpp"
 #include "app/ui/qt/AuthService.hpp"
 #include "app/ui/qt/MockAuthService.hpp"
+#include "sdk/core/MemoryTokenStore.hpp"
+#include "sdk/network/HttpClient.hpp"
 
 #include <QCoreApplication>
 #include <QMetaObject>
@@ -14,9 +17,12 @@
 namespace {
 
 using mrright::app::ui::qt::AppController;
+using mrright::app::ui::qt::AuthSessionService;
 using mrright::app::ui::qt::AuthService;
 using mrright::app::ui::qt::AuthServiceResult;
 using mrright::app::ui::qt::MockAuthService;
+using mrright::sdk::core::MemoryTokenStore;
+using mrright::sdk::network::MockHttpClient;
 
 int fail(const char* message) {
   std::cerr << message << '\n';
@@ -316,6 +322,41 @@ int expectSensitivePropertiesAreNotExposed() {
   return 0;
 }
 
+int expectAuthSessionServiceInjection() {
+  auto httpClient = std::make_shared<MockHttpClient>();
+  httpClient->enqueue({200, {}, R"json({
+    "data": {
+      "session": {"token": "controller-adapter-fixture", "expiresAt": "2026-12-31T00:00:00Z"},
+      "user": {"id": "controller-user", "email": "controller@example.test", "displayName": "Controller User"}
+    },
+    "pagination": {},
+    "error": null
+  })json"});
+  auto service = std::make_unique<AuthSessionService>(
+    httpClient,
+    std::make_unique<MemoryTokenStore>()
+  );
+  AppController controller(std::move(service));
+
+  controller.mockLogin(
+    QStringLiteral("controller@example.test"),
+    QStringLiteral("fixture-password")
+  );
+
+  if (!controller.isLoggedIn()) return fail("controller should accept an injected AuthSessionService");
+  if (controller.currentUserLabel() != QStringLiteral("Signed in as Controller User")) {
+    return fail("controller should expose injected AuthSessionService state through AuthService");
+  }
+  if (httpClient->requests().size() != 1 || httpClient->requests().front().path != "/api/v1/auth/login") {
+    return fail("injected AuthSessionService should use only the mock strict-v1 request");
+  }
+  if (controller.metaObject()->indexOfProperty("authSessionService") != -1) {
+    return fail("AuthSessionService-specific types must not be exposed to QML");
+  }
+
+  return 0;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -329,6 +370,7 @@ int main(int argc, char** argv) {
   if (const int result = expectInjectedControllerDelegates(); result != 0) return result;
   if (const int result = expectInjectedFailureAndNotifySignals(); result != 0) return result;
   if (const int result = expectSensitivePropertiesAreNotExposed(); result != 0) return result;
+  if (const int result = expectAuthSessionServiceInjection(); result != 0) return result;
 
   return 0;
 }
