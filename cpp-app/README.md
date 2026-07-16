@@ -277,29 +277,37 @@ ctest --test-dir cpp-app/build-qt --output-on-failure -R mrright_qt_appcontrolle
 ```
 
 The shell creates a `QGuiApplication`, loads `Main.qml`, and exposes an
-`AppController` for UI-only state. `AppController` publishes `appName`,
+`AppController` for UI-only state. The controller publishes `appName`,
 `sdkVersion`, `apiPrefix`, `status`, `isLoggedIn`, `currentUserLabel`, and
 `loginMessage`, plus mock-only `mockLogin(email, password)`, `logout()`, and
-`clearMessage()` actions.
+`clearMessage()` actions. Authentication state and actions now pass through the
+Qt-layer `AuthService` interface. `AppController` creates `MockAuthService` by
+default and also accepts an injected `std::unique_ptr<AuthService>` for tests
+and future adapters, so it no longer owns the complete mock authentication
+implementation.
 
-The current auth panel is a mock UI flow only. It updates visible UI state from
-the entered email and password, but it does not call `AuthSession`, does not
-create `CurlHttpClient`, does not access the network, does not read or write
-TokenStore, does not persist tokens, does not call admin endpoints, and does
-not create local cache state. The password is never exposed as a property and
-is not stored by `AppController`.
+The current auth panel remains a mock UI flow only. `MockAuthService` validates
+the entered email/password, trims the email for the displayed user label, and
+maintains only mock signed-in state and UI messages. It does not call
+`AuthSession`, create `CurlHttpClient`, access any API, read or write a
+`TokenStore` (including `SecureTokenStore`), persist tokens, call admin
+endpoints, read environment variables, or create local cache state. Neither
+`MockAuthService` nor `AppController` stores or prints the password, and no
+password or token property is exposed to QML.
 
 When `MRRIGHT_ENABLE_QT_UI=ON`, CMake also builds
-`mrright_qt_appcontroller_tests`. These unit tests exercise only
-`AppController` state transitions: initial signed-out state, successful mock
-login, input validation, logout, and message clearing. They use
-`QCoreApplication`, do not start a GUI window, do not perform real login, do
-not access API endpoints, do not read or write TokenStore, and do not persist
-tokens. Default SDK builds keep `MRRIGHT_ENABLE_QT_UI=OFF`, so they do not find
-Qt, build the Qt shell, or build the Qt tests.
+`mrright_qt_appcontroller_tests`. These unit tests directly exercise
+`MockAuthService` state and validation, then inject a lightweight fake service
+to verify controller delegation, property synchronization, and notify signals.
+They use `QCoreApplication`, do not start a GUI window, do not perform real
+login, do not access API endpoints, do not read or write TokenStore, and do not
+persist tokens. Default SDK builds keep `MRRIGHT_ENABLE_QT_UI=OFF`, so they do
+not find Qt, build the Qt shell, or build the Qt tests.
 
-Production login remains a later integration step that should route through
-`AuthSession` and a supported secure platform `TokenStore`.
+The next auth batch will add a real Qt `AuthService` adapter backed by
+`AuthSession` and a supported secure platform `TokenStore`. That adapter is not
+part of this batch. `AuthService` remains under `app/ui/qt`, and no Qt type or
+dependency enters the SDK core public API.
 
 ## JSON Parser Backend
 

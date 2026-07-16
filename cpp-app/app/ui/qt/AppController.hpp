@@ -1,7 +1,11 @@
 #pragma once
 
+#include "app/ui/qt/AuthService.hpp"
+
 #include <QObject>
 #include <QString>
+
+#include <memory>
 
 namespace mrright::app::ui::qt {
 
@@ -11,12 +15,13 @@ class AppController final : public QObject {
   Q_PROPERTY(QString sdkVersion READ sdkVersion CONSTANT)
   Q_PROPERTY(QString apiPrefix READ apiPrefix CONSTANT)
   Q_PROPERTY(QString status READ status NOTIFY authStateChanged)
-  Q_PROPERTY(bool isLoggedIn READ isLoggedIn NOTIFY authStateChanged)
-  Q_PROPERTY(QString currentUserLabel READ currentUserLabel NOTIFY authStateChanged)
+  Q_PROPERTY(bool isLoggedIn READ isLoggedIn NOTIFY isLoggedInChanged)
+  Q_PROPERTY(QString currentUserLabel READ currentUserLabel NOTIFY currentUserLabelChanged)
   Q_PROPERTY(QString loginMessage READ loginMessage NOTIFY loginMessageChanged)
 
  public:
   explicit AppController(QObject* parent = nullptr);
+  explicit AppController(std::unique_ptr<AuthService> authService, QObject* parent = nullptr);
 
   [[nodiscard]] QString appName() const;
   [[nodiscard]] QString sdkVersion() const;
@@ -32,12 +37,21 @@ class AppController final : public QObject {
 
  signals:
   void authStateChanged();
+  void isLoggedInChanged();
+  void currentUserLabelChanged();
   void loginMessageChanged();
 
  private:
-  bool isLoggedIn_ = false;
-  QString currentUserLabel_ = QStringLiteral("Not signed in");
-  QString loginMessage_;
+  struct AuthStateSnapshot {
+    bool isLoggedIn;
+    QString currentUserLabel;
+    QString loginMessage;
+  };
+
+  [[nodiscard]] AuthStateSnapshot authStateSnapshot() const;
+  void notifyAuthServiceChanges(const AuthStateSnapshot& previousState);
+
+  std::unique_ptr<AuthService> authService_;
 };
 
 } // namespace mrright::app::ui::qt
