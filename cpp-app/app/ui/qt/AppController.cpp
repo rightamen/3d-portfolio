@@ -1,20 +1,23 @@
 #include "app/ui/qt/AppController.hpp"
 
+#include "app/ui/qt/MockAuthService.hpp"
 #include "sdk/core/ApiClientConfig.hpp"
 
 #include <QString>
 
+#include <memory>
+#include <utility>
+
 namespace mrright::app::ui::qt {
-namespace {
-
-QString normalizedEmail(const QString& email) {
-  return email.trimmed();
-}
-
-} // namespace
 
 AppController::AppController(QObject* parent)
-  : QObject(parent) {}
+  : AppController(std::make_unique<MockAuthService>(), parent) {}
+
+AppController::AppController(std::unique_ptr<AuthService> authService, QObject* parent)
+  : QObject(parent),
+    authService_(std::move(authService)) {
+  if (!authService_) authService_ = std::make_unique<MockAuthService>();
+}
 
 QString AppController::appName() const {
   return QStringLiteral("mrright.blog");
@@ -30,53 +33,51 @@ QString AppController::apiPrefix() const {
 }
 
 QString AppController::status() const {
-  return isLoggedIn_ ? QStringLiteral("Mock signed in, no network") : QStringLiteral("UI shell only, no network");
+  return isLoggedIn() ? QStringLiteral("Mock signed in, no network") : QStringLiteral("UI shell only, no network");
 }
 
 bool AppController::isLoggedIn() const {
-  return isLoggedIn_;
+  return authService_->isLoggedIn();
 }
 
 QString AppController::currentUserLabel() const {
-  return currentUserLabel_;
+  return authService_->currentUserLabel();
 }
 
 QString AppController::loginMessage() const {
-  return loginMessage_;
+  return authService_->lastMessage();
 }
 
 void AppController::mockLogin(const QString& email, const QString& password) {
-  const QString trimmedEmail = normalizedEmail(email);
-  if (trimmedEmail.isEmpty()) {
-    loginMessage_ = QStringLiteral("Enter an email address for mock sign-in.");
-    emit loginMessageChanged();
-    return;
-  }
-  if (password.isEmpty()) {
-    loginMessage_ = QStringLiteral("Enter any password text for the mock flow.");
-    emit loginMessageChanged();
-    return;
-  }
-
-  isLoggedIn_ = true;
-  currentUserLabel_ = QStringLiteral("Signed in as %1").arg(trimmedEmail);
-  loginMessage_ = QStringLiteral("Mock auth only. No network request was sent and no token was persisted.");
-  emit authStateChanged();
-  emit loginMessageChanged();
+  const AuthStateSnapshot previousState = authStateSnapshot();
+  authService_->login(email, password);
+  notifyAuthServiceChanges(previousState);
 }
 
 void AppController::logout() {
-  isLoggedIn_ = false;
-  currentUserLabel_ = QStringLiteral("Not signed in");
-  loginMessage_ = QStringLiteral("Signed out of the mock UI session.");
-  emit authStateChanged();
-  emit loginMessageChanged();
+  const AuthStateSnapshot previousState = authStateSnapshot();
+  authService_->logout();
+  notifyAuthServiceChanges(previousState);
 }
 
 void AppController::clearMessage() {
-  if (loginMessage_.isEmpty()) return;
-  loginMessage_.clear();
-  emit loginMessageChanged();
+  const AuthStateSnapshot previousState = authStateSnapshot();
+  authService_->clearMessage();
+  notifyAuthServiceChanges(previousState);
+}
+
+AppController::AuthStateSnapshot AppController::authStateSnapshot() const {
+  return {isLoggedIn(), currentUserLabel(), loginMessage()};
+}
+
+void AppController::notifyAuthServiceChanges(const AuthStateSnapshot& previousState) {
+  const bool loggedInChanged = previousState.isLoggedIn != isLoggedIn();
+  const bool userLabelChanged = previousState.currentUserLabel != currentUserLabel();
+
+  if (loggedInChanged) emit isLoggedInChanged();
+  if (userLabelChanged) emit currentUserLabelChanged();
+  if (loggedInChanged || userLabelChanged) emit authStateChanged();
+  if (previousState.loginMessage != loginMessage()) emit loginMessageChanged();
 }
 
 } // namespace mrright::app::ui::qt

@@ -164,8 +164,11 @@ if(MRRIGHT_ENABLE_QT_UI)
 
   qt_add_executable(mrright_qt_shell
     app/ui/qt/main_qt.cpp
+    app/ui/qt/AuthService.hpp
     app/ui/qt/AppController.cpp
     app/ui/qt/AppController.hpp
+    app/ui/qt/MockAuthService.cpp
+    app/ui/qt/MockAuthService.hpp
   )
   target_link_libraries(mrright_qt_shell PRIVATE
     mrright_sdk_core
@@ -183,8 +186,11 @@ if(MRRIGHT_ENABLE_QT_UI)
 
   add_executable(mrright_qt_appcontroller_tests
     tests/unit/qt_appcontroller_tests.cpp
+    app/ui/qt/AuthService.hpp
     app/ui/qt/AppController.cpp
     app/ui/qt/AppController.hpp
+    app/ui/qt/MockAuthService.cpp
+    app/ui/qt/MockAuthService.hpp
   )
   set_target_properties(mrright_qt_appcontroller_tests PROPERTIES
     AUTOMOC ON

@@ -1,5 +1,60 @@
 # mrright.blog 项目进度记录
 
+## 2026-07-16：C++ Qt UI AuthService integration boundary 第一批
+
+结论：本轮在现有 optional Qt/QML mock auth flow 上新增 Qt UI 层 `AuthService` boundary。`AppController` 不再保存或实现完整 mock authentication 状态逻辑，而是默认创建 `MockAuthService`，并支持注入 test fake / future adapter；登录、登出、状态读取和 message clearing 均通过 service 完成。此批只建立下一批真实 `AuthSession` adapter 所需边界，未调用真实 `AuthSession::login`。SDK core 继续 Qt-free；Qt build/tests 继续仅在 `MRRIGHT_ENABLE_QT_UI=ON` 时启用。**未部署、未改数据库、未读取或修改 `.env`/token/secret、未访问 production API、未访问 local API、未改 Web/API/OpenAPI contract 行为、未做 cache、未做 secure TokenStore 新实现、未做 packaging、未提交构建产物**。
+
+完成内容：
+
+- 新增 `cpp-app/app/ui/qt/AuthService.hpp`：
+  - 定义 Qt UI adapter boundary，login result 只包含 `success`、`userLabel`、`message`，不包含 token。
+  - 暴露 login/logout、signed-in state、current user label、last message 和 clear-message 操作。
+  - 接口只位于 `app/ui/qt`，允许使用 `QString`，不改变 `sdk/core` public API。
+- 新增 `cpp-app/app/ui/qt/MockAuthService.hpp` / `.cpp`：
+  - 保留现有 mock email trimming、空 email/password validation、signed-in/signed-out state 与 UI message 行为。
+  - 成功 message 明确 mock authentication、no network request、no token persisted。
+  - 不创建 network object、不调用 `AuthSession`、不访问 TokenStore、不读环境变量、不写文件、不保存或打印 password。
+- 更新 `cpp-app/app/ui/qt/AppController.hpp` / `.cpp`：
+  - 默认构造注入 `MockAuthService`；新增 `std::unique_ptr<AuthService>` constructor 供 tests/future adapter 使用。
+  - 保留全部 QML-facing `Q_PROPERTY` 和 `Q_INVOKABLE` 名称。
+  - properties 直接读取 service state；actions 委托给 service。
+  - 新增细粒度 `isLoggedInChanged` / `currentUserLabelChanged` notify signals，保留 `authStateChanged` 供 `status` 使用，并避免值不变时重复 signal。
+- 更新 `cpp-app/tests/unit/qt_appcontroller_tests.cpp`：
+  - 直接覆盖 `MockAuthService` initial state、success、email/password validation、logout、clearMessage。
+  - 通过 lightweight `FakeAuthService` 覆盖 dependency injection、login/logout/clearMessage delegation、success/failure property synchronization 与 notify signals。
+  - fake 不记录 password 内容；测试确认 password/token/visitorToken 不作为 controller property 暴露。
+  - 使用 `QCoreApplication`，不启动 GUI、不运行 QML automation、不访问网络或 TokenStore。
+- 更新 `cpp-app/CMakeLists.txt`、`cpp-app/README.md` 和 `docs/CPP_APP_MIGRATION_PLAN.md`：
+  - Qt shell/test target 包含新 service files；默认 `MRRIGHT_ENABLE_QT_UI=OFF` 与非 Qt targets 不变。
+  - 记录本批 boundary 完成和后续 real `AuthSession` adapter / local-only real login integration test 待办。
+  - `.github/workflows/cpp-app.yml` 无需修改；现有 optional Qt/QML shell job 已 configure/build Qt shell/tests 并运行 `mrright_qt_appcontroller_tests`。
+
+本轮本地验证结果：
+
+- `git diff --check`：通过。
+- `npm run lint`：通过。
+- `npm run build`：通过；产生的 tracked `dist/` 变动已 `git restore dist`，未提交。
+- `npm run test:api`：通过（37 passed）。
+- `npm run test:api:db`：通过（18 passed，一次性 PostgreSQL cluster 已销毁）。
+- `npm run test:openapi`：通过（200 个本地 `$ref` 可解析；27 个 API error code 与 OpenAPI enum 一致）。
+- 默认 nlohmann/json CMake：
+  - `cmake -S cpp-app -B cpp-app/build-json -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake`：通过。
+  - `cmake --build cpp-app/build-json`：通过。
+  - `ctest --test-dir cpp-app/build-json --output-on-failure`：通过（6/6 tests passed；`mrright_cpp_secure_tokenstore_tests` 因本机 D-Bus session / desktop keyring 不可用而 skipped）。
+- temporary parser fallback CMake：
+  - `cmake -S cpp-app -B cpp-app/build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DMRRIGHT_USE_TEMPORARY_JSON=ON`：通过。
+  - `cmake --build cpp-app/build`：通过。
+  - `ctest --test-dir cpp-app/build --output-on-failure`：通过（5/5 tests passed；`mrright_cpp_secure_tokenstore_tests` 因本机 D-Bus session / desktop keyring 不可用而 skipped）。
+- 本地 Qt configure：未通过；本机没有 Qt6 CMake package（`Qt6Config.cmake` / `qt6-config.cmake`），按要求未安装新依赖、未伪造本地 Qt 成功。Qt shell 和 `mrright_qt_appcontroller_tests` 由 GitHub Actions optional Qt/QML shell job 验证。
+
+后续待办保留：
+
+1. real AuthSession adapter for Qt UI
+2. local-only real login integration test
+3. project list UI
+4. local cache strategy
+5. packaging strategy spike
+
 ## 2026-07-08：C++ Qt AppController mock auth unit tests
 
 结论：本轮为 optional Qt/QML mock auth flow 新增 `AppController` 单元测试。测试只覆盖 UI controller 状态逻辑，不接真实 `AuthSession`，不创建 `CurlHttpClient`，不访问 API，不读取或写入 TokenStore，不启动 GUI，不做真实登录。SDK core 继续 Qt-free；Qt tests 仅在 `MRRIGHT_ENABLE_QT_UI=ON` 时构建。**未部署、未改数据库、未读取或修改 `.env`/token/secret、未访问 production API、未访问 local API、未改 Web/API 行为、未做 SQLite cache、未做 secure TokenStore 新实现、未做 packaging、未提交构建产物**。
