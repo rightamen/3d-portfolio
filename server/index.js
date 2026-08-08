@@ -123,6 +123,10 @@ app.use(
         styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
         fontSrc: ["'self'", 'data:', 'https://fonts.gstatic.com'],
         connectSrc: ["'self'"],
+        // Helmet adds upgrade-insecure-requests by default. It is ignored by
+        // browsers in report-only mode and emits a console error on every SPA
+        // page, so leave it out until CSP is ready to become blocking.
+        upgradeInsecureRequests: null,
       },
     },
     crossOriginEmbedderPolicy: false,
@@ -243,6 +247,22 @@ const createLimiter = ({ windowMs, limit, message, writesOnly = false }) =>
   })
 
 const minutes = (count) => count * 60 * 1000
+
+// Authentication responses are user-specific and must never be served from a
+// browser, intermediary, or a conditional 304 response. In particular, a
+// cached anonymous /api/auth/me response can be revalidated as 304 after a
+// successful login; the client then receives an empty body and would clear the
+// freshly-issued token as if the session had expired. Mount this before the
+// rate limiters too, so a 429 auth response carries the same policy.
+app.use('/api/auth', (_request, response, next) => {
+  // Express can turn a successful JSON response into an empty 304 when these
+  // validators are present. Auth state is not a cacheable representation, so
+  // ignore client/intermediary validators and always send the complete body.
+  delete _request.headers['if-none-match']
+  delete _request.headers['if-modified-since']
+  setNoStoreHeaders(response)
+  next()
+})
 
 app.use('/api', createLimiter({
   windowMs: minutes(15),

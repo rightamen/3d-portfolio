@@ -58,9 +58,12 @@ const waitForHealth = async () => {
   throw lastError || new Error('Timed out waiting for local API server.')
 }
 
-const getJson = async (path, token) => {
+const getJson = async (path, token, extraHeaders = {}) => {
   const response = await fetch(`${baseURL}${path}`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...extraHeaders,
+    },
   })
   const payload = await response.json()
   return { payload, response }
@@ -148,8 +151,8 @@ const registerVisitor = async (displayName, email) => {
     password: visitorPassword,
   })
   expect(response.status, `register ${email}`).toBe(201)
-  // NODE_ENV !== 'production' exposes verification.devCode so the flow can be
-  // completed without SMTP.
+  // The test runner explicitly enables verification.devCode so this flow can
+  // be completed without SMTP. Production never enables that flag.
   return {
     devCode: payload.data.verification.devCode,
     id: payload.data.user.id,
@@ -166,7 +169,8 @@ test.beforeAll(async () => {
       PORT: String(port),
       DATABASE_URL: databaseUrl,
       ADMIN_TOKEN: adminToken,
-      // Non-production so register responses include verification.devCode.
+      // Keep the test-only route available; the runner supplies the explicit
+      // EXPOSE_DEV_VERIFICATION_CODE flag for verification.devCode.
       NODE_ENV: 'test',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -188,6 +192,17 @@ test.beforeAll(async () => {
     email: 'contract-db-a@example.com',
     sessionToken: verify.payload.data.session.token,
   }
+
+  // Verify the actual password-login path separately from email verification:
+  // this catches async password-hash regressions and proves the returned
+  // session can replace the verification session.
+  const login = await sendJson('POST', '/api/auth/login', {
+    email: visitorA.email,
+    password: visitorPassword,
+  })
+  expect(login.response.status).toBe(200)
+  expect(login.payload.data.session.token).toEqual(expect.any(String))
+  visitorA.sessionToken = login.payload.data.session.token
 
   const registeredB = await registerVisitor('Contract Test Visitor B', 'contract-db-b@example.com')
   visitorB = { id: registeredB.id, email: 'contract-db-b@example.com' }
@@ -397,6 +412,22 @@ test.describe('db-backed /api/v1 strict pagination (reverse mirror)', () => {
 })
 
 test.describe('db-backed auth contract', () => {
+  test('auth responses are explicitly non-cacheable', async () => {
+    const { payload, response } = await getJson('/api/auth/me')
+
+    expect(response.status).toBe(200)
+    expect(payload.data.user).toBeNull()
+    expect(response.headers.get('cache-control')).toContain('no-store')
+
+    // A previously cached anonymous response must not turn a post-login
+    // session check into an empty 304 response.
+    const conditional = await getJson('/api/auth/me', '', {
+      'If-None-Match': response.headers.get('etag') || 'W/"stale-auth-response"',
+    })
+    expect(conditional.response.status).toBe(200)
+    expect(conditional.payload.data.user).toBeNull()
+  })
+
   test('account endpoints return AUTH_REQUIRED when the store exists', async () => {
     for (const path of ['/api/account/profile', '/api/account/downloads', '/api/account/comments']) {
       const { payload, response } = await getJson(path)
