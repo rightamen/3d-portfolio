@@ -1,0 +1,120 @@
+# CI for the Web client and Node API — the surfaces that carry real traffic.
+#
+# Until this existed, lint/build/test:api/test:api:db/test:openapi were run by
+# hand and their results recorded in PROJECT_PROGRESS.md, while the C++ SDK
+# (cpp-app.yml) had a three-platform matrix. Nothing enforced the 37 API
+# contract tests, 19 DB contract tests, or the OpenAPI check before a merge.
+#
+# Deliberately NOT here: tests/e2e/*. production-smoke.spec.js defaults to
+# https://mrright.blog and admin-visitors.spec.js needs E2E_ADMIN_TOKEN, so
+# both are operator-run against a live deployment, not PR gates. Nothing in
+# this workflow reads a secret, touches the VPS, or reaches production.
+name: Web and API
+
+on:
+  push:
+    branches:
+      - main
+      - "feat/**"
+      - "fix/**"
+      - "ci/**"
+      - "codex/**"
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: web-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "22.12.0"
+
+jobs:
+  checks:
+    name: Lint, build, API contract
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
+      # dist/ is generated, ignored, and shipped via `npm run release:vps`.
+      # If a build artifact ever reappears in git, fail loudly here rather than
+      # letting it drift back in.
+      - name: Assert no build artifacts are tracked
+        run: |
+          if git ls-files --error-unmatch dist >/dev/null 2>&1; then
+            echo "dist/ is tracked in git. Build output must stay untracked." >&2
+            exit 1
+          fi
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "Build modified tracked files:" >&2
+            git status --porcelain >&2
+            exit 1
+          fi
+
+      # No browser download: the API suites drive the server over fetch().
+      - name: API contract tests (no database)
+        run: npm run test:api
+
+      - name: OpenAPI contract validation
+        run: npm run test:openapi
+
+  api-db-contract:
+    name: API contract against PostgreSQL
+    runs-on: ubuntu-latest
+
+    # Disposable service container. scripts/run-api-db-tests.mjs takes its
+    # "externally provided database" path when API_TEST_DATABASE_URL is set, so
+    # no local cluster is provisioned here. The database name must contain
+    # test/e2e/local/dev and must not be mrright_portfolio — the script
+    # enforces both before connecting.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: mrright_api_contract_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: DB-backed API contract tests
+        env:
+          API_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/mrright_api_contract_test
+        run: npm run test:api:db
