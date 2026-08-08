@@ -4,7 +4,7 @@ import rateLimit from 'express-rate-limit'
 import helmet from 'helmet'
 import multer from 'multer'
 import { createHash, pbkdf2 as pbkdf2Callback, randomBytes, timingSafeEqual } from 'node:crypto'
-import { mkdir, unlink } from 'node:fs/promises'
+import { mkdir, unlink, access } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
@@ -1674,6 +1674,82 @@ app.post('/api/contact', async (request, response) => {
   await contactMessagesStore.addMessage(normalized)
 
   return sendData(response, { ok: true }, 201)
+})
+
+// Source archive download endpoint. The .glb preview files in /models are
+// deliberately public (the viewer downloads and renders them, so gating access
+// would only break the portfolio). This endpoint gates access to the actual
+// source files (FBX/OBJ/Blend + high-res textures) that admins upload to
+// public/uploads/projects/:slug-source.zip.
+//
+// Authorization: admin token OR an approved download_requests row for this
+// project + user/email. If the file doesn't exist on disk, returns 404
+// regardless of authorization (the admin hasn't uploaded it yet).
+app.get('/api/projects/:slug/download', async (request, response) => {
+  const { slug } = request.params
+  const project = await projectStore.getProject(staticProjects, slug)
+
+  if (!project) {
+    return sendError(response, API_ERROR_CODES.PROJECT_NOT_FOUND, 'Project not found.', 404)
+  }
+
+  // Admin bypass: check file existence and return immediately
+  if (isAdminToken(getAuthToken(request))) {
+    const archivePath = path.join(process.cwd(), 'public/uploads/projects', `${slug}-source.zip`)
+    try {
+      await access(archivePath)
+      return response.sendFile(archivePath)
+    } catch {
+      return sendError(
+        response,
+        API_ERROR_CODES.PROJECT_NOT_FOUND,
+        'Source archive not available for this project.',
+        404,
+      )
+    }
+  }
+
+  // Check for approved download request BEFORE checking file existence
+  if (!downloadRequestsStore) {
+    return sendError(
+      response,
+      API_ERROR_CODES.SERVICE_UNAVAILABLE,
+      'Download service is not available.',
+      503,
+    )
+  }
+
+  const user = await getOptionalUser(request)
+  const hasApproval = await downloadRequestsStore.hasApprovedRequest(
+    slug,
+    user?.id,
+    user?.email,
+  )
+
+  if (!hasApproval) {
+    return sendError(
+      response,
+      API_ERROR_CODES.RESOURCE_FORBIDDEN,
+      'Download access requires an approved request. Submit one from the project page.',
+      403,
+    )
+  }
+
+  // Authorization passed; now check if the file exists
+  const archivePath = path.join(process.cwd(), 'public/uploads/projects', `${slug}-source.zip`)
+
+  try {
+    await access(archivePath)
+  } catch {
+    return sendError(
+      response,
+      API_ERROR_CODES.PROJECT_NOT_FOUND,
+      'Source archive not available for this project.',
+      404,
+    )
+  }
+
+  response.sendFile(archivePath)
 })
 
 app.get('/api/admin/summary', requireAdmin, async (_request, response) => {

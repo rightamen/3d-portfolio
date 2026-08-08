@@ -165,6 +165,35 @@ export const requestProjectDownload = (slug, payload, token) =>
     body: JSON.stringify(payload),
   })
 
+export const downloadProjectSource = (slug, token) => {
+  // Direct browser download: construct URL with auth header via fetch, then
+  // trigger download with a blob URL
+  return fetch(`${API_BASE}/api/projects/${slug}/download`, {
+    headers: authHeaders(token),
+  }).then((response) => {
+    if (!response.ok) {
+      return response.json().then(
+        (payload) => {
+          throw createApiError(payload, 'Download failed', response.status)
+        },
+        () => {
+          throw new Error('Download failed')
+        },
+      )
+    }
+    return response.blob().then((blob) => {
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${slug}-source.zip`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      window.URL.revokeObjectURL(url)
+    })
+  })
+}
+
 export const uploadCommunityResource = (token, payload, file, onProgress) => {
   const formData = new FormData()
   formData.append('title', payload.title)

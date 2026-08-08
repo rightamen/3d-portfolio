@@ -1127,6 +1127,24 @@ export const createPostgresStores = async (databaseUrl) => {
         createdAt: row.created_at.toISOString(),
       }))
     },
+
+    // Check if a user or email has an approved download request for a project.
+    // Used by the download endpoint to gate source archive access.
+    hasApprovedRequest: async (projectSlug, userId, email) => {
+      const result = await pool.query(
+        `
+          SELECT id
+          FROM download_requests
+          WHERE project_slug = $1
+            AND status = 'approved'
+            AND (user_id = $2 OR (user_id IS NULL AND email = $3))
+          LIMIT 1
+        `,
+        [projectSlug, userId || null, email || null],
+      )
+
+      return result.rowCount > 0
+    },
   }
 
   const communityStore = {

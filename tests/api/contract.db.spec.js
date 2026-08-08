@@ -655,3 +655,59 @@ test.describe('visitor email containment', () => {
     }
   })
 })
+
+test.describe('project source download authorization', () => {
+  const projectSlug = 'fire-extinguisher-next-gen'
+  const downloadPath = `/api/projects/${projectSlug}/download`
+
+  test('download without approved request returns 403 RESOURCE_FORBIDDEN', async () => {
+    const { payload, response } = await getJson(downloadPath, visitorB.sessionToken)
+
+    expect(response.status).toBe(403)
+    expectContractShape(payload)
+    expect(payload.error.code).toBe('RESOURCE_FORBIDDEN')
+    expect(payload.error.message).toContain('approved request')
+  })
+
+  test('download with admin token bypasses authorization (even if archive missing)', async () => {
+    // Archive doesn't exist in the test environment, so admin gets 404 from
+    // file-not-found rather than 403 from lack-of-approval.
+    const { payload, response } = await getJson(downloadPath, adminToken)
+
+    expect(response.status).toBe(404)
+    expectContractShape(payload)
+    expect(payload.error.code).toBe('PROJECT_NOT_FOUND')
+    expect(payload.error.message).toContain('Source archive not available')
+  })
+
+  test('download with approved request returns 404 when archive missing', async () => {
+    // Submit and approve a download request for visitorA
+    const requestRes = await sendJson(
+      'POST',
+      `/api/projects/${projectSlug}/download-requests`,
+      {
+        name: visitorA.displayName || 'Contract Test Visitor A',
+        email: visitorA.email,
+        purpose: 'Testing download authorization flow.',
+      },
+      visitorA.sessionToken,
+    )
+    expect(requestRes.response.status).toBe(201)
+
+    const requestId = requestRes.payload.data.request.id
+    const approveRes = await sendJson(
+      'PATCH',
+      `/api/admin/download-requests/${requestId}`,
+      { status: 'approved' },
+      adminToken,
+    )
+    expect(approveRes.response.status).toBe(200)
+
+    // Now the approval exists, but the archive file doesn't
+    const { payload, response } = await getJson(downloadPath, visitorA.sessionToken)
+
+    expect(response.status).toBe(404)
+    expectContractShape(payload)
+    expect(payload.error.code).toBe('PROJECT_NOT_FOUND')
+  })
+})

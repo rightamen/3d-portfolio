@@ -1,6 +1,8 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import {
   addProjectComment,
+  downloadProjectSource,
+  getAccountDownloads,
   getProject,
   getProjectInteractions,
   requestProjectDownload,
@@ -46,6 +48,7 @@ const ProjectDetail = ({ authToken, slug, onClose, language, copy, visitorUser }
   const [isPreviewOpen, setIsPreviewOpen] = useState(false)
   const [isRequestOpen, setIsRequestOpen] = useState(false)
   const [liked, setLiked] = useState(false)
+  const [hasApprovedDownload, setHasApprovedDownload] = useState(false)
   const dialogRef = useRef(null)
   const closeButtonRef = useRef(null)
 
@@ -64,10 +67,25 @@ const ProjectDetail = ({ authToken, slug, onClose, language, copy, visitorUser }
         if (isMounted) setStatus('error')
       })
 
+    // Check if the user has an approved download request for this project
+    if (authToken) {
+      getAccountDownloads(authToken)
+        .then((payload) => {
+          if (!isMounted) return
+          const approved = payload.requests?.some(
+            (req) => req.projectSlug === slug && req.status === 'approved',
+          )
+          setHasApprovedDownload(approved)
+        })
+        .catch(() => {
+          // Silent fail: download button just won't appear
+        })
+    }
+
     return () => {
       isMounted = false
     }
-  }, [slug])
+  }, [slug, authToken])
 
   const submitLike = async () => {
     setInteractionStatus('saving')
@@ -125,6 +143,16 @@ const ProjectDetail = ({ authToken, slug, onClose, language, copy, visitorUser }
       )
       setDownloadForm({ name: '', email: '', purpose: '' })
       setDownloadStatus('sent')
+    } catch {
+      setDownloadStatus('error')
+    }
+  }
+
+  const handleDownloadSource = async () => {
+    setDownloadStatus('saving')
+    try {
+      await downloadProjectSource(slug, authToken)
+      setDownloadStatus('idle')
     } catch {
       setDownloadStatus('error')
     }
@@ -275,13 +303,24 @@ const ProjectDetail = ({ authToken, slug, onClose, language, copy, visitorUser }
                     {copy.openModelViewer}
                   </button>
                 )}
-                <button
-                  type="button"
-                  className="secondary-action flex-1"
-                  onClick={() => setIsRequestOpen((current) => !current)}
-                >
-                  {copy.requestDownload}
-                </button>
+                {hasApprovedDownload ? (
+                  <button
+                    type="button"
+                    className="primary-action flex-1"
+                    onClick={handleDownloadSource}
+                    disabled={downloadStatus === 'saving'}
+                  >
+                    {downloadStatus === 'saving' ? copy.downloading : copy.downloadSource}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="secondary-action flex-1"
+                    onClick={() => setIsRequestOpen((current) => !current)}
+                  >
+                    {copy.requestDownload}
+                  </button>
+                )}
               </div>
 
               {isRequestOpen && (
