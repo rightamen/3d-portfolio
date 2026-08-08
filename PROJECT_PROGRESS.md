@@ -1,5 +1,169 @@
 # mrright.blog 项目进度记录
 
+## 2026-08-08：第一阶段基础设施改进（CI、部署安全、数据清理、SQL 安全）
+
+结论：完成第一阶段 4 项基础设施改进，全部通过 lint/build/test:api/test:api:db/test:openapi 验证。这一轮修复的是结构性问题：Web/API 完全没有 CI、部署脚本每次覆盖 nginx 配置会丢失 TLS 设置、visitor_sessions 只增不减、公开接口 SQL 查询仍在选取 email 列（虽然 mapper 会丢弃）、以及 `.map(toX)` 把数组索引当 options 传入的脆弱性。本轮**未部署、未改数据库 schema、未读取或输出任何 token/password/secret、未触碰生产环境**。
+
+完成内容：
+
+1. **CI for Web and API** (`.github/workflows/web.yml`)
+   - checks job: lint + build + API contract (37 tests, no DB) + OpenAPI validation (200 $ref, 27 error codes) + gate that fails if dist/ reappears in git
+   - api-db-contract job: Postgres 16 service + DB contract suite (23 tests including new regression tests)
+   - E2E tests (production-smoke, admin-visitors) stay operator-run since they default to the live site
+
+2. **Untrack dist/ from version control**
+   - Removed 79 files (4355 lines) that were committed before .gitignore
+   - `npm run build` generates dist/ locally; `npm run release:vps` archives it
+   - Every build changes hashes → spurious `git restore` loops in PROJECT_PROGRESS.md
+   - New CI gate enforces dist/ stays untracked
+
+3. **Idempotent deployment**
+   - `scripts/deploy-vps.mjs` now checks if nginx/systemd configs exist before writing
+   - `VPS_REWRITE_NGINX=true` / `VPS_REWRITE_SERVICE=true` required to overwrite
+   - Nginx was HTTP-only (listen 80); overwriting a certbot-modified config dropped HTTPS
+   - `systemctl reload nginx || restart` keeps connections open when config unchanged
+   - `js-yaml` now explicit devDependency (was transitive via @eslint/eslintrc)
+
+4. **Session cleanup + SQL email leak prevention + .map fragility**
+   - `authStore.deleteExpiredSessions()`: sweeps visitor_sessions WHERE expires_at <= now(), called every 6 hours (configurable via SESSION_SWEEP_INTERVAL_MS)
+   - Removed `visitor_users.email` from 11 public-path SELECTs (interactionsStore, communityStore); adminStore queries retain it with explicit `includeEmail: true`
+   - Wrapped 9 bare `.map(toComment|toCommunityUpload|toCommunityPost)` calls in explicit arrows so the numeric index isn't silently passed as options
+   - New regression tests (4 tests, now 23 total in contract.db.spec.js):
+     * Public endpoints never expose registration email, even to authenticated viewers reading their own rows
+     * Public user summaries carry exactly `{id, displayName, accessLevel}`
+     * Admin endpoints still include email (proves removal was scoped, not global)
+     * Verified the tests catch the leak by injecting the 2026-07-25 bug back in
+
+本轮验证结果：
+
+- `npm run lint`：通过。
+- `npm run build`：通过；dist/ 现已 untracked，构建产物不再进入 git。
+- `npm run test:api`：37/37 通过。
+- `npm run test:api:db`：23/23 通过（新增 4 个 PII containment 回归测试）。
+- `npm run test:openapi`：通过（200 个本地 `$ref`、27 个 API error code）。
+- `git diff --check`：通过。
+- 回归验证：临时注入 2026-07-25 原始 bug（toUserSummary 无条件返回 email + 公开查询重新 SELECT email），测试套件报错 `/api/community/posts leaked contract-db-a@example.com`，证明新测试能抓到真实回归。
+
+待办（后续阶段）：
+
+- 第二阶段（1-2 周）：download 授权落地、CSP report-uri + blocking、project like 防刷
+- 第三阶段（1 个月）：react-router、拆 Admin.jsx、getProject 单查询、i18n 拆分
+- 第四阶段：Asset Model 实现（checksum、visibility、downloadPolicy）
+- C++ SDK：建议冻结在当前状态，等 Asset Model 稳定后再继续
+
+## 2026-08-08：社区页面增加返回首页入口
+
+结论：社区页面顶部导航现在提供明确的“返回首页”链接，桌面和移动布局均可使用；补齐 zh/en/ja 文案。本轮已部署到 VPS，未改数据库、未读取或输出任何 token/password/secret。
+
+完成内容：
+
+- `src/pages/CommunityPage.jsx`：在社区页 logo 与语言切换之间加入返回 `/` 的 secondary action，使用箭头和本地化文案，保持现有社区帖子详情返回社区列表功能不变。
+- `src/lib/i18n.js`：新增 `communityBackHome` 的中文、英文、日文文案。
+- `tests/e2e/production-smoke.spec.js`：社区页面 smoke 增加返回首页链接可见性断言。
+
+本轮验证结果：
+
+- `npm run lint`：通过。
+- `npm run build`：通过；构建生成的 tracked `dist/` 已恢复，未提交构建产物。
+- 本地 Playwright 社区页面回归：通过（1/1），返回首页链接正常显示。
+- `git diff --check`：通过。
+
+部署结果：
+
+- `npm run release:vps` 成功生成 release archive；上传前后 SHA-256 一致。
+- 部署前确认 `DATABASE_URL`、`ADMIN_TOKEN` 均为 `[set]`，未输出值。
+- 已创建 `/opt/mrright-portfolio.backup-20260808-091326` 和 `/etc/mrright-portfolio.env.backup-20260808-091326`；既有 backup 继续保留。
+- 只替换 release 中的 `dist`、`server`、`scripts`、`package.json`、`package-lock.json`，重新安装生产依赖；保留 `data`、`public/uploads`、env 和所有 backup。
+- `mrright-portfolio` 重启后保持 active，health 200，admin summary 200。
+- 线上 `/community` 200，返回首页链接实际渲染并由 smoke 断言通过；线上 `/`、`/login?mode=login`、`/account`、`/admin`、`/u/not-exist-test-handle` 均通过页面验证。
+- production smoke：6 passed，真实账号登录场景因未提供 `E2E_VISITOR_EMAIL` / `E2E_VISITOR_PASSWORD` 而按测试设计跳过。
+- 认证接口仍返回 `Cache-Control: no-store`；未修改数据库 schema、数据、上传文件或生产环境变量。
+
+## 2026-08-08：修复访客登录成功后立即掉线
+
+结论：已修复线上“密码正确但无法登录/登录后回到登录页”的认证回归。根因是旧的匿名 `GET /api/auth/me` 响应被浏览器条件缓存，登录成功后再次请求该接口时服务端返回 `304 Not Modified`；`304` 没有 JSON body，前端把空响应当成无效会话并清除了刚保存的 token。认证接口现在统一禁止缓存、忽略条件请求验证头并始终返回完整 JSON，前端认证请求也显式使用 `cache: 'no-store'`。本轮已部署、未改数据库、未读取或输出任何 token/password/secret。
+
+完成内容：
+
+- `server/index.js`：为 `/api/auth/*` 增加 `Cache-Control: no-store, no-cache, must-revalidate, proxy-revalidate`、`Pragma: no-cache` 和 `Expires: 0`，阻止匿名会话响应被复用为 304。
+- `server/index.js`：认证中间件移除 `If-None-Match` / `If-Modified-Since`，即使浏览器或代理发送条件请求，认证接口也不会返回空 body 的 304。
+- `src/lib/api.js`：`/api/auth/me`、login、logout、register、verify-email、resend-verification` 请求显式使用 `cache: 'no-store'`。
+- `scripts/run-api-db-tests.mjs`：仅为一次性 PostgreSQL 测试进程注入 `EXPOSE_DEV_VERIFICATION_CODE=true`，不改变生产默认，保证测试可以在无 SMTP 环境完成邮箱验证。
+- `tests/api/contract.db.spec.js`：新增注册→邮箱验证→密码登录回归，确认密码登录签发可用 session；新增认证响应 `no-store` 和条件请求不会返回 304 的断言。
+
+本轮验证结果：
+
+- `npm run lint`：通过。
+- `npm run build`：通过；构建生成的 tracked `dist/` 已恢复，未提交构建产物。
+- `npm run test:api`：37/37 通过。
+- `npm run test:api:db`：19/19 通过；覆盖真实 PostgreSQL 认证、密码登录、session 和 multipart 错误合约。
+- `npm run test:openapi`：通过（200 个本地 `$ref`、27 个 API error code）。
+- 本地 Playwright 页面回归：`/`、`/community`、`/login?mode=login`、`/account`、`/u/not-exist-test-handle` 通过（5/5）。无数据库环境下账户只读接口返回既定 `503 SERVICE_UNAVAILABLE`，与现有 API 合约一致。
+
+线上核查：部署前日志确认登录 POST 曾返回 200，紧接着 `/api/auth/me` 返回 304，与本次根因完全吻合；本轮已完成 VPS 备份、替换、重启和接口/页面验证。后续条件请求回归也必须返回 200 完整 JSON。
+
+部署结果：
+
+- `npm run release:vps` 成功生成 release archive；上传前后 SHA-256 一致。
+- 部署前确认 `DATABASE_URL`、`ADMIN_TOKEN` 均为 `[set]`，未输出值。
+- 已创建 `/opt/mrright-portfolio.backup-20260808-085858` 和 `/etc/mrright-portfolio.env.backup-20260808-085858`；既有 backup 继续保留。
+- 只替换 release 中的 `dist`、`server`、`scripts`、`package.json`、`package-lock.json`，重新安装生产依赖；保留 `data`、`public/uploads`、env 和所有 backup。
+- `mrright-portfolio` 重启后保持 active。
+- 线上验证通过：`/api/health` 200、`/api/admin/summary` 200、`/api/auth/me` 200、未认证 account 接口 401、`/admin`/`/community`/`/login?mode=login`/`/account`/`/u/not-exist-test-handle` 均 200；带 `If-None-Match` 的 `/api/auth/me` 也返回 200 完整 JSON，不再返回 304。
+- production smoke：6 passed，真实账号登录场景因未提供 `E2E_VISITOR_EMAIL` / `E2E_VISITOR_PASSWORD` 而按测试设计跳过。
+- 部署后最近日志窗口未发现新的 API internal error；未修改数据库 schema、数据、上传文件或生产环境变量。
+
+## 2026-08-08：作品集 UI、可访问性与前端稳定性收尾
+
+结论：本轮继续完善 Web 作品集的首屏体验、公开主页错误状态、对话框键盘交互与移动端可用性。重点把弹窗从“能显示”提升为键盘用户可安全操作的 dialog surface，并用稳定 API error code 驱动三语言文案。所有改动均在本地完成，**未部署、未改数据库、未读取或输出任何 token/password/secret、未触碰生产环境**。
+
+完成内容：
+
+- 修复 `useDialogAccessibility` 的 React Hook 兼容性：补齐 `useRef`、避免渲染阶段写 ref，保留最新 `onClose` 回调而不反复绑定全局监听器。
+- 完善 dialog 行为：Escape 关闭、Tab/Shift+Tab focus trap、焦点意外跑出 dialog 时自动拉回、打开时聚焦 Close、关闭后恢复触发按钮焦点，并保存/恢复原始 `body` overflow；ProjectDetail 与 ModelPreview 均通过 `aria-labelledby` 关联可见标题。
+- 验证嵌套弹窗：ProjectDetail 打开 ModelPreview 时，第一次 Escape 只关闭 3D Viewer，第二次才关闭详情；页面滚动锁定和焦点恢复均正确。
+- 为公开主页的 `RESOURCE_FORBIDDEN` 增加 zh/en/ja 稳定错误码文案，避免把服务端错误消息直接暴露给用户；不存在用户页面显示明确的本地化“Profile Not Found”状态。
+- 为作品卡片、社区资源、公开主页资源和头像补充 `loading="lazy"` / `decoding="async"`，减少非首屏图片对首屏网络与解码的抢占。
+- 为 API 请求 timeout 增加旧浏览器能力回退；AccountMenu 的弹出项补齐 `role="menuitem"`，让已有 ARIA 菜单语义更完整。
+- 统一社区发帖、资源上传、评论和访客账户中心的 API 失败提示：按稳定 error code 调用 `getApiErrorMessage`，只在未知错误时使用对应场景的安全 fallback，不再把 raw server message 直接渲染到普通访客界面。
+- 继续保留并验证移动端 Hero CTA（View Work / Contact Me）、移动导航 `aria-expanded`/`aria-controls`、AccountMenu `aria-haspopup`/`aria-expanded`，以及 `prefers-reduced-motion` 下不加载 Hero Canvas。
+- 保留首页基础 SEO metadata 与自定义 favicon；作品图片使用标题化 alt 文案；Three.js Viewer 保留错误边界和资源清理逻辑。
+
+本轮验证结果：
+
+- `npm run lint`：通过。
+- `npm run build`：通过；build 生成的 tracked `dist/` 已恢复，未提交构建产物。
+- `git diff --check`：通过。
+- `npm run test:api`：37/37 通过。
+- 最终 error-message 扫描：普通访客页面不再存在直接渲染 `error.message` 的路径；Admin 与模型错误边界仍保留管理员/开发诊断语义。
+- 本地 Playwright 页面回归：`/`、`/community`、`/login?mode=login`、`/account`、`/u/not-exist-test-handle` 均正常渲染（5/5）；移动端 Hero CTA、移动菜单和 AccountMenu 状态均通过；桌面端 ProjectDetail/ModelPreview dialog 键盘交互通过，浏览器无前端错误。
+- 本地完整 `production-smoke` 的只读账号接口在无 `DATABASE_URL` 的开发环境返回既有合约规定的 `503 SERVICE_UNAVAILABLE`，而 smoke 文件的线上断言期望 `401`；未为了迎合本地环境改坏既有 API 语义。API contract tests 已确认无数据库时账号读接口应为 503。
+
+后续待办：
+
+1. 延迟加载 Hero 3D Canvas，并为移动端提供静态 poster/质量档，进一步降低首屏 JS 与 GPU 成本。
+2. 继续统一剩余前端错误状态的 error-code 本地化，避免界面直接显示 raw API message。
+3. 在具备真实 PostgreSQL 的隔离环境中补充认证、上传、下载和移动端视觉回归；部署前仍需按规则备份并执行完整 VPS 验证。
+
+## 2026-08-08：提交、推送与 VPS 部署
+
+本轮已将上述 UI、可访问性、性能和错误处理改动提交并推送到 `fix/security-and-ui-2026-07-25`：
+
+- commit：`ef5aa64 feat: polish portfolio ui and accessibility`
+- GitHub 分支已推送，可从仓库页面创建 Pull Request。
+- `npm run release:vps` 成功生成 release archive；部署前远端只检查了 `DATABASE_URL` 和 `ADMIN_TOKEN` 是否为 `[set]`，没有输出值。
+- 部署前已创建 `/opt/mrright-portfolio` 时间戳备份和 `/etc/mrright-portfolio.env` 时间戳备份；`data`、`public/uploads` 和旧备份均保留。
+- 只替换了 release 中的 `dist`、`server`、`scripts`、`package.json`、`package-lock.json`，并重新安装生产依赖；没有替换 env 文件或数据库内容。
+- `mrright-portfolio` systemd 服务已重启并保持 active。
+- 线上验证通过：`/api/health`、`/api/admin/summary`、`/admin`、`/community`、`/login?mode=login`、`/account`、`/u/not-exist-test-handle`、`/favicon.svg` 均返回预期状态；线上入口引用的新 hash JS 可下载。
+- 未修改数据库 schema、数据、上传文件或生产环境变量；没有输出任何 secret/token/password。
+
+后续待办：
+
+1. 创建并审查 Pull Request，合并策略由项目维护者决定。
+2. 继续做 Hero 3D 延迟加载、移动端 poster 和质量档优化。
+3. 在真实 PostgreSQL 隔离环境补认证、上传、下载和视觉回归。
+
 ## 2026-07-16：C++ Qt AuthSessionService adapter 第一批
 
 结论：本轮在 Qt UI adapter 层新增 `AuthSessionService`，实现现有 `AuthService` boundary 并复用 SDK `AuthSession`。adapter 不提供 production default backend，而是拥有显式注入的 `HttpClient` 与 `TokenStore`，从而保证 `AuthSession` 引用依赖的生命周期安全。测试仅使用 `MockHttpClient` + `MemoryTokenStore`，不创建 `CurlHttpClient`，不访问真实或本地 API。Qt shell 的 `main_qt.cpp` 未修改，默认实现继续是 `MockAuthService`。SDK core 继续 Qt-free。**未部署、未改数据库、未读取或修改 `.env`/token/secret、未访问 production API、未访问 local API、未启用真实网络、未改 Web/API/OpenAPI contract、未修改 QML/Qt 视觉、未做 cache、未做 packaging、未提交构建产物**。

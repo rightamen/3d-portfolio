@@ -1,6 +1,6 @@
 import { ContactShadows, Grid, Html, OrbitControls, useGLTF, useProgress } from '@react-three/drei'
 import { Canvas, useThree } from '@react-three/fiber'
-import { Component, Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ACESFilmicToneMapping,
   Box3,
@@ -14,8 +14,10 @@ import {
   Vector3,
 } from 'three'
 import { EXRLoader } from 'three/examples/jsm/loaders/EXRLoader.js'
+import ModelErrorBoundary from './ModelErrorBoundary'
 import { inferAssetCategory } from '../lib/assetCategories'
 import { pickLocalized, translateKnownLabel } from '../lib/i18n'
+import useDialogAccessibility from '../hooks/useDialogAccessibility'
 
 const modes = [
   { id: 'textured', labelKey: 'modeTextured' },
@@ -153,11 +155,16 @@ const emptyModelStats = {
 const formatNumber = (value, fallback = 'Unknown') =>
   Number.isFinite(value) && value > 0 ? new Intl.NumberFormat().format(Math.round(value)) : fallback
 
-const disposeMaterial = (material) => {
+// Textures are shared references: the textured-mode clones borrow the maps of
+// the original studio materials, so only the full teardown path may dispose
+// them. Disposing them on a material swap would blank the studio materials.
+const disposeMaterial = (material, { disposeTextures = false } = {}) => {
   if (!material) return
-  materialKeys.forEach((key) => {
-    material[key]?.dispose?.()
-  })
+  if (disposeTextures) {
+    materialKeys.forEach((key) => {
+      material[key]?.dispose?.()
+    })
+  }
   material.dispose?.()
 }
 
@@ -166,7 +173,7 @@ const disposeObject = (object) => {
     if (!child.isMesh) return
     child.geometry?.dispose?.()
     const materials = Array.isArray(child.material) ? child.material : [child.material]
-    materials.forEach(disposeMaterial)
+    materials.forEach((material) => disposeMaterial(material, { disposeTextures: true }))
   })
 }
 
@@ -198,32 +205,6 @@ const collectModelStats = (scene) => {
     textures: textures.size,
     triangles,
     vertices,
-  }
-}
-
-class ModelErrorBoundary extends Component {
-  constructor(props) {
-    super(props)
-    this.state = { hasError: false }
-  }
-
-  static getDerivedStateFromError() {
-    return { hasError: true }
-  }
-
-  componentDidCatch(error) {
-    console.warn('Model preview failed to load.', error?.message || error)
-  }
-
-  componentDidUpdate(previousProps) {
-    if (previousProps.resetKey !== this.props.resetKey && this.state.hasError) {
-      this.setState({ hasError: false })
-    }
-  }
-
-  render() {
-    if (this.state.hasError) return this.props.fallback
-    return this.props.children
   }
 }
 
@@ -450,9 +431,14 @@ const ModelScene = ({
     })
 
     return () => {
-      texturedClones.forEach(disposeMaterial)
+      texturedClones.forEach((material) => disposeMaterial(material))
     }
   }, [clayMaterial, displayScene, mode, profile, renderSettings, wireMaterial])
+
+  // Each memoised material owns its own lifecycle, so toggling renderSettings
+  // only disposes the instance it just replaced.
+  useEffect(() => () => clayMaterial.dispose(), [clayMaterial])
+  useEffect(() => () => wireMaterial.dispose(), [wireMaterial])
 
   useEffect(() => {
     onModelReady({
@@ -468,12 +454,18 @@ const ModelScene = ({
     controlsRef.current?.update()
   }, [camera, controlsRef, resetNonce, transform.cameraPosition, transform.distance])
 
+  // Teardown must run on unmount only: keeping it in a dependency-driven effect
+  // let a rebuilt material wipe the geometry and GLTF cache of a live model.
+  const teardownRef = useRef({ displayScene, url })
+
+  useEffect(() => {
+    teardownRef.current = { displayScene, url }
+  }, [displayScene, url])
+
   useEffect(() => () => {
-    clayMaterial.dispose()
-    wireMaterial.dispose()
-    disposeObject(displayScene)
-    useGLTF.clear(url)
-  }, [clayMaterial, displayScene, url, wireMaterial])
+    disposeObject(teardownRef.current.displayScene)
+    useGLTF.clear(teardownRef.current.url)
+  }, [])
 
   const showGrid = sceneMode === 'grid' || (mode !== 'textured' && profile.grid && sceneMode === 'studio')
   const showContactShadow = !isMobile && mode !== 'textured' && sceneMode !== 'dark'
@@ -643,6 +635,8 @@ const ModelPreview = ({ project, onClose, language = 'zh', copy }) => {
   const [isMobile, setIsMobile] = useState(false)
   const controlsRef = useRef(null)
   const panelRef = useRef(null)
+  const dialogRef = useRef(null)
+  const closeButtonRef = useRef(null)
   const projectTitle = pickLocalized(project, 'title', language)
   const projectFormat = translateKnownLabel(
     pickLocalized(project, 'format', language) || copy.modelPreviewFallback,
@@ -680,15 +674,6 @@ const ModelPreview = ({ project, onClose, language = 'zh', copy }) => {
   }, [project.slug, retryKey])
 
   useEffect(() => {
-    const onKeyDown = (event) => {
-      if (event.key === 'Escape') onClose()
-    }
-
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [onClose])
-
-  useEffect(() => {
     const onFullscreenChange = () => setIsFullscreen(Boolean(document.fullscreenElement))
     document.addEventListener('fullscreenchange', onFullscreenChange)
     return () => document.removeEventListener('fullscreenchange', onFullscreenChange)
@@ -721,13 +706,25 @@ const ModelPreview = ({ project, onClose, language = 'zh', copy }) => {
     [],
   )
 
+  useDialogAccessibility({
+    dialogRef,
+    initialFocusRef: closeButtonRef,
+    onClose,
+  })
+
   return (
-    <div className="model-overlay" role="dialog" aria-modal="true">
+    <div
+      ref={dialogRef}
+      className="model-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="model-preview-title"
+    >
       <div className="model-panel" ref={panelRef}>
         <div className="model-toolbar">
           <div>
             <div className="section-kicker mb-1">{copy.modelPreview}</div>
-            <h3 className="text-xl font-semibold text-white">
+            <h3 id="model-preview-title" className="text-xl font-semibold text-white">
               {projectTitle}
             </h3>
             <p>{isMobile ? copy.modelTouchHint : copy.modelDesktopHint}</p>
@@ -736,7 +733,7 @@ const ModelPreview = ({ project, onClose, language = 'zh', copy }) => {
             <button type="button" className="mode-button" onClick={toggleFullscreen}>
               {isFullscreen ? copy.viewerExitFullscreen : copy.viewerFullscreen}
             </button>
-            <button type="button" className="secondary-action" onClick={onClose}>
+            <button ref={closeButtonRef} type="button" className="secondary-action" onClick={onClose}>
               {copy.close}
             </button>
           </div>

@@ -24,6 +24,7 @@ const pageCases = [
     assertions: async (page) => {
       await expect(page.getByRole('heading', { name: /visitor assets and creative exchange/i })).toBeVisible()
       await expect(page.getByText(/sign in to post/i)).toBeVisible()
+      await expect(page.getByRole('link', { name: /back to home/i })).toBeVisible()
     },
     path: '/community',
     title: /mrright\.blog/i,

@@ -105,7 +105,15 @@ const runPlaywright = (databaseUrl) =>
       ['playwright', 'test', '--config=playwright.api.db.config.js'],
       {
         cwd: process.cwd(),
-        env: { ...process.env, API_TEST_DATABASE_URL: databaseUrl },
+        // The disposable database has no SMTP service. This test-only flag
+        // exposes the one-time verification code in register responses so the
+        // suite can exercise register -> verify -> password login without
+        // weakening the production default.
+        env: {
+          ...process.env,
+          API_TEST_DATABASE_URL: databaseUrl,
+          EXPOSE_DEV_VERIFICATION_CODE: 'true',
+        },
         stdio: 'inherit',
       },
     )

@@ -1,8 +1,10 @@
-import { Component, StrictMode } from 'react'
+import { Component, StrictMode, Suspense, lazy } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
-import Admin from './Admin.jsx'
 import App from './App.jsx'
+import { getCopy, getInitialLanguage } from './lib/i18n'
+
+const Admin = lazy(() => import('./Admin.jsx'))
 
 const chunkReloadKey = 'mrright-chunk-reload-attempted-at'
 const chunkReloadCooldownMs = 60 * 1000
@@ -60,20 +62,22 @@ class ChunkReloadBoundary extends Component {
   render() {
     if (!this.state.error) return this.props.children
 
+    const copy = getCopy(getInitialLanguage())
+
     return (
       <main className="flex min-h-screen items-center justify-center bg-primary px-6 text-center text-white">
         <section className="max-w-md rounded-2xl border border-white/10 bg-black-100/70 p-8">
           <p className="section-kicker">mrright.blog</p>
-          <h1 className="mt-3 text-3xl font-bold">页面资源正在更新</h1>
+          <h1 className="mt-3 text-3xl font-bold">{copy.chunkErrorTitle}</h1>
           <p className="mt-4 text-neutral-400">
-            如果页面没有自动恢复，请点击下方按钮重新加载最新版本。
+            {copy.chunkErrorBody}
           </p>
           <button
             type="button"
             className="primary-action mt-6 w-full"
             onClick={() => window.location.reload()}
           >
-            重新加载
+            {copy.chunkErrorAction}
           </button>
         </section>
       </main>
@@ -86,7 +90,9 @@ const Root = window.location.pathname.startsWith('/admin') ? Admin : App
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <ChunkReloadBoundary>
-      <Root />
+      <Suspense fallback={null}>
+        <Root />
+      </Suspense>
     </ChunkReloadBoundary>
   </StrictMode>,
 )

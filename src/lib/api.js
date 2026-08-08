@@ -34,15 +34,44 @@ const createApiError = (payload, fallbackMessage, status) => {
   return error
 }
 
-const request = async (path, options) => {
-  const response = await fetch(`${API_BASE}${path}`, options)
+const requestTimeoutMs = 15000
+
+const buildRequestSignal = (signal) => {
+  if (typeof AbortSignal === 'undefined') return signal
+
+  const timeoutSignal =
+    typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(requestTimeoutMs) : null
+  if (!signal) return timeoutSignal || undefined
+  if (!timeoutSignal || typeof AbortSignal.any !== 'function') return signal
+  return AbortSignal.any([signal, timeoutSignal])
+}
+
+// A proxy or nginx error page returns HTML: parse it here so callers always see
+// the shared api error shape instead of a bare SyntaxError.
+const parseJsonBody = async (response) => {
+  const text = await response.text()
+  if (!text) return {}
+
+  try {
+    return JSON.parse(text)
+  } catch {
+    throw createApiError(null, 'Unexpected server response', response.status)
+  }
+}
+
+const request = async (path, options = {}) => {
+  const { signal, ...rest } = options
+  const response = await fetch(`${API_BASE}${path}`, {
+    ...rest,
+    signal: buildRequestSignal(signal),
+  })
 
   if (!response.ok) {
-    const payload = await response.json().catch(() => ({}))
+    const payload = await parseJsonBody(response).catch(() => ({}))
     throw createApiError(payload, 'Request failed', response.status)
   }
 
-  return response.json().then(normalizeApiPayload)
+  return normalizeApiPayload(await parseJsonBody(response))
 }
 
 const adminRequest = (path, token, options = {}) =>
@@ -72,11 +101,13 @@ export const getCommunityPosts = () => request('/api/community/posts')
 
 export const getCurrentVisitor = (token) =>
   request('/api/auth/me', {
+    cache: 'no-store',
     headers: authHeaders(token),
   })
 
 export const loginVisitor = (payload) =>
   request('/api/auth/login', {
+    cache: 'no-store',
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
@@ -84,12 +115,14 @@ export const loginVisitor = (payload) =>
 
 export const logoutVisitor = (token) =>
   request('/api/auth/logout', {
+    cache: 'no-store',
     method: 'POST',
     headers: authHeaders(token),
   })
 
 export const registerVisitor = (payload) =>
   request('/api/auth/register', {
+    cache: 'no-store',
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
@@ -97,6 +130,7 @@ export const registerVisitor = (payload) =>
 
 export const verifyVisitorEmail = (payload) =>
   request('/api/auth/verify-email', {
+    cache: 'no-store',
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
@@ -104,6 +138,7 @@ export const verifyVisitorEmail = (payload) =>
 
 export const resendVisitorVerification = (payload) =>
   request('/api/auth/resend-verification', {
+    cache: 'no-store',
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),

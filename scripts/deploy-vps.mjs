@@ -18,6 +18,15 @@ const serviceName = process.env.VPS_SERVICE || 'mrright-portfolio'
 const domain = process.env.VPS_DOMAIN || 'mrright.blog'
 const envFile = process.env.VPS_ENV_FILE || `/etc/${serviceName}.env`
 const archivePath = path.resolve('.deploy-tools', 'portfolio.tar.gz')
+// The generated nginx config below is HTTP-only (listen 80; TLS is terminated
+// upstream). Overwriting an existing config would therefore discard whatever a
+// certbot run — or any manual hardening — added to it, and the site would lose
+// HTTPS until someone restored the backup by hand. Same reasoning for the
+// systemd unit: an operator may have added Environment=, hardening directives,
+// or a different ExecStart. Both files are now written only when absent, unless
+// the caller explicitly opts in to a rewrite for this one deploy.
+const rewriteNginx = process.env.VPS_REWRITE_NGINX === 'true'
+const rewriteService = process.env.VPS_REWRITE_SERVICE === 'true'
 
 if (!host || !password) {
   throw new Error('VPS_HOST and VPS_PASSWORD are required.')
@@ -162,8 +171,15 @@ try {
       'if ! command -v nginx >/dev/null 2>&1; then apt-get update && apt-get install -y nginx; fi',
       'cd "$REMOTE_DIR" && npm ci --omit=dev',
       'SERVICE_FILE="/etc/systemd/system/$SERVICE_NAME.service"',
-      'if [ -f "$SERVICE_FILE" ]; then cp -a "$SERVICE_FILE" "$SERVICE_FILE.backup-$(date +%Y%m%d-%H%M%S)"; fi',
-      'cat > "$SERVICE_FILE" <<SERVICE',
+      `REWRITE_SERVICE=${rewriteService ? 'true' : 'false'}`,
+      'if [ -f "$SERVICE_FILE" ] && [ "$REWRITE_SERVICE" != "true" ]; then',
+      '  echo "Keeping existing $SERVICE_FILE (set VPS_REWRITE_SERVICE=true to regenerate)."',
+      'else',
+      '  if [ -f "$SERVICE_FILE" ]; then',
+      '    cp -a "$SERVICE_FILE" "$SERVICE_FILE.backup-$(date +%Y%m%d-%H%M%S)"',
+      '    echo "Rewriting $SERVICE_FILE (backup taken)."',
+      '  fi',
+      '  cat > "$SERVICE_FILE" <<SERVICE',
       '[Unit]',
       'Description=mrright.blog portfolio',
       'After=network.target',
@@ -179,9 +195,18 @@ try {
       '[Install]',
       'WantedBy=multi-user.target',
       'SERVICE',
+      'fi',
       'NGINX_FILE="/etc/nginx/sites-available/$SERVICE_NAME"',
-      'if [ -f "$NGINX_FILE" ]; then cp -a "$NGINX_FILE" "$NGINX_FILE.backup-$(date +%Y%m%d-%H%M%S)"; fi',
-      'cat > "$NGINX_FILE" <<NGINX',
+      `REWRITE_NGINX=${rewriteNginx ? 'true' : 'false'}`,
+      'if [ -f "$NGINX_FILE" ] && [ "$REWRITE_NGINX" != "true" ]; then',
+      '  echo "Keeping existing $NGINX_FILE (set VPS_REWRITE_NGINX=true to regenerate)."',
+      '  echo "Note: the generated template is HTTP-only; an existing TLS config is preserved."',
+      'else',
+      '  if [ -f "$NGINX_FILE" ]; then',
+      '    cp -a "$NGINX_FILE" "$NGINX_FILE.backup-$(date +%Y%m%d-%H%M%S)"',
+      '    echo "Rewriting $NGINX_FILE (backup taken). TLS settings in the old file are NOT carried over."',
+      '  fi',
+      '  cat > "$NGINX_FILE" <<NGINX',
       'server {',
       '    listen 80;',
       '    server_name $DOMAIN www.$DOMAIN;',
@@ -198,13 +223,16 @@ try {
       '    }',
       '}',
       'NGINX',
+      'fi',
       'ln -sf "$NGINX_FILE" "/etc/nginx/sites-enabled/$SERVICE_NAME"',
       'nginx -t',
       'systemctl daemon-reload',
       'systemctl enable "$SERVICE_NAME"',
       'systemctl restart "$SERVICE_NAME"',
       'systemctl enable nginx',
-      'systemctl restart nginx',
+      // reload keeps existing connections; fall back to restart if the running
+      // config cannot be reloaded in place.
+      'systemctl reload nginx || systemctl restart nginx',
       'curl -fsS http://127.0.0.1:4173/api/health',
       'TOKEN="$(awk -F= \'$1 == "ADMIN_TOKEN" { print substr($0, index($0, $2)) }\' "$ENV_FILE")"',
       'curl -fsS -H "Authorization: Bearer $TOKEN" http://127.0.0.1:4173/api/admin/summary >/dev/null',

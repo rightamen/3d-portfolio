@@ -16,13 +16,15 @@ const AccountMenu = ({
         type="button"
         className={visitorUser ? 'account-trigger-active' : 'account-trigger'}
         onClick={() => setIsOpen((current) => !current)}
+        aria-expanded={isOpen}
+        aria-haspopup="menu"
       >
         <span>{visitorUser ? copy.accountSignedIn : copy.accountGuest}</span>
         <strong>{visitorUser?.displayName || accessLabel}</strong>
       </button>
 
       {isOpen && (
-        <div className="account-popover">
+        <div className="account-popover" role="menu">
           {visitorUser ? (
             <>
               <div className="account-profile">
@@ -38,12 +40,13 @@ const AccountMenu = ({
                 <span>{copy.authEmailStatus}</span>
                 <strong>{visitorUser.emailVerified ? copy.authVerified : copy.authUnverified}</strong>
               </div>
-              <a href="/account" className="primary-action w-full">
+              <a href="/account" className="primary-action w-full" role="menuitem">
                 {copy.accountCenter}
               </a>
               <button
                 type="button"
                 className="secondary-action w-full"
+                role="menuitem"
                 onClick={() => {
                   onLogout()
                   setIsOpen(false)
@@ -58,10 +61,10 @@ const AccountMenu = ({
                 <div className="section-kicker mb-1">{copy.account}</div>
                 <p className="text-sm leading-relaxed text-neutral-400">{copy.authHint}</p>
               </div>
-              <a href="/login?mode=login" className="primary-action w-full">
+              <a href="/login?mode=login" className="primary-action w-full" role="menuitem">
                 {copy.authLogin}
               </a>
-              <a href="/login?mode=register" className="secondary-action w-full">
+              <a href="/login?mode=register" className="secondary-action w-full" role="menuitem">
                 {copy.authRegister}
               </a>
             </>

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { assetCategoryProfiles, getAssetCategoryProfile } from '../lib/assetCategories'
 import {
   createCommunityPost,
@@ -13,7 +13,7 @@ import {
   uploadAccountBanner,
   uploadCommunityResource,
 } from '../lib/api'
-import { languages, getAccessLevelLabel } from '../lib/i18n'
+import { getAccessLevelLabel, getApiErrorMessage, languages } from '../lib/i18n'
 
 const emptyUploadForm = {
   assetCategory: 'generic',
@@ -85,8 +85,10 @@ const formatFileSize = (size) => {
 
 const formatDate = (value) => (value ? new Date(value).toLocaleString() : '')
 
-const getTopicLabel = (copy, topic) =>
-  copy[`communityTopic${topic[0].toUpperCase()}${topic.slice(1)}`] || topic
+const getTopicLabel = (copy, topic) => {
+  if (!topic) return ''
+  return copy[`communityTopic${topic[0].toUpperCase()}${topic.slice(1)}`] || topic
+}
 
 const getStatusLabel = (copy, status) => copy[`accountStudioStatus${status}`] || status
 
@@ -173,6 +175,14 @@ const AccountPage = ({
   const [profileStatus, setProfileStatus] = useState('idle')
   const [profileMessage, setProfileMessage] = useState('')
   const [imageUploadState, setImageUploadState] = useState({ field: '', message: '', progress: 0 })
+  const isMountedRef = useRef(true)
+
+  useEffect(() => {
+    isMountedRef.current = true
+    return () => {
+      isMountedRef.current = false
+    }
+  }, [])
 
   const categories = useMemo(
     () =>
@@ -201,12 +211,14 @@ const AccountPage = ({
 
     try {
       const payload = await getAccountProfile(authToken)
+      if (!isMountedRef.current) return
       setProfile(payload.profile)
       setProfileForm(createProfileForm(payload.profile || visitorUser))
       setProfileStatus('ready')
     } catch (error) {
+      if (!isMountedRef.current) return
       setProfileStatus('error')
-      setProfileMessage(error.message || copy.accountProfileLoadError)
+      setProfileMessage(getApiErrorMessage(error, copy, copy.accountProfileLoadError))
     }
   }
 
@@ -218,14 +230,16 @@ const AccountPage = ({
 
     try {
       const payload = await getAccountCommunity(authToken)
+      if (!isMountedRef.current) return
       setDashboard({
         posts: payload.posts || [],
         uploads: payload.uploads || [],
       })
       setDashboardStatus('ready')
     } catch (error) {
+      if (!isMountedRef.current) return
       setDashboardStatus('error')
-      setDashboardMessage(error.message || copy.accountStudioLoadError)
+      setDashboardMessage(getApiErrorMessage(error, copy, copy.accountStudioLoadError))
     }
   }
 
@@ -237,11 +251,13 @@ const AccountPage = ({
 
     try {
       const payload = await getAccountDownloads(authToken)
+      if (!isMountedRef.current) return
       setDownloads(payload.requests || [])
       setDownloadsStatus('ready')
     } catch (error) {
+      if (!isMountedRef.current) return
       setDownloadsStatus('error')
-      setDownloadsMessage(error.message || copy.accountDownloadsLoadError)
+      setDownloadsMessage(getApiErrorMessage(error, copy, copy.accountDownloadsLoadError))
     }
   }
 
@@ -253,12 +269,14 @@ const AccountPage = ({
 
     try {
       const payload = await getAccountComments(authToken)
+      if (!isMountedRef.current) return
       setComments(payload.comments || [])
       setLikeCount(payload.likeCount || 0)
       setCommentsStatus('ready')
     } catch (error) {
+      if (!isMountedRef.current) return
       setCommentsStatus('error')
-      setCommentsMessage(error.message || copy.accountCommentsLoadError)
+      setCommentsMessage(getApiErrorMessage(error, copy, copy.accountCommentsLoadError))
     }
   }
 
@@ -290,7 +308,7 @@ const AccountPage = ({
     } catch (error) {
       setUploadState({
         phase: 'error',
-        message: error.message || copy.communitySubmitError,
+        message: getApiErrorMessage(error, copy, copy.communitySubmitError),
         progress: 0,
       })
     }
@@ -308,7 +326,10 @@ const AccountPage = ({
       setPostForm(emptyPostForm)
       setPostState({ phase: 'done', message: copy.communityPostSubmitted })
     } catch (error) {
-      setPostState({ phase: 'error', message: error.message || copy.communityPostError })
+      setPostState({
+        phase: 'error',
+        message: getApiErrorMessage(error, copy, copy.communityPostError),
+      })
     }
   }
 
@@ -323,7 +344,7 @@ const AccountPage = ({
         uploads: current.uploads.filter((upload) => upload.id !== id),
       }))
     } catch (error) {
-      setDashboardMessage(error.message || copy.accountStudioDeleteError)
+      setDashboardMessage(getApiErrorMessage(error, copy, copy.accountStudioDeleteError))
     } finally {
       setDeletingId('')
     }
@@ -340,7 +361,7 @@ const AccountPage = ({
         posts: current.posts.filter((post) => post.id !== id),
       }))
     } catch (error) {
-      setDashboardMessage(error.message || copy.accountStudioDeleteError)
+      setDashboardMessage(getApiErrorMessage(error, copy, copy.accountStudioDeleteError))
     } finally {
       setDeletingId('')
     }
@@ -381,7 +402,7 @@ const AccountPage = ({
       setProfileMessage(
         error.code === 'HANDLE_TAKEN'
           ? copy.accountProfileHandleTaken
-          : error.message || copy.accountProfileSaveError,
+          : getApiErrorMessage(error, copy, copy.accountProfileSaveError),
       )
     }
   }
@@ -405,7 +426,7 @@ const AccountPage = ({
     } catch (error) {
       setImageUploadState({
         field: '',
-        message: error.message || copy.accountProfileUploadError,
+        message: getApiErrorMessage(error, copy, copy.accountProfileUploadError),
         progress: 0,
       })
     }
@@ -915,7 +936,8 @@ const AccountPage = ({
               <img
                 className="account-channel-avatar"
                 src={getImageUrl(profileForm.avatarUrl)}
-                alt=""
+                alt={`${profileForm.displayName || visitorUser.displayName} avatar`}
+                decoding="async"
               />
             ) : (
               <span className="account-channel-avatar account-channel-avatar-empty">

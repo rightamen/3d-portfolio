@@ -66,11 +66,17 @@ const translationFilters = [
   { label: 'Missing Any Region', value: 'missing-any' },
 ]
 
-const formatDate = (value) =>
-  new Intl.DateTimeFormat('en-US', {
+const formatDate = (value) => {
+  if (!value) return ''
+
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+
+  return new Intl.DateTimeFormat('en-US', {
     dateStyle: 'medium',
     timeStyle: 'short',
-  }).format(new Date(value))
+  }).format(date)
+}
 
 const listToText = (value) => (Array.isArray(value) ? value.join(', ') : '')
 
@@ -756,6 +762,8 @@ const Admin = () => {
   const [visitorDetailTab, setVisitorDetailTab] = useState('overview')
   const [visitorContent, setVisitorContent] = useState({})
   const [visitorActionStatus, setVisitorActionStatus] = useState('')
+  const [actionMessage, setActionMessage] = useState('')
+  const visitorRequestRef = useRef(0)
 
   useEffect(() => {
     if (!editorScrollKey) return
@@ -799,17 +807,17 @@ const Admin = () => {
         ])
 
       setData({
-        comments: commentsPayload.comments,
-        communityComments: communityCommentsPayload.comments,
-        communityPosts: communityPostsPayload.posts,
-        communityUploads: communityUploadsPayload.uploads,
-        likes: likesPayload.likes,
-        messages: messagesPayload.messages,
-        projects: projectsPayload.projects,
-        requests: requestsPayload.requests,
-        visitors: visitorsPayload.visitors,
-        visitorPagination: visitorsPayload.pagination,
-        summary: summaryPayload.summary,
+        comments: commentsPayload.comments || [],
+        communityComments: communityCommentsPayload.comments || [],
+        communityPosts: communityPostsPayload.posts || [],
+        communityUploads: communityUploadsPayload.uploads || [],
+        likes: likesPayload.likes || [],
+        messages: messagesPayload.messages || [],
+        projects: projectsPayload.projects || [],
+        requests: requestsPayload.requests || [],
+        visitors: visitorsPayload.visitors || [],
+        visitorPagination: visitorsPayload.pagination || { page: 1, pages: 1, total: 0 },
+        summary: summaryPayload.summary || {},
       })
       setStatus('ready')
       return true
@@ -865,27 +873,54 @@ const Admin = () => {
   }
 
   const updateRequestStatus = async (id, nextStatus) => {
-    await updateAdminDownloadRequest(token, id, nextStatus)
-    await loadAdminData(token)
+    setActionMessage('')
+    try {
+      await updateAdminDownloadRequest(token, id, nextStatus)
+      await loadAdminData(token)
+    } catch (error) {
+      setActionMessage(error.message || 'Could not update this download request.')
+    }
   }
 
   const updateVisitorAccess = async (id, accessLevel) => {
-    await updateAdminVisitor(token, id, accessLevel)
-    await loadAdminData(token)
+    setVisitorActionStatus('working')
+    try {
+      await updateAdminVisitor(token, id, accessLevel)
+      await loadAdminData(token)
+      setVisitorActionStatus('done')
+    } catch (error) {
+      setVisitorActionStatus(error.message || 'Could not update this access level.')
+    }
   }
 
   const updateVisitorVerification = async (id, verified) => {
-    await updateAdminVisitorEmailVerification(token, id, verified)
-    await loadAdminData(token)
+    setVisitorActionStatus('working')
+    try {
+      await updateAdminVisitorEmailVerification(token, id, verified)
+      await loadAdminData(token)
+      setVisitorActionStatus('done')
+    } catch (error) {
+      setVisitorActionStatus(error.message || 'Could not update this email verification.')
+    }
   }
 
+  // Filter and pagination clicks overlap: only the newest request may write.
   const loadVisitors = async (filters = visitorFilters) => {
-    const payload = await getAdminVisitors(token, filters)
-    setData((current) => ({
-      ...current,
-      visitors: payload.visitors,
-      visitorPagination: payload.pagination,
-    }))
+    visitorRequestRef.current += 1
+    const requestId = visitorRequestRef.current
+
+    try {
+      const payload = await getAdminVisitors(token, filters)
+      if (visitorRequestRef.current !== requestId) return
+      setData((current) => ({
+        ...current,
+        visitors: payload.visitors || [],
+        visitorPagination: payload.pagination || current.visitorPagination,
+      }))
+    } catch (error) {
+      if (visitorRequestRef.current !== requestId) return
+      setActionMessage(error.message || 'Could not load visitors.')
+    }
   }
 
   const updateVisitorFilters = (patch) => {
@@ -931,10 +966,14 @@ const Admin = () => {
 
   const refreshSelectedVisitor = async () => {
     if (!selectedVisitor) return
-    const payload = await getAdminVisitor(token, selectedVisitor.id)
-    setSelectedVisitor({ ...payload.visitor, recentActions: payload.recentActions })
-    await loadVisitors()
-    if (visitorDetailTab !== 'overview') await loadVisitorTab(visitorDetailTab)
+    try {
+      const payload = await getAdminVisitor(token, selectedVisitor.id)
+      setSelectedVisitor({ ...payload.visitor, recentActions: payload.recentActions })
+      await loadVisitors()
+      if (visitorDetailTab !== 'overview') await loadVisitorTab(visitorDetailTab)
+    } catch (error) {
+      setVisitorActionStatus(error.message || 'Could not refresh this visitor.')
+    }
   }
 
   const confirmVisitorModeration = async ({ action, fields = [], label }) => {
@@ -961,14 +1000,21 @@ const Admin = () => {
     }
   }
 
+  // Errors surface through deleteItem, the only caller: swallowing them here
+  // would let the follow-up cleanup run as if the delete had succeeded.
   const deleteVisitor = async (id) => {
     await deleteAdminVisitor(token, id)
     await loadAdminData(token)
   }
 
   const updateCommunityUploadStatus = async (id, nextStatus) => {
-    await updateAdminCommunityUpload(token, id, nextStatus)
-    await loadAdminData(token)
+    setActionMessage('')
+    try {
+      await updateAdminCommunityUpload(token, id, nextStatus)
+      await loadAdminData(token)
+    } catch (error) {
+      setActionMessage(error.message || 'Could not update this community upload.')
+    }
   }
 
   const saveProject = async (event) => {
@@ -1179,8 +1225,13 @@ const Admin = () => {
   const deleteItem = async (label, action) => {
     if (!window.confirm(`Delete this ${label}? This cannot be undone.`)) return
 
-    await action()
-    await loadAdminData(token)
+    setActionMessage('')
+    try {
+      await action()
+      await loadAdminData(token)
+    } catch (error) {
+      setActionMessage(error.message || `Could not delete this ${label}.`)
+    }
   }
 
   const visibleProjects = data.projects.filter(
@@ -1260,6 +1311,7 @@ const Admin = () => {
       {status === 'error' && (
         <p className="text-coral">Could not load admin data. Check the token.</p>
       )}
+      {actionMessage && <p className="text-coral">{actionMessage}</p>}
 
       {status === 'ready' && (
         <>
@@ -2237,7 +2289,14 @@ const Admin = () => {
               {visibleVisitors.map((visitor) => (
                 <button key={visitor.id} type="button" className={`admin-row visitor-row ${selectedVisitor?.id === visitor.id ? 'visitor-row-active' : ''}`} onClick={() => openVisitorDetail(visitor)}>
                   <span className="visitor-avatar">
-                    {visitor.avatarUrl ? <img src={visitor.avatarUrl} alt="" /> : visitor.displayName?.slice(0, 1)}
+                    {visitor.avatarUrl ? (
+                      <img
+                        src={visitor.avatarUrl}
+                        alt={`${visitor.displayName} avatar`}
+                        decoding="async"
+                        loading="lazy"
+                      />
+                    ) : visitor.displayName?.slice(0, 1)}
                   </span>
                   <span className="visitor-row-main">
                     <strong>{visitor.displayName}</strong>

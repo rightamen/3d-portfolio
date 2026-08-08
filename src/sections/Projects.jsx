@@ -119,7 +119,13 @@ const Projects = ({ authToken, copy, language, projects = [], visitorUser }) => 
             transition={{ duration: 0.45, delay: index * 0.08 }}
           >
             <div className="project-media">
-              <img src={project.image} alt="" className="h-full w-full object-cover" />
+              <img
+                src={project.image}
+                alt={`${title} preview`}
+                className="h-full w-full object-cover"
+                decoding="async"
+                loading="lazy"
+              />
               <span className="project-category-badge">{category.label}</span>
             </div>
             <div className="flex flex-1 flex-col gap-4 p-5">
@@ -172,7 +178,7 @@ const Projects = ({ authToken, copy, language, projects = [], visitorUser }) => 
       {previewProject && (
         <Suspense fallback={null}>
           <ModelPreview
-            key={`${previewProject.slug}-${language}`}
+            key={previewProject.slug}
             project={previewProject}
             language={language}
             copy={copy}
@@ -185,7 +191,7 @@ const Projects = ({ authToken, copy, language, projects = [], visitorUser }) => 
         <Suspense fallback={null}>
           <ProjectDetail
             authToken={authToken}
-            key={`${detailSlug}-${language}`}
+            key={detailSlug}
             slug={detailSlug}
             visitorUser={visitorUser}
             language={language}

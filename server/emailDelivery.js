@@ -102,15 +102,36 @@ const encodeHeader = (value) => {
 
 const escapeAddress = (value) => value.replace(/[\r\n<>]/g, '').trim()
 
+// displayName is attacker-controlled at registration and is persisted, so old
+// rows may already hold newlines. Collapse them before the value reaches either
+// MIME part.
+const escapeTextField = (value) => String(value ?? '').replace(/[\r\n]+/g, ' ')
+
+const escapeHtmlField = (value) =>
+  escapeTextField(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+
+// RFC 5321 §4.5.2. A line consisting of a single "." ends the DATA segment, so
+// any body line starting with "." must be doubled. Without this a crafted
+// display name could close DATA early and have the remainder read as SMTP
+// commands — effectively an open relay on an authenticated account.
+const stuffDots = (message) =>
+  (message.startsWith('.') ? `.${message}` : message).replace(/\r\n\./g, '\r\n..')
+
 const formatMessage = ({ code, displayName, expiresAt, from, siteUrl, to }) => {
   const expiresText = new Date(expiresAt).toLocaleString('zh-CN', {
     hour12: false,
     timeZone: 'Asia/Shanghai',
   })
   const safeTo = escapeAddress(to)
+  const safeNamePlain = escapeTextField(displayName) || 'there'
+  const safeNameHtml = escapeHtmlField(displayName) || 'there'
   const subject = 'mrright.blog visitor verification code'
   const plain = [
-    `Hi ${displayName || 'there'},`,
+    `Hi ${safeNamePlain},`,
     '',
     `Your mrright.blog verification code is: ${code}`,
     `This code expires at ${expiresText}.`,
@@ -122,7 +143,7 @@ const formatMessage = ({ code, displayName, expiresAt, from, siteUrl, to }) => {
   const html = `
     <div style="font-family:Arial,sans-serif;line-height:1.6;color:#111827">
       <h2>mrright.blog visitor verification</h2>
-      <p>Hi ${displayName || 'there'},</p>
+      <p>Hi ${safeNameHtml},</p>
       <p>Your verification code is:</p>
       <p style="font-size:28px;font-weight:700;letter-spacing:6px">${code}</p>
       <p>This code expires at ${expiresText}.</p>
@@ -211,14 +232,16 @@ export const sendVerificationEmail = async ({ code, displayName, email, expiresA
     await sendCommand(socket, readResponse, `RCPT TO:<${escapeAddress(email)}>`, [250, 251], 'RCPT TO')
     await sendCommand(socket, readResponse, 'DATA', [354], 'DATA')
     socket.write(
-      `${formatMessage({
-        code,
-        displayName,
-        expiresAt,
-        from: config.from,
-        siteUrl: config.siteUrl,
-        to: email,
-      })}${crlf}.${crlf}`,
+      `${stuffDots(
+        formatMessage({
+          code,
+          displayName,
+          expiresAt,
+          from: config.from,
+          siteUrl: config.siteUrl,
+          to: email,
+        }),
+      )}${crlf}.${crlf}`,
     )
     expect(await readResponse(), [250], 'Message delivery')
     await sendCommand(socket, readResponse, 'QUIT', [221], 'QUIT')
