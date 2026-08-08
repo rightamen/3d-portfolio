@@ -689,6 +689,15 @@ export const createPostgresStores = async (databaseUrl) => {
       await pool.query('DELETE FROM visitor_sessions WHERE token_hash = $1', [tokenHash])
     },
 
+    // Sessions live for 30 days and were only ever removed by an explicit
+    // logout, so every abandoned session stayed in the table forever. Expired
+    // rows can no longer authenticate (getSessionUser filters on expires_at),
+    // but they still accumulate. Called on a timer from server/index.js.
+    deleteExpiredSessions: async () => {
+      const result = await pool.query('DELETE FROM visitor_sessions WHERE expires_at <= now()')
+      return result.rowCount
+    },
+
     getSessionUser: async (tokenHash) => {
       const result = await pool.query(
         `
@@ -906,7 +915,6 @@ export const createPostgresStores = async (databaseUrl) => {
               project_comments.created_at,
               visitor_users.id AS user_id,
               visitor_users.display_name,
-              visitor_users.email,
               visitor_users.access_level
             FROM project_comments
             LEFT JOIN visitor_users ON visitor_users.id = project_comments.user_id
@@ -920,7 +928,7 @@ export const createPostgresStores = async (databaseUrl) => {
 
       return {
         likes: Array.from({ length: likesResult.rows[0].count }, (_, index) => String(index)),
-        comments: commentsResult.rows.map(toComment),
+        comments: commentsResult.rows.map((row) => toComment(row)),
       }
     },
 
@@ -1003,7 +1011,6 @@ export const createPostgresStores = async (databaseUrl) => {
             project_comments.created_at,
             visitor_users.id AS user_id,
             visitor_users.display_name,
-            visitor_users.email,
             visitor_users.access_level
           FROM project_comments
           LEFT JOIN visitor_users ON visitor_users.id = project_comments.user_id
@@ -1026,7 +1033,6 @@ export const createPostgresStores = async (databaseUrl) => {
             project_comments.created_at,
             visitor_users.id AS user_id,
             visitor_users.display_name,
-            visitor_users.email,
             visitor_users.access_level
           FROM project_comments
           LEFT JOIN visitor_users ON visitor_users.id = project_comments.user_id
@@ -1037,7 +1043,7 @@ export const createPostgresStores = async (databaseUrl) => {
         [userId],
       )
 
-      return result.rows.map(toComment)
+      return result.rows.map((row) => toComment(row))
     },
 
     countUserLikes: async (userId) => {
@@ -1141,7 +1147,6 @@ export const createPostgresStores = async (databaseUrl) => {
           community_uploads.updated_at,
           visitor_users.id AS user_id,
           visitor_users.display_name,
-          visitor_users.email,
           visitor_users.access_level
         FROM community_uploads
         LEFT JOIN visitor_users ON visitor_users.id = community_uploads.user_id
@@ -1150,7 +1155,7 @@ export const createPostgresStores = async (databaseUrl) => {
         LIMIT 100
       `)
 
-      return result.rows.map(toCommunityUpload)
+      return result.rows.map((row) => toCommunityUpload(row))
     },
 
     // Reverse lookup used by the /uploads access gate: a file on disk only
@@ -1180,7 +1185,6 @@ export const createPostgresStores = async (databaseUrl) => {
           community_posts.updated_at,
           visitor_users.id AS user_id,
           visitor_users.display_name,
-          visitor_users.email,
           visitor_users.access_level
         FROM community_posts
         LEFT JOIN visitor_users ON visitor_users.id = community_posts.user_id
@@ -1188,7 +1192,7 @@ export const createPostgresStores = async (databaseUrl) => {
         LIMIT 100
       `)
 
-      return result.rows.map(toCommunityPost)
+      return result.rows.map((row) => toCommunityPost(row))
     },
 
     getPost: async (id) => {
@@ -1203,7 +1207,6 @@ export const createPostgresStores = async (databaseUrl) => {
             community_posts.updated_at,
             visitor_users.id AS user_id,
             visitor_users.display_name,
-            visitor_users.email,
             visitor_users.access_level
           FROM community_posts
           LEFT JOIN visitor_users ON visitor_users.id = community_posts.user_id
@@ -1383,7 +1386,6 @@ export const createPostgresStores = async (databaseUrl) => {
             community_uploads.updated_at,
             visitor_users.id AS user_id,
             visitor_users.display_name,
-            visitor_users.email,
             visitor_users.access_level
           FROM community_uploads
           LEFT JOIN visitor_users ON visitor_users.id = community_uploads.user_id
@@ -1394,7 +1396,7 @@ export const createPostgresStores = async (databaseUrl) => {
         [userId],
       )
 
-      return result.rows.map(toCommunityUpload)
+      return result.rows.map((row) => toCommunityUpload(row))
     },
 
     listUserPosts: async (userId) => {
@@ -1409,7 +1411,6 @@ export const createPostgresStores = async (databaseUrl) => {
             community_posts.updated_at,
             visitor_users.id AS user_id,
             visitor_users.display_name,
-            visitor_users.email,
             visitor_users.access_level
           FROM community_posts
           LEFT JOIN visitor_users ON visitor_users.id = community_posts.user_id
@@ -1420,7 +1421,7 @@ export const createPostgresStores = async (databaseUrl) => {
         [userId],
       )
 
-      return result.rows.map(toCommunityPost)
+      return result.rows.map((row) => toCommunityPost(row))
     },
 
     listPublicUserUploads: async (userId) => {
@@ -1441,7 +1442,6 @@ export const createPostgresStores = async (databaseUrl) => {
             community_uploads.updated_at,
             visitor_users.id AS user_id,
             visitor_users.display_name,
-            visitor_users.email,
             visitor_users.access_level
           FROM community_uploads
           LEFT JOIN visitor_users ON visitor_users.id = community_uploads.user_id
@@ -1453,7 +1453,7 @@ export const createPostgresStores = async (databaseUrl) => {
         [userId],
       )
 
-      return result.rows.map(toCommunityUpload)
+      return result.rows.map((row) => toCommunityUpload(row))
     },
 
     listPublicUserPosts: async (userId) => {
@@ -1468,7 +1468,6 @@ export const createPostgresStores = async (databaseUrl) => {
             community_posts.updated_at,
             visitor_users.id AS user_id,
             visitor_users.display_name,
-            visitor_users.email,
             visitor_users.access_level
           FROM community_posts
           LEFT JOIN visitor_users ON visitor_users.id = community_posts.user_id
@@ -1479,7 +1478,7 @@ export const createPostgresStores = async (databaseUrl) => {
         [userId],
       )
 
-      return result.rows.map(toCommunityPost)
+      return result.rows.map((row) => toCommunityPost(row))
     },
 
     listPublicUserComments: async (userId) => {
@@ -1493,7 +1492,6 @@ export const createPostgresStores = async (databaseUrl) => {
             project_comments.created_at,
             visitor_users.id AS user_id,
             visitor_users.display_name,
-            visitor_users.email,
             visitor_users.access_level
           FROM project_comments
           LEFT JOIN visitor_users ON visitor_users.id = project_comments.user_id
@@ -1504,7 +1502,7 @@ export const createPostgresStores = async (databaseUrl) => {
         [userId],
       )
 
-      return result.rows.map(toComment)
+      return result.rows.map((row) => toComment(row))
     },
 
     createUpload: async (upload) => {

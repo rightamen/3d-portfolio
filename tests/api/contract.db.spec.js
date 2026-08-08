@@ -538,3 +538,120 @@ test.describe('db-backed real multer upload errors', () => {
     })
   }
 })
+
+// PII containment. An earlier release leaked visitor_users.email through every
+// public community, profile, and interaction response, because the row mappers
+// in server/postgresStores.js emitted `email: row.email` unconditionally. Email
+// is now opt-in (toUserSummary's includeEmail, passed only by adminStore call
+// sites) and the public-path queries no longer select the column at all.
+// Nothing covered that, so the leak could come back silently.
+//
+// Both directions are asserted on purpose: public payloads must not contain a
+// registration address anywhere, AND admin payloads must still contain it.
+// Without the second half, deleting the field admin moderation depends on
+// would make this suite pass.
+test.describe('visitor email containment', () => {
+  const publicHandle = 'contract-visitor-a'
+  const projectSlug = 'fire-extinguisher-next-gen'
+
+  const expectNoRegistrationEmail = (payload, label) => {
+    const serialized = JSON.stringify(payload)
+    for (const email of [visitorA.email, visitorB.email]) {
+      expect(serialized.includes(email), `${label} leaked ${email}`).toBe(false)
+    }
+  }
+
+  test.beforeAll(async () => {
+    // /api/users/:handle only resolves once the account has a public handle.
+    const profile = await sendJson(
+      'PUT',
+      '/api/account/profile',
+      {
+        activityPublic: true,
+        contactsPublic: false,
+        displayName: 'Contract Test Visitor A',
+        handle: publicHandle,
+        profilePublic: true,
+      },
+      visitorA.sessionToken,
+    )
+    expect(profile.response.status).toBe(200)
+
+    // Author-bearing rows on both comment tables, so the assertions below run
+    // against populated user summaries rather than empty lists.
+    const communityComment = await sendJson(
+      'POST',
+      `/api/community/posts/${seededPostId}/comments`,
+      { message: 'Email containment seed comment.' },
+      visitorA.sessionToken,
+    )
+    expect(communityComment.response.status).toBe(201)
+
+    const projectComment = await sendJson(
+      'POST',
+      `/api/projects/${projectSlug}/comments`,
+      { message: 'Email containment seed project comment.' },
+      visitorA.sessionToken,
+    )
+    expect(projectComment.response.status).toBe(201)
+  })
+  test('public read endpoints never expose a registration email', async () => {
+    const publicPaths = [
+      '/api/community/posts',
+      '/api/community/uploads',
+      `/api/community/posts/${seededPostId}`,
+      `/api/community/posts/${seededPostId}/comments`,
+      `/api/projects/${projectSlug}/interactions`,
+      `/api/users/${publicHandle}`,
+      `/api/users/${publicHandle}/posts`,
+      `/api/users/${publicHandle}/resources`,
+      `/api/users/${publicHandle}/activity`,
+    ]
+
+    for (const path of publicPaths) {
+      const { payload, response } = await getJson(path)
+      expect(response.status, `${path} status`).toBe(200)
+      expectNoRegistrationEmail(payload, path)
+    }
+  })
+
+  test('an authenticated viewer does not see emails either, including their own rows', async () => {
+    // The viewer's own email is legitimately available from /api/account/profile.
+    // It must still not ride along on shared community content, which is what
+    // the old mappers did.
+    for (const path of [
+      '/api/community/posts',
+      `/api/community/posts/${seededPostId}/comments`,
+      '/api/account/community',
+    ]) {
+      const { payload, response } = await getJson(path, visitorA.sessionToken)
+      expect(response.status, `${path} status`).toBe(200)
+      expectNoRegistrationEmail(payload, `${path} (authenticated)`)
+    }
+  })
+
+  test('public user summaries carry exactly id/displayName/accessLevel', async () => {
+    const { payload, response } = await getJson(
+      `/api/community/posts/${seededPostId}/comments`,
+      visitorA.sessionToken,
+    )
+    expect(response.status).toBe(200)
+
+    const summaries = payload.data.comments.map((comment) => comment.user).filter(Boolean)
+    expect(summaries.length).toBeGreaterThan(0)
+    for (const summary of summaries) {
+      expect(Object.keys(summary).sort()).toEqual(['accessLevel', 'displayName', 'id'])
+    }
+  })
+
+  test('admin responses still include the email that moderation depends on', async () => {
+    // The mirror of the assertions above: proves the email was removed from the
+    // public path only, not dropped everywhere. Without this, deleting the
+    // column from every query would still pass the leak tests.
+    for (const path of ['/api/admin/community-posts', '/api/admin/comments', '/api/admin/visitors']) {
+      const { payload, response } = await getJson(path, adminToken)
+      expect(response.status, `${path} status`).toBe(200)
+      expect(JSON.stringify(payload), `${path} should retain email`).toContain(visitorA.email)
+    }
+  })
+})

@@ -2248,6 +2248,28 @@ app.get(/.*/, (_request, response) => {
   response.sendFile(distIndexPath)
 })
 
+// Expired sessions cannot authenticate (getSessionUser filters on expires_at)
+// but nothing ever deleted them, so visitor_sessions grew without bound. Sweep
+// on an interval instead of per-request so a slow DELETE never sits in a
+// request path. unref() keeps the timer from holding the process open.
+const sessionSweepIntervalMs = Number(process.env.SESSION_SWEEP_INTERVAL_MS || 6 * 60 * 60 * 1000)
+
+const sweepExpiredSessions = async () => {
+  if (typeof authStore?.deleteExpiredSessions !== 'function') return
+
+  try {
+    const removed = await authStore.deleteExpiredSessions()
+    if (removed > 0) console.log(`Removed ${removed} expired visitor session(s).`)
+  } catch (error) {
+    console.error('Expired session sweep failed:', error.message)
+  }
+}
+
+if (typeof authStore?.deleteExpiredSessions === 'function' && sessionSweepIntervalMs > 0) {
+  sweepExpiredSessions()
+  setInterval(sweepExpiredSessions, sessionSweepIntervalMs).unref()
+}
+
 app.listen(port, () => {
   console.log(`Portfolio server listening on http://localhost:${port}`)
 })
