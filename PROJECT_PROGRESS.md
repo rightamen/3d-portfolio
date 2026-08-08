@@ -32,6 +32,25 @@
 2. 继续统一剩余前端错误状态的 error-code 本地化，避免界面直接显示 raw API message。
 3. 在具备真实 PostgreSQL 的隔离环境中补充认证、上传、下载和移动端视觉回归；部署前仍需按规则备份并执行完整 VPS 验证。
 
+## 2026-08-08：提交、推送与 VPS 部署
+
+本轮已将上述 UI、可访问性、性能和错误处理改动提交并推送到 `fix/security-and-ui-2026-07-25`：
+
+- commit：`ef5aa64 feat: polish portfolio ui and accessibility`
+- GitHub 分支已推送，可从仓库页面创建 Pull Request。
+- `npm run release:vps` 成功生成 release archive；部署前远端只检查了 `DATABASE_URL` 和 `ADMIN_TOKEN` 是否为 `[set]`，没有输出值。
+- 部署前已创建 `/opt/mrright-portfolio` 时间戳备份和 `/etc/mrright-portfolio.env` 时间戳备份；`data`、`public/uploads` 和旧备份均保留。
+- 只替换了 release 中的 `dist`、`server`、`scripts`、`package.json`、`package-lock.json`，并重新安装生产依赖；没有替换 env 文件或数据库内容。
+- `mrright-portfolio` systemd 服务已重启并保持 active。
+- 线上验证通过：`/api/health`、`/api/admin/summary`、`/admin`、`/community`、`/login?mode=login`、`/account`、`/u/not-exist-test-handle`、`/favicon.svg` 均返回预期状态；线上入口引用的新 hash JS 可下载。
+- 未修改数据库 schema、数据、上传文件或生产环境变量；没有输出任何 secret/token/password。
+
+后续待办：
+
+1. 创建并审查 Pull Request，合并策略由项目维护者决定。
+2. 继续做 Hero 3D 延迟加载、移动端 poster 和质量档优化。
+3. 在真实 PostgreSQL 隔离环境补认证、上传、下载和视觉回归。
+
 ## 2026-07-16：C++ Qt AuthSessionService adapter 第一批
 
 结论：本轮在 Qt UI adapter 层新增 `AuthSessionService`，实现现有 `AuthService` boundary 并复用 SDK `AuthSession`。adapter 不提供 production default backend，而是拥有显式注入的 `HttpClient` 与 `TokenStore`，从而保证 `AuthSession` 引用依赖的生命周期安全。测试仅使用 `MockHttpClient` + `MemoryTokenStore`，不创建 `CurlHttpClient`，不访问真实或本地 API。Qt shell 的 `main_qt.cpp` 未修改，默认实现继续是 `MockAuthService`。SDK core 继续 Qt-free。**未部署、未改数据库、未读取或修改 `.env`/token/secret、未访问 production API、未访问 local API、未启用真实网络、未改 Web/API/OpenAPI contract、未修改 QML/Qt 视觉、未做 cache、未做 packaging、未提交构建产物**。
