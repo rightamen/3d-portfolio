@@ -1,5 +1,67 @@
 # mrright.blog 项目进度记录
 
+## 2026-08-08：社区页面增加返回首页入口
+
+结论：社区页面顶部导航现在提供明确的“返回首页”链接，桌面和移动布局均可使用；补齐 zh/en/ja 文案。本轮已部署到 VPS，未改数据库、未读取或输出任何 token/password/secret。
+
+完成内容：
+
+- `src/pages/CommunityPage.jsx`：在社区页 logo 与语言切换之间加入返回 `/` 的 secondary action，使用箭头和本地化文案，保持现有社区帖子详情返回社区列表功能不变。
+- `src/lib/i18n.js`：新增 `communityBackHome` 的中文、英文、日文文案。
+- `tests/e2e/production-smoke.spec.js`：社区页面 smoke 增加返回首页链接可见性断言。
+
+本轮验证结果：
+
+- `npm run lint`：通过。
+- `npm run build`：通过；构建生成的 tracked `dist/` 已恢复，未提交构建产物。
+- 本地 Playwright 社区页面回归：通过（1/1），返回首页链接正常显示。
+- `git diff --check`：通过。
+
+部署结果：
+
+- `npm run release:vps` 成功生成 release archive；上传前后 SHA-256 一致。
+- 部署前确认 `DATABASE_URL`、`ADMIN_TOKEN` 均为 `[set]`，未输出值。
+- 已创建 `/opt/mrright-portfolio.backup-20260808-091326` 和 `/etc/mrright-portfolio.env.backup-20260808-091326`；既有 backup 继续保留。
+- 只替换 release 中的 `dist`、`server`、`scripts`、`package.json`、`package-lock.json`，重新安装生产依赖；保留 `data`、`public/uploads`、env 和所有 backup。
+- `mrright-portfolio` 重启后保持 active，health 200，admin summary 200。
+- 线上 `/community` 200，返回首页链接实际渲染并由 smoke 断言通过；线上 `/`、`/login?mode=login`、`/account`、`/admin`、`/u/not-exist-test-handle` 均通过页面验证。
+- production smoke：6 passed，真实账号登录场景因未提供 `E2E_VISITOR_EMAIL` / `E2E_VISITOR_PASSWORD` 而按测试设计跳过。
+- 认证接口仍返回 `Cache-Control: no-store`；未修改数据库 schema、数据、上传文件或生产环境变量。
+
+## 2026-08-08：修复访客登录成功后立即掉线
+
+结论：已修复线上“密码正确但无法登录/登录后回到登录页”的认证回归。根因是旧的匿名 `GET /api/auth/me` 响应被浏览器条件缓存，登录成功后再次请求该接口时服务端返回 `304 Not Modified`；`304` 没有 JSON body，前端把空响应当成无效会话并清除了刚保存的 token。认证接口现在统一禁止缓存、忽略条件请求验证头并始终返回完整 JSON，前端认证请求也显式使用 `cache: 'no-store'`。本轮已部署、未改数据库、未读取或输出任何 token/password/secret。
+
+完成内容：
+
+- `server/index.js`：为 `/api/auth/*` 增加 `Cache-Control: no-store, no-cache, must-revalidate, proxy-revalidate`、`Pragma: no-cache` 和 `Expires: 0`，阻止匿名会话响应被复用为 304。
+- `server/index.js`：认证中间件移除 `If-None-Match` / `If-Modified-Since`，即使浏览器或代理发送条件请求，认证接口也不会返回空 body 的 304。
+- `src/lib/api.js`：`/api/auth/me`、login、logout、register、verify-email、resend-verification` 请求显式使用 `cache: 'no-store'`。
+- `scripts/run-api-db-tests.mjs`：仅为一次性 PostgreSQL 测试进程注入 `EXPOSE_DEV_VERIFICATION_CODE=true`，不改变生产默认，保证测试可以在无 SMTP 环境完成邮箱验证。
+- `tests/api/contract.db.spec.js`：新增注册→邮箱验证→密码登录回归，确认密码登录签发可用 session；新增认证响应 `no-store` 和条件请求不会返回 304 的断言。
+
+本轮验证结果：
+
+- `npm run lint`：通过。
+- `npm run build`：通过；构建生成的 tracked `dist/` 已恢复，未提交构建产物。
+- `npm run test:api`：37/37 通过。
+- `npm run test:api:db`：19/19 通过；覆盖真实 PostgreSQL 认证、密码登录、session 和 multipart 错误合约。
+- `npm run test:openapi`：通过（200 个本地 `$ref`、27 个 API error code）。
+- 本地 Playwright 页面回归：`/`、`/community`、`/login?mode=login`、`/account`、`/u/not-exist-test-handle` 通过（5/5）。无数据库环境下账户只读接口返回既定 `503 SERVICE_UNAVAILABLE`，与现有 API 合约一致。
+
+线上核查：部署前日志确认登录 POST 曾返回 200，紧接着 `/api/auth/me` 返回 304，与本次根因完全吻合；本轮已完成 VPS 备份、替换、重启和接口/页面验证。后续条件请求回归也必须返回 200 完整 JSON。
+
+部署结果：
+
+- `npm run release:vps` 成功生成 release archive；上传前后 SHA-256 一致。
+- 部署前确认 `DATABASE_URL`、`ADMIN_TOKEN` 均为 `[set]`，未输出值。
+- 已创建 `/opt/mrright-portfolio.backup-20260808-085858` 和 `/etc/mrright-portfolio.env.backup-20260808-085858`；既有 backup 继续保留。
+- 只替换 release 中的 `dist`、`server`、`scripts`、`package.json`、`package-lock.json`，重新安装生产依赖；保留 `data`、`public/uploads`、env 和所有 backup。
+- `mrright-portfolio` 重启后保持 active。
+- 线上验证通过：`/api/health` 200、`/api/admin/summary` 200、`/api/auth/me` 200、未认证 account 接口 401、`/admin`/`/community`/`/login?mode=login`/`/account`/`/u/not-exist-test-handle` 均 200；带 `If-None-Match` 的 `/api/auth/me` 也返回 200 完整 JSON，不再返回 304。
+- production smoke：6 passed，真实账号登录场景因未提供 `E2E_VISITOR_EMAIL` / `E2E_VISITOR_PASSWORD` 而按测试设计跳过。
+- 部署后最近日志窗口未发现新的 API internal error；未修改数据库 schema、数据、上传文件或生产环境变量。
+
 ## 2026-08-08：作品集 UI、可访问性与前端稳定性收尾
 
 结论：本轮继续完善 Web 作品集的首屏体验、公开主页错误状态、对话框键盘交互与移动端可用性。重点把弹窗从“能显示”提升为键盘用户可安全操作的 dialog surface，并用稳定 API error code 驱动三语言文案。所有改动均在本地完成，**未部署、未改数据库、未读取或输出任何 token/password/secret、未触碰生产环境**。

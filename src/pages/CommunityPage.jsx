@@ -59,7 +59,12 @@ const CommunityShell = ({ children, copy, language, onLanguageChange }) => (
       <a href="/" className="text-xl font-bold text-neutral-300 hover:text-white">
         mrright.blog
       </a>
-      <LanguageSwitch language={language} onLanguageChange={onLanguageChange} copy={copy} />
+      <div className="flex items-center gap-2 sm:gap-3">
+        <a className="secondary-action px-3 py-2 text-xs sm:px-4 sm:text-sm" href="/">
+          ← {copy.communityBackHome}
+        </a>
+        <LanguageSwitch language={language} onLanguageChange={onLanguageChange} copy={copy} />
+      </div>
     </nav>
     <div className="community-page">{children}</div>
   </main>
