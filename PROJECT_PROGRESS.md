@@ -1,5 +1,56 @@
 # mrright.blog 项目进度记录
 
+## 2026-08-08：第一阶段基础设施改进（CI、部署安全、数据清理、SQL 安全）
+
+结论：完成第一阶段 4 项基础设施改进，全部通过 lint/build/test:api/test:api:db/test:openapi 验证。这一轮修复的是结构性问题：Web/API 完全没有 CI、部署脚本每次覆盖 nginx 配置会丢失 TLS 设置、visitor_sessions 只增不减、公开接口 SQL 查询仍在选取 email 列（虽然 mapper 会丢弃）、以及 `.map(toX)` 把数组索引当 options 传入的脆弱性。本轮**未部署、未改数据库 schema、未读取或输出任何 token/password/secret、未触碰生产环境**。
+
+完成内容：
+
+1. **CI for Web and API** (`.github/workflows/web.yml`)
+   - checks job: lint + build + API contract (37 tests, no DB) + OpenAPI validation (200 $ref, 27 error codes) + gate that fails if dist/ reappears in git
+   - api-db-contract job: Postgres 16 service + DB contract suite (23 tests including new regression tests)
+   - E2E tests (production-smoke, admin-visitors) stay operator-run since they default to the live site
+
+2. **Untrack dist/ from version control**
+   - Removed 79 files (4355 lines) that were committed before .gitignore
+   - `npm run build` generates dist/ locally; `npm run release:vps` archives it
+   - Every build changes hashes → spurious `git restore` loops in PROJECT_PROGRESS.md
+   - New CI gate enforces dist/ stays untracked
+
+3. **Idempotent deployment**
+   - `scripts/deploy-vps.mjs` now checks if nginx/systemd configs exist before writing
+   - `VPS_REWRITE_NGINX=true` / `VPS_REWRITE_SERVICE=true` required to overwrite
+   - Nginx was HTTP-only (listen 80); overwriting a certbot-modified config dropped HTTPS
+   - `systemctl reload nginx || restart` keeps connections open when config unchanged
+   - `js-yaml` now explicit devDependency (was transitive via @eslint/eslintrc)
+
+4. **Session cleanup + SQL email leak prevention + .map fragility**
+   - `authStore.deleteExpiredSessions()`: sweeps visitor_sessions WHERE expires_at <= now(), called every 6 hours (configurable via SESSION_SWEEP_INTERVAL_MS)
+   - Removed `visitor_users.email` from 11 public-path SELECTs (interactionsStore, communityStore); adminStore queries retain it with explicit `includeEmail: true`
+   - Wrapped 9 bare `.map(toComment|toCommunityUpload|toCommunityPost)` calls in explicit arrows so the numeric index isn't silently passed as options
+   - New regression tests (4 tests, now 23 total in contract.db.spec.js):
+     * Public endpoints never expose registration email, even to authenticated viewers reading their own rows
+     * Public user summaries carry exactly `{id, displayName, accessLevel}`
+     * Admin endpoints still include email (proves removal was scoped, not global)
+     * Verified the tests catch the leak by injecting the 2026-07-25 bug back in
+
+本轮验证结果：
+
+- `npm run lint`：通过。
+- `npm run build`：通过；dist/ 现已 untracked，构建产物不再进入 git。
+- `npm run test:api`：37/37 通过。
+- `npm run test:api:db`：23/23 通过（新增 4 个 PII containment 回归测试）。
+- `npm run test:openapi`：通过（200 个本地 `$ref`、27 个 API error code）。
+- `git diff --check`：通过。
+- 回归验证：临时注入 2026-07-25 原始 bug（toUserSummary 无条件返回 email + 公开查询重新 SELECT email），测试套件报错 `/api/community/posts leaked contract-db-a@example.com`，证明新测试能抓到真实回归。
+
+待办（后续阶段）：
+
+- 第二阶段（1-2 周）：download 授权落地、CSP report-uri + blocking、project like 防刷
+- 第三阶段（1 个月）：react-router、拆 Admin.jsx、getProject 单查询、i18n 拆分
+- 第四阶段：Asset Model 实现（checksum、visibility、downloadPolicy）
+- C++ SDK：建议冻结在当前状态，等 Asset Model 稳定后再继续
+
 ## 2026-08-08：社区页面增加返回首页入口
 
 结论：社区页面顶部导航现在提供明确的“返回首页”链接，桌面和移动布局均可使用；补齐 zh/en/ja 文案。本轮已部署到 VPS，未改数据库、未读取或输出任何 token/password/secret。
