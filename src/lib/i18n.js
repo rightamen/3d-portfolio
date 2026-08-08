@@ -9,6 +9,9 @@ export const defaultLanguage = 'zh'
 const copy = {
   zh: {
     loading: '正在加载',
+    chunkErrorTitle: '页面资源正在更新',
+    chunkErrorBody: '如果页面没有自动恢复，请点击下方按钮重新加载最新版本。',
+    chunkErrorAction: '重新加载',
     navHome: '首页',
     navAbout: '关于',
     navProjects: '作品',
@@ -33,6 +36,12 @@ const copy = {
     authHint: '登录后，你的点赞、评论和下载申请会绑定到账号。',
     authError: '账号操作失败，请检查邮箱和密码。',
     authUnavailable: '访客账号暂未启用。',
+    apiErrorAuthRequired: '请先登录后继续。',
+    apiErrorInvalidToken: '登录状态已过期，请重新登录。',
+    apiErrorServiceUnavailable: '此功能暂时不可用，请稍后重试。',
+    apiErrorRateLimited: '操作次数过多，请稍候再试。',
+    apiErrorValidation: '请检查填写的信息后重试。',
+    apiErrorResourceForbidden: '用户主页不存在或暂不可访问。',
     authPageKicker: '访客认证',
     authPageTitle: '登录或创建你的访客账号',
     authPageIntro: '通过邮箱验证后，你可以参与社区交流、提交资源，并申请不同等级的下载权限。',
@@ -175,11 +184,11 @@ const copy = {
     publicProfileLoadError: '公开主页加载失败。',
     publicProfileActivityPrivateTitle: '该用户未公开互动记录',
     publicProfileActivityPrivateBody: '资源、帖子、评论和互动统计已被设为私密。',
-    publicProfileTabOverview: 'Overview',
-    publicProfileTabResources: 'Resources',
-    publicProfileTabPosts: 'Posts',
-    publicProfileTabComments: 'Comments',
-    publicProfileTabAbout: 'About',
+    publicProfileTabOverview: '总览',
+    publicProfileTabResources: '资源',
+    publicProfileTabPosts: '帖子',
+    publicProfileTabComments: '评论',
+    publicProfileTabAbout: '关于',
     publicProfileNoResourcesTitle: '还没有公开资源。',
     publicProfileNoResourcesBody: '该用户公开的资源会显示在这里。',
     publicProfileNoPostsTitle: '还没有公开帖子。',
@@ -395,6 +404,9 @@ const copy = {
   },
   en: {
     loading: 'Loading',
+    chunkErrorTitle: 'The page is being updated',
+    chunkErrorBody: 'If the page does not recover automatically, reload the latest version below.',
+    chunkErrorAction: 'Reload page',
     navHome: 'Home',
     navAbout: 'About',
     navProjects: 'Work',
@@ -419,6 +431,12 @@ const copy = {
     authHint: 'Sign in to attach likes, comments, and download requests to your account.',
     authError: 'Account action failed. Check your email and password.',
     authUnavailable: 'Visitor accounts are not enabled yet.',
+    apiErrorAuthRequired: 'Please sign in to continue.',
+    apiErrorInvalidToken: 'Your session has expired. Please sign in again.',
+    apiErrorServiceUnavailable: 'This feature is temporarily unavailable. Please try again later.',
+    apiErrorRateLimited: 'Too many attempts. Please wait a moment and try again.',
+    apiErrorValidation: 'Please check the highlighted information and try again.',
+    apiErrorResourceForbidden: 'User profile not found or unavailable.',
     authPageKicker: 'Visitor Access',
     authPageTitle: 'Sign In Or Create Your Visitor Account',
     authPageIntro:
@@ -800,6 +818,9 @@ const copy = {
   },
   ja: {
     loading: '読み込み中',
+    chunkErrorTitle: 'ページを更新しています',
+    chunkErrorBody: '自動で復旧しない場合は、下のボタンで最新バージョンを再読み込みしてください。',
+    chunkErrorAction: '再読み込み',
     navHome: 'ホーム',
     navAbout: '紹介',
     navProjects: '作品',
@@ -824,6 +845,12 @@ const copy = {
     authHint: 'ログインすると、いいね、コメント、ダウンロード申請がアカウントに紐づきます。',
     authError: 'アカウント操作に失敗しました。メールとパスワードを確認してください。',
     authUnavailable: '訪問者アカウントはまだ有効ではありません。',
+    apiErrorAuthRequired: '続行するにはログインしてください。',
+    apiErrorInvalidToken: 'セッションの有効期限が切れました。もう一度ログインしてください。',
+    apiErrorServiceUnavailable: 'この機能は一時的に利用できません。後でもう一度お試しください。',
+    apiErrorRateLimited: '操作が多すぎます。少し待ってからお試しください。',
+    apiErrorValidation: '入力内容を確認して、もう一度お試しください。',
+    apiErrorResourceForbidden: 'ユーザープロフィールが見つからないか、現在利用できません。',
     authPageKicker: '訪問者認証',
     authPageTitle: 'ログインまたは訪問者アカウント作成',
     authPageIntro:
@@ -975,11 +1002,11 @@ const copy = {
     publicProfileActivityPrivateTitle: 'このユーザーはアクティビティを公開していません',
     publicProfileActivityPrivateBody:
       '素材、投稿、コメント、インタラクション統計は非公開に設定されています。',
-    publicProfileTabOverview: 'Overview',
-    publicProfileTabResources: 'Resources',
-    publicProfileTabPosts: 'Posts',
-    publicProfileTabComments: 'Comments',
-    publicProfileTabAbout: 'About',
+    publicProfileTabOverview: '概要',
+    publicProfileTabResources: 'リソース',
+    publicProfileTabPosts: '投稿',
+    publicProfileTabComments: 'コメント',
+    publicProfileTabAbout: 'プロフィール',
     publicProfileNoResourcesTitle: '公開素材はまだありません。',
     publicProfileNoResourcesBody: 'このユーザーの公開素材がここに表示されます。',
     publicProfileNoPostsTitle: '公開投稿はまだありません。',
@@ -1216,6 +1243,23 @@ export const getInitialLanguage = () => {
 }
 
 export const getCopy = (language = defaultLanguage) => copy[language] || copy[defaultLanguage]
+
+// Error codes are part of the API contract; human-readable server messages
+// are intentionally not used to decide UI state or language.
+export const getApiErrorMessage = (error, labels, fallbackMessage) => {
+  const fallback = fallbackMessage || labels?.authError || copy[defaultLanguage].authError
+  const messages = {
+    AUTH_REQUIRED: labels?.apiErrorAuthRequired,
+    INVALID_TOKEN: labels?.apiErrorInvalidToken,
+    SERVICE_UNAVAILABLE: labels?.apiErrorServiceUnavailable,
+    RATE_LIMITED: labels?.apiErrorRateLimited,
+    VALIDATION_ERROR: labels?.apiErrorValidation,
+    EMAIL_NOT_VERIFIED: labels?.authEmailNotVerified,
+    RESOURCE_FORBIDDEN: labels?.apiErrorResourceForbidden,
+  }
+
+  return messages[error?.code] || fallback
+}
 
 export const pickLocalized = (item = {}, field, language = defaultLanguage) => {
   if (!item || typeof item !== 'object') return ''

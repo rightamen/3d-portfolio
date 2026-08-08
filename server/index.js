@@ -1,10 +1,13 @@
 import cors from 'cors'
 import express from 'express'
+import rateLimit from 'express-rate-limit'
+import helmet from 'helmet'
 import multer from 'multer'
-import { createHash, pbkdf2Sync, randomBytes, timingSafeEqual } from 'node:crypto'
+import { createHash, pbkdf2 as pbkdf2Callback, randomBytes, timingSafeEqual } from 'node:crypto'
 import { mkdir, unlink } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { promisify } from 'node:util'
 import { createContactMessagesStore } from './contactMessagesStore.js'
 import { experience, profile, projects as staticProjects, skills } from './content.js'
 import { createDownloadRequestsStore } from './downloadRequestsStore.js'
@@ -23,6 +26,13 @@ const distIndexPath = path.join(distDir, 'index.html')
 const uploadRoot = path.join(rootDir, 'public', 'uploads')
 const modelConverterScript = path.join(rootDir, 'scripts', 'convert-model-to-glb.py')
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const pbkdf2 = promisify(pbkdf2Callback)
+// Opt-in, not derived from NODE_ENV. The deploy script's systemd unit only sets
+// EnvironmentFile, so NODE_ENV is usually undefined in production — keying the
+// code echo off `!== 'production'` meant an unauthenticated caller could read a
+// live verification code out of the response and take over any unverified
+// account. Absent env now means no echo.
+const exposeDevVerificationCode = process.env.EXPOSE_DEV_VERIFICATION_CODE === 'true'
 const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 const handlePattern = /^[a-z0-9_-]{3,30}$/
 const imageExtensions = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif'])
@@ -89,7 +99,49 @@ const setStaticCacheHeaders = (response, filePath) => {
 const app = express()
 const port = process.env.PORT || 4173
 
-app.use(cors({ origin: process.env.CORS_ORIGIN || true }))
+// The app always runs behind nginx (and Cloudflare in production). Without this
+// request.ip is 127.0.0.1 for every visitor, which silently emptied the
+// download_requests / admin visitor audit trail and would make every IP-based
+// rate limit below behave as one global bucket.
+app.set('trust proxy', Number(process.env.TRUST_PROXY_HOPS || 1))
+app.disable('x-powered-by')
+
+app.use(
+  helmet({
+    // Report-only for now: the SPA loads Google Fonts over @import and three.js
+    // creates blob: workers, so a blocking policy needs a browser pass first.
+    // Switch to contentSecurityPolicy once the report shows a clean run.
+    contentSecurityPolicy: {
+      reportOnly: true,
+      directives: {
+        defaultSrc: ["'self'"],
+        baseUri: ["'self'"],
+        frameAncestors: ["'none'"],
+        objectSrc: ["'none'"],
+        imgSrc: ["'self'", 'data:', 'blob:'],
+        workerSrc: ["'self'", 'blob:'],
+        styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+        fontSrc: ["'self'", 'data:', 'https://fonts.gstatic.com'],
+        connectSrc: ["'self'"],
+      },
+    },
+    crossOriginEmbedderPolicy: false,
+    crossOriginResourcePolicy: { policy: 'same-site' },
+    hsts: { maxAge: 15552000, includeSubDomains: true },
+    referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+  }),
+)
+
+// origin:true echoed any Origin back, letting any site read API responses.
+const allowedOrigins = (
+  process.env.CORS_ORIGIN ||
+  'https://mrright.blog,https://www.mrright.blog,http://localhost:5173,http://127.0.0.1:5173'
+)
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean)
+
+app.use(cors({ origin: allowedOrigins }))
 
 // /api/v1 dual mount (docs/API_V1_FREEZE_PLAN.md §3). Requests to /api/v1/*
 // are tagged apiVersion='v1' and rewritten to the matching /api/* path so both
@@ -119,7 +171,128 @@ app.use((request, _response, next) => {
 })
 
 app.use(express.json({ limit: '96kb' }))
-app.use('/uploads', express.static(path.join(rootDir, 'public', 'uploads')))
+
+// Access gate for user-supplied files. Two things were reachable by anyone who
+// knew (or was handed) the URL: community uploads still sitting in pending or
+// already rejected, and the original .fbx/.obj/.zip sources that survive after
+// an admin upload is converted to .glb.
+//
+// Deliberate non-goal: the .glb a public project renders in the browser stays
+// public. A mesh the viewer downloads and draws is downloadable by definition —
+// gating it would only break the portfolio while stopping nobody. Enforce
+// distribution policy on the source archives, not on the preview mesh.
+//
+// <img> and the GLTF loader cannot attach an Authorization header, so anything
+// a public page needs to render must pass without one.
+const restrictedUploadExtensions = new Set(['.fbx', '.obj', '.zip'])
+
+const uploadAccessGate = async (request, response, next) => {
+  let assetPath
+  try {
+    assetPath = decodeURIComponent(request.path)
+  } catch {
+    return response.status(400).end()
+  }
+
+  const assetUrl = `/uploads${assetPath}`
+  const upload = communityStore ? await communityStore.getUploadByAssetUrl(assetUrl) : null
+
+  if (upload) {
+    if (upload.status === 'approved') return next()
+  } else if (!restrictedUploadExtensions.has(path.extname(assetPath).toLowerCase())) {
+    return next()
+  }
+
+  if (isAdminToken(getAuthToken(request))) return next()
+
+  const viewer = await getOptionalUser(request)
+  if (viewer && upload && upload.user_id === viewer.id) return next()
+
+  // 404 rather than 403: a 403 would confirm the file exists.
+  return response.status(404).end()
+}
+
+app.use(
+  '/uploads',
+  uploadAccessGate,
+  express.static(uploadRoot, {
+    setHeaders: (response) => {
+      response.setHeader('X-Content-Type-Options', 'nosniff')
+    },
+  }),
+)
+
+// Nothing was rate limited before this: /api/auth/login took unlimited password
+// guesses, the 6-digit verification code could be brute forced while
+// /api/auth/resend-verification refreshed the window for free, and that same
+// endpoint could mail-bomb any registered address. RATE_LIMITED already exists
+// in responses.js and the OpenAPI enum, so this adds no contract change.
+//
+// Registered after the /api/v1 rewrite so both prefixes share one bucket, and
+// it relies on the trust proxy setting above — without it every visitor would
+// count against a single 127.0.0.1 bucket.
+const createLimiter = ({ windowMs, limit, message, writesOnly = false }) =>
+  rateLimit({
+    windowMs,
+    limit,
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    skip: (request) => writesOnly && (request.method === 'GET' || request.method === 'HEAD'),
+    handler: (_request, response) =>
+      sendError(response, API_ERROR_CODES.RATE_LIMITED, message, 429),
+  })
+
+const minutes = (count) => count * 60 * 1000
+
+app.use('/api', createLimiter({
+  windowMs: minutes(15),
+  limit: 600,
+  message: 'Too many requests. Please slow down and try again shortly.',
+}))
+
+app.use('/api/auth/login', createLimiter({
+  windowMs: minutes(15),
+  limit: 10,
+  message: 'Too many sign-in attempts. Please try again in a few minutes.',
+}))
+
+app.use('/api/auth/verify-email', createLimiter({
+  windowMs: minutes(15),
+  limit: 10,
+  message: 'Too many verification attempts. Please request a new code.',
+}))
+
+app.use('/api/auth/register', createLimiter({
+  windowMs: minutes(60),
+  limit: 5,
+  message: 'Too many accounts created from this network. Please try again later.',
+}))
+
+app.use('/api/auth/resend-verification', createLimiter({
+  windowMs: minutes(60),
+  limit: 3,
+  message: 'Verification email already requested. Please wait before trying again.',
+}))
+
+app.use('/api/contact', createLimiter({
+  windowMs: minutes(60),
+  limit: 5,
+  message: 'Too many messages sent. Please try again later.',
+}))
+
+app.use('/api/community/uploads', createLimiter({
+  windowMs: minutes(60),
+  limit: 20,
+  message: 'Upload limit reached. Please try again later.',
+  writesOnly: true,
+}))
+
+app.use('/api/community/posts', createLimiter({
+  windowMs: minutes(60),
+  limit: 30,
+  message: 'Posting limit reached. Please try again later.',
+  writesOnly: true,
+}))
 
 const upload = multer({
   limits: { fileSize: 120 * 1024 * 1024 },
@@ -204,26 +377,32 @@ const hashVerificationCode = (email, code) =>
     .update(`${email.trim().toLowerCase()}:${String(code).trim()}`)
     .digest('hex')
 
-const hashPassword = (password) => {
+// 600k iterations is the current OWASP guidance for PBKDF2-HMAC-SHA256, up from
+// 120k. The synchronous variant used before blocked Node's only thread for the
+// whole derivation, so raising the count without also going async would have
+// turned every concurrent sign-in into a site-wide stall. The iteration count
+// lives in the stored hash, so existing 120k records keep verifying.
+const PBKDF2_ITERATIONS = 600000
+
+const hashPassword = async (password) => {
   const salt = randomBytes(16).toString('hex')
-  const hash = pbkdf2Sync(password, salt, 120000, 32, 'sha256').toString('hex')
-  return `pbkdf2_sha256$120000$${salt}$${hash}`
+  const hash = await pbkdf2(password, salt, PBKDF2_ITERATIONS, 32, 'sha256')
+  return `pbkdf2_sha256$${PBKDF2_ITERATIONS}$${salt}$${hash.toString('hex')}`
 }
 
-const verifyPassword = (password, storedHash = '') => {
+const verifyPassword = async (password, storedHash = '') => {
   const [algorithm, iterationsRaw, salt, expected] = storedHash.split('$')
   if (algorithm !== 'pbkdf2_sha256' || !iterationsRaw || !salt || !expected) return false
 
-  const actual = pbkdf2Sync(
-    password,
-    salt,
-    Number(iterationsRaw),
-    Buffer.from(expected, 'hex').length,
-    'sha256',
-  )
   const expectedBuffer = Buffer.from(expected, 'hex')
+  const actual = await pbkdf2(password, salt, Number(iterationsRaw), expectedBuffer.length, 'sha256')
   return actual.length === expectedBuffer.length && timingSafeEqual(actual, expectedBuffer)
 }
+
+// Burned so that "no such account" costs the same as a wrong password. Without
+// it the missing-user branch returned in microseconds while a real account paid
+// the full derivation, which is a reliable account-existence oracle.
+const dummyPasswordHash = await hashPassword(randomBytes(16).toString('hex'))
 
 const createSession = async (user) => {
   const token = randomBytes(32).toString('base64url')
@@ -433,6 +612,30 @@ const requireUser = async (request, response, message) => {
   return null
 }
 
+// Authentication middleware for the upload routes, so multer never runs for an
+// anonymous caller. Previously the chain was requireAuthStore -> multer ->
+// handler, which meant an unauthenticated request streamed its whole body to
+// disk (up to 120MB) before the handler rejected it and unlinked the file.
+// Resolves the session once and hands it to the handler via request.visitorUser.
+const requireVisitor = async (request, response, next) => {
+  if (!authStore) {
+    return sendError(
+      response,
+      API_ERROR_CODES.SERVICE_UNAVAILABLE,
+      'Visitor accounts are not configured.',
+      503,
+    )
+  }
+
+  const user = await getOptionalUser(request)
+  if (!user) {
+    return sendError(response, API_ERROR_CODES.AUTH_REQUIRED, 'Please sign in to continue.', 401)
+  }
+
+  request.visitorUser = user
+  return next()
+}
+
 app.get('/api/health', (_request, response) => {
   sendData(response, { ok: true, service: 'mrright-portfolio' })
 })
@@ -443,7 +646,13 @@ app.get('/api/auth/me', async (request, response) => {
 })
 
 app.post('/api/auth/register', requireAuthStore, async (request, response) => {
-  const displayName = String(request.body?.displayName ?? '').trim().slice(0, 80)
+  // Strip CR/LF before this value reaches the mail body. formatMessage writes
+  // straight into the SMTP DATA segment, so an embedded "\r\n.\r\n" terminated
+  // the message early and let the rest be parsed as SMTP commands.
+  const displayName = String(request.body?.displayName ?? '')
+    .replace(/[\r\n]+/g, ' ')
+    .trim()
+    .slice(0, 80)
   const email = String(request.body?.email ?? '').trim().toLowerCase().slice(0, 180)
   const password = String(request.body?.password ?? '')
 
@@ -467,15 +676,34 @@ app.post('/api/auth/register', requireAuthStore, async (request, response) => {
   }
 
   const verification = createEmailVerification(email)
-  const user = await authStore.createUser({
-    accessLevel: 'member',
-    displayName,
-    email,
-    id: createId(),
-    passwordHash: hashPassword(password),
-    verificationCodeHash: verification.hash,
-    verificationExpiresAt: verification.expiresAt,
-  })
+  let user
+  try {
+    user = await authStore.createUser({
+      accessLevel: 'member',
+      displayName,
+      email,
+      id: createId(),
+      passwordHash: await hashPassword(password),
+      verificationCodeHash: verification.hash,
+      verificationExpiresAt: verification.expiresAt,
+    })
+  } catch (error) {
+    // The check above is not atomic. Two simultaneous registrations for the same
+    // address used to surface the visitor_users.email unique violation as a bare
+    // 500 instead of the 409 the caller already handles. Same pattern as the
+    // handle uniqueness path in PUT /api/account/profile.
+    if (error?.code === '23505') {
+      return sendError(
+        response,
+        API_ERROR_CODES.EMAIL_ALREADY_REGISTERED,
+        'This email is already registered.',
+        409,
+      )
+    }
+
+    throw error
+  }
+
   const delivery = await sendVisitorVerification({
     code: verification.code,
     displayName,
@@ -491,7 +719,7 @@ app.post('/api/auth/register', requireAuthStore, async (request, response) => {
         delivery: delivery.delivery,
         expiresAt: verification.expiresAt.toISOString(),
         required: true,
-        ...(process.env.NODE_ENV === 'production' ? {} : { devCode: verification.code }),
+        ...(exposeDevVerificationCode ? { devCode: verification.code } : {}),
       },
     },
     201,
@@ -506,22 +734,23 @@ app.post('/api/auth/resend-verification', requireAuthStore, async (request, resp
   }
 
   const user = await authStore.getUserByEmail(email)
-  if (!user) {
-    return sendError(
-      response,
-      API_ERROR_CODES.EMAIL_NOT_REGISTERED,
-      'This email is not registered.',
-      404,
-    )
-  }
 
-  if (user.emailVerified) {
-    return sendError(
-      response,
-      API_ERROR_CODES.EMAIL_ALREADY_VERIFIED,
-      'This email is already verified.',
-      409,
-    )
+  // Uniform response whether or not the address exists or is already verified.
+  // The previous 404 / 409 / 200 split turned this unauthenticated endpoint into
+  // a free "is this address registered, and has it been verified" oracle, and
+  // handed an attacker a way to mail every address in a dictionary.
+  const respondAccepted = (expiresAt, extra = {}) =>
+    sendData(response, {
+      verification: {
+        delivery: 'accepted',
+        expiresAt: expiresAt.toISOString(),
+        required: true,
+        ...extra,
+      },
+    })
+
+  if (!user || user.emailVerified) {
+    return respondAccepted(new Date(Date.now() + 1000 * 60 * 20))
   }
 
   const verification = createEmailVerification(email)
@@ -538,7 +767,7 @@ app.post('/api/auth/resend-verification', requireAuthStore, async (request, resp
       delivery: delivery.delivery,
       expiresAt: verification.expiresAt.toISOString(),
       required: true,
-      ...(process.env.NODE_ENV === 'production' ? {} : { devCode: verification.code }),
+      ...(exposeDevVerificationCode ? { devCode: verification.code } : {}),
     },
   })
 })
@@ -548,7 +777,11 @@ app.post('/api/auth/login', requireAuthStore, async (request, response) => {
   const password = String(request.body?.password ?? '')
   const user = await authStore.getUserByEmail(email)
 
-  if (!user || !verifyPassword(password, user.passwordHash)) {
+  // Always run one derivation, even when the address is unknown, so the
+  // response time does not reveal whether the account exists.
+  const passwordMatches = await verifyPassword(password, user?.passwordHash ?? dummyPasswordHash)
+
+  if (!user || !passwordMatches) {
     return sendError(
       response,
       API_ERROR_CODES.VALIDATION_ERROR,
@@ -605,10 +838,21 @@ app.post('/api/auth/logout', async (request, response) => {
   sendData(response, { ok: true })
 })
 
-const requireAdmin = (request, response, next) => {
-  const token = request.get('Authorization')?.replace(/^Bearer\s+/i, '')
+// sha256 both sides before comparing so the buffers are always the same length:
+// timingSafeEqual throws on a length mismatch, and the raw length would itself
+// leak information. Reuses getAuthToken so the trimming rule matches the
+// visitor auth path, which previously differed.
+const isAdminToken = (token) => {
+  if (!process.env.ADMIN_TOKEN || !token) return false
 
-  if (!process.env.ADMIN_TOKEN || token !== process.env.ADMIN_TOKEN) {
+  return timingSafeEqual(
+    createHash('sha256').update(token).digest(),
+    createHash('sha256').update(process.env.ADMIN_TOKEN).digest(),
+  )
+}
+
+const requireAdmin = (request, response, next) => {
+  if (!isAdminToken(getAuthToken(request))) {
     return sendError(
       response,
       API_ERROR_CODES.ADMIN_AUTH_REQUIRED,
@@ -941,19 +1185,10 @@ app.put('/api/account/profile', requireAuthStore, async (request, response) => {
 
 app.post(
   '/api/account/avatar',
-  requireAuthStore,
+  requireVisitor,
   avatarUpload.single('file'),
   async (request, response) => {
-    const user = await getOptionalUser(request)
-    if (!user) {
-      if (request.file) unlink(request.file.path).catch((error) => console.error(error))
-      return sendError(
-        response,
-        API_ERROR_CODES.AUTH_REQUIRED,
-        'Please sign in to update your avatar.',
-        401,
-      )
-    }
+    const user = request.visitorUser
 
     if (!request.file) {
       return sendError(response, API_ERROR_CODES.VALIDATION_ERROR, 'Avatar file is required.', 400)
@@ -967,19 +1202,10 @@ app.post(
 
 app.post(
   '/api/account/banner',
-  requireAuthStore,
+  requireVisitor,
   bannerUpload.single('file'),
   async (request, response) => {
-    const user = await getOptionalUser(request)
-    if (!user) {
-      if (request.file) unlink(request.file.path).catch((error) => console.error(error))
-      return sendError(
-        response,
-        API_ERROR_CODES.AUTH_REQUIRED,
-        'Please sign in to update your banner.',
-        401,
-      )
-    }
+    const user = request.visitorUser
 
     if (!request.file) {
       return sendError(response, API_ERROR_CODES.VALIDATION_ERROR, 'Banner file is required.', 400)
@@ -1244,7 +1470,7 @@ app.delete('/api/account/community/posts/:id', requireAuthStore, async (request,
   return sendData(response, { ok: true })
 })
 
-app.post('/api/community/uploads', requireAuthStore, upload.single('file'), async (request, response) => {
+app.post('/api/community/uploads', requireVisitor, upload.single('file'), async (request, response) => {
   if (!communityStore) {
     return sendError(
       response,
@@ -1254,16 +1480,7 @@ app.post('/api/community/uploads', requireAuthStore, upload.single('file'), asyn
     )
   }
 
-  const user = await getOptionalUser(request)
-  if (!user) {
-    if (request.file) unlink(request.file.path).catch((error) => console.error(error))
-    return sendError(
-      response,
-      API_ERROR_CODES.AUTH_REQUIRED,
-      'Please sign in before uploading community resources.',
-      401,
-    )
-  }
+  const user = request.visitorUser
 
   if (!request.file) {
     return sendError(response, API_ERROR_CODES.VALIDATION_ERROR, 'Upload file is required.', 400)
@@ -1273,6 +1490,20 @@ app.post('/api/community/uploads', requireAuthStore, upload.single('file'), asyn
   const description = String(request.body?.description ?? '').trim().slice(0, 1200)
   const extension = path.extname(request.file.originalname).toLowerCase()
   const fileType = imageExtensions.has(extension) ? 'image' : 'model'
+
+  // The shared multer instance caps everything at the 120MB a model may need.
+  // /api/admin/uploads already narrowed images to imageUploadLimit; this route
+  // did not, so a member could store a 120MB "png".
+  if (fileType === 'image' && request.file.size > imageUploadLimit) {
+    unlink(request.file.path).catch((error) => console.error(error))
+
+    return sendError(
+      response,
+      API_ERROR_CODES.VALIDATION_ERROR,
+      'Image uploads must be 16MB or smaller.',
+      413,
+    )
+  }
 
   if (!title || !description) {
     unlink(request.file.path).catch((error) => console.error(error))
@@ -1411,7 +1642,7 @@ app.post('/api/contact', async (request, response) => {
     createdAt: new Date().toISOString(),
   }
 
-  if (!normalized.name || !normalized.email || !normalized.message) {
+  if (!normalized.name || !emailPattern.test(normalized.email) || !normalized.message) {
     return sendError(
       response,
       API_ERROR_CODES.VALIDATION_ERROR,

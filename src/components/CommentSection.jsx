@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   createCommunityComment,
   deleteCommunityComment,
   getCommunityComments,
   toggleCommunityCommentLike,
 } from '../lib/api'
+import { getApiErrorMessage } from '../lib/i18n'
 
 const getDateLocale = (language) =>
   language === 'zh' ? 'zh-CN' : language === 'ja' ? 'ja-JP' : 'en-US'
@@ -37,35 +38,33 @@ const CommentSection = ({ authToken, copy, language, postId, visitorUser }) => {
   const [replyState, setReplyState] = useState({ phase: 'idle', message: '' })
   const [expandedReplies, setExpandedReplies] = useState({})
   const [busyId, setBusyId] = useState('')
+  const isMountedRef = useRef(true)
 
   const dateLocale = getDateLocale(language)
 
-  const loadComments = (nextSort = sort) => {
-    setStatus('loading')
-    getCommunityComments(postId, { sort: nextSort, token: authToken })
-      .then((payload) => {
-        setComments(payload.comments || [])
-        setStatus('ready')
-      })
-      .catch(() => setStatus('error'))
-  }
-
   useEffect(() => {
-    let isMounted = true
+    isMountedRef.current = true
+    return () => {
+      isMountedRef.current = false
+    }
+  }, [])
+
+  const loadComments = useCallback(() => {
+    setStatus('loading')
     getCommunityComments(postId, { sort, token: authToken })
       .then((payload) => {
-        if (!isMounted) return
+        if (!isMountedRef.current) return
         setComments(payload.comments || [])
         setStatus('ready')
       })
       .catch(() => {
-        if (isMounted) setStatus('error')
+        if (isMountedRef.current) setStatus('error')
       })
+  }, [authToken, postId, sort])
 
-    return () => {
-      isMounted = false
-    }
-  }, [postId, sort, authToken])
+  useEffect(() => {
+    loadComments()
+  }, [loadComments])
 
   const { childrenByParent, roots } = useMemo(() => buildTree(comments), [comments])
   const totalCount = comments.length
@@ -86,7 +85,10 @@ const CommentSection = ({ authToken, copy, language, postId, visitorUser }) => {
       setSubmitState({ phase: 'idle', message: '' })
       loadComments()
     } catch (error) {
-      setSubmitState({ phase: 'error', message: error.message || copy.communityCommentError })
+      setSubmitState({
+        phase: 'error',
+        message: getApiErrorMessage(error, copy, copy.communityCommentError),
+      })
     }
   }
 
@@ -103,7 +105,10 @@ const CommentSection = ({ authToken, copy, language, postId, visitorUser }) => {
       setExpandedReplies((current) => ({ ...current, [parentId]: true }))
       loadComments()
     } catch (error) {
-      setReplyState({ phase: 'error', message: error.message || copy.communityCommentError })
+      setReplyState({
+        phase: 'error',
+        message: getApiErrorMessage(error, copy, copy.communityCommentError),
+      })
     }
   }
 
@@ -133,7 +138,9 @@ const CommentSection = ({ authToken, copy, language, postId, visitorUser }) => {
       await deleteCommunityComment(authToken, commentId)
       loadComments()
     } catch {
-      setBusyId('')
+      // Ignore transient delete errors; the list stays on the last known state.
+    } finally {
+      if (isMountedRef.current) setBusyId('')
     }
   }
 

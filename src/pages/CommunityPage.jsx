@@ -7,7 +7,7 @@ import {
   getCommunityUploads,
   uploadCommunityResource,
 } from '../lib/api'
-import { languages } from '../lib/i18n'
+import { getApiErrorMessage, languages } from '../lib/i18n'
 
 const CommentSection = lazy(() => import('../components/CommentSection'))
 
@@ -32,8 +32,10 @@ const formatFileSize = (size) => {
   return `${(size / 1024 / 1024).toFixed(size > 20 * 1024 * 1024 ? 0 : 1)} MB`
 }
 
-const getTopicLabel = (copy, topic) =>
-  copy[`communityTopic${topic[0].toUpperCase()}${topic.slice(1)}`] || topic
+const getTopicLabel = (copy, topic) => {
+  if (!topic) return ''
+  return copy[`communityTopic${topic[0].toUpperCase()}${topic.slice(1)}`] || topic
+}
 
 const LanguageSwitch = ({ language, onLanguageChange, copy }) => (
   <div className="language-switch" aria-label={copy.toggleLanguage}>
@@ -65,7 +67,13 @@ const CommunityShell = ({ children, copy, language, onLanguageChange }) => (
 
 const getPostIdFromPath = () => {
   const match = window.location.pathname.match(/^\/community\/([^/]+)/)
-  return match ? decodeURIComponent(match[1]) : ''
+  if (!match) return ''
+
+  try {
+    return decodeURIComponent(match[1])
+  } catch {
+    return ''
+  }
 }
 
 const PostDetail = ({ authToken, copy, language, postId, visitorUser }) => {
@@ -193,7 +201,7 @@ const PostList = ({ authToken, copy, language, visitorUser }) => {
       setSubmitState({
         phase: 'error',
         progress: 0,
-        message: error.message || copy.communitySubmitError,
+        message: getApiErrorMessage(error, copy, copy.communitySubmitError),
       })
     }
   }
@@ -209,7 +217,10 @@ const PostList = ({ authToken, copy, language, visitorUser }) => {
       setPostForm(emptyPostForm)
       setPostState({ phase: 'done', message: copy.communityPostSubmitted })
     } catch (error) {
-      setPostState({ phase: 'error', message: error.message || copy.communityPostError })
+      setPostState({
+        phase: 'error',
+        message: getApiErrorMessage(error, copy, copy.communityPostError),
+      })
     }
   }
 
@@ -452,7 +463,12 @@ const PostList = ({ authToken, copy, language, visitorUser }) => {
                 style={{ '--category-accent': category.accent }}
               >
                 {upload.previewUrl ? (
-                  <img src={upload.previewUrl} alt="" />
+                  <img
+                    src={upload.previewUrl}
+                    alt={`${upload.title} preview`}
+                    decoding="async"
+                    loading="lazy"
+                  />
                 ) : (
                   <div className="community-file-preview">{upload.fileType}</div>
                 )}

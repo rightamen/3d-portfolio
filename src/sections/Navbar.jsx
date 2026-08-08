@@ -94,6 +94,8 @@ const Navbar = ({
             onClick={() => setIsOpen((prev) => !prev)}
             className="flex cursor-pointer text-neutral-400 hover:text-white focus:outline-none sm:hidden"
             aria-label={copy.toggleMenu}
+            aria-expanded={isOpen}
+            aria-controls="mobile-navigation"
           >
             <img
               src={isOpen ? '/assets/close.svg' : '/assets/menu.svg'}
@@ -106,6 +108,7 @@ const Navbar = ({
 
       {isOpen && (
         <Motion.div
+          id="mobile-navigation"
           className="block overflow-hidden text-center sm:hidden"
           initial={{ opacity: 0, x: -10 }}
           animate={{ opacity: 1, x: 0 }}

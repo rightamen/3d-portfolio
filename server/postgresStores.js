@@ -4,23 +4,35 @@ const { Pool } = pg
 
 const createId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 
-const toComment = (row) => ({
+// Author summary attached to comments, posts, and uploads. The account email is
+// PII and must never reach an unauthenticated response, so it is opt-in: only
+// adminStore call sites pass includeEmail. Public list/detail endpoints reuse
+// the same mappers and therefore stay email-free by construction.
+const toUserSummary = (row, { includeEmail = false } = {}) =>
+  row.user_id
+    ? {
+        accessLevel: row.access_level,
+        displayName: row.display_name,
+        id: row.user_id,
+        ...(includeEmail ? { email: row.email } : {}),
+      }
+    : null
+
+const toComment = (row, options) => ({
   id: row.id,
   projectSlug: row.project_slug,
   author: row.author,
   message: row.message,
-  user: row.user_id
-    ? {
-        accessLevel: row.access_level,
-        displayName: row.display_name,
-        email: row.email,
-        id: row.user_id,
-      }
-    : null,
+  user: toUserSummary(row, options),
   createdAt: row.created_at.toISOString(),
 })
 
-const toPublicUser = (row) =>
+// Full account record including the login email. Despite the historical name
+// this was never a public shape: every call site is the account's own profile,
+// an internal auth lookup, or an adminStore mutation. Other people's profiles
+// go through toPublicProfile, which exposes public_email only when
+// contacts_public is on. Do not reuse this for unauthenticated responses.
+const toAccountUserRecord = (row) =>
   row
     ? {
         accessLevel: row.access_level,
@@ -45,7 +57,7 @@ const toPublicUser = (row) =>
 const toPrivateUser = (row) =>
   row
     ? {
-        ...toPublicUser(row),
+        ...toAccountUserRecord(row),
         passwordHash: row.password_hash,
       }
     : null
@@ -53,7 +65,7 @@ const toPrivateUser = (row) =>
 const toAccountProfile = (row) =>
   row
     ? {
-        ...toPublicUser(row),
+        ...toAccountUserRecord(row),
         contactLinks: row.contact_links || {},
         contactsPublic: row.contacts_public === true,
         lastLoginAt: row.last_login_at?.toISOString?.() || row.last_login_at || null,
@@ -120,7 +132,7 @@ const publicContactLinks = (contactLinks = {}, contactsPublic = false) => {
   )
 }
 
-const toCommunityUpload = (row) => ({
+const toCommunityUpload = (row, options) => ({
   assetCategory: row.asset_category,
   createdAt: row.created_at.toISOString(),
   description: row.description,
@@ -133,31 +145,17 @@ const toCommunityUpload = (row) => ({
   status: row.status,
   title: row.title,
   updatedAt: row.updated_at.toISOString(),
-  user: row.user_id
-    ? {
-        accessLevel: row.access_level,
-        displayName: row.display_name,
-        email: row.email,
-        id: row.user_id,
-      }
-    : null,
+  user: toUserSummary(row, options),
 })
 
-const toCommunityPost = (row) => ({
+const toCommunityPost = (row, options) => ({
   createdAt: row.created_at.toISOString(),
   id: row.id,
   message: row.message,
   title: row.title,
   topic: row.topic,
   updatedAt: row.updated_at.toISOString(),
-  user: row.user_id
-    ? {
-        accessLevel: row.access_level,
-        displayName: row.display_name,
-        email: row.email,
-        id: row.user_id,
-      }
-    : null,
+  user: toUserSummary(row, options),
 })
 
 const toCommunityComment = (row) => ({
@@ -565,9 +563,12 @@ const ensureSchema = async (pool) => {
 }
 
 export const createPostgresStores = async (databaseUrl) => {
+  // Several writes (toggleLike, toggleCommentLike, profile moderation) hold a
+  // dedicated client for the length of a transaction. A pool of 2 meant two
+  // concurrent likes could starve every other query until connectionTimeoutMillis.
   const pool = new Pool({
     connectionString: databaseUrl,
-    max: Number(process.env.PG_POOL_MAX || 2),
+    max: Number(process.env.PG_POOL_MAX || 10),
     idleTimeoutMillis: 10_000,
     connectionTimeoutMillis: 5_000,
   })
@@ -662,7 +663,7 @@ export const createPostgresStores = async (databaseUrl) => {
         ],
       )
 
-      return toPublicUser(result.rows[0])
+      return toAccountUserRecord(result.rows[0])
     },
 
     createSession: async (session) => {
@@ -715,7 +716,7 @@ export const createPostgresStores = async (databaseUrl) => {
         [tokenHash],
       )
 
-      return toPublicUser(result.rows[0])
+      return toAccountUserRecord(result.rows[0])
     },
 
     getUserByEmail: async (email) => {
@@ -750,7 +751,7 @@ export const createPostgresStores = async (databaseUrl) => {
         [email, verificationCodeHash],
       )
 
-      return toPublicUser(result.rows[0])
+      return toAccountUserRecord(result.rows[0])
     },
 
     setVerificationCode: async (email, verificationCodeHash, verificationExpiresAt) => {
@@ -1152,6 +1153,22 @@ export const createPostgresStores = async (databaseUrl) => {
       return result.rows.map(toCommunityUpload)
     },
 
+    // Reverse lookup used by the /uploads access gate: a file on disk only
+    // reveals its moderation state through the row that points at it.
+    getUploadByAssetUrl: async (assetUrl) => {
+      const result = await pool.query(
+        `
+          SELECT id, user_id, status
+          FROM community_uploads
+          WHERE file_url = $1 OR preview_url = $1
+          LIMIT 1
+        `,
+        [assetUrl],
+      )
+
+      return result.rows[0] || null
+    },
+
     listPosts: async () => {
       const result = await pool.query(`
         SELECT
@@ -1301,7 +1318,7 @@ export const createPostgresStores = async (databaseUrl) => {
         await client.query('BEGIN')
         const existing = await client.query(
           `
-            SELECT comment_id FROM community_comments WHERE id = $1
+            SELECT id FROM community_comments WHERE id = $1
           `,
           [commentId],
         )
@@ -1629,7 +1646,7 @@ export const createPostgresStores = async (databaseUrl) => {
         LIMIT 100
       `)
 
-      return result.rows.map(toComment)
+      return result.rows.map((row) => toComment(row, { includeEmail: true }))
     },
 
     listCommunityUploads: async () => {
@@ -1663,7 +1680,7 @@ export const createPostgresStores = async (databaseUrl) => {
         LIMIT 200
       `)
 
-      return result.rows.map(toCommunityUpload)
+      return result.rows.map((row) => toCommunityUpload(row, { includeEmail: true }))
     },
 
     listCommunityPosts: async () => {
@@ -1685,7 +1702,7 @@ export const createPostgresStores = async (databaseUrl) => {
         LIMIT 200
       `)
 
-      return result.rows.map(toCommunityPost)
+      return result.rows.map((row) => toCommunityPost(row, { includeEmail: true }))
     },
 
     listCommunityComments: async () => {
@@ -2063,7 +2080,7 @@ export const createPostgresStores = async (databaseUrl) => {
         pool.query('SELECT count(*)::int AS count FROM community_uploads WHERE user_id = $1', [id]),
       ])
       return {
-        items: itemsResult.rows.map(toCommunityUpload),
+        items: itemsResult.rows.map((row) => toCommunityUpload(row, { includeEmail: true })),
         total: Number(countResult.rows[0]?.count || 0),
       }
     },
@@ -2199,7 +2216,7 @@ export const createPostgresStores = async (databaseUrl) => {
         [id, accessLevel],
       )
 
-      return toPublicUser(result.rows[0])
+      return toAccountUserRecord(result.rows[0])
     },
 
     setVisitorEmailVerified: async (id, verified) => {
@@ -2216,7 +2233,7 @@ export const createPostgresStores = async (databaseUrl) => {
         [id, verified],
       )
 
-      return toPublicUser(result.rows[0])
+      return toAccountUserRecord(result.rows[0])
     },
 
     deleteVisitor: async (id) => {
@@ -2229,7 +2246,7 @@ export const createPostgresStores = async (databaseUrl) => {
         [id],
       )
 
-      return toPublicUser(result.rows[0])
+      return toAccountUserRecord(result.rows[0])
     },
 
     updateDownloadRequestStatus: async (id, status) => {
@@ -2286,7 +2303,7 @@ export const createPostgresStores = async (databaseUrl) => {
         [id],
       )
 
-      return toCommunityUpload(updated.rows[0])
+      return toCommunityUpload(updated.rows[0], { includeEmail: true })
     },
 
     listProjects: async (baseProjects) =>

@@ -57,6 +57,14 @@ const App = () => {
   useEffect(() => {
     let isMounted = true
 
+    // Account, community, profile and auth routes have their own data
+    // boundaries. Avoid fetching homepage content for those pages.
+    if (window.location.pathname !== '/') {
+      return () => {
+        isMounted = false
+      }
+    }
+
     Promise.all([getProfile(), getProjects(), getExperience()])
       .then(([profilePayload, projectsPayload, experiencePayload]) => {
         if (!isMounted) return
@@ -163,7 +171,7 @@ const App = () => {
       setAuthStatus('idle')
       return result
     } catch (error) {
-      setAuthStatus(error.message.includes('not configured') ? 'unavailable' : 'error')
+      setAuthStatus(error.code === 'SERVICE_UNAVAILABLE' ? 'unavailable' : 'error')
       throw error
     }
   }
@@ -175,7 +183,7 @@ const App = () => {
       setAuthStatus('idle')
       return result
     } catch (error) {
-      setAuthStatus(error.message.includes('not configured') ? 'unavailable' : 'error')
+      setAuthStatus(error.code === 'SERVICE_UNAVAILABLE' ? 'unavailable' : 'error')
       throw error
     }
   }
@@ -188,7 +196,7 @@ const App = () => {
       setAuthStatus('idle')
       return result
     } catch (error) {
-      setAuthStatus(error.message.includes('not configured') ? 'unavailable' : 'error')
+      setAuthStatus(error.code === 'SERVICE_UNAVAILABLE' ? 'unavailable' : 'error')
       throw error
     }
   }
@@ -200,7 +208,7 @@ const App = () => {
       setAuthStatus('idle')
       return result
     } catch (error) {
-      setAuthStatus(error.message.includes('not configured') ? 'unavailable' : 'error')
+      setAuthStatus(error.code === 'SERVICE_UNAVAILABLE' ? 'unavailable' : 'error')
       throw error
     }
   }

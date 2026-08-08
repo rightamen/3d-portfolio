@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { languages } from '../lib/i18n'
+import { getApiErrorMessage, languages } from '../lib/i18n'
 
 const emptyForm = {
   code: '',
@@ -103,7 +103,7 @@ const AuthPage = ({
       const result = await onResendVerification({ email: form.email })
       setMessage(getVerificationMessage(result.verification))
     } catch (caughtError) {
-      setError(caughtError.message || copy.authError)
+      setError(getApiErrorMessage(caughtError, copy))
     }
   }
 
@@ -135,13 +135,13 @@ const AuthPage = ({
       await onLogin({ email: form.email, password: form.password })
       window.location.replace('/account')
     } catch (caughtError) {
-      if (caughtError.code === 'EMAIL_NOT_VERIFIED' || caughtError.message.includes('verify')) {
+      if (caughtError.code === 'EMAIL_NOT_VERIFIED') {
         setCompletedSteps(['account'])
         changeMode('verify')
         setError(copy.authEmailNotVerified)
         return
       }
-      setError(caughtError.message || copy.authError)
+      setError(getApiErrorMessage(caughtError, copy))
     }
   }
 

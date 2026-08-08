@@ -5,7 +5,7 @@ import {
   getPublicUserProfile,
   getPublicUserResources,
 } from '../lib/api'
-import { languages } from '../lib/i18n'
+import { getApiErrorMessage, languages } from '../lib/i18n'
 
 const publicProfileTabs = [
   { key: 'overview', labelKey: 'publicProfileTabOverview' },
@@ -46,8 +46,16 @@ const getInitials = (name = '', handle = '') => {
 
 const formatDate = (value) => (value ? new Date(value).toLocaleDateString() : '')
 
+const decodePathSegment = (value) => {
+  try {
+    return decodeURIComponent(value)
+  } catch {
+    return ''
+  }
+}
+
 const PublicProfilePage = ({ copy, language, onLanguageChange }) => {
-  const handle = decodeURIComponent(window.location.pathname.replace(/^\/u\/?/, '')).split('/')[0]
+  const handle = decodePathSegment(window.location.pathname.replace(/^\/u\/?/, '')).split('/')[0]
   const [activeTab, setActiveTab] = useState('overview')
   const [profile, setProfile] = useState(null)
   const [activity, setActivity] = useState({ comments: [], posts: [], resources: [] })
@@ -93,13 +101,13 @@ const PublicProfilePage = ({ copy, language, onLanguageChange }) => {
       .catch((error) => {
         if (!isMounted) return
         setStatus(error.code === 'PROFILE_ADMIN_DISABLED' ? 'admin-disabled' : 'error')
-        setMessage(error.message || copy.publicProfileLoadError)
+        setMessage(error.code ? getApiErrorMessage(error, copy) : copy.publicProfileLoadError)
       })
 
     return () => {
       isMounted = false
     }
-  }, [copy.publicProfileLoadError, handle])
+  }, [copy, handle])
 
   const isLoading = status === `loading:${handle}`
   const activityPublic = profile?.activityPublic !== false
@@ -132,7 +140,14 @@ const PublicProfilePage = ({ copy, language, onLanguageChange }) => {
     <div className="public-profile-grid">
       {activity.resources.map((item) => (
         <article key={item.id} className="public-profile-item">
-          {item.previewUrl && <img src={item.previewUrl} alt="" />}
+          {item.previewUrl && (
+            <img
+              src={item.previewUrl}
+              alt={`${item.title} preview`}
+              decoding="async"
+              loading="lazy"
+            />
+          )}
           <div>
             <h3>{item.title}</h3>
             <p>{item.description}</p>
@@ -335,7 +350,12 @@ const PublicProfilePage = ({ copy, language, onLanguageChange }) => {
             </div>
             <div className="public-profile-head">
               {profile.avatarUrl ? (
-                <img className="public-profile-avatar" src={profile.avatarUrl} alt="" />
+                <img
+                  className="public-profile-avatar"
+                  src={profile.avatarUrl}
+                  alt={`${profile.displayName} avatar`}
+                  decoding="async"
+                />
               ) : (
                 <span className="public-profile-avatar public-profile-avatar-empty">
                   {getInitials(profile.displayName, profile.handle)}

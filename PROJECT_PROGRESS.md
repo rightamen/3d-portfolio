@@ -1,5 +1,37 @@
 # mrright.blog 项目进度记录
 
+## 2026-08-08：作品集 UI、可访问性与前端稳定性收尾
+
+结论：本轮继续完善 Web 作品集的首屏体验、公开主页错误状态、对话框键盘交互与移动端可用性。重点把弹窗从“能显示”提升为键盘用户可安全操作的 dialog surface，并用稳定 API error code 驱动三语言文案。所有改动均在本地完成，**未部署、未改数据库、未读取或输出任何 token/password/secret、未触碰生产环境**。
+
+完成内容：
+
+- 修复 `useDialogAccessibility` 的 React Hook 兼容性：补齐 `useRef`、避免渲染阶段写 ref，保留最新 `onClose` 回调而不反复绑定全局监听器。
+- 完善 dialog 行为：Escape 关闭、Tab/Shift+Tab focus trap、焦点意外跑出 dialog 时自动拉回、打开时聚焦 Close、关闭后恢复触发按钮焦点，并保存/恢复原始 `body` overflow；ProjectDetail 与 ModelPreview 均通过 `aria-labelledby` 关联可见标题。
+- 验证嵌套弹窗：ProjectDetail 打开 ModelPreview 时，第一次 Escape 只关闭 3D Viewer，第二次才关闭详情；页面滚动锁定和焦点恢复均正确。
+- 为公开主页的 `RESOURCE_FORBIDDEN` 增加 zh/en/ja 稳定错误码文案，避免把服务端错误消息直接暴露给用户；不存在用户页面显示明确的本地化“Profile Not Found”状态。
+- 为作品卡片、社区资源、公开主页资源和头像补充 `loading="lazy"` / `decoding="async"`，减少非首屏图片对首屏网络与解码的抢占。
+- 为 API 请求 timeout 增加旧浏览器能力回退；AccountMenu 的弹出项补齐 `role="menuitem"`，让已有 ARIA 菜单语义更完整。
+- 统一社区发帖、资源上传、评论和访客账户中心的 API 失败提示：按稳定 error code 调用 `getApiErrorMessage`，只在未知错误时使用对应场景的安全 fallback，不再把 raw server message 直接渲染到普通访客界面。
+- 继续保留并验证移动端 Hero CTA（View Work / Contact Me）、移动导航 `aria-expanded`/`aria-controls`、AccountMenu `aria-haspopup`/`aria-expanded`，以及 `prefers-reduced-motion` 下不加载 Hero Canvas。
+- 保留首页基础 SEO metadata 与自定义 favicon；作品图片使用标题化 alt 文案；Three.js Viewer 保留错误边界和资源清理逻辑。
+
+本轮验证结果：
+
+- `npm run lint`：通过。
+- `npm run build`：通过；build 生成的 tracked `dist/` 已恢复，未提交构建产物。
+- `git diff --check`：通过。
+- `npm run test:api`：37/37 通过。
+- 最终 error-message 扫描：普通访客页面不再存在直接渲染 `error.message` 的路径；Admin 与模型错误边界仍保留管理员/开发诊断语义。
+- 本地 Playwright 页面回归：`/`、`/community`、`/login?mode=login`、`/account`、`/u/not-exist-test-handle` 均正常渲染（5/5）；移动端 Hero CTA、移动菜单和 AccountMenu 状态均通过；桌面端 ProjectDetail/ModelPreview dialog 键盘交互通过，浏览器无前端错误。
+- 本地完整 `production-smoke` 的只读账号接口在无 `DATABASE_URL` 的开发环境返回既有合约规定的 `503 SERVICE_UNAVAILABLE`，而 smoke 文件的线上断言期望 `401`；未为了迎合本地环境改坏既有 API 语义。API contract tests 已确认无数据库时账号读接口应为 503。
+
+后续待办：
+
+1. 延迟加载 Hero 3D Canvas，并为移动端提供静态 poster/质量档，进一步降低首屏 JS 与 GPU 成本。
+2. 继续统一剩余前端错误状态的 error-code 本地化，避免界面直接显示 raw API message。
+3. 在具备真实 PostgreSQL 的隔离环境中补充认证、上传、下载和移动端视觉回归；部署前仍需按规则备份并执行完整 VPS 验证。
+
 ## 2026-07-16：C++ Qt AuthSessionService adapter 第一批
 
 结论：本轮在 Qt UI adapter 层新增 `AuthSessionService`，实现现有 `AuthService` boundary 并复用 SDK `AuthSession`。adapter 不提供 production default backend，而是拥有显式注入的 `HttpClient` 与 `TokenStore`，从而保证 `AuthSession` 引用依赖的生命周期安全。测试仅使用 `MockHttpClient` + `MemoryTokenStore`，不创建 `CurlHttpClient`，不访问真实或本地 API。Qt shell 的 `main_qt.cpp` 未修改，默认实现继续是 `MockAuthService`。SDK core 继续 Qt-free。**未部署、未改数据库、未读取或修改 `.env`/token/secret、未访问 production API、未访问 local API、未启用真实网络、未改 Web/API/OpenAPI contract、未修改 QML/Qt 视觉、未做 cache、未做 packaging、未提交构建产物**。

@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import {
   addProjectComment,
   getProject,
@@ -8,6 +8,7 @@ import {
 } from '../lib/api'
 import { getAssetCategoryProfile } from '../lib/assetCategories'
 import { getAccessLevelLabel, pickLocalized, translateKnownLabel } from '../lib/i18n'
+import useDialogAccessibility from '../hooks/useDialogAccessibility'
 
 const ModelPreview = lazy(() => import('./ModelPreview'))
 
@@ -45,6 +46,8 @@ const ProjectDetail = ({ authToken, slug, onClose, language, copy, visitorUser }
   const [isPreviewOpen, setIsPreviewOpen] = useState(false)
   const [isRequestOpen, setIsRequestOpen] = useState(false)
   const [liked, setLiked] = useState(false)
+  const dialogRef = useRef(null)
+  const closeButtonRef = useRef(null)
 
   useEffect(() => {
     let isMounted = true
@@ -127,14 +130,12 @@ const ProjectDetail = ({ authToken, slug, onClose, language, copy, visitorUser }
     }
   }
 
-  useEffect(() => {
-    const onKeyDown = (event) => {
-      if (event.key === 'Escape') onClose()
-    }
-
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [onClose])
+  useDialogAccessibility({
+    dialogRef,
+    initialFocusRef: closeButtonRef,
+    onClose,
+    open: !isPreviewOpen,
+  })
 
   const category = project ? getAssetCategoryProfile(project, language) : null
   const projectTitle = project ? pickLocalized(project, 'title', language) : ''
@@ -151,16 +152,22 @@ const ProjectDetail = ({ authToken, slug, onClose, language, copy, visitorUser }
       : copy.accessApprovalRequired
 
   return (
-    <div className="detail-overlay" role="dialog" aria-modal="true">
+    <div
+      ref={dialogRef}
+      className="detail-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="project-detail-title"
+    >
       <article className="detail-panel">
         <div className="detail-header">
           <div>
             <div className="section-kicker mb-1">{copy.detailKicker}</div>
-            <h3 className="text-2xl font-semibold text-white">
+            <h3 id="project-detail-title" className="text-2xl font-semibold text-white">
               {projectTitle || copy.loadingProject}
             </h3>
           </div>
-          <button type="button" className="secondary-action" onClick={onClose}>
+          <button ref={closeButtonRef} type="button" className="secondary-action" onClick={onClose}>
             {copy.close}
           </button>
         </div>
@@ -176,7 +183,12 @@ const ProjectDetail = ({ authToken, slug, onClose, language, copy, visitorUser }
         {project && (
           <div className="detail-body">
             <div className="detail-media">
-              <img src={project.image} alt="" className="h-full w-full object-cover" />
+              <img
+                src={project.image}
+                alt={`${projectTitle} preview`}
+                className="h-full w-full object-cover"
+                decoding="async"
+              />
             </div>
 
             <div className="detail-content">
@@ -438,7 +450,7 @@ const ProjectDetail = ({ authToken, slug, onClose, language, copy, visitorUser }
       {project && isPreviewOpen && (
         <Suspense fallback={null}>
           <ModelPreview
-            key={`${project.slug}-${language}`}
+            key={project.slug}
             project={project}
             language={language}
             copy={copy}

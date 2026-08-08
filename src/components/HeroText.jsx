@@ -130,6 +130,14 @@ const HeroText = ({ profile, status, language, copy }) => {
             ? copy.heroError
             : title}
         </p>
+        <div className="hero-mobile-actions" aria-label={copy.heroProjects}>
+          <a href="#projects" className="primary-action">
+            {copy.heroProjects}
+          </a>
+          <a href="#contact" className="secondary-action">
+            {copy.heroContact}
+          </a>
+        </div>
       </div>
     </div>
   )
