@@ -7,7 +7,9 @@ import {
   loginVisitor,
   logoutVisitor,
   registerVisitor,
+  requestPasswordReset,
   resendVisitorVerification,
+  resetVisitorPassword,
   verifyVisitorEmail,
 } from './lib/api'
 import { getCopy, getInitialLanguage } from './lib/i18n'
@@ -213,6 +215,34 @@ const App = () => {
     }
   }
 
+  const handleRequestPasswordReset = async (payload) => {
+    setAuthStatus('saving')
+    try {
+      const result = await requestPasswordReset(payload)
+      setAuthStatus('idle')
+      return result
+    } catch (error) {
+      setAuthStatus(error.code === 'SERVICE_UNAVAILABLE' ? 'unavailable' : 'error')
+      throw error
+    }
+  }
+
+  // The reset response carries a fresh session: the server drops every session
+  // the account had, so without this the visitor would land on a sign-in form
+  // immediately after proving control of the address.
+  const handleResetPassword = async (payload) => {
+    setAuthStatus('saving')
+    try {
+      const result = await resetVisitorPassword(payload)
+      saveVisitorSession(result)
+      setAuthStatus('idle')
+      return result
+    } catch (error) {
+      setAuthStatus(error.code === 'SERVICE_UNAVAILABLE' ? 'unavailable' : 'error')
+      throw error
+    }
+  }
+
   const handleVisitorLogout = async () => {
     const token = visitorToken
     window.localStorage.removeItem(visitorTokenKey)
@@ -234,7 +264,9 @@ const App = () => {
           onLanguageChange={setLanguage}
           onLogin={handleVisitorLogin}
           onRegister={handleVisitorRegister}
+          onRequestPasswordReset={handleRequestPasswordReset}
           onResendVerification={handleVisitorResendVerification}
+          onResetPassword={handleResetPassword}
           onVerifyEmail={handleVisitorVerifyEmail}
           visitorUser={visitorUser}
         />

@@ -1,0 +1,24 @@
+[Unit]
+Description=mrright.blog PostgreSQL backup
+Documentation=file:///opt/mrright-portfolio/docs/OPERATIONS_BACKUP.md
+After=network-online.target postgresql.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/mrright-portfolio
+# Same env file as the app service, so DATABASE_URL is never duplicated on disk.
+EnvironmentFile=/etc/mrright-portfolio.env
+Environment=BACKUP_DIR=/var/backups/mrright-portfolio
+# Retention is opt-in. Uncomment to keep only the newest 14 verified dumps.
+# Environment=BACKUP_RETENTION_COUNT=14
+ExecStart=/usr/bin/node /opt/mrright-portfolio/scripts/backup-database.mjs
+
+# The backup only ever needs to read the database and write one directory.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/backups/mrright-portfolio
+
+[Install]
+WantedBy=multi-user.target

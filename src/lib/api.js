@@ -74,6 +74,24 @@ const request = async (path, options = {}) => {
   return normalizeApiPayload(await parseJsonBody(response))
 }
 
+// Exchanges the static ADMIN_TOKEN for a short-lived session token. The
+// dashboard stores only the result, so the permanent secret never sits in
+// localStorage where any XSS could lift it and keep it forever.
+export const createAdminSession = (staticToken) =>
+  request('/api/admin/session', {
+    cache: 'no-store',
+    method: 'POST',
+    headers: { Authorization: `Bearer ${staticToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  })
+
+export const endAdminSession = (token) =>
+  request('/api/admin/session', {
+    cache: 'no-store',
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  })
+
 const adminRequest = (path, token, options = {}) =>
   request(path, {
     ...options,
@@ -144,6 +162,69 @@ export const resendVisitorVerification = (payload) =>
     body: JSON.stringify(payload),
   })
 
+export const requestPasswordReset = (payload) =>
+  request('/api/auth/forgot-password', {
+    cache: 'no-store',
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+
+export const resetVisitorPassword = (payload) =>
+  request('/api/auth/reset-password', {
+    cache: 'no-store',
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+
+export const changeVisitorPassword = (token, payload) =>
+  request('/api/account/password', {
+    cache: 'no-store',
+    method: 'PUT',
+    headers: authHeaders(token, { 'Content-Type': 'application/json' }),
+    body: JSON.stringify(payload),
+  })
+
+export const requestEmailChange = (token, payload) =>
+  request('/api/account/email', {
+    cache: 'no-store',
+    method: 'POST',
+    headers: authHeaders(token, { 'Content-Type': 'application/json' }),
+    body: JSON.stringify(payload),
+  })
+
+export const confirmEmailChange = (token, payload) =>
+  request('/api/account/email/confirm', {
+    cache: 'no-store',
+    method: 'POST',
+    headers: authHeaders(token, { 'Content-Type': 'application/json' }),
+    body: JSON.stringify(payload),
+  })
+
+export const cancelEmailChange = (token) =>
+  request('/api/account/email', {
+    cache: 'no-store',
+    method: 'DELETE',
+    headers: authHeaders(token),
+  })
+
+export const revokeOtherSessions = (token) =>
+  request('/api/account/sessions/revoke-all', {
+    cache: 'no-store',
+    method: 'POST',
+    headers: authHeaders(token, { 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ keepCurrent: true }),
+  })
+
+export const deleteVisitorAccount = (token, payload) =>
+  request('/api/account', {
+    cache: 'no-store',
+    method: 'DELETE',
+    headers: authHeaders(token, { 'Content-Type': 'application/json' }),
+    body: JSON.stringify(payload),
+  })
+
 export const toggleProjectLike = (slug, visitorId, token) =>
   request(`/api/projects/${slug}/like`, {
     method: 'POST',
@@ -165,33 +246,36 @@ export const requestProjectDownload = (slug, payload, token) =>
     body: JSON.stringify(payload),
   })
 
-export const downloadProjectSource = (slug, token) => {
-  // Direct browser download: construct URL with auth header via fetch, then
-  // trigger download with a blob URL
-  return fetch(`${API_BASE}/api/projects/${slug}/download`, {
-    headers: authHeaders(token),
-  }).then((response) => {
-    if (!response.ok) {
-      return response.json().then(
-        (payload) => {
-          throw createApiError(payload, 'Download failed', response.status)
-        },
-        () => {
-          throw new Error('Download failed')
-        },
-      )
-    }
-    return response.blob().then((blob) => {
-      const url = window.URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `${slug}-source.zip`
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      window.URL.revokeObjectURL(url)
-    })
+// Downloads the gated source archive by way of a one-shot ticket.
+//
+// The archive needs authorization, and a plain <a href> cannot carry a bearer
+// token — so this used to fetch() the whole file into a Blob and click a
+// generated link. That put the entire archive in the tab's memory, which for a
+// multi-hundred-megabyte source package is enough to kill the tab.
+//
+// Now the client asks for a short-lived single-use ticket and then navigates to
+// the URL that carries it, letting the browser stream straight to disk with its
+// own progress UI and resume behaviour.
+export const downloadProjectSource = async (slug, token) => {
+  const payload = await request(`/api/projects/${slug}/download-ticket`, {
+    cache: 'no-store',
+    method: 'POST',
+    headers: authHeaders(token, { 'Content-Type': 'application/json' }),
+    body: JSON.stringify({}),
   })
+
+  const url = payload?.ticket?.url
+  if (!url) throw new Error('Download failed')
+
+  // A hidden iframe rather than window.location so a download failure does not
+  // navigate the SPA away from the project the visitor was reading.
+  const frame = document.createElement('iframe')
+  frame.style.display = 'none'
+  frame.src = `${API_BASE}${url}`
+  document.body.appendChild(frame)
+  window.setTimeout(() => frame.remove(), 60000)
+
+  return payload
 }
 
 export const uploadCommunityResource = (token, payload, file, onProgress) => {

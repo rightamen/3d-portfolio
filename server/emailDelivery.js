@@ -121,36 +121,17 @@ const escapeHtmlField = (value) =>
 const stuffDots = (message) =>
   (message.startsWith('.') ? `.${message}` : message).replace(/\r\n\./g, '\r\n..')
 
-const formatMessage = ({ code, displayName, expiresAt, from, siteUrl, to }) => {
-  const expiresText = new Date(expiresAt).toLocaleString('zh-CN', {
+const formatExpiry = (expiresAt) =>
+  new Date(expiresAt).toLocaleString('zh-CN', {
     hour12: false,
     timeZone: 'Asia/Shanghai',
   })
+
+// Assembles the MIME envelope. Subject/body are produced by the template
+// functions below; everything attacker-influenced has already passed through
+// escapeTextField / escapeHtmlField by the time it arrives here.
+const formatMessage = ({ from, html, plain, subject, to }) => {
   const safeTo = escapeAddress(to)
-  const safeNamePlain = escapeTextField(displayName) || 'there'
-  const safeNameHtml = escapeHtmlField(displayName) || 'there'
-  const subject = 'mrright.blog visitor verification code'
-  const plain = [
-    `Hi ${safeNamePlain},`,
-    '',
-    `Your mrright.blog verification code is: ${code}`,
-    `This code expires at ${expiresText}.`,
-    '',
-    `Open ${siteUrl}/login?mode=verify to finish registration.`,
-    '',
-    'If you did not request this code, you can ignore this email.',
-  ].join('\n')
-  const html = `
-    <div style="font-family:Arial,sans-serif;line-height:1.6;color:#111827">
-      <h2>mrright.blog visitor verification</h2>
-      <p>Hi ${safeNameHtml},</p>
-      <p>Your verification code is:</p>
-      <p style="font-size:28px;font-weight:700;letter-spacing:6px">${code}</p>
-      <p>This code expires at ${expiresText}.</p>
-      <p><a href="${siteUrl}/login?mode=verify">Finish registration</a></p>
-      <p style="color:#6b7280">If you did not request this code, you can ignore this email.</p>
-    </div>
-  `.trim()
   const boundary = `mrright-${Date.now()}`
 
   return [
@@ -175,7 +156,46 @@ const formatMessage = ({ code, displayName, expiresAt, from, siteUrl, to }) => {
   ].join(crlf)
 }
 
-export const sendVerificationEmail = async ({ code, displayName, email, expiresAt }) => {
+const wrapHtml = (body) =>
+  `
+    <div style="font-family:Arial,sans-serif;line-height:1.6;color:#111827">
+      ${body}
+    </div>
+  `.trim()
+
+// One code-delivery template shared by registration, password reset, and email
+// change. They differ only in wording and landing URL; keeping a single body
+// builder means the dot-stuffing and escaping rules cannot drift between them.
+const buildCodeTemplate = ({ action, code, displayName, expiresAt, heading, landingPath, siteUrl }) => {
+  const expiresText = formatExpiry(expiresAt)
+  const safeNamePlain = escapeTextField(displayName) || 'there'
+  const safeNameHtml = escapeHtmlField(displayName) || 'there'
+
+  return {
+    html: wrapHtml(`
+      <h2>${heading}</h2>
+      <p>Hi ${safeNameHtml},</p>
+      <p>${action}</p>
+      <p style="font-size:28px;font-weight:700;letter-spacing:6px">${code}</p>
+      <p>This code expires at ${expiresText}.</p>
+      <p><a href="${siteUrl}${landingPath}">Continue on mrright.blog</a></p>
+      <p style="color:#6b7280">If you did not request this, you can ignore this email — no change has been made.</p>
+    `),
+    plain: [
+      `Hi ${safeNamePlain},`,
+      '',
+      `${action}`,
+      `Code: ${code}`,
+      `This code expires at ${expiresText}.`,
+      '',
+      `Open ${siteUrl}${landingPath} to continue.`,
+      '',
+      'If you did not request this, you can ignore this email — no change has been made.',
+    ].join('\n'),
+  }
+}
+
+export const sendMail = async ({ email, html, plain, subject }) => {
   const config = getSmtpConfig()
 
   if (!isEmailDeliveryConfigured()) {
@@ -234,11 +254,10 @@ export const sendVerificationEmail = async ({ code, displayName, email, expiresA
     socket.write(
       `${stuffDots(
         formatMessage({
-          code,
-          displayName,
-          expiresAt,
           from: config.from,
-          siteUrl: config.siteUrl,
+          html,
+          plain,
+          subject,
           to: email,
         }),
       )}${crlf}.${crlf}`,
@@ -250,4 +269,82 @@ export const sendVerificationEmail = async ({ code, displayName, email, expiresA
   } finally {
     socket.destroy()
   }
+}
+
+export const sendVerificationEmail = ({ code, displayName, email, expiresAt }) =>
+  sendMail({
+    email,
+    subject: 'mrright.blog visitor verification code',
+    ...buildCodeTemplate({
+      action: 'Your mrright.blog verification code is:',
+      code,
+      displayName,
+      expiresAt,
+      heading: 'mrright.blog visitor verification',
+      landingPath: '/login?mode=verify',
+      siteUrl: getSmtpConfig().siteUrl,
+    }),
+  })
+
+export const sendPasswordResetEmail = ({ code, displayName, email, expiresAt }) =>
+  sendMail({
+    email,
+    subject: 'mrright.blog password reset code',
+    ...buildCodeTemplate({
+      action: 'Use this code to set a new mrright.blog password:',
+      code,
+      displayName,
+      expiresAt,
+      heading: 'Reset your mrright.blog password',
+      landingPath: '/login?mode=reset',
+      siteUrl: getSmtpConfig().siteUrl,
+    }),
+  })
+
+// Sent to the NEW address. The current address gets no code — confirming
+// control of the new mailbox is the whole point of the flow.
+export const sendEmailChangeEmail = ({ code, displayName, email, expiresAt }) =>
+  sendMail({
+    email,
+    subject: 'mrright.blog email change confirmation code',
+    ...buildCodeTemplate({
+      action: 'Use this code to confirm your new mrright.blog sign-in address:',
+      code,
+      displayName,
+      expiresAt,
+      heading: 'Confirm your new email address',
+      landingPath: '/account',
+      siteUrl: getSmtpConfig().siteUrl,
+    }),
+  })
+
+// Closes the loop on download requests: before this, an approval or rejection
+// was only visible if the requester happened to revisit /account.
+export const sendDownloadDecisionEmail = ({ approved, displayName, email, projectTitle }) => {
+  const config = getSmtpConfig()
+  const safeNamePlain = escapeTextField(displayName) || 'there'
+  const safeNameHtml = escapeHtmlField(displayName) || 'there'
+  const safeTitlePlain = escapeTextField(projectTitle)
+  const safeTitleHtml = escapeHtmlField(projectTitle)
+  const outcome = approved
+    ? 'has been approved. You can download the source archive from your account page.'
+    : 'was not approved this time.'
+
+  return sendMail({
+    email,
+    subject: `mrright.blog download request ${approved ? 'approved' : 'declined'}`,
+    html: wrapHtml(`
+      <h2>Download request ${approved ? 'approved' : 'declined'}</h2>
+      <p>Hi ${safeNameHtml},</p>
+      <p>Your request for <strong>${safeTitleHtml}</strong> ${outcome}</p>
+      <p><a href="${config.siteUrl}/account">Open your account page</a></p>
+    `),
+    plain: [
+      `Hi ${safeNamePlain},`,
+      '',
+      `Your request for "${safeTitlePlain}" ${outcome}`,
+      '',
+      `Open ${config.siteUrl}/account to review your download requests.`,
+    ].join('\n'),
+  })
 }

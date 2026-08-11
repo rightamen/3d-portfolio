@@ -1,0 +1,15 @@
+[Unit]
+Description=Daily mrright.blog PostgreSQL backup
+Documentation=file:///opt/mrright-portfolio/docs/OPERATIONS_BACKUP.md
+
+[Timer]
+# 03:30 local time, with jitter so the dump does not land on the same second
+# every night (matters once off-site sync shares the uplink).
+OnCalendar=*-*-* 03:30:00
+RandomizedDelaySec=900
+# Catch up after downtime rather than silently skipping a day.
+Persistent=true
+Unit=mrright-backup.service
+
+[Install]
+WantedBy=timers.target

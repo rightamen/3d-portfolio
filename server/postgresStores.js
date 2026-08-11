@@ -58,6 +58,8 @@ const toPrivateUser = (row) =>
   row
     ? {
         ...toAccountUserRecord(row),
+        failedLoginCount: Number(row.failed_login_count || 0),
+        lockedUntil: row.locked_until?.toISOString?.() || row.locked_until || null,
         passwordHash: row.password_hash,
       }
     : null
@@ -69,6 +71,14 @@ const toAccountProfile = (row) =>
         contactLinks: row.contact_links || {},
         contactsPublic: row.contacts_public === true,
         lastLoginAt: row.last_login_at?.toISOString?.() || row.last_login_at || null,
+        passwordChangedAt:
+          row.password_changed_at?.toISOString?.() || row.password_changed_at || null,
+        // Only ever returned to the account itself (getAccountProfile), so the
+        // in-flight address is safe to surface — the UI needs it to show what
+        // the pending confirmation code was sent to.
+        pendingEmail: row.pending_email || '',
+        pendingEmailExpiresAt:
+          row.pending_email_expires_at?.toISOString?.() || row.pending_email_expires_at || null,
         profileAdminDisabled: row.profile_admin_disabled === true,
         profileAdminDisabledAt:
           row.profile_admin_disabled_at?.toISOString?.() || row.profile_admin_disabled_at || null,
@@ -475,6 +485,54 @@ const ensureSchema = async (pool) => {
 
     CREATE INDEX IF NOT EXISTS admin_user_actions_user_created_idx
       ON admin_user_actions (visitor_user_id, created_at DESC);
+
+    -- Short-lived admin sessions. The static ADMIN_TOKEN used to be stored in
+    -- the browser's localStorage forever, so a single XSS or leak handed over
+    -- permanent full control. The token is now exchanged once for a session
+    -- that expires, can be revoked, and is recorded here per issuing IP.
+    CREATE TABLE IF NOT EXISTS admin_sessions (
+      token_hash text PRIMARY KEY,
+      ip text,
+      user_agent text,
+      expires_at timestamptz NOT NULL,
+      last_seen_at timestamptz,
+      created_at timestamptz NOT NULL DEFAULT now()
+    );
+
+    CREATE INDEX IF NOT EXISTS admin_sessions_expires_idx
+      ON admin_sessions (expires_at);
+
+    -- One-shot download tickets. The Web client used to pull the whole source
+    -- archive through fetch() into a Blob just to attach an Authorization
+    -- header, which OOMs the tab on large archives. A ticket lets the browser
+    -- stream the file over a plain navigation instead, without the bearer
+    -- token ever appearing in a URL that outlives the download.
+    CREATE TABLE IF NOT EXISTS download_tickets (
+      token_hash text PRIMARY KEY,
+      project_slug text NOT NULL,
+      user_id text REFERENCES visitor_users(id) ON DELETE CASCADE,
+      expires_at timestamptz NOT NULL,
+      used_at timestamptz,
+      created_at timestamptz NOT NULL DEFAULT now()
+    );
+
+    CREATE INDEX IF NOT EXISTS download_tickets_expires_idx
+      ON download_tickets (expires_at);
+
+    -- Audit trail for gated source downloads. Approving a request was recorded
+    -- but the download itself was not, so there was no way to answer "who
+    -- actually took this asset, and when".
+    CREATE TABLE IF NOT EXISTS download_events (
+      id text PRIMARY KEY,
+      project_slug text NOT NULL,
+      user_id text REFERENCES visitor_users(id) ON DELETE SET NULL,
+      actor text NOT NULL,
+      ip text,
+      created_at timestamptz NOT NULL DEFAULT now()
+    );
+
+    CREATE INDEX IF NOT EXISTS download_events_slug_created_idx
+      ON download_events (project_slug, created_at DESC);
   `)
 
   await pool.query(`
@@ -514,7 +572,28 @@ const ensureSchema = async (pool) => {
       ADD COLUMN IF NOT EXISTS profile_admin_disabled_at timestamptz,
       ADD COLUMN IF NOT EXISTS profile_admin_disable_reason text,
       ADD COLUMN IF NOT EXISTS profile_moderated_at timestamptz,
-      ADD COLUMN IF NOT EXISTS updated_at timestamptz DEFAULT now();
+      ADD COLUMN IF NOT EXISTS updated_at timestamptz DEFAULT now(),
+      -- Per-account throttling. IP rate limits alone let an attacker with a
+      -- proxy pool brute force both the password and the 6-digit verification
+      -- code, because every bucket was keyed on the caller's address rather
+      -- than on the account under attack.
+      ADD COLUMN IF NOT EXISTS failed_login_count integer NOT NULL DEFAULT 0,
+      ADD COLUMN IF NOT EXISTS locked_until timestamptz,
+      ADD COLUMN IF NOT EXISTS verification_attempts integer NOT NULL DEFAULT 0,
+      -- Password reset and email change, neither of which existed before: a
+      -- visitor who forgot their password had no way back into the account.
+      ADD COLUMN IF NOT EXISTS password_changed_at timestamptz,
+      ADD COLUMN IF NOT EXISTS password_reset_code_hash text,
+      ADD COLUMN IF NOT EXISTS password_reset_expires_at timestamptz,
+      ADD COLUMN IF NOT EXISTS password_reset_attempts integer NOT NULL DEFAULT 0,
+      ADD COLUMN IF NOT EXISTS pending_email text,
+      ADD COLUMN IF NOT EXISTS pending_email_code_hash text,
+      ADD COLUMN IF NOT EXISTS pending_email_expires_at timestamptz,
+      ADD COLUMN IF NOT EXISTS pending_email_attempts integer NOT NULL DEFAULT 0;
+
+    ALTER TABLE download_requests
+      ADD COLUMN IF NOT EXISTS decided_at timestamptz,
+      ADD COLUMN IF NOT EXISTS notified_at timestamptz;
 
     CREATE UNIQUE INDEX IF NOT EXISTS visitor_users_handle_unique_idx
       ON visitor_users (lower(handle))
@@ -733,6 +812,7 @@ export const createPostgresStores = async (databaseUrl) => {
         `
           SELECT id, email, display_name, password_hash, access_level, created_at
             , email_verified_at, verification_code_hash, verification_expires_at
+            , failed_login_count, locked_until
           FROM visitor_users
           WHERE email = lower($1)
           LIMIT 1
@@ -769,6 +849,10 @@ export const createPostgresStores = async (databaseUrl) => {
           UPDATE visitor_users
           SET verification_code_hash = $2,
               verification_expires_at = $3,
+              -- Reset the attempt budget with the new code, otherwise a
+              -- visitor who exhausted it can never complete verification:
+              -- the first wrong digit on the fresh code would void it again.
+              verification_attempts = 0,
               updated_at = now()
           WHERE email = lower($1)
             AND email_verified_at IS NULL
@@ -778,6 +862,385 @@ export const createPostgresStores = async (databaseUrl) => {
       )
 
       return Boolean(result.rows[0])
+    },
+
+    // ---------------------------------------------------------------------
+    // Per-account throttling.
+    //
+    // The IP rate limiters in server/index.js cap how fast one address can
+    // guess, but they do nothing about an attacker who spreads guesses across
+    // a proxy pool: every request lands in a fresh bucket while the account
+    // under attack absorbs all of them. These counters live on the account, so
+    // the attempt budget is shared no matter where the guesses come from.
+    // ---------------------------------------------------------------------
+
+    registerFailedLogin: async (userId, { lockAfter, lockMs }) => {
+      const result = await pool.query(
+        `
+          UPDATE visitor_users
+          SET failed_login_count = failed_login_count + 1,
+              locked_until = CASE
+                WHEN failed_login_count + 1 >= $2
+                  THEN now() + ($3::bigint * interval '1 millisecond')
+                ELSE locked_until
+              END,
+              updated_at = now()
+          WHERE id = $1
+          RETURNING failed_login_count, locked_until
+        `,
+        [userId, lockAfter, lockMs],
+      )
+
+      const row = result.rows[0]
+      if (!row) return { failedCount: 0, lockedUntil: null }
+
+      return {
+        failedCount: row.failed_login_count,
+        lockedUntil: row.locked_until?.toISOString?.() || row.locked_until || null,
+      }
+    },
+
+    clearLoginFailures: async (userId) => {
+      await pool.query(
+        `
+          UPDATE visitor_users
+          SET failed_login_count = 0,
+              locked_until = null
+          WHERE id = $1
+            AND (failed_login_count <> 0 OR locked_until IS NOT NULL)
+        `,
+        [userId],
+      )
+    },
+
+    // Burns one attempt against the stored verification code and destroys the
+    // code once the budget is spent, so the 6-digit space cannot be walked.
+    // Returns the attempt count after the increment.
+    registerVerificationAttempt: async (email, { maxAttempts }) => {
+      const result = await pool.query(
+        `
+          UPDATE visitor_users
+          SET verification_attempts = verification_attempts + 1,
+              verification_code_hash = CASE
+                WHEN verification_attempts + 1 >= $2 THEN null
+                ELSE verification_code_hash
+              END,
+              verification_expires_at = CASE
+                WHEN verification_attempts + 1 >= $2 THEN null
+                ELSE verification_expires_at
+              END,
+              updated_at = now()
+          WHERE email = lower($1)
+            AND email_verified_at IS NULL
+          RETURNING verification_attempts
+        `,
+        [email, maxAttempts],
+      )
+
+      return result.rows[0]?.verification_attempts ?? 0
+    },
+
+    // ---------------------------------------------------------------------
+    // Password reset.
+    //
+    // Previously absent entirely: a visitor who forgot their password was
+    // permanently locked out and could only be recovered by hand-editing the
+    // database. A successful reset also invalidates every existing session,
+    // which is the point of resetting after a suspected compromise.
+    // ---------------------------------------------------------------------
+
+    setPasswordResetCode: async (email, codeHash, expiresAt) => {
+      const result = await pool.query(
+        `
+          UPDATE visitor_users
+          SET password_reset_code_hash = $2,
+              password_reset_expires_at = $3,
+              password_reset_attempts = 0,
+              updated_at = now()
+          WHERE email = lower($1)
+            AND email_verified_at IS NOT NULL
+          RETURNING id
+        `,
+        [email, codeHash, expiresAt],
+      )
+
+      return Boolean(result.rows[0])
+    },
+
+    registerPasswordResetAttempt: async (email, { maxAttempts }) => {
+      const result = await pool.query(
+        `
+          UPDATE visitor_users
+          SET password_reset_attempts = password_reset_attempts + 1,
+              password_reset_code_hash = CASE
+                WHEN password_reset_attempts + 1 >= $2 THEN null
+                ELSE password_reset_code_hash
+              END,
+              password_reset_expires_at = CASE
+                WHEN password_reset_attempts + 1 >= $2 THEN null
+                ELSE password_reset_expires_at
+              END,
+              updated_at = now()
+          WHERE email = lower($1)
+          RETURNING password_reset_attempts
+        `,
+        [email, maxAttempts],
+      )
+
+      return result.rows[0]?.password_reset_attempts ?? 0
+    },
+
+    resetPasswordWithCode: async (email, codeHash, passwordHash) => {
+      const client = await pool.connect()
+
+      try {
+        await client.query('BEGIN')
+        const result = await client.query(
+          `
+            UPDATE visitor_users
+            SET password_hash = $3,
+                password_changed_at = now(),
+                password_reset_code_hash = null,
+                password_reset_expires_at = null,
+                password_reset_attempts = 0,
+                failed_login_count = 0,
+                locked_until = null,
+                updated_at = now()
+            WHERE email = lower($1)
+              AND password_reset_code_hash = $2
+              AND password_reset_expires_at > now()
+            RETURNING id, email, display_name, access_level, email_verified_at, created_at
+          `,
+          [email, codeHash, passwordHash],
+        )
+
+        const row = result.rows[0]
+        if (!row) {
+          await client.query('ROLLBACK')
+          return null
+        }
+
+        // Anyone holding a session issued before the reset loses it.
+        await client.query('DELETE FROM visitor_sessions WHERE user_id = $1', [row.id])
+        await client.query('COMMIT')
+
+        return toAccountUserRecord(row)
+      } catch (error) {
+        await client.query('ROLLBACK')
+        throw error
+      } finally {
+        client.release()
+      }
+    },
+
+    getPasswordHash: async (userId) => {
+      const result = await pool.query(
+        'SELECT password_hash FROM visitor_users WHERE id = $1 LIMIT 1',
+        [userId],
+      )
+
+      return result.rows[0]?.password_hash || null
+    },
+
+    // Changing a known password keeps the caller signed in on the current
+    // device (the caller passes its own token hash) and drops every other
+    // session, which is what "sign out my other devices" has to mean.
+    updatePassword: async (userId, passwordHash, { keepTokenHash = null } = {}) => {
+      const client = await pool.connect()
+
+      try {
+        await client.query('BEGIN')
+        await client.query(
+          `
+            UPDATE visitor_users
+            SET password_hash = $2,
+                password_changed_at = now(),
+                failed_login_count = 0,
+                locked_until = null,
+                updated_at = now()
+            WHERE id = $1
+          `,
+          [userId, passwordHash],
+        )
+        await client.query(
+          `
+            DELETE FROM visitor_sessions
+            WHERE user_id = $1
+              AND ($2::text IS NULL OR token_hash <> $2)
+          `,
+          [userId, keepTokenHash],
+        )
+        await client.query('COMMIT')
+      } catch (error) {
+        await client.query('ROLLBACK')
+        throw error
+      } finally {
+        client.release()
+      }
+    },
+
+    deleteSessionsForUser: async (userId, { keepTokenHash = null } = {}) => {
+      const result = await pool.query(
+        `
+          DELETE FROM visitor_sessions
+          WHERE user_id = $1
+            AND ($2::text IS NULL OR token_hash <> $2)
+        `,
+        [userId, keepTokenHash],
+      )
+
+      return result.rowCount
+    },
+
+    countSessions: async (userId) => {
+      const result = await pool.query(
+        'SELECT count(*)::int AS total FROM visitor_sessions WHERE user_id = $1 AND expires_at > now()',
+        [userId],
+      )
+
+      return result.rows[0]?.total ?? 0
+    },
+
+    // ---------------------------------------------------------------------
+    // Email change. The code goes to the NEW address only: proving control of
+    // the new mailbox is the entire security property. The old address keeps
+    // working for sign-in until the change is confirmed.
+    // ---------------------------------------------------------------------
+
+    setPendingEmail: async (userId, pendingEmail, codeHash, expiresAt) => {
+      await pool.query(
+        `
+          UPDATE visitor_users
+          SET pending_email = lower($2),
+              pending_email_code_hash = $3,
+              pending_email_expires_at = $4,
+              pending_email_attempts = 0,
+              updated_at = now()
+          WHERE id = $1
+        `,
+        [userId, pendingEmail, codeHash, expiresAt],
+      )
+    },
+
+    registerPendingEmailAttempt: async (userId, { maxAttempts }) => {
+      const result = await pool.query(
+        `
+          UPDATE visitor_users
+          SET pending_email_attempts = pending_email_attempts + 1,
+              pending_email_code_hash = CASE
+                WHEN pending_email_attempts + 1 >= $2 THEN null
+                ELSE pending_email_code_hash
+              END,
+              updated_at = now()
+          WHERE id = $1
+          RETURNING pending_email_attempts
+        `,
+        [userId, maxAttempts],
+      )
+
+      return result.rows[0]?.pending_email_attempts ?? 0
+    },
+
+    confirmPendingEmail: async (userId, codeHash) => {
+      const result = await pool.query(
+        `
+          UPDATE visitor_users
+          SET email = pending_email,
+              pending_email = null,
+              pending_email_code_hash = null,
+              pending_email_expires_at = null,
+              pending_email_attempts = 0,
+              updated_at = now()
+          WHERE id = $1
+            AND pending_email IS NOT NULL
+            AND pending_email_code_hash = $2
+            AND pending_email_expires_at > now()
+          RETURNING id, email, display_name, access_level, email_verified_at, created_at
+        `,
+        [userId, codeHash],
+      )
+
+      return toAccountUserRecord(result.rows[0])
+    },
+
+    cancelPendingEmail: async (userId) => {
+      await pool.query(
+        `
+          UPDATE visitor_users
+          SET pending_email = null,
+              pending_email_code_hash = null,
+              pending_email_expires_at = null,
+              pending_email_attempts = 0,
+              updated_at = now()
+          WHERE id = $1
+        `,
+        [userId],
+      )
+    },
+
+    // Account deletion. Deliberately NOT a blanket cascade.
+    //
+    // Most content FKs are ON DELETE SET NULL, so posts and comments survive as
+    // orphaned rows — that is the right default, because deleting a post would
+    // take other people's replies with it. What SET NULL does not handle is the
+    // personal data denormalized onto those rows (project_comments.author,
+    // download_requests.name/email) and the uploaded files, which would sit on
+    // disk forever with nothing pointing at them. Both are handled explicitly
+    // here. Returns the upload URLs so the caller can unlink the files.
+    deleteAccount: async (userId) => {
+      const client = await pool.connect()
+
+      try {
+        await client.query('BEGIN')
+
+        const uploads = await client.query(
+          'SELECT file_url, preview_url FROM community_uploads WHERE user_id = $1',
+          [userId],
+        )
+        await client.query('DELETE FROM community_uploads WHERE user_id = $1', [userId])
+
+        await client.query(
+          `
+            UPDATE project_comments
+            SET author = 'Deleted user'
+            WHERE user_id = $1
+          `,
+          [userId],
+        )
+
+        await client.query(
+          `
+            UPDATE download_requests
+            SET name = 'Deleted user',
+                email = ''
+            WHERE user_id = $1
+          `,
+          [userId],
+        )
+
+        const result = await client.query(
+          'DELETE FROM visitor_users WHERE id = $1 RETURNING id',
+          [userId],
+        )
+
+        if (!result.rows[0]) {
+          await client.query('ROLLBACK')
+          return null
+        }
+
+        await client.query('COMMIT')
+
+        return {
+          fileUrls: uploads.rows
+            .flatMap((row) => [row.file_url, row.preview_url])
+            .filter((url) => typeof url === 'string' && url.startsWith('/uploads/')),
+        }
+      } catch (error) {
+        await client.query('ROLLBACK')
+        throw error
+      } finally {
+        client.release()
+      }
     },
 
     getAccountProfile: async (userId) => {
@@ -1145,9 +1608,84 @@ export const createPostgresStores = async (databaseUrl) => {
 
       return result.rowCount > 0
     },
+
+    // One-shot, short-lived tickets so the browser can stream a gated archive
+    // over a plain navigation instead of buffering it through fetch(). The
+    // ticket is single-use and scoped to one project, so a copied URL is worth
+    // at most one download inside its short window.
+    createDownloadTicket: async ({ expiresAt, projectSlug, tokenHash, userId }) => {
+      await pool.query(
+        `
+          INSERT INTO download_tickets (token_hash, project_slug, user_id, expires_at)
+          VALUES ($1, $2, $3, $4)
+        `,
+        [tokenHash, projectSlug, userId || null, expiresAt],
+      )
+    },
+
+    // Marks the ticket used and returns it in the same statement, so two
+    // concurrent requests cannot both redeem one ticket.
+    consumeDownloadTicket: async (tokenHash, projectSlug) => {
+      const result = await pool.query(
+        `
+          UPDATE download_tickets
+          SET used_at = now()
+          WHERE token_hash = $1
+            AND project_slug = $2
+            AND used_at IS NULL
+            AND expires_at > now()
+          RETURNING project_slug, user_id
+        `,
+        [tokenHash, projectSlug],
+      )
+
+      const row = result.rows[0]
+      return row ? { projectSlug: row.project_slug, userId: row.user_id } : null
+    },
+
+    deleteExpiredDownloadTickets: async () => {
+      const result = await pool.query(
+        "DELETE FROM download_tickets WHERE expires_at <= now() - interval '1 day'",
+      )
+
+      return result.rowCount
+    },
+
+    recordDownloadEvent: async ({ actor, ip, projectSlug, userId }) => {
+      await pool.query(
+        `
+          INSERT INTO download_events (id, project_slug, user_id, actor, ip)
+          VALUES ($1, $2, $3, $4, $5)
+        `,
+        [createId(), projectSlug, userId || null, actor, ip || null],
+      )
+    },
   }
 
   const communityStore = {
+    // Rolling-window upload usage for one account. The per-IP limiter capped
+    // request count but nothing capped stored bytes, so a single member could
+    // park gigabytes on the VPS disk one 120MB model at a time.
+    getUploadUsage: async (userId, windowMs) => {
+      const result = await pool.query(
+        `
+          SELECT
+            count(*)::int AS upload_count,
+            coalesce(sum(file_size), 0)::bigint AS total_bytes
+          FROM community_uploads
+          WHERE user_id = $1
+            AND created_at > now() - ($2::bigint * interval '1 millisecond')
+        `,
+        [userId, windowMs],
+      )
+
+      const row = result.rows[0]
+      return {
+        bytes: Number(row?.total_bytes || 0),
+        count: Number(row?.upload_count || 0),
+      }
+    },
+
     listApprovedUploads: async () => {
       const result = await pool.query(`
         SELECT
@@ -2265,18 +2803,127 @@ export const createPostgresStores = async (databaseUrl) => {
       return toAccountUserRecord(result.rows[0])
     },
 
+    // Returns the requester's contact details alongside the new status so the
+    // caller can notify them. Before this, a decision was invisible unless the
+    // requester happened to revisit /account.
     updateDownloadRequestStatus: async (id, status) => {
       const result = await pool.query(
         `
           UPDATE download_requests
-          SET status = $2
+          SET status = $2,
+              decided_at = now()
           WHERE id = $1
-          RETURNING id, status
+          RETURNING id, status, name, email, project_slug, project_title, user_id
         `,
         [id, status],
       )
 
-      return result.rows[0] || null
+      const row = result.rows[0]
+      if (!row) return null
+
+      return {
+        email: row.email,
+        id: row.id,
+        name: row.name,
+        projectSlug: row.project_slug,
+        projectTitle: row.project_title,
+        status: row.status,
+        userId: row.user_id,
+      }
+    },
+
+    markDownloadRequestNotified: async (id) => {
+      await pool.query('UPDATE download_requests SET notified_at = now() WHERE id = $1', [id])
+    },
+
+    listDownloadEvents: async (limit = 100) => {
+      const result = await pool.query(
+        `
+          SELECT
+            download_events.id,
+            download_events.project_slug,
+            download_events.actor,
+            download_events.ip,
+            download_events.created_at,
+            visitor_users.display_name,
+            visitor_users.id AS user_id
+          FROM download_events
+          LEFT JOIN visitor_users ON visitor_users.id = download_events.user_id
+          ORDER BY download_events.created_at DESC
+          LIMIT $1
+        `,
+        [limit],
+      )
+
+      return result.rows.map((row) => ({
+        actor: row.actor,
+        createdAt: row.created_at.toISOString(),
+        id: row.id,
+        ip: row.ip,
+        projectSlug: row.project_slug,
+        user: row.user_id ? { displayName: row.display_name, id: row.user_id } : null,
+      }))
+    },
+
+    // ---------------------------------------------------------------------
+    // Admin sessions. See the admin_sessions comment in ensureSchema for why
+    // the permanent static token had to stop being the thing the browser
+    // holds on to.
+    // ---------------------------------------------------------------------
+
+    createAdminSession: async ({ expiresAt, ip, tokenHash, userAgent }) => {
+      await pool.query(
+        `
+          INSERT INTO admin_sessions (token_hash, ip, user_agent, expires_at, last_seen_at)
+          VALUES ($1, $2, $3, $4, now())
+        `,
+        [tokenHash, ip || null, userAgent || null, expiresAt],
+      )
+    },
+
+    getAdminSession: async (tokenHash) => {
+      const result = await pool.query(
+        `
+          UPDATE admin_sessions
+          SET last_seen_at = now()
+          WHERE token_hash = $1
+            AND expires_at > now()
+          RETURNING expires_at
+        `,
+        [tokenHash],
+      )
+
+      const row = result.rows[0]
+      return row ? { expiresAt: row.expires_at.toISOString() } : null
+    },
+
+    deleteAdminSession: async (tokenHash) => {
+      await pool.query('DELETE FROM admin_sessions WHERE token_hash = $1', [tokenHash])
+    },
+
+    deleteExpiredAdminSessions: async () => {
+      const result = await pool.query('DELETE FROM admin_sessions WHERE expires_at <= now()')
+      return result.rowCount
+    },
+
+    listAdminSessions: async () => {
+      const result = await pool.query(
+        `
+          SELECT ip, user_agent, expires_at, last_seen_at, created_at
+          FROM admin_sessions
+          WHERE expires_at > now()
+          ORDER BY created_at DESC
+          LIMIT 50
+        `,
+      )
+
+      return result.rows.map((row) => ({
+        createdAt: row.created_at.toISOString(),
+        expiresAt: row.expires_at.toISOString(),
+        ip: row.ip,
+        lastSeenAt: row.last_seen_at?.toISOString?.() || null,
+        userAgent: row.user_agent,
+      }))
     },
 
     updateCommunityUploadStatus: async (id, status) => {

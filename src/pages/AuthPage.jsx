@@ -8,7 +8,10 @@ const emptyForm = {
   password: '',
 }
 
-const authModes = ['login', 'register', 'verify']
+// 'forgot' collects the address, 'reset' redeems the emailed code. They are
+// separate modes rather than one form so the second step can be reached
+// directly from the link in the email.
+const authModes = ['login', 'register', 'verify', 'forgot', 'reset']
 
 const getInitialMode = () => {
   const mode = new URLSearchParams(window.location.search).get('mode')
@@ -38,7 +41,9 @@ const AuthPage = ({
   onLanguageChange,
   onLogin,
   onRegister,
+  onRequestPasswordReset,
   onResendVerification,
+  onResetPassword,
   onVerifyEmail,
   visitorUser,
 }) => {
@@ -60,6 +65,14 @@ const AuthPage = ({
     verify: {
       intro: copy.authVerifyPageIntro || copy.authPageIntro,
       title: copy.authVerifyPageTitle || copy.authPageTitle,
+    },
+    forgot: {
+      intro: copy.authForgotIntro,
+      title: copy.authForgotTitle,
+    },
+    reset: {
+      intro: copy.authResetIntro,
+      title: copy.authResetTitle,
     },
   }[mode]
 
@@ -113,6 +126,25 @@ const AuthPage = ({
     setMessage('')
 
     try {
+      if (mode === 'forgot') {
+        await onRequestPasswordReset({ email: form.email })
+        changeMode('reset')
+        // Deliberately the same wording whether or not the address exists —
+        // the API answers identically so the page must not narrow it down.
+        setMessage(copy.authForgotSent)
+        return
+      }
+
+      if (mode === 'reset') {
+        await onResetPassword({
+          code: form.code,
+          email: form.email,
+          password: form.password,
+        })
+        window.location.replace('/account')
+        return
+      }
+
       if (mode === 'register') {
         const result = await onRegister(form)
         setCompletedSteps(['account'])
@@ -166,7 +198,28 @@ const AuthPage = ({
           </div>
         </div>
 
-        {mode !== 'verify' ? (
+        {mode === 'forgot' || mode === 'reset' ? (
+          <div className="auth-flow">
+            {[
+              { key: 'account', label: copy.authEmail },
+              { key: 'email', label: copy.authResetCode },
+              { key: 'done', label: copy.authFlowDone },
+            ].map((step, index) => (
+              <span
+                key={step.key}
+                className={
+                  (step.key === 'account' && mode === 'forgot') ||
+                  (step.key === 'email' && mode === 'reset')
+                    ? 'auth-flow-step-active'
+                    : 'auth-flow-step'
+                }
+              >
+                <strong>{index + 1}</strong>
+                {step.label}
+              </span>
+            ))}
+          </div>
+        ) : mode !== 'verify' ? (
           <div className="auth-mode-switch">
             <button
               type="button"
@@ -225,12 +278,23 @@ const AuthPage = ({
             onChange={updateForm}
             required
           />
-          {mode !== 'verify' && (
+          {mode === 'reset' && (
+            <input
+              className="field-input field-input-focus"
+              inputMode="numeric"
+              name="code"
+              placeholder={copy.authResetCode}
+              value={form.code}
+              onChange={updateForm}
+              required
+            />
+          )}
+          {(mode === 'login' || mode === 'register' || mode === 'reset') && (
             <input
               className="field-input field-input-focus"
               minLength={8}
               name="password"
-              placeholder={copy.authPassword}
+              placeholder={mode === 'reset' ? copy.authResetNewPassword : copy.authPassword}
               type="password"
               value={form.password}
               onChange={updateForm}
@@ -255,8 +319,22 @@ const AuthPage = ({
                 ? copy.authRegister
                 : mode === 'verify'
                   ? copy.authVerifyEmail
-                  : copy.authLogin}
+                  : mode === 'forgot'
+                    ? copy.authForgotSubmit
+                    : mode === 'reset'
+                      ? copy.authResetSubmit
+                      : copy.authLogin}
           </button>
+          {mode === 'login' && (
+            <button type="button" className="auth-text-action" onClick={() => changeMode('forgot')}>
+              {copy.authForgotPassword}
+            </button>
+          )}
+          {(mode === 'forgot' || mode === 'reset') && (
+            <button type="button" className="auth-text-action" onClick={() => changeMode('login')}>
+              {copy.authBackToLogin}
+            </button>
+          )}
           {mode === 'verify' && (
             <button
               type="button"

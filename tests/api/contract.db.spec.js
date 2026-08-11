@@ -35,6 +35,8 @@ const baseURL = `http://127.0.0.1:${port}`
 // Throwaway credential for this test process only — never logged, never persisted.
 const adminToken = randomBytes(24).toString('hex')
 const visitorPassword = `pw-${randomBytes(9).toString('hex')}`
+const loginLockAfter = 3
+const verificationMaxAttempts = 3
 
 let serverProcess
 let visitorA // verified + logged in: { id, email, sessionToken }
@@ -172,6 +174,21 @@ test.beforeAll(async () => {
       // Keep the test-only route available; the runner supplies the explicit
       // EXPOSE_DEV_VERIFICATION_CODE flag for verification.devCode.
       NODE_ENV: 'test',
+      // Lowered so the lockout and code-budget tests do not have to issue the
+      // production number of attempts. The behaviour under test is the budget
+      // existing at all, not its exact size.
+      LOGIN_LOCK_AFTER: String(loginLockAfter),
+      LOGIN_LOCK_MINUTES: '15',
+      VERIFICATION_MAX_ATTEMPTS: String(verificationMaxAttempts),
+      // Stable so anonymous like identities do not change mid-suite.
+      VISITOR_ID_SECRET: 'contract-test-visitor-secret',
+      // The suite needs more throwaway accounts and reset mails per run than
+      // the production per-IP budgets allow.
+      REGISTER_LIMIT_PER_HOUR: '40',
+      FORGOT_PASSWORD_LIMIT_PER_HOUR: '30',
+      LOGIN_LIMIT_PER_WINDOW: '200',
+      VERIFY_LIMIT_PER_WINDOW: '200',
+      RESEND_LIMIT_PER_HOUR: '30',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
@@ -709,5 +726,524 @@ test.describe('project source download authorization', () => {
     expect(response.status).toBe(404)
     expectContractShape(payload)
     expect(payload.error.code).toBe('PROJECT_NOT_FOUND')
+  })
+
+  test('download ticket is refused without an approved request', async () => {
+    const { payload, response } = await sendJson(
+      'POST',
+      `/api/projects/${projectSlug}/download-ticket`,
+      {},
+      visitorB.sessionToken,
+    )
+
+    expect(response.status).toBe(403)
+    expectContractShape(payload)
+    expect(payload.error.code).toBe('RESOURCE_FORBIDDEN')
+  })
+
+  test('download ticket is single-use', async () => {
+    // visitorA's request was approved by the previous test in this group.
+    const issued = await sendJson(
+      'POST',
+      `/api/projects/${projectSlug}/download-ticket`,
+      {},
+      visitorA.sessionToken,
+    )
+    expect(issued.response.status).toBe(201)
+    const ticket = issued.payload.data.ticket.token
+    expect(ticket).toEqual(expect.any(String))
+
+    // First redemption gets past authorization and fails only because the
+    // archive is absent in the test environment — the ticket is spent.
+    const first = await getJson(`${downloadPath}?ticket=${ticket}`)
+    expect(first.response.status).toBe(404)
+    expect(first.payload.error.code).toBe('PROJECT_NOT_FOUND')
+
+    const replay = await getJson(`${downloadPath}?ticket=${ticket}`)
+    expect(replay.response.status).toBe(403)
+    expectContractShape(replay.payload)
+    expect(replay.payload.error.code).toBe('DOWNLOAD_TICKET_INVALID')
+  })
+
+  test('a forged ticket is rejected', async () => {
+    const { payload, response } = await getJson(`${downloadPath}?ticket=not-a-real-ticket`)
+
+    expect(response.status).toBe(403)
+    expectContractShape(payload)
+    expect(payload.error.code).toBe('DOWNLOAD_TICKET_INVALID')
+  })
+})
+
+// Registers and verifies a throwaway account so tests that lock out, rotate
+// credentials, or delete an account never disturb the shared visitorA/visitorB.
+const createVerifiedVisitor = async (label) => {
+  const email = `contract-db-${label}@example.com`
+  const registered = await registerVisitor(`Contract ${label}`, email)
+  const verified = await sendJson('POST', '/api/auth/verify-email', {
+    email,
+    code: registered.devCode,
+  })
+  expect(verified.response.status, `verify ${email}`).toBe(200)
+
+  return { email, id: registered.id, sessionToken: verified.payload.data.session.token }
+}
+
+test.describe('per-account credential throttling', () => {
+  test('repeated wrong passwords lock the account, even for the correct password', async () => {
+    const visitor = await createVerifiedVisitor('lockout')
+
+    for (let attempt = 0; attempt < loginLockAfter; attempt += 1) {
+      const wrong = await sendJson('POST', '/api/auth/login', {
+        email: visitor.email,
+        password: 'definitely-not-the-password',
+      })
+      expect(wrong.response.status, `attempt ${attempt + 1}`).toBe(401)
+      expect(wrong.payload.error.code).toBe('VALIDATION_ERROR')
+    }
+
+    // The whole point: the budget is spent, so even the real password is
+    // refused. An attacker who guesses it inside the window gains nothing.
+    const correct = await sendJson('POST', '/api/auth/login', {
+      email: visitor.email,
+      password: visitorPassword,
+    })
+    expect(correct.response.status).toBe(423)
+    expectContractShape(correct.payload)
+    expect(correct.payload.error.code).toBe('ACCOUNT_LOCKED')
+  })
+
+  test('a successful sign-in clears the failure budget', async () => {
+    const visitor = await createVerifiedVisitor('lockout-reset')
+
+    const wrong = await sendJson('POST', '/api/auth/login', {
+      email: visitor.email,
+      password: 'wrong-password-once',
+    })
+    expect(wrong.response.status).toBe(401)
+
+    const good = await sendJson('POST', '/api/auth/login', {
+      email: visitor.email,
+      password: visitorPassword,
+    })
+    expect(good.response.status).toBe(200)
+
+    // Without the reset, this run of failures would trip the lock one attempt
+    // early and the account would be locked below.
+    for (let attempt = 0; attempt < loginLockAfter - 1; attempt += 1) {
+      await sendJson('POST', '/api/auth/login', {
+        email: visitor.email,
+        password: 'wrong-password-again',
+      })
+    }
+
+    const stillOpen = await sendJson('POST', '/api/auth/login', {
+      email: visitor.email,
+      password: visitorPassword,
+    })
+    expect(stillOpen.response.status).toBe(200)
+  })
+
+  test('an unknown address never locks and never reveals itself', async () => {
+    for (let attempt = 0; attempt < loginLockAfter + 2; attempt += 1) {
+      const { payload, response } = await sendJson('POST', '/api/auth/login', {
+        email: 'contract-db-nobody@example.com',
+        password: 'whatever',
+      })
+
+      // Always the same 401 VALIDATION_ERROR a wrong password gets: a 423 here
+      // would confirm the address is registered.
+      expect(response.status).toBe(401)
+      expect(payload.error.code).toBe('VALIDATION_ERROR')
+    }
+  })
+
+  test('wrong verification codes burn a per-account budget and void the code', async () => {
+    const email = 'contract-db-codebudget@example.com'
+    const registered = await registerVisitor('Contract Code Budget', email)
+
+    for (let attempt = 0; attempt < verificationMaxAttempts; attempt += 1) {
+      const wrong = await sendJson('POST', '/api/auth/verify-email', { email, code: '000000' })
+      expect(wrong.response.status).toBe(400)
+    }
+
+    // Six digits is a million guesses; without this budget an attacker rotating
+    // IPs walks the space and takes over the unverified registration.
+    const withRealCode = await sendJson('POST', '/api/auth/verify-email', {
+      email,
+      code: registered.devCode,
+    })
+    expect(withRealCode.response.status).toBe(400)
+    expect(withRealCode.payload.error.code).toBe('VALIDATION_ERROR')
+
+    // A fresh code resets the budget, otherwise the account is bricked.
+    const resent = await sendJson('POST', '/api/auth/resend-verification', { email })
+    expect(resent.response.status).toBe(200)
+
+    const completed = await sendJson('POST', '/api/auth/verify-email', {
+      email,
+      code: resent.payload.data.verification.devCode,
+    })
+    expect(completed.response.status).toBe(200)
+  })
+})
+
+test.describe('password reset', () => {
+  test('forgot-password answers identically for registered and unknown addresses', async () => {
+    const unknown = await sendJson('POST', '/api/auth/forgot-password', {
+      email: 'contract-db-not-registered@example.com',
+    })
+
+    expect(unknown.response.status).toBe(200)
+    expectContractShape(unknown.payload, { legacyKeys: ['reset'] })
+    expect(unknown.payload.data.reset.delivery).toBe('accepted')
+    // No code is minted for an address that does not exist, and the response
+    // must not hint at that.
+    expect(unknown.payload.data.reset.devCode).toBeUndefined()
+  })
+
+  test('a reset replaces the password and invalidates every existing session', async () => {
+    const visitor = await createVerifiedVisitor('reset')
+    const newPassword = `reset-${randomBytes(8).toString('hex')}`
+
+    // Prove the session works before the reset.
+    const before = await getJson('/api/account/profile', visitor.sessionToken)
+    expect(before.response.status).toBe(200)
+
+    const requested = await sendJson('POST', '/api/auth/forgot-password', { email: visitor.email })
+    expect(requested.response.status).toBe(200)
+    const code = requested.payload.data.reset.devCode
+    expect(code).toEqual(expect.any(String))
+
+    const wrongCode = await sendJson('POST', '/api/auth/reset-password', {
+      email: visitor.email,
+      code: '000000',
+      password: newPassword,
+    })
+    expect(wrongCode.response.status).toBe(400)
+    expect(wrongCode.payload.error.code).toBe('PASSWORD_RESET_INVALID')
+
+    const reset = await sendJson('POST', '/api/auth/reset-password', {
+      email: visitor.email,
+      code,
+      password: newPassword,
+    })
+    expect(reset.response.status).toBe(200)
+    expect(reset.payload.data.session.token).toEqual(expect.any(String))
+
+    // Resetting after a suspected compromise is worthless if the attacker's
+    // session survives it.
+    const after = await getJson('/api/account/profile', visitor.sessionToken)
+    expect(after.response.status).toBe(401)
+
+    const oldPassword = await sendJson('POST', '/api/auth/login', {
+      email: visitor.email,
+      password: visitorPassword,
+    })
+    expect(oldPassword.response.status).toBe(401)
+
+    const newLogin = await sendJson('POST', '/api/auth/login', {
+      email: visitor.email,
+      password: newPassword,
+    })
+    expect(newLogin.response.status).toBe(200)
+  })
+
+  test('a weak password is refused at reset time', async () => {
+    const { payload, response } = await sendJson('POST', '/api/auth/reset-password', {
+      email: 'contract-db-reset@example.com',
+      code: '123456',
+      password: 'password',
+    })
+
+    // Rejected on strength before the code is even considered.
+    expect(response.status).toBe(400)
+    expect(payload.error.code).toBe('VALIDATION_ERROR')
+    expect(payload.error.message).toContain('too common')
+  })
+})
+
+test.describe('account security self-service', () => {
+  test('changing the password requires the current one and drops other sessions', async () => {
+    const visitor = await createVerifiedVisitor('pwchange')
+    const newPassword = `changed-${randomBytes(8).toString('hex')}`
+
+    // A second sign-in stands in for "the same account on another device".
+    const other = await sendJson('POST', '/api/auth/login', {
+      email: visitor.email,
+      password: visitorPassword,
+    })
+    expect(other.response.status).toBe(200)
+    const otherSessionToken = other.payload.data.session.token
+
+    const wrong = await sendJson(
+      'PUT',
+      '/api/account/password',
+      { currentPassword: 'not-the-current-password', newPassword },
+      visitor.sessionToken,
+    )
+    expect(wrong.response.status).toBe(403)
+    expectContractShape(wrong.payload)
+    expect(wrong.payload.error.code).toBe('PASSWORD_INCORRECT')
+
+    const changed = await sendJson(
+      'PUT',
+      '/api/account/password',
+      { currentPassword: visitorPassword, newPassword },
+      visitor.sessionToken,
+    )
+    expect(changed.response.status).toBe(200)
+
+    // The device that made the change stays signed in; the other one does not.
+    const current = await getJson('/api/account/profile', visitor.sessionToken)
+    expect(current.response.status).toBe(200)
+
+    const revoked = await getJson('/api/account/profile', otherSessionToken)
+    expect(revoked.response.status).toBe(401)
+  })
+
+  test('email change confirms control of the new address before switching', async () => {
+    const visitor = await createVerifiedVisitor('emailchange')
+    const newEmail = 'contract-db-emailchange-new@example.com'
+
+    const unauthorized = await sendJson(
+      'POST',
+      '/api/account/email',
+      { currentPassword: 'wrong', email: newEmail },
+      visitor.sessionToken,
+    )
+    expect(unauthorized.response.status).toBe(403)
+    expect(unauthorized.payload.error.code).toBe('PASSWORD_INCORRECT')
+
+    const requested = await sendJson(
+      'POST',
+      '/api/account/email',
+      { currentPassword: visitorPassword, email: newEmail },
+      visitor.sessionToken,
+    )
+    expect(requested.response.status).toBe(200)
+    const code = requested.payload.data.pendingEmail.devCode
+    expect(code).toEqual(expect.any(String))
+
+    // Still signed in under the OLD address until confirmation.
+    const stillOld = await sendJson('POST', '/api/auth/login', {
+      email: visitor.email,
+      password: visitorPassword,
+    })
+    expect(stillOld.response.status).toBe(200)
+
+    const wrongCode = await sendJson(
+      'POST',
+      '/api/account/email/confirm',
+      { code: '000000' },
+      visitor.sessionToken,
+    )
+    expect(wrongCode.response.status).toBe(400)
+    expect(wrongCode.payload.error.code).toBe('EMAIL_CHANGE_INVALID')
+
+    const confirmed = await sendJson(
+      'POST',
+      '/api/account/email/confirm',
+      { code },
+      visitor.sessionToken,
+    )
+    expect(confirmed.response.status).toBe(200)
+    expect(confirmed.payload.data.profile.email).toBe(newEmail)
+
+    const newLogin = await sendJson('POST', '/api/auth/login', {
+      email: newEmail,
+      password: visitorPassword,
+    })
+    expect(newLogin.response.status).toBe(200)
+
+    const oldLogin = await sendJson('POST', '/api/auth/login', {
+      email: visitor.email,
+      password: visitorPassword,
+    })
+    expect(oldLogin.response.status).toBe(401)
+  })
+
+  test('account deletion needs the password plus an explicit confirmation', async () => {
+    const visitor = await createVerifiedVisitor('delete')
+
+    const noConfirm = await sendJson(
+      'DELETE',
+      '/api/account',
+      { currentPassword: visitorPassword },
+      visitor.sessionToken,
+    )
+    expect(noConfirm.response.status).toBe(400)
+    expect(noConfirm.payload.error.code).toBe('VALIDATION_ERROR')
+
+    const wrongPassword = await sendJson(
+      'DELETE',
+      '/api/account',
+      { confirm: 'DELETE', currentPassword: 'nope' },
+      visitor.sessionToken,
+    )
+    expect(wrongPassword.response.status).toBe(403)
+    expect(wrongPassword.payload.error.code).toBe('PASSWORD_INCORRECT')
+
+    const deleted = await sendJson(
+      'DELETE',
+      '/api/account',
+      { confirm: 'DELETE', currentPassword: visitorPassword },
+      visitor.sessionToken,
+    )
+    expect(deleted.response.status).toBe(200)
+
+    const afterSession = await getJson('/api/account/profile', visitor.sessionToken)
+    expect(afterSession.response.status).toBe(401)
+
+    const afterLogin = await sendJson('POST', '/api/auth/login', {
+      email: visitor.email,
+      password: visitorPassword,
+    })
+    expect(afterLogin.response.status).toBe(401)
+  })
+})
+
+test.describe('admin session exchange', () => {
+  test('the static token mints a session that authorizes admin routes', async () => {
+    const issued = await sendJson('POST', '/api/admin/session', {}, adminToken)
+
+    expect(issued.response.status).toBe(201)
+    expectContractShape(issued.payload, { legacyKeys: ['session'] })
+    const sessionToken = issued.payload.data.session.token
+    expect(sessionToken).toEqual(expect.any(String))
+    expect(sessionToken).not.toBe(adminToken)
+
+    const authorized = await getJson('/api/admin/summary', sessionToken)
+    expect(authorized.response.status).toBe(200)
+
+    const revoked = await sendJson('DELETE', '/api/admin/session', {}, sessionToken)
+    expect(revoked.response.status).toBe(200)
+
+    // Revocation is the property the permanent static token never had.
+    const afterRevoke = await getJson('/api/admin/summary', sessionToken)
+    expect(afterRevoke.response.status).toBe(401)
+    expect(afterRevoke.payload.error.code).toBe('ADMIN_AUTH_REQUIRED')
+  })
+
+  test('a token that was never issued is refused', async () => {
+    const forged = randomBytes(32).toString('base64url')
+
+    const minting = await sendJson('POST', '/api/admin/session', {}, forged)
+    expect(minting.response.status).toBe(401)
+
+    const using = await getJson('/api/admin/summary', forged)
+    expect(using.response.status).toBe(401)
+    expect(using.payload.error.code).toBe('ADMIN_AUTH_REQUIRED')
+  })
+})
+
+test.describe('upload content validation', () => {
+  test('bytes that do not match the claimed extension are rejected', async () => {
+    const form = new FormData()
+    // A .png name over content that is not a PNG. The extension was previously
+    // the only thing checked, so this was stored and served as an image.
+    form.append('file', new Blob(['<?php echo 1; ?>'], { type: 'image/png' }), 'not-really.png')
+    form.append('title', 'Signature mismatch')
+    form.append('description', 'Should never be stored.')
+
+    const { payload, response } = await postForm(
+      '/api/community/uploads',
+      form,
+      visitorA.sessionToken,
+    )
+
+    expect(response.status).toBe(400)
+    expectContractShape(payload)
+    expect(payload.error.code).toBe('INVALID_FILE_TYPE')
+  })
+
+  test('a real PNG passes the signature check', async () => {
+    // 1x1 transparent PNG.
+    const png = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+      'base64',
+    )
+    const form = new FormData()
+    form.append('file', new Blob([png], { type: 'image/png' }), 'pixel.png')
+    form.append('title', 'Valid PNG upload')
+    form.append('description', 'A genuine one-pixel PNG.')
+
+    const { payload, response } = await postForm(
+      '/api/community/uploads',
+      form,
+      visitorA.sessionToken,
+    )
+
+    expect(response.status).toBe(201)
+    expectContractShape(payload, { legacyKeys: ['upload'] })
+    expect(payload.data.upload.fileType).toBe('image')
+  })
+})
+
+test.describe('project like identity is server-derived', () => {
+  test('a client cannot inflate a like count by changing visitorId', async () => {
+    const list = await getJson('/api/projects')
+    const slug = list.payload.data.projects[0].slug
+
+    const first = await sendJson('POST', `/api/projects/${slug}/like`, { visitorId: 'client-id-1' })
+    expect(first.response.status).toBe(200)
+    const likedState = first.payload.data.liked
+
+    // Same caller, brand new client-supplied id. Before the fix this minted a
+    // second, independent like row; now it toggles the same server-derived
+    // identity back off.
+    const second = await sendJson('POST', `/api/projects/${slug}/like`, { visitorId: 'client-id-2' })
+    expect(second.response.status).toBe(200)
+    expect(second.payload.data.liked).toBe(!likedState)
+
+    const third = await sendJson('POST', `/api/projects/${slug}/like`, { visitorId: 'client-id-3' })
+    expect(third.payload.data.liked).toBe(likedState)
+  })
+})
+
+test.describe('operational endpoints', () => {
+  test('robots.txt points at the sitemap and excludes private areas', async () => {
+    const response = await fetch(`${baseURL}/robots.txt`)
+    const body = await response.text()
+
+    expect(response.status).toBe(200)
+    expect(body).toContain('Sitemap:')
+    expect(body).toContain('Disallow: /admin')
+    expect(body).toContain('Disallow: /account')
+  })
+
+  test('sitemap.xml lists the public entry points', async () => {
+    const response = await fetch(`${baseURL}/sitemap.xml`)
+    const body = await response.text()
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get('content-type')).toContain('xml')
+    expect(body).toContain('<urlset')
+    expect(body).toContain('/community</loc>')
+    // Public profiles must never be enumerated here.
+    expect(body).not.toContain('/u/')
+  })
+
+  test('CSP reports are accepted and answered with 204', async () => {
+    const response = await fetch(`${baseURL}/api/csp-report`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/csp-report' },
+      body: JSON.stringify({
+        'csp-report': {
+          'blocked-uri': 'https://example.com/evil.js',
+          'effective-directive': 'script-src',
+        },
+      }),
+    })
+
+    expect(response.status).toBe(204)
+  })
+
+  test('admin diagnostics report the resolved client IP for trust-proxy checks', async () => {
+    const { payload, response } = await getJson('/api/admin/diagnostics', adminToken)
+
+    expect(response.status).toBe(200)
+    expectContractShape(payload, { legacyKeys: ['diagnostics'] })
+    expect(payload.data.diagnostics.resolvedIp).toEqual(expect.any(String))
+    expect(payload.data.diagnostics.trustProxyHops).toEqual(expect.any(Number))
   })
 })
