@@ -1,5 +1,57 @@
 # mrright.blog 项目进度记录
 
+## 下次从这里继续（截至 2026-08-11 收工）
+
+**代码与线上的对应关系 —— 这是最容易搞错的一点：**
+
+| | commit | 说明 |
+| --- | --- | --- |
+| main 最新 | `47d1cfc` | 签名 Cookie 身份 + 评论先审后发 |
+| **线上实际运行** | `fe80a62` | 第二阶段安全加固（2026-08-11 11:53 UTC 部署） |
+| 未部署的差异 | `47d1cfc` | **有数据库改动**，见下 |
+
+`c8b2419` 是纯文档，不影响线上。
+
+**下次部署 `47d1cfc` 时必须知道：**
+
+- 会执行 `ALTER TABLE project_comments ADD COLUMN IF NOT EXISTS status, moderated_at` + 一个索引。
+  幂等新增，存量行默认 `published`，线上已有评论不会消失。
+- 部署前照例备份。备份 timer 已在线上运行（每日 03:30 UTC），但部署前应手动再跑一次：
+  `systemctl start mrright-backup.service`
+- 部署方式：`scripts/deploy-vps.mjs` 需要 `VPS_PASSWORD` 密码认证；若只有 SSH 密钥，按该脚本的
+  同一套远程步骤手动执行（上一轮就是这么做的，步骤记在本文件 2026-08-11 那节）。
+- 部署后按 `CLAUDE.md` 第 9 条逐项验证。
+
+**已经不需要再排查的事（省得重复劳动）：**
+
+- 真实客户端 IP 拿不到 —— 原因已查明（443 与机场节点共用 SNI 分流），**已决定不修**，
+  已用不依赖 IP 的方案补偿。见 `docs/OPERATIONS_CLIENT_IP.md`。**动 nginx 或 443 之前必读这份文档。**
+- 2026-07-25 审查的 7 项 —— 全部确认修复并已上线，包括线上 `/api/v1` 严格信封确实生效。
+
+**待你决策的（我没有权限或不该替你决定）：**
+
+1. **配置 SMTP**。没有它，忘记密码邮件发不出去 —— 接口返回「已受理」但用户收不到验证码。
+   这是目前最影响用户的一个缺口。需要在 `/etc/mrright-portfolio.env` 加
+   `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` / `SMTP_FROM`。
+2. **备份异地副本**。当前备份和数据库在同一块磁盘上，磁盘坏了两者一起没。
+   `docs/OPERATIONS_BACKUP.md` 里有 rclone 方案。
+3. **`/opt/mrright-portfolio.backup-*` 的保留策略**。已占 4.5G，磁盘 73%。按规则我没删任何备份。
+4. **`/etc/nginx/proxy.conf`** 是个占用 443、`server_name` 还是占位符的 Docker 镜像加速遗留配置，
+   确认是否还需要。
+5. 确认没有脚本依赖静态管理员令牌后，设 `ADMIN_ALLOW_STATIC_TOKEN=false`
+   （见 `docs/OPERATIONS_ADMIN_AUTH.md` 的收紧路径）。
+6. 观察 CSP 报告几天后，把 `contentSecurityPolicy` 从 report-only 切成 blocking。
+
+**路线图上还没做的（按我建议的优先级）：**
+
+- 恢复演练：跑一次 `docs/OPERATIONS_BACKUP.md` 的演练流程，把结果记进本文件。备份没演练过等于没备份。
+- 管理员账号体系 + TOTP（当前仍是「知道共享密钥就是管理员」，`admin_user_actions` 无法归因到人）
+- 拆 `Admin.jsx`（2400+ 行）与 `postgresStores.js`（3000+ 行）
+- react-router（现在靠 `window.location.pathname` 判断，页面跳转全是整页刷新，3D 场景每次重建）
+- 前端单元测试（目前只有 API 契约测试和 Playwright）
+- SSR / 预渲染 SEO（社区帖子和公开主页搜索引擎抓不到）
+- Asset Model（checksum / visibility / downloadPolicy）稳定后再回到 C++ SDK
+
 ## 2026-08-11（第二轮）：接受 IP 不可得的现实，改用不依赖 IP 的补偿措施
 
 结论：查明 443 端口由网站与机场节点（sui / sing-box）通过 nginx stream 的 SNI 分流共用，
