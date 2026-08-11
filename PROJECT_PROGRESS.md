@@ -71,6 +71,59 @@
 - SSR / 预渲染 SEO（社区帖子和公开主页搜索引擎抓不到）
 - Asset Model（checksum / visibility / downloadPolicy）稳定后再回到 C++ SDK
 
+## 2026-08-11（第五轮）：接入 Resend，SMTP 首次配置完成
+
+结论：`mrright.blog` 首次接入邮件服务（Resend）。**启动自检的 SMTP 告警已消失**，
+密码重置发信路径确认已跑通到「Resend 已接收」这一步。**最终收件确认待用户回报**。
+
+日期：2026-08-11。
+
+完成内容：
+
+1. **确认这个域名此前从未接过邮件服务**（详见上方待办第 1 条记录的诊断），所以是首次配置而非凭证找回。
+2. **域名验证记录已在 Cloudflare 生效**（用 VPS 上的 `node:dns` 实测）：
+   - `send.mrright.blog` TXT `v=spf1 include:amazonses.com ~all`
+   - `send.mrright.blog` MX `feedback-smtp.ap-northeast-1.amazonses.com`
+   - `resend._domainkey.mrright.blog` TXT（DKIM 公钥）
+   - **DMARC 仍未配置** —— 建议加 `_dmarc` TXT `v=DMARC1; p=none; rua=mailto:<你的邮箱>`
+3. **env 追加 5 个 SMTP 键**：`SMTP_HOST=smtp.resend.com`、`SMTP_PORT=587`、
+   `SMTP_USER=resend`（字面量，不是邮箱）、`SMTP_PASS`（Resend API key）、
+   `SMTP_FROM=noreply@mrright.blog`。**追加而非覆盖**，追加前已备份，文件权限仍为 `600 root`。
+4. 重启服务，**启动自检从 2 条告警降为 1 条**（只剩 `TRUST_PROXY_HOPS`，在本机拓扑下无意义）。
+
+修改文件：无（本轮不改代码，只改 VPS 上的 env 与本记录）
+
+commit hash：本次提交（最终 hash 以 git log 为准）
+
+build / lint 结果：**未运行 —— 本轮未修改任何业务代码**。线上仍是 `47d1cfc`。
+
+是否部署 VPS：**否**（仅 env 变更 + 重启）。
+
+VPS 备份路径：
+
+- env：`/etc/mrright-portfolio.env.backup-20260811-153040`（追加 SMTP 键之前）
+
+验证接口状态：
+
+- 启动自检：SMTP 告警消失
+- `POST /api/auth/forgot-password`（对已注册且已验证的地址）：
+  - **注意 `delivery:"accepted"` 是写死的常量**，无论发信成败都返回它 —— 这是刻意设计，
+    避免接口沦为「账号是否存在」的探测器。**不要拿它当发信成功的证据。**
+  - 真正的证据是：`email_verified_at` 非空（说明没走静默跳过分支）、
+    `password_reset_code_hash` 已写入且过期时间与响应一致（说明进入了发信路径）、
+    且日志中**没有** `Password reset email delivery failed:`（说明 SMTP 握手/AUTH/DATA 全部成功）。
+  - **最终收件确认：待用户回报**（收件箱/垃圾箱）。
+- 无法从服务端核对 Resend 投递日志：该 API key 是只写的，读操作返回
+  `restricted to only send emails`。权限收紧是好事，但意味着投递状态只能到 Resend 后台看。
+
+待办事项：
+
+- **等用户确认邮件是否真的收到、是否落入垃圾箱**。若进垃圾箱，加 DMARC 通常能改善。
+- DMARC 记录仍未添加。
+- 备份异地副本仍未配置（备份体系最后一个结构性缺口）。
+- CSP 仍是 report-only；`ADMIN_ALLOW_STATIC_TOKEN` 仍未收紧；`/etc/nginx/proxy.conf` 遗留文件待确认。
+- 应用备份的自动保留策略仍未做。
+
 ## 2026-08-11（第四轮）：清理应用备份 + 第一次真正跑通恢复演练
 
 结论：按用户明确指示清理了积压的应用目录备份（磁盘 78% → 49%），并完成路线图上排第一的
