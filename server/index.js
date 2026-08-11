@@ -2388,15 +2388,74 @@ app.post(
 // the database, and not something the caller can vary at will. Visitors behind
 // one NAT sharing a browser build collapse into a single identity, which is the
 // safe direction to be wrong in — it undercounts rather than inflates.
-const deriveLikeIdentity = (request, slug, user) => {
+// Anonymous identity comes from a cookie the SERVER issues and signs.
+//
+// The first version of this hashed the caller's address and user agent, which
+// was fine in principle and useless here: port 443 is shared with another
+// service through an nginx stream (SNI) splitter, so every HTTPS visitor
+// arrives as 127.0.0.1 and the whole anonymous population collapsed into one
+// identity per browser build. See docs/OPERATIONS_CLIENT_IP.md.
+//
+// A signed cookie needs no address at all. The client cannot forge one without
+// the secret, and clearing cookies to like again is a far higher bar than
+// editing the localStorage string the client used to be trusted with.
+const VISITOR_COOKIE = 'mrright-vid'
+const VISITOR_COOKIE_MAX_AGE_MS = 365 * 24 * 60 * 60 * 1000
+
+const signVisitorId = (id) =>
+  createHmac('sha256', visitorIdentitySecret).update(id).digest('base64url').slice(0, 27)
+
+const readCookie = (request, name) => {
+  const header = request.headers.cookie
+  if (!header) return ''
+
+  for (const part of header.split(';')) {
+    const separator = part.indexOf('=')
+    if (separator === -1) continue
+    if (part.slice(0, separator).trim() !== name) continue
+
+    try {
+      return decodeURIComponent(part.slice(separator + 1).trim())
+    } catch {
+      return ''
+    }
+  }
+
+  return ''
+}
+
+// Returns the caller's anonymous id, issuing and setting a fresh signed cookie
+// when there is no valid one. Verifying the signature is what stops a caller
+// from simply making up a new id per request.
+const resolveAnonymousVisitorId = (request, response) => {
+  const cookie = readCookie(request, VISITOR_COOKIE)
+  const [id, signature] = cookie.split('.')
+
+  if (id && signature && id.length <= 40) {
+    const expected = signVisitorId(id)
+    const provided = Buffer.from(signature)
+    const wanted = Buffer.from(expected)
+    if (provided.length === wanted.length && timingSafeEqual(provided, wanted)) return id
+  }
+
+  const freshId = randomBytes(16).toString('base64url')
+  response.cookie(VISITOR_COOKIE, `${freshId}.${signVisitorId(freshId)}`, {
+    httpOnly: true,
+    maxAge: VISITOR_COOKIE_MAX_AGE_MS,
+    path: '/',
+    sameSite: 'lax',
+    // request.protocol reflects X-Forwarded-Proto, which the TLS vhost does set
+    // correctly even though it cannot set a usable X-Forwarded-For.
+    secure: request.protocol === 'https',
+  })
+
+  return freshId
+}
+
+const deriveLikeIdentity = (request, response, user) => {
   if (user?.id) return `user:${user.id}`
 
-  const fingerprint = createHmac('sha256', visitorIdentitySecret)
-    .update(`${request.ip || ''}|${request.get('User-Agent') || ''}|${slug}`)
-    .digest('hex')
-    .slice(0, 40)
-
-  return `anon:${fingerprint}`
+  return `anon:${resolveAnonymousVisitorId(request, response)}`
 }
 
 app.post('/api/projects/:slug/like', async (request, response) => {
@@ -2415,10 +2474,42 @@ app.post('/api/projects/:slug/like', async (request, response) => {
     return sendError(response, API_ERROR_CODES.VALIDATION_ERROR, 'Visitor id is required.', 400)
   }
 
-  const identity = deriveLikeIdentity(request, project.slug, user)
+  const identity = deriveLikeIdentity(request, response, user)
   const result = await interactionsStore.toggleLike(project.slug, identity, user?.id)
   return sendData(response, result)
 })
+
+// Project comments are moderated rather than rate limited by address.
+//
+// Anyone could post anonymously under any author name, and the only thing
+// between the site and a spam run was a per-IP limiter — which does nothing on
+// this deployment, because port 443 is shared through an nginx stream splitter
+// and every visitor arrives as 127.0.0.1 (docs/OPERATIONS_CLIENT_IP.md).
+//
+// So the gate is identity-based instead: a signed-in visitor with a verified
+// address publishes immediately, because that account carries consequences and
+// is already subject to per-account throttling. Everyone else is queued for
+// review. Obvious spam is filed straight to 'spam' so it never reaches the
+// queue a human reads.
+const COMMENT_WINDOW_MS = 60 * 60 * 1000
+const COMMENT_MAX_PER_WINDOW = Math.max(1, Number(process.env.COMMENT_MAX_PER_HOUR || 10))
+const linkPattern = /https?:\/\/|www\.|\[url[=\]]|<a\s/gi
+
+const looksLikeSpam = (message, author) => {
+  const links = message.match(linkPattern)?.length ?? 0
+  if (links >= 3) return true
+
+  // A short message that is mostly a link is an advert, not a comment.
+  if (links >= 1 && message.replace(linkPattern, '').trim().length < 15) return true
+
+  // Long runs of the same character, and the usual pharma/casino keyword soup.
+  if (/(.)\1{15,}/.test(message)) return true
+  if (/\b(viagra|cialis|casino|porn|crypto giveaway|forex signals)\b/i.test(`${author} ${message}`)) {
+    return true
+  }
+
+  return false
+}
 
 app.post('/api/projects/:slug/comments', async (request, response) => {
   const project = await projectStore.getProject(staticProjects, request.params.slug)
@@ -2434,11 +2525,41 @@ app.post('/api/projects/:slug/comments', async (request, response) => {
     return sendError(response, API_ERROR_CODES.VALIDATION_ERROR, 'Author and message are required.', 400)
   }
 
+  // Per-account budget, the one axis that still works without a client address.
+  if (user?.id && typeof interactionsStore.countRecentUserComments === 'function') {
+    const recent = await interactionsStore.countRecentUserComments(user.id, COMMENT_WINDOW_MS)
+    if (recent >= COMMENT_MAX_PER_WINDOW) {
+      return sendError(
+        response,
+        API_ERROR_CODES.RATE_LIMITED,
+        'You have posted a lot of comments recently. Please try again later.',
+        429,
+      )
+    }
+  }
+
+  let status = user?.emailVerified ? 'published' : 'pending'
+
+  if (looksLikeSpam(message, author)) {
+    status = 'spam'
+  } else if (typeof interactionsStore.hasRecentDuplicate === 'function') {
+    const duplicate = await interactionsStore.hasRecentDuplicate(
+      { message, slug: project.slug, userId: user?.id },
+      COMMENT_WINDOW_MS,
+    )
+    if (duplicate) status = 'spam'
+  }
+
   const comment = await interactionsStore.addComment(project.slug, {
     author,
     message,
+    status,
     userId: user?.id,
   })
+
+  // A spam verdict is reported as a normal acceptance. Telling the poster
+  // which heuristic caught them just teaches them how to get around it, and a
+  // false positive still shows up in the author's own account page.
   return sendData(response, { comment }, 201)
 })
 
@@ -2791,8 +2912,29 @@ app.get('/api/admin/download-events', requireAdmin, async (_request, response) =
   sendData(response, { events: await adminStore.listDownloadEvents() })
 })
 
-app.get('/api/admin/comments', requireAdmin, async (_request, response) => {
-  sendData(response, { comments: await adminStore.listComments() })
+// ?status=pending drives the moderation queue; no status keeps the existing
+// "everything" view the dashboard already renders.
+app.get('/api/admin/comments', requireAdmin, async (request, response) => {
+  const allowed = new Set(['published', 'pending', 'spam'])
+  const status = allowed.has(request.query.status) ? request.query.status : ''
+
+  sendData(response, { comments: await adminStore.listComments({ status }) })
+})
+
+app.patch('/api/admin/comments/:id', requireAdmin, async (request, response) => {
+  const status = String(request.body?.status ?? '').trim()
+  const allowed = new Set(['published', 'pending', 'spam'])
+
+  if (!allowed.has(status)) {
+    return sendError(response, API_ERROR_CODES.VALIDATION_ERROR, 'Invalid comment status.', 400)
+  }
+
+  const updated = await adminStore.setCommentStatus(request.params.id, status)
+  if (!updated) {
+    return sendError(response, API_ERROR_CODES.COMMENT_NOT_FOUND, 'Comment not found.', 404)
+  }
+
+  return sendData(response, { comment: updated })
 })
 
 app.get('/api/admin/likes', requireAdmin, async (_request, response) => {

@@ -116,12 +116,23 @@ const ProjectDetail = ({ authToken, slug, onClose, language, copy, visitorUser }
         },
         authToken,
       )
-      setInteractions((current) => ({
-        ...current,
-        comments: [...current.comments, payload.comment],
-      }))
+      // Only a published comment joins the list. Anything else is awaiting
+      // review, and appending it locally would show the author something no
+      // one else can see — then have it vanish on the next reload.
+      if (payload.comment?.status === 'published' || !payload.comment?.status) {
+        setInteractions((current) => ({
+          ...current,
+          comments: [...current.comments, payload.comment],
+        }))
+        setInteractionStatus('idle')
+      } else {
+        // 'spam' is reported as 'pending' too: telling a spammer which rule
+        // caught them is free tuning advice, and a false positive reads the
+        // same as a genuine queue wait.
+        setInteractionStatus('pending')
+      }
+
       setCommentForm((current) => ({ ...current, message: '' }))
-      setInteractionStatus('idle')
     } catch {
       setInteractionStatus('error')
     }
@@ -459,6 +470,9 @@ const ProjectDetail = ({ authToken, slug, onClose, language, copy, visitorUser }
                   </button>
                   {interactionStatus === 'error' && (
                     <p className="text-sm text-coral">{copy.interactionError}</p>
+                  )}
+                  {interactionStatus === 'pending' && (
+                    <p className="text-sm text-neutral-300">{copy.commentPendingReview}</p>
                   )}
                 </form>
 

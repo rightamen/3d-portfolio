@@ -1,5 +1,59 @@
 # mrright.blog 项目进度记录
 
+## 2026-08-11（第二轮）：接受 IP 不可得的现实，改用不依赖 IP 的补偿措施
+
+结论：查明 443 端口由网站与机场节点（sui / sing-box）通过 nginx stream 的 SNI 分流共用，
+四层裸 TCP 转发导致**所有 HTTPS 访客在应用侧都是 127.0.0.1**。经评估**决定不修基础设施**
+（唯一的标准修法会打挂正在服务用户的机场节点），转而把任何依赖「区分匿名访客」的功能
+改成不依赖 IP 的实现。本轮已完成本地开发与验证，**未部署**。
+
+背景与决策全文见新增的 `docs/OPERATIONS_CLIENT_IP.md`。
+
+完成内容：
+
+1. **修正上一轮点赞防刷的连带缺陷**
+   - 上一轮把点赞身份改成 `HMAC(IP + UA + slug)`，方向对，但在这台机器上 IP 恒为 127.0.0.1，
+     结果退化成「按浏览器 UA 字符串去重」—— 同一款浏览器的所有匿名访客塌缩成一个点赞
+   - 改为**服务端签发的签名 Cookie**（`mrright-vid`，HttpOnly / SameSite=Lax / 一年）：
+     值为 `随机 id.HMAC 签名`，客户端无法伪造；完全不依赖 IP
+   - 已知取舍：清 Cookie 可以再点一次。门槛远高于原先「改一个 localStorage 字符串」，
+     且方向仍是少算而非虚高
+
+2. **项目评论改为先审后发（补偿失效的 IP 限流）**
+   - `project_comments` 新增 `status`（`published`/`pending`/`spam`）与 `moderated_at`，
+     存量行默认 `published`，线上已有评论不受影响
+   - 登录且**邮箱已验证**的访客直接发布；匿名访客进审核队列
+   - 垃圾特征直接判 `spam`，不进人工队列：链接数 ≥ 3、短文本几乎全是链接、
+     单字符长串重复、常见垃圾关键词、以及**同一项目下重复发送相同内容**
+   - 按账号的滚动窗口限额（默认 10 条/小时），不使用 IP
+   - 公开读取只返回 `published`；作者在个人中心能看到自己待审核的评论，不会以为丢了
+   - 对垃圾判定**不告知具体原因**：告诉刷子哪条规则拦住了他等于免费调优建议，
+     而误判在作者自己的页面里看得到
+
+3. **管理端审核**
+   - `GET /api/admin/comments?status=pending` 驱动审核队列（不带参数仍是原来的全量视图，行为不变）
+   - 新增 `PATCH /api/admin/comments/:id`（`published`/`pending`/`spam`）
+
+修改文件：`server/index.js`、`server/postgresStores.js`、`src/components/ProjectDetail.jsx`、
+`src/lib/i18n.js`、`tests/api/contract.db.spec.js`；新增 `docs/OPERATIONS_CLIENT_IP.md`。
+
+本轮验证结果：
+
+- `npm run lint`、`npm run build`：通过
+- `npm run test:api`：37/37 通过
+- `npm run test:api:db`：**54/54 通过**（上一轮 48 个 + 本轮 6 个）
+- `npm run test:openapi`：通过（33 个 error code，未新增）
+- `git diff --check`：通过
+
+新增测试覆盖：签名 Cookie 的签发/沿用/伪造替换、同一 Cookie 下更换 visitorId 只会来回切换同一个赞、
+匿名评论进队列且不公开、已验证用户直接发布、链接堆砌与重复内容判为 spam 且永不显示、
+管理员审核放行、非法状态与不存在评论的错误码。
+
+数据库影响：`ALTER TABLE project_comments ADD COLUMN IF NOT EXISTS status/moderated_at` +
+一个索引。幂等新增，无 DROP/TRUNCATE/DELETE，存量数据不变。
+
+待办：本轮**尚未部署**。部署前仍需按 `docs/OPERATIONS_BACKUP.md` 备份（备份 timer 已在线上运行）。
+
 ## 2026-08-11：第二阶段安全加固（备份、账号生命周期、管理员会话、上传与下载）
 
 结论：完成一轮以「静默失效的安全控制」为主线的加固。这一轮修的不是崩溃，而是那些**系统照常运行、但某个安全属性其实什么都没做**的地方：数据库从来没有备份、忘记密码的用户永久失去账号、管理员令牌永久有效且明文存在浏览器里、点赞身份由客户端自己声明、上传只看文件名后缀。全部改动均在本地完成，**未部署、未读取或输出任何 token/password/secret、未触碰生产环境与生产数据库**。数据库 schema 有新增列与新增表，但只通过 `ensureSchema` 的 `ADD COLUMN IF NOT EXISTS` / `CREATE TABLE IF NOT EXISTS` 增量执行，未删除任何列、表或数据。

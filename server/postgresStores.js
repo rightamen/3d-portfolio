@@ -595,6 +595,18 @@ const ensureSchema = async (pool) => {
       ADD COLUMN IF NOT EXISTS decided_at timestamptz,
       ADD COLUMN IF NOT EXISTS notified_at timestamptz;
 
+    -- Project comments are moderated. Anonymous comments used to publish
+    -- instantly with any author name the poster chose, and the only thing
+    -- standing between the site and a spam run was a per-IP rate limit that
+    -- cannot work here at all (docs/OPERATIONS_CLIENT_IP.md). Existing rows
+    -- default to 'published' so nothing already on the site disappears.
+    ALTER TABLE project_comments
+      ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'published',
+      ADD COLUMN IF NOT EXISTS moderated_at timestamptz;
+
+    CREATE INDEX IF NOT EXISTS project_comments_status_created_idx
+      ON project_comments (status, created_at DESC);
+
     CREATE UNIQUE INDEX IF NOT EXISTS visitor_users_handle_unique_idx
       ON visitor_users (lower(handle))
       WHERE handle IS NOT NULL AND handle <> '';
@@ -1382,6 +1394,8 @@ export const createPostgresStores = async (databaseUrl) => {
             FROM project_comments
             LEFT JOIN visitor_users ON visitor_users.id = project_comments.user_id
             WHERE project_comments.project_slug = $1
+              -- Pending and spam rows exist but are not public.
+              AND project_comments.status = 'published'
             ORDER BY project_comments.created_at ASC
             LIMIT 100
           `,
@@ -1451,18 +1465,53 @@ export const createPostgresStores = async (databaseUrl) => {
       }
     },
 
+    // Counts what one account has posted in a rolling window. Used instead of
+    // a per-IP limiter, which is meaningless on this deployment.
+    countRecentUserComments: async (userId, windowMs) => {
+      const result = await pool.query(
+        `
+          SELECT count(*)::int AS total
+          FROM project_comments
+          WHERE user_id = $1
+            AND created_at > now() - ($2::bigint * interval '1 millisecond')
+        `,
+        [userId, windowMs],
+      )
+
+      return result.rows[0]?.total ?? 0
+    },
+
+    // Detects a poster repeating the same message, which is what a spam run
+    // looks like and what a human almost never does.
+    hasRecentDuplicate: async ({ message, slug, userId }, windowMs) => {
+      const result = await pool.query(
+        `
+          SELECT 1
+          FROM project_comments
+          WHERE project_slug = $1
+            AND message = $2
+            AND ($3::text IS NULL OR user_id = $3)
+            AND created_at > now() - ($4::bigint * interval '1 millisecond')
+          LIMIT 1
+        `,
+        [slug, message, userId || null, windowMs],
+      )
+
+      return result.rowCount > 0
+    },
+
     addComment: async (slug, comment) => {
       const id = createId()
       const result = await pool.query(
         `
-          INSERT INTO project_comments (id, project_slug, user_id, author, message)
-          VALUES ($1, $2, $3, $4, $5)
-          RETURNING id, project_slug, author, message, created_at, user_id
+          INSERT INTO project_comments (id, project_slug, user_id, author, message, status)
+          VALUES ($1, $2, $3, $4, $5, $6)
+          RETURNING id, project_slug, author, message, created_at, user_id, status
         `,
-        [id, slug, comment.userId || null, comment.author, comment.message],
+        [id, slug, comment.userId || null, comment.author, comment.message, comment.status || 'published'],
       )
 
-      if (!comment.userId) return toComment(result.rows[0])
+      if (!comment.userId) return { ...toComment(result.rows[0]), status: result.rows[0].status }
 
       const enriched = await pool.query(
         `
@@ -1472,6 +1521,7 @@ export const createPostgresStores = async (databaseUrl) => {
             project_comments.author,
             project_comments.message,
             project_comments.created_at,
+            project_comments.status,
             visitor_users.id AS user_id,
             visitor_users.display_name,
             visitor_users.access_level
@@ -1482,9 +1532,12 @@ export const createPostgresStores = async (databaseUrl) => {
         [id],
       )
 
-      return toComment(enriched.rows[0])
+      return { ...toComment(enriched.rows[0]), status: enriched.rows[0].status }
     },
 
+    // The account page shows the author their own comments including the ones
+    // still awaiting review, so a pending comment does not look like it
+    // vanished.
     listUserComments: async (userId) => {
       const result = await pool.query(
         `
@@ -1494,6 +1547,7 @@ export const createPostgresStores = async (databaseUrl) => {
             project_comments.author,
             project_comments.message,
             project_comments.created_at,
+            project_comments.status,
             visitor_users.id AS user_id,
             visitor_users.display_name,
             visitor_users.access_level
@@ -1506,7 +1560,7 @@ export const createPostgresStores = async (databaseUrl) => {
         [userId],
       )
 
-      return result.rows.map((row) => toComment(row))
+      return result.rows.map((row) => ({ ...toComment(row), status: row.status }))
     },
 
     countUserLikes: async (userId) => {
@@ -2182,25 +2236,50 @@ export const createPostgresStores = async (databaseUrl) => {
       return result.rows[0]
     },
 
-    listComments: async () => {
-      const result = await pool.query(`
+    // `status` filters the moderation queue; omitting it lists everything, so
+    // the existing admin comments view keeps working unchanged.
+    listComments: async ({ status = '' } = {}) => {
+      const result = await pool.query(
+        `
         SELECT
           project_comments.id,
           project_comments.project_slug,
           project_comments.author,
           project_comments.message,
           project_comments.created_at,
+          project_comments.status,
           visitor_users.id AS user_id,
           visitor_users.display_name,
           visitor_users.email,
           visitor_users.access_level
         FROM project_comments
         LEFT JOIN visitor_users ON visitor_users.id = project_comments.user_id
+        WHERE ($1::text = '' OR project_comments.status = $1)
         ORDER BY project_comments.created_at DESC
         LIMIT 100
-      `)
+      `,
+        [status],
+      )
 
-      return result.rows.map((row) => toComment(row, { includeEmail: true }))
+      return result.rows.map((row) => ({
+        ...toComment(row, { includeEmail: true }),
+        status: row.status,
+      }))
+    },
+
+    setCommentStatus: async (id, status) => {
+      const result = await pool.query(
+        `
+          UPDATE project_comments
+          SET status = $2,
+              moderated_at = now()
+          WHERE id = $1
+          RETURNING id, status
+        `,
+        [id, status],
+      )
+
+      return result.rows[0] || null
     },
 
     listCommunityUploads: async () => {

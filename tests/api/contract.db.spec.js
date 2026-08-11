@@ -1179,24 +1179,202 @@ test.describe('upload content validation', () => {
   })
 })
 
-test.describe('project like identity is server-derived', () => {
-  test('a client cannot inflate a like count by changing visitorId', async () => {
+// Like identity: see the signed-cookie group below, which supersedes an
+// earlier version of this test. That version asserted the same property
+// against an IP+user-agent fingerprint; the fingerprint had to be replaced
+// because this deployment cannot see client addresses at all, so a test that
+// sent no cookie could no longer express "the same caller".
+
+// These two groups are the compensating controls for a limitation that cannot
+// be fixed at the infrastructure layer on this deployment: port 443 is shared
+// with another service through an nginx stream (SNI) splitter, so every HTTPS
+// visitor reaches the app as 127.0.0.1 and no per-IP control can work.
+// See docs/OPERATIONS_CLIENT_IP.md.
+test.describe('anonymous identity survives without a usable client address', () => {
+  test('the server issues a signed cookie and honours it across requests', async () => {
+    const list = await getJson('/api/projects')
+    const slug = list.payload.data.projects[1]?.slug || list.payload.data.projects[0].slug
+
+    const first = await fetch(`${baseURL}/api/projects/${slug}/like`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ visitorId: 'ignored-by-the-server' }),
+    })
+    const firstPayload = await first.json()
+    const setCookie = first.headers.get('set-cookie') || ''
+
+    expect(first.status).toBe(200)
+    expect(setCookie, 'a fresh caller must be issued an identity').toContain('mrright-vid=')
+    expect(setCookie).toContain('HttpOnly')
+    expect(setCookie).toContain('SameSite=Lax')
+
+    const cookie = setCookie.split(';')[0]
+
+    // Same signed cookie, different client-supplied visitorId: the second call
+    // must toggle the SAME like off rather than create a second one.
+    const second = await fetch(`${baseURL}/api/projects/${slug}/like`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Cookie: cookie },
+      body: JSON.stringify({ visitorId: 'a-completely-different-id' }),
+    })
+    const secondPayload = await second.json()
+    expect(secondPayload.data.liked).toBe(!firstPayload.data.liked)
+
+    // A cookie the server never signed is rejected and replaced.
+    const forged = await fetch(`${baseURL}/api/projects/${slug}/like`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: 'mrright-vid=forged-id.forged-signature',
+      },
+      body: JSON.stringify({ visitorId: 'x' }),
+    })
+    expect(forged.status).toBe(200)
+    expect(forged.headers.get('set-cookie') || '', 'forged cookie must be replaced').toContain(
+      'mrright-vid=',
+    )
+  })
+
+  test('the client-supplied visitorId no longer controls identity', async () => {
     const list = await getJson('/api/projects')
     const slug = list.payload.data.projects[0].slug
 
-    const first = await sendJson('POST', `/api/projects/${slug}/like`, { visitorId: 'client-id-1' })
-    expect(first.response.status).toBe(200)
-    const likedState = first.payload.data.liked
+    // One caller, one cookie, three different client-supplied ids. Before the
+    // fix each id minted an independent like row, so a like count could be
+    // inflated indefinitely from a single browser.
+    const jar = await fetch(`${baseURL}/api/projects/${slug}/like`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ visitorId: 'id-one' }),
+    })
+    const cookie = (jar.headers.get('set-cookie') || '').split(';')[0]
+    const initial = (await jar.json()).data.liked
 
-    // Same caller, brand new client-supplied id. Before the fix this minted a
-    // second, independent like row; now it toggles the same server-derived
-    // identity back off.
-    const second = await sendJson('POST', `/api/projects/${slug}/like`, { visitorId: 'client-id-2' })
-    expect(second.response.status).toBe(200)
-    expect(second.payload.data.liked).toBe(!likedState)
+    const states = [initial]
+    for (const visitorId of ['id-two', 'id-three']) {
+      const next = await fetch(`${baseURL}/api/projects/${slug}/like`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Cookie: cookie },
+        body: JSON.stringify({ visitorId }),
+      })
+      states.push((await next.json()).data.liked)
+    }
 
-    const third = await sendJson('POST', `/api/projects/${slug}/like`, { visitorId: 'client-id-3' })
-    expect(third.payload.data.liked).toBe(likedState)
+    // Strict alternation proves every call hit the same identity.
+    expect(states).toEqual([initial, !initial, initial])
+  })
+})
+
+test.describe('project comment moderation', () => {
+  const commentSlug = 'fire-extinguisher-next-gen'
+
+  const publicComments = async () => {
+    const { payload } = await getJson(`/api/projects/${commentSlug}/interactions`)
+    return payload.data.comments
+  }
+
+  test('an anonymous comment is queued, not published', async () => {
+    const message = `Anonymous pending comment ${randomBytes(4).toString('hex')}`
+    const created = await sendJson('POST', `/api/projects/${commentSlug}/comments`, {
+      author: 'Anonymous Visitor',
+      message,
+    })
+
+    expect(created.response.status).toBe(201)
+    expect(created.payload.data.comment.status).toBe('pending')
+
+    const visible = await publicComments()
+    expect(visible.some((comment) => comment.message === message)).toBe(false)
+
+    // The admin queue is where it should be.
+    const queue = await getJson('/api/admin/comments?status=pending', adminToken)
+    expect(queue.payload.data.comments.some((comment) => comment.message === message)).toBe(true)
+  })
+
+  test('a verified signed-in visitor publishes immediately', async () => {
+    const message = `Verified visitor comment ${randomBytes(4).toString('hex')}`
+    const created = await sendJson(
+      'POST',
+      `/api/projects/${commentSlug}/comments`,
+      { message },
+      visitorA.sessionToken,
+    )
+
+    expect(created.response.status).toBe(201)
+    expect(created.payload.data.comment.status).toBe('published')
+
+    const visible = await publicComments()
+    expect(visible.some((comment) => comment.message === message)).toBe(true)
+  })
+
+  test('link-stuffed and duplicated comments are filed as spam, never shown', async () => {
+    const spam = await sendJson('POST', `/api/projects/${commentSlug}/comments`, {
+      author: 'Spam Bot',
+      message: 'buy here http://a.example http://b.example http://c.example',
+    })
+    expect(spam.response.status).toBe(201)
+    expect(spam.payload.data.comment.status).toBe('spam')
+
+    const repeated = `Repeated message ${randomBytes(4).toString('hex')}`
+    const firstPost = await sendJson(
+      'POST',
+      `/api/projects/${commentSlug}/comments`,
+      { message: repeated },
+      visitorA.sessionToken,
+    )
+    expect(firstPost.payload.data.comment.status).toBe('published')
+
+    const duplicate = await sendJson(
+      'POST',
+      `/api/projects/${commentSlug}/comments`,
+      { message: repeated },
+      visitorA.sessionToken,
+    )
+    expect(duplicate.payload.data.comment.status).toBe('spam')
+
+    const visible = await publicComments()
+    expect(visible.filter((comment) => comment.message === repeated)).toHaveLength(1)
+  })
+
+  test('an admin can publish a queued comment', async () => {
+    const message = `Queued then approved ${randomBytes(4).toString('hex')}`
+    const created = await sendJson('POST', `/api/projects/${commentSlug}/comments`, {
+      author: 'Anonymous Visitor',
+      message,
+    })
+    const id = created.payload.data.comment.id
+
+    const approved = await sendJson(
+      'PATCH',
+      `/api/admin/comments/${id}`,
+      { status: 'published' },
+      adminToken,
+    )
+    expect(approved.response.status).toBe(200)
+    expect(approved.payload.data.comment.status).toBe('published')
+
+    const visible = await publicComments()
+    expect(visible.some((comment) => comment.message === message)).toBe(true)
+  })
+
+  test('moderation rejects an unknown status and an unknown comment', async () => {
+    const badStatus = await sendJson(
+      'PATCH',
+      '/api/admin/comments/any-id',
+      { status: 'approved-ish' },
+      adminToken,
+    )
+    expect(badStatus.response.status).toBe(400)
+    expect(badStatus.payload.error.code).toBe('VALIDATION_ERROR')
+
+    const missing = await sendJson(
+      'PATCH',
+      '/api/admin/comments/not-a-real-comment',
+      { status: 'published' },
+      adminToken,
+    )
+    expect(missing.response.status).toBe(404)
+    expect(missing.payload.error.code).toBe('COMMENT_NOT_FOUND')
   })
 })
 
