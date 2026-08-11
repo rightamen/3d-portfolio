@@ -3,15 +3,27 @@ import express from 'express'
 import rateLimit from 'express-rate-limit'
 import helmet from 'helmet'
 import multer from 'multer'
-import { createHash, pbkdf2 as pbkdf2Callback, randomBytes, timingSafeEqual } from 'node:crypto'
-import { mkdir, unlink, access } from 'node:fs/promises'
+import {
+  createHash,
+  createHmac,
+  pbkdf2 as pbkdf2Callback,
+  randomBytes,
+  timingSafeEqual,
+} from 'node:crypto'
+import { mkdir, unlink, access, open } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { createContactMessagesStore } from './contactMessagesStore.js'
 import { experience, profile, projects as staticProjects, skills } from './content.js'
 import { createDownloadRequestsStore } from './downloadRequestsStore.js'
-import { sendVerificationEmail } from './emailDelivery.js'
+import {
+  isEmailDeliveryConfigured,
+  sendDownloadDecisionEmail,
+  sendEmailChangeEmail,
+  sendPasswordResetEmail,
+  sendVerificationEmail,
+} from './emailDelivery.js'
 import { createInteractionsStore } from './interactionsStore.js'
 import { convertModelToGlb } from './modelConverter.js'
 import { createPostgresStores } from './postgresStores.js'
@@ -53,6 +65,46 @@ const assetCategories = new Set([
 ])
 const communityTopics = new Set(['general', 'showcase', 'help', 'feedback'])
 const legacyAssetCategoryAliases = new Map([['hand-painted', 'hand-painted-character']])
+
+// --------------------------------------------------------------------------
+// Per-account security policy.
+//
+// The rate limiters further down are keyed on the caller's IP, which is the
+// wrong axis for credential attacks: an attacker with a proxy pool gets a
+// fresh bucket per request while the account under attack absorbs every
+// guess. These budgets live on the account row instead, so they are shared
+// across every source address.
+// --------------------------------------------------------------------------
+const LOGIN_LOCK_AFTER = Math.max(3, Number(process.env.LOGIN_LOCK_AFTER || 8))
+const LOGIN_LOCK_MS = Math.max(1, Number(process.env.LOGIN_LOCK_MINUTES || 15)) * 60 * 1000
+const VERIFICATION_MAX_ATTEMPTS = Math.max(3, Number(process.env.VERIFICATION_MAX_ATTEMPTS || 6))
+const PASSWORD_RESET_MAX_ATTEMPTS = Math.max(3, Number(process.env.PASSWORD_RESET_MAX_ATTEMPTS || 6))
+const CODE_TTL_MS = 20 * 60 * 1000
+const MIN_PASSWORD_LENGTH = 8
+
+// Admin sessions expire; the static ADMIN_TOKEN no longer has to live in a
+// browser forever. See docs/OPERATIONS_ADMIN_AUTH.md.
+const ADMIN_SESSION_TTL_MS =
+  Math.max(1, Number(process.env.ADMIN_SESSION_HOURS || 12)) * 60 * 60 * 1000
+// Set ADMIN_ALLOW_STATIC_TOKEN=false once every admin client exchanges the
+// token for a session, to retire direct static-token API access entirely.
+const allowStaticAdminToken = process.env.ADMIN_ALLOW_STATIC_TOKEN !== 'false'
+
+// Storage budget per account, independent of the per-IP request limiter.
+const UPLOAD_QUOTA_WINDOW_MS = Math.max(1, Number(process.env.UPLOAD_QUOTA_HOURS || 24)) * 3600 * 1000
+const UPLOAD_QUOTA_MAX_FILES = Math.max(1, Number(process.env.UPLOAD_QUOTA_MAX_FILES || 30))
+const UPLOAD_QUOTA_MAX_BYTES =
+  Math.max(1, Number(process.env.UPLOAD_QUOTA_MAX_MB || 1024)) * 1024 * 1024
+
+// Download tickets are redeemed immediately by a browser navigation, so the
+// window only has to cover the round trip.
+const DOWNLOAD_TICKET_TTL_MS = 2 * 60 * 1000
+
+// Key for the server-derived anonymous visitor identity used by project likes.
+// Without a stable value across restarts, anonymous like de-duplication resets
+// on every deploy; the startup self-check warns when it is unset.
+const visitorIdentitySecret =
+  process.env.VISITOR_ID_SECRET || randomBytes(32).toString('hex')
 const stores = process.env.DATABASE_URL
   ? await createPostgresStores(process.env.DATABASE_URL)
   : {
@@ -123,6 +175,12 @@ app.use(
         styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
         fontSrc: ["'self'", 'data:', 'https://fonts.gstatic.com'],
         connectSrc: ["'self'"],
+        // Report-only without a collector produced nothing at all: violations
+        // went to the browser console on someone else's machine. With an
+        // endpoint the policy can be tightened against evidence instead of
+        // guesses. reportUri is the widely-supported directive; reportTo needs
+        // a Report-To/Reporting-Endpoints header pair to be useful.
+        reportUri: ['/api/csp-report'],
         // Helmet adds upgrade-insecure-requests by default. It is ignored by
         // browsers in report-only mode and emits a console error on every SPA
         // page, so leave it out until CSP is ready to become blocking.
@@ -190,6 +248,48 @@ app.use(express.json({ limit: '96kb' }))
 // a public page needs to render must pass without one.
 const restrictedUploadExtensions = new Set(['.fbx', '.obj', '.zip'])
 
+// Every /uploads request used to cost one database round trip, so a gallery
+// page with N images issued N queries before a single byte was served. The
+// lookup is cached for a short TTL and invalidated explicitly wherever an
+// upload's status changes, so a rejection takes effect immediately rather than
+// waiting out the TTL.
+const UPLOAD_ACCESS_CACHE_TTL_MS = 30 * 1000
+const UPLOAD_ACCESS_CACHE_MAX_ENTRIES = 1000
+const uploadAccessCache = new Map()
+
+const invalidateUploadAccessCache = (assetUrl) => {
+  if (assetUrl) {
+    uploadAccessCache.delete(assetUrl)
+    return
+  }
+
+  uploadAccessCache.clear()
+}
+
+const lookupUploadByAssetUrl = async (assetUrl) => {
+  if (!communityStore) return null
+
+  const cached = uploadAccessCache.get(assetUrl)
+  if (cached && cached.expiresAt > Date.now()) return cached.upload
+
+  const upload = await communityStore.getUploadByAssetUrl(assetUrl)
+
+  // Plain insertion-ordered eviction: the oldest key goes when the map is
+  // full. An LRU would be better under a hot working set, but this only has
+  // to stop unbounded growth from one-off asset URLs.
+  if (uploadAccessCache.size >= UPLOAD_ACCESS_CACHE_MAX_ENTRIES) {
+    const oldestKey = uploadAccessCache.keys().next().value
+    uploadAccessCache.delete(oldestKey)
+  }
+
+  uploadAccessCache.set(assetUrl, {
+    expiresAt: Date.now() + UPLOAD_ACCESS_CACHE_TTL_MS,
+    upload,
+  })
+
+  return upload
+}
+
 const uploadAccessGate = async (request, response, next) => {
   let assetPath
   try {
@@ -199,7 +299,7 @@ const uploadAccessGate = async (request, response, next) => {
   }
 
   const assetUrl = `/uploads${assetPath}`
-  const upload = communityStore ? await communityStore.getUploadByAssetUrl(assetUrl) : null
+  const upload = await lookupUploadByAssetUrl(assetUrl)
 
   if (upload) {
     if (upload.status === 'approved') return next()
@@ -207,7 +307,7 @@ const uploadAccessGate = async (request, response, next) => {
     return next()
   }
 
-  if (isAdminToken(getAuthToken(request))) return next()
+  if (await resolveAdminAuth(request)) return next()
 
   const viewer = await getOptionalUser(request)
   if (viewer && upload && upload.user_id === viewer.id) return next()
@@ -270,28 +370,71 @@ app.use('/api', createLimiter({
   message: 'Too many requests. Please slow down and try again shortly.',
 }))
 
+// The per-IP budgets below are the first line of defence; the per-account
+// budgets in the route handlers are the one that actually stops a distributed
+// attack. Both are env-overridable so the contract suite can exercise the
+// account-level behaviour without tripping the network-level cap first —
+// production leaves every one of them at the default.
 app.use('/api/auth/login', createLimiter({
   windowMs: minutes(15),
-  limit: 10,
+  limit: Math.max(1, Number(process.env.LOGIN_LIMIT_PER_WINDOW || 10)),
   message: 'Too many sign-in attempts. Please try again in a few minutes.',
 }))
 
 app.use('/api/auth/verify-email', createLimiter({
   windowMs: minutes(15),
-  limit: 10,
+  limit: Math.max(1, Number(process.env.VERIFY_LIMIT_PER_WINDOW || 10)),
   message: 'Too many verification attempts. Please request a new code.',
 }))
 
+// Overridable so the contract suite can exercise flows that need more than a
+// handful of throwaway accounts per run. Production leaves them at the default.
 app.use('/api/auth/register', createLimiter({
   windowMs: minutes(60),
-  limit: 5,
+  limit: Math.max(1, Number(process.env.REGISTER_LIMIT_PER_HOUR || 5)),
   message: 'Too many accounts created from this network. Please try again later.',
 }))
 
 app.use('/api/auth/resend-verification', createLimiter({
   windowMs: minutes(60),
-  limit: 3,
+  limit: Math.max(1, Number(process.env.RESEND_LIMIT_PER_HOUR || 3)),
   message: 'Verification email already requested. Please wait before trying again.',
+}))
+
+// Reset mails go to an address the caller does not have to control, so the
+// send side is capped harder than the redeem side.
+app.use('/api/auth/forgot-password', createLimiter({
+  windowMs: minutes(60),
+  limit: Math.max(1, Number(process.env.FORGOT_PASSWORD_LIMIT_PER_HOUR || 3)),
+  message: 'Password reset already requested. Please wait before trying again.',
+}))
+
+app.use('/api/auth/reset-password', createLimiter({
+  windowMs: minutes(15),
+  limit: 10,
+  message: 'Too many reset attempts. Please request a new code.',
+}))
+
+// Changing a sign-in address mails a code to an address supplied in the
+// request body, which is the same mail-bomb primitive as resend-verification.
+//
+// The budget covers the confirm step too — app.use matches by prefix, so
+// /api/account/email/confirm lands in this bucket as well. That is why it is
+// not the tight 5/hour the send side alone would want: a visitor who mistypes
+// the code a few times must not be locked out of finishing the change. The
+// per-account attempt counter is what actually bounds code guessing.
+app.use('/api/account/email', createLimiter({
+  windowMs: minutes(60),
+  limit: Math.max(1, Number(process.env.EMAIL_CHANGE_LIMIT_PER_HOUR || 15)),
+  message: 'Too many email change requests. Please try again later.',
+  writesOnly: true,
+}))
+
+app.use('/api/account/password', createLimiter({
+  windowMs: minutes(15),
+  limit: 10,
+  message: 'Too many password change attempts. Please try again shortly.',
+  writesOnly: true,
 }))
 
 app.use('/api/contact', createLimiter({
@@ -334,7 +477,12 @@ const upload = multer({
         .replace(/[^a-z0-9]+/g, '-')
         .replace(/(^-|-$)/g, '')
         .slice(0, 60)
-      callback(null, `${Date.now()}-${baseName || 'asset'}${extension}`)
+      // The random component is not decoration: `${Date.now()}-${baseName}`
+      // collides whenever two uploads of the same file name land in the same
+      // millisecond, and the loser silently overwrites the winner's file. It
+      // also made every stored path guessable from the original file name.
+      const suffix = randomBytes(4).toString('hex')
+      callback(null, `${Date.now()}-${suffix}-${baseName || 'asset'}${extension}`)
     },
   }),
   fileFilter: (_request, file, callback) => {
@@ -386,6 +534,113 @@ const createProfileImageUpload = ({ folder, limit }) =>
 const avatarUpload = createProfileImageUpload({ folder: 'avatars', limit: avatarUploadLimit })
 const bannerUpload = createProfileImageUpload({ folder: 'banners', limit: bannerUploadLimit })
 
+// Content-based validation. multer's fileFilter only ever saw the file name, so
+// any payload at all could be stored as "portrait.png" — the extension was a
+// claim by the uploader, never a fact about the bytes. Formats whose container
+// has no reliable magic number (.obj, ASCII .fbx, .gltf) are text and are
+// checked for a plausible opening token instead.
+const fileSignatures = new Map([
+  ['.jpg', [[0xff, 0xd8, 0xff]]],
+  ['.jpeg', [[0xff, 0xd8, 0xff]]],
+  ['.png', [[0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]]],
+  ['.gif', [[0x47, 0x49, 0x46, 0x38]]],
+  ['.glb', [[0x67, 0x6c, 0x54, 0x46]]],
+  ['.zip', [[0x50, 0x4b, 0x03, 0x04], [0x50, 0x4b, 0x05, 0x06], [0x50, 0x4b, 0x07, 0x08]]],
+])
+
+const startsWithSignature = (buffer, signature) =>
+  signature.every((byte, index) => buffer[index] === byte)
+
+const hasValidFileSignature = async (filePath, extension) => {
+  let handle
+  try {
+    handle = await open(filePath, 'r')
+    const buffer = Buffer.alloc(64)
+    const { bytesRead } = await handle.read(buffer, 0, 64, 0)
+    const head = buffer.subarray(0, bytesRead)
+
+    const signatures = fileSignatures.get(extension)
+    if (signatures) return signatures.some((signature) => startsWithSignature(head, signature))
+
+    // RIFF....WEBP — the format tag sits at offset 8, after the chunk size.
+    if (extension === '.webp') {
+      return head.subarray(0, 4).toString('latin1') === 'RIFF' &&
+        head.subarray(8, 12).toString('latin1') === 'WEBP'
+    }
+
+    // Binary FBX carries a fixed preamble; ASCII FBX is a text file that
+    // conventionally opens with a comment or a node declaration.
+    if (extension === '.fbx') {
+      const text = head.toString('latin1')
+      return text.startsWith('Kaydara FBX Binary') || /^[;\s]|^FBXHeaderExtension/.test(text)
+    }
+
+    // Text formats: reject anything with NUL bytes in the head, which is the
+    // cheap way to tell "this is not the text file you said it was".
+    if (extension === '.gltf' || extension === '.obj') {
+      if (head.includes(0x00)) return false
+      const text = head.toString('utf8').trimStart()
+      return extension === '.gltf' ? text.startsWith('{') : /^[#a-zA-Z]/.test(text)
+    }
+
+    return false
+  } catch {
+    return false
+  } finally {
+    await handle?.close()
+  }
+}
+
+// Rejects and removes an upload whose bytes do not match its extension.
+// Returns true when the caller should stop (the response has been sent).
+const rejectOnSignatureMismatch = async (request, response) => {
+  const extension = path.extname(request.file.originalname).toLowerCase()
+  if (await hasValidFileSignature(request.file.path, extension)) return false
+
+  unlink(request.file.path).catch((error) => console.error(error))
+  sendError(
+    response,
+    API_ERROR_CODES.INVALID_FILE_TYPE,
+    `File contents do not match the ${extension} format.`,
+    400,
+  )
+
+  return true
+}
+
+// Storage budget per account, checked BEFORE multer streams the body so an
+// over-quota member never gets to write 120MB to disk first. Content-Length is
+// a hint from the client, but multer's own fileSize limit bounds the real
+// write, so the worst case is one oversized file slipping past the byte check.
+const enforceUploadQuota = async (request, response, next) => {
+  if (typeof communityStore?.getUploadUsage !== 'function') return next()
+
+  const usage = await communityStore.getUploadUsage(request.visitorUser.id, UPLOAD_QUOTA_WINDOW_MS)
+  const declaredSize = Number(request.get('Content-Length') || 0)
+  const windowHours = Math.round(UPLOAD_QUOTA_WINDOW_MS / 3600000)
+
+  if (usage.count >= UPLOAD_QUOTA_MAX_FILES) {
+    return sendError(
+      response,
+      API_ERROR_CODES.UPLOAD_QUOTA_EXCEEDED,
+      `Upload limit reached: ${UPLOAD_QUOTA_MAX_FILES} files per ${windowHours} hours.`,
+      429,
+    )
+  }
+
+  if (usage.bytes + declaredSize > UPLOAD_QUOTA_MAX_BYTES) {
+    const quotaMb = Math.round(UPLOAD_QUOTA_MAX_BYTES / (1024 * 1024))
+    return sendError(
+      response,
+      API_ERROR_CODES.UPLOAD_QUOTA_EXCEEDED,
+      `Storage limit reached: ${quotaMb}MB per ${windowHours} hours.`,
+      429,
+    )
+  }
+
+  return next()
+}
+
 const createId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 
 const hashToken = (token) => createHash('sha256').update(token).digest('hex')
@@ -396,6 +651,49 @@ const hashVerificationCode = (email, code) =>
   createHash('sha256')
     .update(`${email.trim().toLowerCase()}:${String(code).trim()}`)
     .digest('hex')
+
+// Domain-separated from hashVerificationCode so a code minted for one purpose
+// can never be replayed against another, even if a future refactor lets the
+// two share a column.
+const hashScopedCode = (scope, key, code) =>
+  createHash('sha256')
+    .update(`${scope}:${String(key).trim().toLowerCase()}:${String(code).trim()}`)
+    .digest('hex')
+
+// Rejects the passwords that show up first in every credential-stuffing list,
+// plus anything derived from the account's own identifiers. Length alone is a
+// weak signal — "password" and "12345678" both clear an 8-character minimum.
+const weakPasswords = new Set([
+  '12345678', '123456789', '1234567890', 'password', 'password1', 'password123',
+  'qwertyui', 'qwerty123', 'iloveyou', 'admin123', 'welcome1', 'abc12345',
+  'letmein1', 'football', 'baseball', 'sunshine', 'princess', 'trustno1',
+  '11111111', '00000000', 'passw0rd', 'zaq12wsx', 'dragon123', 'monkey12',
+])
+
+const describePasswordProblem = (password, { displayName = '', email = '' } = {}) => {
+  if (password.length < MIN_PASSWORD_LENGTH) {
+    return `Password must be at least ${MIN_PASSWORD_LENGTH} characters.`
+  }
+
+  if (password.length > 200) return 'Password must be 200 characters or fewer.'
+
+  const normalized = password.toLowerCase()
+  if (weakPasswords.has(normalized)) return 'This password is too common. Please choose another.'
+
+  const localPart = String(email).split('@')[0]?.toLowerCase() || ''
+  if (localPart.length >= 3 && normalized.includes(localPart)) {
+    return 'Password must not contain your email address.'
+  }
+
+  const name = String(displayName).trim().toLowerCase()
+  if (name.length >= 3 && normalized.includes(name)) {
+    return 'Password must not contain your display name.'
+  }
+
+  if (/^(.)\1+$/.test(password)) return 'Password must not be a single repeated character.'
+
+  return null
+}
 
 // 600k iterations is the current OWASP guidance for PBKDF2-HMAC-SHA256, up from
 // 120k. The synchronous variant used before blocked Node's only thread for the
@@ -660,6 +958,43 @@ app.get('/api/health', (_request, response) => {
   sendData(response, { ok: true, service: 'mrright-portfolio' })
 })
 
+// CSP violation collector. Browsers post these with content-type
+// application/csp-report (or application/reports+json for the newer Reporting
+// API), neither of which express.json accepts by default, so the payload
+// needs its own parser.
+//
+// Deliberately NOT part of the JSON envelope contract: the browser is the
+// caller and it ignores the body entirely. It answers 204 and never anything
+// else, so a malformed or hostile report cannot turn into an error the site
+// has to handle.
+const cspReportCounts = new Map()
+
+app.post(
+  '/api/csp-report',
+  express.json({ limit: '16kb', type: ['application/csp-report', 'application/reports+json', 'application/json'] }),
+  (request, response) => {
+    const report = request.body?.['csp-report'] || request.body || {}
+    const directive = String(
+      report['effective-directive'] || report['violated-directive'] || 'unknown',
+    ).slice(0, 80)
+    const blockedUri = String(report['blocked-uri'] || '').slice(0, 200)
+
+    // Aggregate rather than log every hit: a single broken third-party asset
+    // on a busy page would otherwise flood the journal.
+    const key = `${directive} <- ${blockedUri}`
+    const count = (cspReportCounts.get(key) || 0) + 1
+    cspReportCounts.set(key, count)
+
+    // Log on a widening interval so the first occurrences are visible without
+    // the thousandth being noise.
+    if (count === 1 || count === 10 || count % 100 === 0) {
+      console.warn(`[CSP] ${key} (${count} report(s))`)
+    }
+
+    response.status(204).end()
+  },
+)
+
 app.get('/api/auth/me', async (request, response) => {
   const user = await getOptionalUser(request)
   sendData(response, { user })
@@ -676,13 +1011,18 @@ app.post('/api/auth/register', requireAuthStore, async (request, response) => {
   const email = String(request.body?.email ?? '').trim().toLowerCase().slice(0, 180)
   const password = String(request.body?.password ?? '')
 
-  if (!displayName || !emailPattern.test(email) || password.length < 8) {
+  if (!displayName || !emailPattern.test(email) || password.length < MIN_PASSWORD_LENGTH) {
     return sendError(
       response,
       API_ERROR_CODES.VALIDATION_ERROR,
       'Please provide a display name, valid email, and password with at least 8 characters.',
       400,
     )
+  }
+
+  const passwordProblem = describePasswordProblem(password, { displayName, email })
+  if (passwordProblem) {
+    return sendError(response, API_ERROR_CODES.VALIDATION_ERROR, passwordProblem, 400)
   }
 
   const existingUser = await authStore.getUserByEmail(email)
@@ -801,7 +1141,28 @@ app.post('/api/auth/login', requireAuthStore, async (request, response) => {
   // response time does not reveal whether the account exists.
   const passwordMatches = await verifyPassword(password, user?.passwordHash ?? dummyPasswordHash)
 
+  // A locked account rejects even the correct password, so an attacker who
+  // eventually guesses it inside the lock window still gains nothing. The
+  // check runs after the derivation above to keep the timing uniform.
+  if (user?.lockedUntil && new Date(user.lockedUntil) > new Date()) {
+    return sendError(
+      response,
+      API_ERROR_CODES.ACCOUNT_LOCKED,
+      'Too many failed sign-in attempts. Please try again later or reset your password.',
+      423,
+    )
+  }
+
   if (!user || !passwordMatches) {
+    // Only a real account can be locked out; an unknown address must not
+    // create state, or the endpoint becomes an account-enumeration oracle.
+    if (user && typeof authStore.registerFailedLogin === 'function') {
+      await authStore.registerFailedLogin(user.id, {
+        lockAfter: LOGIN_LOCK_AFTER,
+        lockMs: LOGIN_LOCK_MS,
+      })
+    }
+
     return sendError(
       response,
       API_ERROR_CODES.VALIDATION_ERROR,
@@ -817,6 +1178,10 @@ app.post('/api/auth/login', requireAuthStore, async (request, response) => {
       'Please verify your email before signing in.',
       403,
     )
+  }
+
+  if (typeof authStore.clearLoginFailures === 'function') {
+    await authStore.clearLoginFailures(user.id)
   }
 
   const session = await createSession(user)
@@ -840,6 +1205,24 @@ app.post('/api/auth/verify-email', requireAuthStore, async (request, response) =
 
   const user = await authStore.verifyEmail(email, hashVerificationCode(email, code))
   if (!user) {
+    // Burn one attempt against the account. Six digits is only a million
+    // possibilities: without an account-scoped budget, an attacker rotating
+    // IPs walks the space and takes over any unverified registration.
+    if (typeof authStore.registerVerificationAttempt === 'function') {
+      const attempts = await authStore.registerVerificationAttempt(email, {
+        maxAttempts: VERIFICATION_MAX_ATTEMPTS,
+      })
+
+      if (attempts >= VERIFICATION_MAX_ATTEMPTS) {
+        return sendError(
+          response,
+          API_ERROR_CODES.VALIDATION_ERROR,
+          'Too many incorrect codes. Please request a new verification email.',
+          400,
+        )
+      }
+    }
+
     return sendError(
       response,
       API_ERROR_CODES.VALIDATION_ERROR,
@@ -850,6 +1233,122 @@ app.post('/api/auth/verify-email', requireAuthStore, async (request, response) =
 
   const session = await createSession(user)
   return sendData(response, { session, user })
+})
+
+// Password reset. Before this existed, a visitor who forgot their password was
+// permanently locked out: there was no self-service path back into the account
+// and no way to rotate a password suspected of being compromised.
+//
+// Like /api/auth/resend-verification, the response is uniform whether or not
+// the address is registered — otherwise this becomes a free account-existence
+// oracle for every address an attacker cares to try.
+app.post('/api/auth/forgot-password', requireAuthStore, async (request, response) => {
+  const email = String(request.body?.email ?? '').trim().toLowerCase().slice(0, 180)
+
+  if (!emailPattern.test(email)) {
+    return sendError(response, API_ERROR_CODES.VALIDATION_ERROR, 'Valid email is required.', 400)
+  }
+
+  const expiresAt = new Date(Date.now() + CODE_TTL_MS)
+  const respondAccepted = (extra = {}) =>
+    sendData(response, {
+      reset: {
+        delivery: 'accepted',
+        expiresAt: expiresAt.toISOString(),
+        required: true,
+        ...extra,
+      },
+    })
+
+  if (typeof authStore.setPasswordResetCode !== 'function') {
+    return sendError(
+      response,
+      API_ERROR_CODES.SERVICE_UNAVAILABLE,
+      'Password reset is not configured.',
+      503,
+    )
+  }
+
+  const code = createVerificationCode()
+  const issued = await authStore.setPasswordResetCode(
+    email,
+    hashScopedCode('password-reset', email, code),
+    expiresAt,
+  )
+
+  // An unverified or unknown address gets the same 200 with no email sent.
+  if (!issued) return respondAccepted()
+
+  const user = await authStore.getUserByEmail(email)
+  try {
+    await sendPasswordResetEmail({
+      code,
+      displayName: user?.displayName,
+      email,
+      expiresAt,
+    })
+  } catch (error) {
+    console.error('Password reset email delivery failed:', error.message)
+  }
+
+  return respondAccepted(exposeDevVerificationCode ? { devCode: code } : {})
+})
+
+app.post('/api/auth/reset-password', requireAuthStore, async (request, response) => {
+  const email = String(request.body?.email ?? '').trim().toLowerCase().slice(0, 180)
+  const code = String(request.body?.code ?? '').trim().slice(0, 12)
+  const password = String(request.body?.password ?? '')
+
+  if (!emailPattern.test(email) || !code) {
+    return sendError(
+      response,
+      API_ERROR_CODES.VALIDATION_ERROR,
+      'Valid email and reset code are required.',
+      400,
+    )
+  }
+
+  const passwordProblem = describePasswordProblem(password, { email })
+  if (passwordProblem) {
+    return sendError(response, API_ERROR_CODES.VALIDATION_ERROR, passwordProblem, 400)
+  }
+
+  if (typeof authStore.resetPasswordWithCode !== 'function') {
+    return sendError(
+      response,
+      API_ERROR_CODES.SERVICE_UNAVAILABLE,
+      'Password reset is not configured.',
+      503,
+    )
+  }
+
+  const user = await authStore.resetPasswordWithCode(
+    email,
+    hashScopedCode('password-reset', email, code),
+    await hashPassword(password),
+  )
+
+  if (!user) {
+    if (typeof authStore.registerPasswordResetAttempt === 'function') {
+      await authStore.registerPasswordResetAttempt(email, {
+        maxAttempts: PASSWORD_RESET_MAX_ATTEMPTS,
+      })
+    }
+
+    return sendError(
+      response,
+      API_ERROR_CODES.PASSWORD_RESET_INVALID,
+      'Reset code is invalid or expired. Please request a new one.',
+      400,
+    )
+  }
+
+  // resetPasswordWithCode dropped every existing session, so the caller is
+  // handed a fresh one rather than being bounced back to the sign-in form.
+  const session = await createSession(user)
+  const publicUser = await authStore.getAccountProfile(user.id)
+
+  return sendData(response, { session, user: publicUser })
 })
 
 app.post('/api/auth/logout', async (request, response) => {
@@ -871,17 +1370,41 @@ const isAdminToken = (token) => {
   )
 }
 
-const requireAdmin = (request, response, next) => {
-  if (!isAdminToken(getAuthToken(request))) {
-    return sendError(
-      response,
-      API_ERROR_CODES.ADMIN_AUTH_REQUIRED,
-      'Admin authorization is required.',
-      401,
-    )
-  }
+// Accepts either the static ADMIN_TOKEN or a session token minted from it by
+// POST /api/admin/session.
+//
+// The static token used to be what the browser kept in localStorage, forever:
+// one XSS or one leaked backup handed over permanent, unrevocable control of
+// every admin route. The dashboard now exchanges it once at sign-in and stores
+// only the resulting session, so the blast radius of a stolen browser token is
+// ADMIN_SESSION_HOURS instead of "until someone notices". Direct static-token
+// API access stays enabled for scripts and the deploy checks until
+// ADMIN_ALLOW_STATIC_TOKEN=false retires it.
+const resolveAdminAuth = async (request) => {
+  const token = getAuthToken(request)
+  if (!token) return null
 
+  if (allowStaticAdminToken && isAdminToken(token)) return { kind: 'static' }
+
+  if (typeof adminStore?.getAdminSession !== 'function') return null
+
+  const session = await adminStore.getAdminSession(hashToken(token))
+  return session ? { expiresAt: session.expiresAt, kind: 'session' } : null
+}
+
+const requireAdmin = async (request, response, next) => {
   if (!adminStore) {
+    // Reported before the auth check so a misconfigured deployment is
+    // distinguishable from a rejected credential.
+    if (!isAdminToken(getAuthToken(request))) {
+      return sendError(
+        response,
+        API_ERROR_CODES.ADMIN_AUTH_REQUIRED,
+        'Admin authorization is required.',
+        401,
+      )
+    }
+
     return sendError(
       response,
       API_ERROR_CODES.SERVICE_UNAVAILABLE,
@@ -890,6 +1413,17 @@ const requireAdmin = (request, response, next) => {
     )
   }
 
+  const auth = await resolveAdminAuth(request)
+  if (!auth) {
+    return sendError(
+      response,
+      API_ERROR_CODES.ADMIN_AUTH_REQUIRED,
+      'Admin authorization is required.',
+      401,
+    )
+  }
+
+  request.adminAuth = auth
   return next()
 }
 
@@ -1203,6 +1737,281 @@ app.put('/api/account/profile', requireAuthStore, async (request, response) => {
   }
 })
 
+// --------------------------------------------------------------------------
+// Account security. None of this existed before: a visitor could not change
+// their password, could not move to a new email address, could not sign out a
+// device they no longer had, and could not delete the account at all.
+// --------------------------------------------------------------------------
+
+// Re-authenticates the caller with their current password before a sensitive
+// change. Returns null and sends the error response when it does not match, so
+// call sites can `if (!(await confirmPassword(...))) return`.
+const confirmCurrentPassword = async (request, response, user) => {
+  const currentPassword = String(request.body?.currentPassword ?? '')
+
+  if (typeof authStore.getPasswordHash !== 'function') {
+    sendError(response, API_ERROR_CODES.SERVICE_UNAVAILABLE, 'Account security is not configured.', 503)
+    return false
+  }
+
+  const storedHash = await authStore.getPasswordHash(user.id)
+  // Falls back to the dummy hash so a missing record costs the same time as a
+  // wrong password, matching the sign-in path.
+  const matches = await verifyPassword(currentPassword, storedHash ?? dummyPasswordHash)
+
+  if (!storedHash || !matches) {
+    sendError(response, API_ERROR_CODES.PASSWORD_INCORRECT, 'Current password is incorrect.', 403)
+    return false
+  }
+
+  return true
+}
+
+app.put('/api/account/password', requireAuthStore, async (request, response) => {
+  const user = await requireUser(request, response, 'Please sign in to change your password.')
+  if (!user) return
+
+  const newPassword = String(request.body?.newPassword ?? '')
+  const problem = describePasswordProblem(newPassword, {
+    displayName: user.displayName,
+    email: user.email,
+  })
+  if (problem) return sendError(response, API_ERROR_CODES.VALIDATION_ERROR, problem, 400)
+
+  if (!(await confirmCurrentPassword(request, response, user))) return
+
+  if (typeof authStore.updatePassword !== 'function') {
+    return sendError(
+      response,
+      API_ERROR_CODES.SERVICE_UNAVAILABLE,
+      'Account security is not configured.',
+      503,
+    )
+  }
+
+  // The device doing the change keeps its session; every other one is dropped,
+  // which is the behaviour a password change has to have to be worth anything
+  // after a suspected compromise.
+  const currentTokenHash = hashToken(getAuthToken(request))
+  await authStore.updatePassword(user.id, await hashPassword(newPassword), {
+    keepTokenHash: currentTokenHash,
+  })
+
+  return sendData(response, { ok: true, otherSessionsRevoked: true })
+})
+
+app.post('/api/account/sessions/revoke-all', requireAuthStore, async (request, response) => {
+  const user = await requireUser(request, response, 'Please sign in to manage your sessions.')
+  if (!user) return
+
+  if (typeof authStore.deleteSessionsForUser !== 'function') {
+    return sendError(
+      response,
+      API_ERROR_CODES.SERVICE_UNAVAILABLE,
+      'Account security is not configured.',
+      503,
+    )
+  }
+
+  const keepCurrent = request.body?.keepCurrent !== false
+  const revoked = await authStore.deleteSessionsForUser(user.id, {
+    keepTokenHash: keepCurrent ? hashToken(getAuthToken(request)) : null,
+  })
+
+  return sendData(response, { ok: true, revoked })
+})
+
+// Email change is a two-step flow: the code goes to the NEW address only, so
+// completing it proves control of that mailbox. The old address keeps working
+// for sign-in until the change is confirmed.
+app.post('/api/account/email', requireAuthStore, async (request, response) => {
+  const user = await requireUser(request, response, 'Please sign in to change your email.')
+  if (!user) return
+
+  const newEmail = String(request.body?.email ?? '').trim().toLowerCase().slice(0, 180)
+
+  if (!emailPattern.test(newEmail)) {
+    return sendError(response, API_ERROR_CODES.VALIDATION_ERROR, 'Valid email is required.', 400)
+  }
+
+  if (newEmail === String(user.email || '').toLowerCase()) {
+    return sendError(
+      response,
+      API_ERROR_CODES.VALIDATION_ERROR,
+      'This is already your sign-in email.',
+      400,
+    )
+  }
+
+  if (!(await confirmCurrentPassword(request, response, user))) return
+
+  if (typeof authStore.setPendingEmail !== 'function') {
+    return sendError(
+      response,
+      API_ERROR_CODES.SERVICE_UNAVAILABLE,
+      'Account security is not configured.',
+      503,
+    )
+  }
+
+  // Deliberately not reported to the caller: telling them the address is taken
+  // turns an authenticated endpoint into a registration oracle. The pending
+  // change is stored either way and fails at confirmation on the unique index.
+  const taken = await authStore.getUserByEmail(newEmail)
+
+  const code = createVerificationCode()
+  const expiresAt = new Date(Date.now() + CODE_TTL_MS)
+  await authStore.setPendingEmail(
+    user.id,
+    newEmail,
+    hashScopedCode('email-change', newEmail, code),
+    expiresAt,
+  )
+
+  if (!taken) {
+    try {
+      await sendEmailChangeEmail({
+        code,
+        displayName: user.displayName,
+        email: newEmail,
+        expiresAt,
+      })
+    } catch (error) {
+      console.error('Email change delivery failed:', error.message)
+    }
+  }
+
+  return sendData(response, {
+    pendingEmail: {
+      email: newEmail,
+      expiresAt: expiresAt.toISOString(),
+      ...(exposeDevVerificationCode && !taken ? { devCode: code } : {}),
+    },
+  })
+})
+
+app.post('/api/account/email/confirm', requireAuthStore, async (request, response) => {
+  const user = await requireUser(request, response, 'Please sign in to change your email.')
+  if (!user) return
+
+  const code = String(request.body?.code ?? '').trim().slice(0, 12)
+  if (!code) {
+    return sendError(response, API_ERROR_CODES.VALIDATION_ERROR, 'Confirmation code is required.', 400)
+  }
+
+  if (typeof authStore.confirmPendingEmail !== 'function') {
+    return sendError(
+      response,
+      API_ERROR_CODES.SERVICE_UNAVAILABLE,
+      'Account security is not configured.',
+      503,
+    )
+  }
+
+  const profile = await authStore.getAccountProfile(user.id)
+  const pendingEmail = profile?.pendingEmail
+  if (!pendingEmail) {
+    return sendError(
+      response,
+      API_ERROR_CODES.EMAIL_CHANGE_INVALID,
+      'No pending email change. Please start again.',
+      400,
+    )
+  }
+
+  let updated
+  try {
+    updated = await authStore.confirmPendingEmail(
+      user.id,
+      hashScopedCode('email-change', pendingEmail, code),
+    )
+  } catch (error) {
+    // Someone registered the address while the change was pending.
+    if (error?.code === '23505') {
+      await authStore.cancelPendingEmail(user.id)
+      return sendError(
+        response,
+        API_ERROR_CODES.EMAIL_ALREADY_REGISTERED,
+        'This email is already registered.',
+        409,
+      )
+    }
+
+    throw error
+  }
+
+  if (!updated) {
+    if (typeof authStore.registerPendingEmailAttempt === 'function') {
+      await authStore.registerPendingEmailAttempt(user.id, {
+        maxAttempts: PASSWORD_RESET_MAX_ATTEMPTS,
+      })
+    }
+
+    return sendError(
+      response,
+      API_ERROR_CODES.EMAIL_CHANGE_INVALID,
+      'Confirmation code is invalid or expired.',
+      400,
+    )
+  }
+
+  return sendData(response, { profile: await authStore.getAccountProfile(user.id) })
+})
+
+app.delete('/api/account/email', requireAuthStore, async (request, response) => {
+  const user = await requireUser(request, response, 'Please sign in to manage your email.')
+  if (!user) return
+
+  if (typeof authStore.cancelPendingEmail === 'function') {
+    await authStore.cancelPendingEmail(user.id)
+  }
+
+  return sendData(response, { ok: true })
+})
+
+// Hard account deletion. Requires the current password plus an explicit typed
+// confirmation, because it cannot be undone.
+app.delete('/api/account', requireAuthStore, async (request, response) => {
+  const user = await requireUser(request, response, 'Please sign in to delete your account.')
+  if (!user) return
+
+  if (String(request.body?.confirm ?? '').trim().toUpperCase() !== 'DELETE') {
+    return sendError(
+      response,
+      API_ERROR_CODES.VALIDATION_ERROR,
+      'Type DELETE to confirm account deletion.',
+      400,
+    )
+  }
+
+  if (!(await confirmCurrentPassword(request, response, user))) return
+
+  if (typeof authStore.deleteAccount !== 'function') {
+    return sendError(
+      response,
+      API_ERROR_CODES.SERVICE_UNAVAILABLE,
+      'Account deletion is not configured.',
+      503,
+    )
+  }
+
+  const deleted = await authStore.deleteAccount(user.id)
+  if (!deleted) {
+    return sendError(response, API_ERROR_CODES.VISITOR_NOT_FOUND, 'Account not found.', 404)
+  }
+
+  // Files are removed after the transaction committed: a failed unlink must
+  // not roll back the deletion, it just leaves an orphan for the operator.
+  for (const fileUrl of deleted.fileUrls) {
+    const localPath = path.resolve(rootDir, 'public', fileUrl.replace(/^\//, ''))
+    if (localPath.startsWith(uploadRoot)) {
+      unlink(localPath).catch((error) => console.error(error))
+    }
+  }
+
+  return sendData(response, { ok: true })
+})
+
 app.post(
   '/api/account/avatar',
   requireVisitor,
@@ -1213,6 +2022,8 @@ app.post(
     if (!request.file) {
       return sendError(response, API_ERROR_CODES.VALIDATION_ERROR, 'Avatar file is required.', 400)
     }
+
+    if (await rejectOnSignatureMismatch(request, response)) return
 
     const avatarUrl = `/uploads/avatars/${request.file.filename}`
     const profile = await authStore.updateAccountImage(user.id, 'avatar', avatarUrl)
@@ -1230,6 +2041,8 @@ app.post(
     if (!request.file) {
       return sendError(response, API_ERROR_CODES.VALIDATION_ERROR, 'Banner file is required.', 400)
     }
+
+    if (await rejectOnSignatureMismatch(request, response)) return
 
     const bannerUrl = `/uploads/banners/${request.file.filename}`
     const profile = await authStore.updateAccountImage(user.id, 'banner', bannerUrl)
@@ -1448,6 +2261,7 @@ app.delete('/api/account/community/uploads/:id', requireAuthStore, async (reques
   }
 
   if (deleted.file_url?.startsWith('/uploads/')) {
+    invalidateUploadAccessCache(deleted.file_url)
     const localPath = path.resolve(rootDir, 'public', deleted.file_url.replace(/^\//, ''))
     if (localPath.startsWith(uploadRoot)) {
       unlink(localPath).catch((error) => console.error(error))
@@ -1490,7 +2304,12 @@ app.delete('/api/account/community/posts/:id', requireAuthStore, async (request,
   return sendData(response, { ok: true })
 })
 
-app.post('/api/community/uploads', requireVisitor, upload.single('file'), async (request, response) => {
+app.post(
+  '/api/community/uploads',
+  requireVisitor,
+  enforceUploadQuota,
+  upload.single('file'),
+  async (request, response) => {
   if (!communityStore) {
     return sendError(
       response,
@@ -1505,6 +2324,8 @@ app.post('/api/community/uploads', requireVisitor, upload.single('file'), async 
   if (!request.file) {
     return sendError(response, API_ERROR_CODES.VALIDATION_ERROR, 'Upload file is required.', 400)
   }
+
+  if (await rejectOnSignatureMismatch(request, response)) return
 
   const title = String(request.body?.title ?? '').trim().slice(0, 160)
   const description = String(request.body?.description ?? '').trim().slice(0, 1200)
@@ -1555,8 +2376,34 @@ app.post('/api/community/uploads', requireVisitor, upload.single('file'), async 
   return sendData(response, { upload: uploadRecord }, 201)
 })
 
+// The identity a like is recorded against is derived on the server.
+//
+// It used to be whatever `visitorId` the client sent — a value the browser
+// generated and kept in localStorage — so inflating a project's like count was
+// a matter of posting the same request with a new random string each time.
+//
+// A signed-in caller is identified by their account. Everyone else gets an
+// HMAC over their address, user agent, and the project slug: stable for the
+// same visitor (so a second like still toggles the first one off), opaque in
+// the database, and not something the caller can vary at will. Visitors behind
+// one NAT sharing a browser build collapse into a single identity, which is the
+// safe direction to be wrong in — it undercounts rather than inflates.
+const deriveLikeIdentity = (request, slug, user) => {
+  if (user?.id) return `user:${user.id}`
+
+  const fingerprint = createHmac('sha256', visitorIdentitySecret)
+    .update(`${request.ip || ''}|${request.get('User-Agent') || ''}|${slug}`)
+    .digest('hex')
+    .slice(0, 40)
+
+  return `anon:${fingerprint}`
+}
+
 app.post('/api/projects/:slug/like', async (request, response) => {
   const project = await projectStore.getProject(staticProjects, request.params.slug)
+  // Still required by the frozen v1 request schema, but the VALUE is now
+  // ignored — identity comes from deriveLikeIdentity below. Drop the field
+  // from the request schema in the next contract version.
   const visitorId = String(request.body?.visitorId ?? '').trim().slice(0, 120)
   const user = await getOptionalUser(request)
 
@@ -1568,7 +2415,8 @@ app.post('/api/projects/:slug/like', async (request, response) => {
     return sendError(response, API_ERROR_CODES.VALIDATION_ERROR, 'Visitor id is required.', 400)
   }
 
-  const result = await interactionsStore.toggleLike(project.slug, visitorId, user?.id)
+  const identity = deriveLikeIdentity(request, project.slug, user)
+  const result = await interactionsStore.toggleLike(project.slug, identity, user?.id)
   return sendData(response, result)
 })
 
@@ -1685,6 +2533,116 @@ app.post('/api/contact', async (request, response) => {
 // Authorization: admin token OR an approved download_requests row for this
 // project + user/email. If the file doesn't exist on disk, returns 404
 // regardless of authorization (the admin hasn't uploaded it yet).
+// Resolved from rootDir, not process.cwd(). The two happen to agree under the
+// deploy script's systemd unit (WorkingDirectory=/opt/mrright-portfolio), but
+// every other path in this file derives from rootDir, and a unit started from
+// anywhere else would have made this endpoint quietly serve nothing.
+const projectArchivePath = (slug) => path.join(uploadRoot, 'projects', `${slug}-source.zip`)
+
+const archiveExists = async (archivePath) => {
+  try {
+    await access(archivePath)
+    return true
+  } catch {
+    return false
+  }
+}
+
+const streamProjectArchive = async (request, response, { actor, slug, userId }) => {
+  const archivePath = projectArchivePath(slug)
+
+  if (!(await archiveExists(archivePath))) {
+    return sendError(
+      response,
+      API_ERROR_CODES.PROJECT_NOT_FOUND,
+      'Source archive not available for this project.',
+      404,
+    )
+  }
+
+  // Who actually took an asset, and when, was previously unrecorded: only the
+  // approval was. Logged before the transfer starts so an aborted download
+  // still leaves a trace.
+  if (typeof downloadRequestsStore?.recordDownloadEvent === 'function') {
+    try {
+      await downloadRequestsStore.recordDownloadEvent({
+        actor,
+        ip: request.ip,
+        projectSlug: slug,
+        userId,
+      })
+    } catch (error) {
+      console.error('Download event logging failed:', error.message)
+    }
+  }
+
+  // response.download streams from disk and sets Content-Disposition, so the
+  // browser writes straight to the file system instead of buffering.
+  return response.download(archivePath, `${slug}-source.zip`)
+}
+
+// Issues a short-lived, single-use ticket for the gated source archive.
+//
+// The Web client could not simply link to the download: the archive needs an
+// Authorization header, so it pulled the whole file through fetch() into a Blob
+// first, which puts a multi-hundred-megabyte archive in the tab's memory. With
+// a ticket the browser navigates to a plain URL and streams the file to disk.
+app.post('/api/projects/:slug/download-ticket', async (request, response) => {
+  const { slug } = request.params
+  const project = await projectStore.getProject(staticProjects, slug)
+
+  if (!project) {
+    return sendError(response, API_ERROR_CODES.PROJECT_NOT_FOUND, 'Project not found.', 404)
+  }
+
+  if (typeof downloadRequestsStore?.createDownloadTicket !== 'function') {
+    return sendError(
+      response,
+      API_ERROR_CODES.SERVICE_UNAVAILABLE,
+      'Download service is not available.',
+      503,
+    )
+  }
+
+  const adminAuth = await resolveAdminAuth(request)
+  const user = adminAuth ? null : await getOptionalUser(request)
+
+  if (!adminAuth) {
+    const hasApproval = await downloadRequestsStore.hasApprovedRequest(slug, user?.id, user?.email)
+
+    if (!hasApproval) {
+      return sendError(
+        response,
+        API_ERROR_CODES.RESOURCE_FORBIDDEN,
+        'Download access requires an approved request. Submit one from the project page.',
+        403,
+      )
+    }
+  }
+
+  const token = randomBytes(32).toString('base64url')
+  const expiresAt = new Date(Date.now() + DOWNLOAD_TICKET_TTL_MS)
+
+  await downloadRequestsStore.createDownloadTicket({
+    expiresAt,
+    projectSlug: slug,
+    tokenHash: hashToken(token),
+    userId: user?.id,
+  })
+
+  return sendData(
+    response,
+    {
+      ticket: {
+        expiresAt: expiresAt.toISOString(),
+        token,
+        url: `/api/projects/${encodeURIComponent(slug)}/download?ticket=${token}`,
+      },
+    },
+    201,
+  )
+})
+
 app.get('/api/projects/:slug/download', async (request, response) => {
   const { slug } = request.params
   const project = await projectStore.getProject(staticProjects, slug)
@@ -1693,23 +2651,43 @@ app.get('/api/projects/:slug/download', async (request, response) => {
     return sendError(response, API_ERROR_CODES.PROJECT_NOT_FOUND, 'Project not found.', 404)
   }
 
-  // Admin bypass: check file existence and return immediately
-  if (isAdminToken(getAuthToken(request))) {
-    const archivePath = path.join(process.cwd(), 'public/uploads/projects', `${slug}-source.zip`)
-    try {
-      await access(archivePath)
-      return response.sendFile(archivePath)
-    } catch {
+  // Ticket path: a browser navigation carries no Authorization header, so the
+  // credential rides in the query string. It is single-use and expires in
+  // minutes, which is what keeps a URL leaked through history or a referrer
+  // from being worth anything.
+  const ticket = String(request.query.ticket ?? '').trim()
+  if (ticket) {
+    if (typeof downloadRequestsStore?.consumeDownloadTicket !== 'function') {
       return sendError(
         response,
-        API_ERROR_CODES.PROJECT_NOT_FOUND,
-        'Source archive not available for this project.',
-        404,
+        API_ERROR_CODES.SERVICE_UNAVAILABLE,
+        'Download service is not available.',
+        503,
       )
     }
+
+    const redeemed = await downloadRequestsStore.consumeDownloadTicket(hashToken(ticket), slug)
+    if (!redeemed) {
+      return sendError(
+        response,
+        API_ERROR_CODES.DOWNLOAD_TICKET_INVALID,
+        'Download link is invalid, already used, or expired. Please start the download again.',
+        403,
+      )
+    }
+
+    return streamProjectArchive(request, response, {
+      actor: redeemed.userId ? 'visitor' : 'admin',
+      slug,
+      userId: redeemed.userId,
+    })
   }
 
-  // Check for approved download request BEFORE checking file existence
+  // Bearer-token path, kept for the admin dashboard and API clients.
+  if (await resolveAdminAuth(request)) {
+    return streamProjectArchive(request, response, { actor: 'admin', slug, userId: null })
+  }
+
   if (!downloadRequestsStore) {
     return sendError(
       response,
@@ -1720,11 +2698,7 @@ app.get('/api/projects/:slug/download', async (request, response) => {
   }
 
   const user = await getOptionalUser(request)
-  const hasApproval = await downloadRequestsStore.hasApprovedRequest(
-    slug,
-    user?.id,
-    user?.email,
-  )
+  const hasApproval = await downloadRequestsStore.hasApprovedRequest(slug, user?.id, user?.email)
 
   if (!hasApproval) {
     return sendError(
@@ -1735,25 +2709,86 @@ app.get('/api/projects/:slug/download', async (request, response) => {
     )
   }
 
-  // Authorization passed; now check if the file exists
-  const archivePath = path.join(process.cwd(), 'public/uploads/projects', `${slug}-source.zip`)
+  return streamProjectArchive(request, response, { actor: 'visitor', slug, userId: user?.id })
+})
 
-  try {
-    await access(archivePath)
-  } catch {
+// Exchanges the static ADMIN_TOKEN for a short-lived session. This is the only
+// admin route that accepts the static token unconditionally — everything else
+// goes through requireAdmin, which will stop accepting it once
+// ADMIN_ALLOW_STATIC_TOKEN=false.
+app.post('/api/admin/session', async (request, response) => {
+  if (!isAdminToken(getAuthToken(request))) {
     return sendError(
       response,
-      API_ERROR_CODES.PROJECT_NOT_FOUND,
-      'Source archive not available for this project.',
-      404,
+      API_ERROR_CODES.ADMIN_AUTH_REQUIRED,
+      'Admin authorization is required.',
+      401,
     )
   }
 
-  response.sendFile(archivePath)
+  if (typeof adminStore?.createAdminSession !== 'function') {
+    return sendError(
+      response,
+      API_ERROR_CODES.SERVICE_UNAVAILABLE,
+      'Admin data store is not configured.',
+      503,
+    )
+  }
+
+  const token = randomBytes(32).toString('base64url')
+  const expiresAt = new Date(Date.now() + ADMIN_SESSION_TTL_MS)
+
+  await adminStore.createAdminSession({
+    expiresAt,
+    ip: request.ip,
+    tokenHash: hashToken(token),
+    userAgent: String(request.get('User-Agent') || '').slice(0, 300),
+  })
+
+  return sendData(
+    response,
+    { session: { expiresAt: expiresAt.toISOString(), token } },
+    201,
+  )
+})
+
+app.delete('/api/admin/session', requireAdmin, async (request, response) => {
+  if (request.adminAuth?.kind === 'session') {
+    await adminStore.deleteAdminSession(hashToken(getAuthToken(request)))
+  }
+
+  return sendData(response, { ok: true })
+})
+
+app.get('/api/admin/sessions', requireAdmin, async (_request, response) => {
+  sendData(response, { sessions: await adminStore.listAdminSessions() })
 })
 
 app.get('/api/admin/summary', requireAdmin, async (_request, response) => {
   sendData(response, { summary: await adminStore.getSummary() })
+})
+
+// Reports what the app actually resolved for the caller's address, so an
+// operator can confirm the trust-proxy hop count matches the real chain. A
+// wrong count silently collapses every IP rate limit into one global bucket
+// and writes the proxy's address into the audit trail. Admin-gated because the
+// forwarding headers can carry internal topology.
+app.get('/api/admin/diagnostics', requireAdmin, (request, response) => {
+  sendData(response, {
+    diagnostics: {
+      forwardedFor: request.get('X-Forwarded-For') || null,
+      forwardedProto: request.get('X-Forwarded-Proto') || null,
+      protocol: request.protocol,
+      resolvedIp: request.ip,
+      // If the resolved IP is not the leftmost untrusted entry you expect,
+      // TRUST_PROXY_HOPS does not match the deployment.
+      trustProxyHops: Number(process.env.TRUST_PROXY_HOPS || 1),
+    },
+  })
+})
+
+app.get('/api/admin/download-events', requireAdmin, async (_request, response) => {
+  sendData(response, { events: await adminStore.listDownloadEvents() })
 })
 
 app.get('/api/admin/comments', requireAdmin, async (_request, response) => {
@@ -1961,6 +2996,11 @@ app.patch('/api/admin/community-uploads/:id', requireAdmin, async (request, resp
     )
   }
 
+  // A rejection has to stop serving the file now, not once the gate's cache
+  // entry ages out.
+  invalidateUploadAccessCache(uploadRecord.fileUrl)
+  invalidateUploadAccessCache(uploadRecord.previewUrl)
+
   return sendData(response, { upload: uploadRecord })
 })
 
@@ -1968,6 +3008,8 @@ app.post('/api/admin/uploads', requireAdmin, upload.single('file'), async (reque
   if (!request.file) {
     return sendError(response, API_ERROR_CODES.VALIDATION_ERROR, 'Upload file is required.', 400)
   }
+
+  if (await rejectOnSignatureMismatch(request, response)) return
 
   const extension = path.extname(request.file.originalname).toLowerCase()
   const type = imageExtensions.has(extension) ? 'image' : 'model'
@@ -2162,6 +3204,25 @@ app.patch('/api/admin/download-requests/:id', requireAdmin, async (request, resp
     )
   }
 
+  // Close the loop with the requester. Until now a decision was only visible
+  // if they happened to come back and look at /account, which meant an
+  // approved request could sit unnoticed indefinitely.
+  if (status !== 'pending' && updated.email) {
+    try {
+      await sendDownloadDecisionEmail({
+        approved: status === 'approved',
+        displayName: updated.name,
+        email: updated.email,
+        projectTitle: updated.projectTitle,
+      })
+      await adminStore.markDownloadRequestNotified(updated.id)
+    } catch (error) {
+      // The decision itself is already committed; a mail failure must not
+      // turn it into a 500 the admin would retry.
+      console.error('Download decision notification failed:', error.message)
+    }
+  }
+
   return sendData(response, { request: updated })
 })
 
@@ -2218,6 +3279,7 @@ app.delete('/api/admin/community-uploads/:id', requireAdmin, async (request, res
   }
 
   if (deleted.file_url?.startsWith('/uploads/')) {
+    invalidateUploadAccessCache(deleted.file_url)
     const localPath = path.resolve(rootDir, 'public', deleted.file_url.replace(/^\//, ''))
     if (localPath.startsWith(uploadRoot)) {
       unlink(localPath).catch((error) => console.error(error))
@@ -2317,6 +3379,68 @@ app.use((error, request, response, next) => {
 // the API contract. Static assets are streamed as-is, and any non-API GET
 // falls back to the SPA's index.html so client-side routing can take over.
 // API routes are all registered above; the envelope contract applies to them.
+// Generated rather than shipped as static files so the canonical host follows
+// PUBLIC_SITE_URL and the project list stays in sync with the database. The
+// site had neither file, so crawlers had no entry point beyond the bare
+// homepage and no signal about which paths are worth indexing.
+const publicSiteUrl = (process.env.PUBLIC_SITE_URL || 'https://mrright.blog').replace(/\/$/, '')
+
+app.get('/robots.txt', (_request, response) => {
+  response.type('text/plain').send(
+    [
+      'User-agent: *',
+      // Account, admin, and auth pages are per-user or privileged; there is
+      // nothing there for an index and crawling them only burns budget.
+      'Disallow: /admin',
+      'Disallow: /account',
+      'Disallow: /login',
+      'Disallow: /api/',
+      'Allow: /',
+      '',
+      `Sitemap: ${publicSiteUrl}/sitemap.xml`,
+      '',
+    ].join('\n'),
+  )
+})
+
+app.get('/sitemap.xml', async (_request, response) => {
+  const entries = [
+    { changefreq: 'weekly', loc: '/', priority: '1.0' },
+    { changefreq: 'daily', loc: '/community', priority: '0.8' },
+  ]
+
+  // Public profiles are deliberately absent: listing them would enumerate
+  // registered users, which the /api/users/:handle responses go out of their
+  // way to prevent.
+  try {
+    const projects = await projectStore.listProjects(staticProjects)
+    for (const project of projects) {
+      if (project.isPublic === false) continue
+      entries.push({ changefreq: 'monthly', loc: `/?project=${project.slug}`, priority: '0.6' })
+    }
+  } catch (error) {
+    console.error('Sitemap project listing failed:', error.message)
+  }
+
+  const body = [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
+    ...entries.map((entry) =>
+      [
+        '  <url>',
+        `    <loc>${publicSiteUrl}${entry.loc}</loc>`,
+        `    <changefreq>${entry.changefreq}</changefreq>`,
+        `    <priority>${entry.priority}</priority>`,
+        '  </url>',
+      ].join('\n'),
+    ),
+    '</urlset>',
+    '',
+  ].join('\n')
+
+  response.type('application/xml').send(body)
+})
+
 app.use(express.static(distDir, { setHeaders: setStaticCacheHeaders }))
 
 app.get(/.*/, (_request, response) => {
@@ -2331,13 +3455,21 @@ app.get(/.*/, (_request, response) => {
 const sessionSweepIntervalMs = Number(process.env.SESSION_SWEEP_INTERVAL_MS || 6 * 60 * 60 * 1000)
 
 const sweepExpiredSessions = async () => {
-  if (typeof authStore?.deleteExpiredSessions !== 'function') return
+  const sweeps = [
+    ['visitor session', authStore?.deleteExpiredSessions],
+    ['admin session', adminStore?.deleteExpiredAdminSessions],
+    ['download ticket', downloadRequestsStore?.deleteExpiredDownloadTickets],
+  ]
 
-  try {
-    const removed = await authStore.deleteExpiredSessions()
-    if (removed > 0) console.log(`Removed ${removed} expired visitor session(s).`)
-  } catch (error) {
-    console.error('Expired session sweep failed:', error.message)
+  for (const [label, sweep] of sweeps) {
+    if (typeof sweep !== 'function') continue
+
+    try {
+      const removed = await sweep()
+      if (removed > 0) console.log(`Removed ${removed} expired ${label}(s).`)
+    } catch (error) {
+      console.error(`Expired ${label} sweep failed:`, error.message)
+    }
   }
 }
 
@@ -2346,6 +3478,59 @@ if (typeof authStore?.deleteExpiredSessions === 'function' && sessionSweepInterv
   setInterval(sweepExpiredSessions, sessionSweepIntervalMs).unref()
 }
 
+// Startup configuration self-check.
+//
+// Every item here is something that fails silently at runtime: the site keeps
+// serving pages while a security control quietly does nothing. Warnings go to
+// the journal at boot so a misconfigured deploy is visible immediately instead
+// of during the incident it causes.
+const reportConfigurationWarnings = () => {
+  const warnings = []
+
+  if (!process.env.DATABASE_URL) {
+    warnings.push('DATABASE_URL is unset — visitor accounts, community, and admin are disabled.')
+  }
+
+  if (!process.env.ADMIN_TOKEN) {
+    warnings.push('ADMIN_TOKEN is unset — every admin route will reject all callers.')
+  }
+
+  if (!process.env.VISITOR_ID_SECRET) {
+    warnings.push(
+      'VISITOR_ID_SECRET is unset — anonymous like de-duplication resets on every restart. ' +
+        'Set it to any long random string to make it stable.',
+    )
+  }
+
+  if (!isEmailDeliveryConfigured()) {
+    warnings.push(
+      'SMTP is not configured — verification, password reset, and download decision emails ' +
+        'cannot be delivered.',
+    )
+  }
+
+  if (!process.env.CORS_ORIGIN) {
+    warnings.push('CORS_ORIGIN is unset — falling back to the built-in origin list.')
+  }
+
+  if (!process.env.TRUST_PROXY_HOPS) {
+    warnings.push(
+      'TRUST_PROXY_HOPS is unset (defaulting to 1). If Cloudflare sits in front of nginx the ' +
+        'real chain is 2 hops, and every IP rate limit collapses into one bucket. ' +
+        'Verify with GET /api/admin/diagnostics.',
+    )
+  }
+
+  if (warnings.length === 0) {
+    console.log('Configuration self-check: no warnings.')
+    return
+  }
+
+  console.warn(`Configuration self-check found ${warnings.length} issue(s):`)
+  warnings.forEach((warning) => console.warn(`  - ${warning}`))
+}
+
 app.listen(port, () => {
   console.log(`Portfolio server listening on http://localhost:${port}`)
+  reportConfigurationWarnings()
 })

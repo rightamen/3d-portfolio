@@ -1,5 +1,128 @@
 # mrright.blog 项目进度记录
 
+## 2026-08-11：第二阶段安全加固（备份、账号生命周期、管理员会话、上传与下载）
+
+结论：完成一轮以「静默失效的安全控制」为主线的加固。这一轮修的不是崩溃，而是那些**系统照常运行、但某个安全属性其实什么都没做**的地方：数据库从来没有备份、忘记密码的用户永久失去账号、管理员令牌永久有效且明文存在浏览器里、点赞身份由客户端自己声明、上传只看文件名后缀。全部改动均在本地完成，**未部署、未读取或输出任何 token/password/secret、未触碰生产环境与生产数据库**。数据库 schema 有新增列与新增表，但只通过 `ensureSchema` 的 `ADD COLUMN IF NOT EXISTS` / `CREATE TABLE IF NOT EXISTS` 增量执行，未删除任何列、表或数据。
+
+完成内容：
+
+1. **数据库备份（此前完全没有）**
+   - `scripts/backup-database.mjs`：`pg_dump --format=custom` + `pg_restore --list` 结构校验 + SHA-256 旁文件 + 可选保留策略
+   - `scripts/systemd/mrright-backup.service` / `.timer`：每日 03:30，`Persistent=true` 补跑，复用主服务的 `EnvironmentFile`
+   - `docs/OPERATIONS_BACKUP.md`：安装、异地副本方案、**恢复演练步骤**、灾难恢复流程、已知缺口（无 PITR）
+   - 三条安全性质：连接串永不输出；清理必须显式开启且跳过无校验旁文件的 dump；只有归档可被 `pg_restore` 解析才算成功
+   - 已用一次性集群完成端到端验证：成功路径、校验和、保留策略裁剪、截断归档被拒、**真实恢复演练（2 行数据成功还原）**
+
+2. **账号维度限流（此前只有按 IP 限流）**
+   - `visitor_users` 新增 `failed_login_count` / `locked_until` / `verification_attempts`
+   - 连续失败 `LOGIN_LOCK_AFTER`（默认 8）次锁定 `LOGIN_LOCK_MINUTES`（默认 15）分钟，**锁定期间正确密码也拒绝**
+   - 验证码失败达 `VERIFICATION_MAX_ATTEMPTS`（默认 6）次即作废该验证码；重发验证码会重置计数，避免账号被永久卡死
+   - 不存在的邮箱永远返回和密码错误相同的 401，不会因为锁定状态泄露账号是否注册
+
+3. **账号生命周期（忘记密码/改密码/改邮箱/注销/登出其他设备，此前全部缺失）**
+   - 新增 `POST /api/auth/forgot-password`、`POST /api/auth/reset-password`
+   - 新增 `PUT /api/account/password`、`POST /api/account/sessions/revoke-all`
+   - 新增 `POST /api/account/email`、`POST /api/account/email/confirm`、`DELETE /api/account/email`
+   - 新增 `DELETE /api/account`（需当前密码 + 输入 DELETE 确认）
+   - 重置密码会作废该账号**全部**会话；修改密码保留当前设备、踢掉其他设备
+   - 改邮箱的确认码只发往**新地址**，确认前旧地址仍可登录
+   - 注销：删除上传文件、匿名化 `project_comments.author` 与 `download_requests` 的姓名邮箱、保留他人可见的帖子与评论（避免连带删除别人的回复）
+   - 密码强度校验：拒绝常见弱口令、包含邮箱前缀或昵称的密码、单字符重复
+
+4. **管理员短时会话取代永久静态令牌**
+   - 新增 `admin_sessions` 表（只存 SHA-256 哈希，记录 IP / User-Agent / 最后使用时间）
+   - 新增 `POST /api/admin/session`（用 ADMIN_TOKEN 换 12 小时会话）、`DELETE /api/admin/session`、`GET /api/admin/sessions`
+   - `src/Admin.jsx` 换取会话后**丢弃**静态令牌，localStorage 里不再存永久密钥；登出会真正吊销
+   - 静态令牌仍可直接调 API（`ADMIN_ALLOW_STATIC_TOKEN=true`），为部署脚本保留兼容；收紧路径写在 `docs/OPERATIONS_ADMIN_AUTH.md`
+
+5. **点赞防刷：身份改为服务端派生**
+   - 登录用户用账号 id；匿名用户用 `HMAC(VISITOR_ID_SECRET, IP|UA|slug)`
+   - 客户端传的 `visitorId` 仍在请求 schema 中（v1 契约冻结），但**值已被完全忽略**，下个契约版本移除
+
+6. **上传加固**
+   - 魔数校验：jpg/png/gif/webp/glb/zip 校验文件头，gltf/obj 校验文本开头且不含 NUL，fbx 支持二进制与 ASCII 两种
+   - 账号级配额：滚动 24 小时内 30 个文件 / 1GB，在 multer 落盘**之前**用 Content-Length 预判
+   - 文件名加 4 字节随机后缀，消除同毫秒同名互相覆盖，也让存储路径不可从原文件名推测
+
+7. **下载链路修复**
+   - 新增一次性下载票据 `POST /api/projects/:slug/download-ticket`（2 分钟有效、单次使用、绑定项目）
+   - 前端不再用 `fetch` → `Blob` 把整个压缩包读进内存（大包会让标签页 OOM），改为浏览器直接流式下载
+   - `response.download` 带 `Content-Disposition`；新增 `download_events` 审计表记录谁在何时下载
+   - 归档路径从 `process.cwd()` 改为 `rootDir`，与文件内其他路径一致
+
+8. **下载审批通知（此前审批结果对用户不可见）**
+   - `emailDelivery.js` 抽出通用 `sendMail`，新增密码重置、改邮箱、下载审批三类模板
+   - 审批/拒绝后自动发邮件并记录 `notified_at`；邮件失败不会让已提交的审批变成 500
+
+9. **/uploads 授权缓存与 CSP 报告**
+   - 授权查询加 30 秒 TTL 缓存（上限 1000 条），消除每个静态资源一次数据库查询；审核状态变更与删除时显式失效
+   - CSP 增加 `report-uri`，新增 `POST /api/csp-report` 收集端点（聚合计数，避免刷屏）
+
+10. **运维可见性**
+    - 新增 `/robots.txt` 与 `/sitemap.xml`（动态生成，**不列出公开主页以免枚举注册用户**）
+    - 新增 `GET /api/admin/diagnostics` 回显解析到的客户端 IP，用于核对 trust proxy 跳数
+    - 启动自检：缺少 DATABASE_URL / ADMIN_TOKEN / VISITOR_ID_SECRET / SMTP / CORS_ORIGIN / TRUST_PROXY_HOPS 时打印告警
+    - 过期清理扩展到管理员会话与下载票据
+
+11. **修复 dist/ 重新被跟踪的回归**
+    - `8ec237d` 取消跟踪 dist/ 之后，`46f53ea` 又把 62 个文件加了回来，CI 的 dist 门禁在 main 上一直是失败的
+    - 已重新 `git rm -r --cached dist`（**未删除磁盘文件**，只移出索引）
+
+修改文件：
+
+- 新增：`scripts/backup-database.mjs`、`scripts/systemd/mrright-backup.service`、`scripts/systemd/mrright-backup.timer`、`docs/OPERATIONS_BACKUP.md`、`docs/OPERATIONS_ADMIN_AUTH.md`
+- 后端：`server/index.js`、`server/postgresStores.js`、`server/responses.js`、`server/emailDelivery.js`
+- 前端：`src/App.jsx`、`src/Admin.jsx`、`src/lib/api.js`、`src/lib/i18n.js`、`src/pages/AuthPage.jsx`、`src/pages/AccountPage.jsx`
+- 契约与文档：`docs/openapi/api-v1.yaml`、`docs/API_ERRORS.md`
+- 测试：`tests/api/contract.db.spec.js`
+
+新增 API error code（27 → 33）：`ACCOUNT_LOCKED`、`PASSWORD_INCORRECT`、`PASSWORD_RESET_INVALID`、`EMAIL_CHANGE_INVALID`、`UPLOAD_QUOTA_EXCEEDED`、`DOWNLOAD_TICKET_INVALID`
+
+commit hash：**未提交**（本轮只做本地修改，等待确认后再 commit / push）
+
+本轮验证结果：
+
+- `npm run lint`：通过。
+- `npm run build`：通过。
+- `npm run test:api`：37/37 通过。
+- `npm run test:api:db`：**48/48 通过**（原 26 个 + 新增 22 个安全回归测试）。
+- `npm run test:openapi`：通过（200 个本地 `$ref`、33 个 API error code）。
+- `git diff --check`：通过。
+- 备份脚本一次性集群验证：成功路径 / 校验和 / 保留策略 / 截断归档被拒 / 真实恢复演练全部通过。
+- 本地服务冒烟：`/api/health`、`/robots.txt`、`/sitemap.xml`、`/api/csp-report`（204）、`/`、`/community`、`/account`、`/login?mode=forgot`、`/login?mode=reset` 全部 200。
+- 本地 Playwright 渲染检查：登录页「忘记密码」入口、忘记密码页、重置密码页三语（中/英/日）文案与表单字段全部正确，无 console 错误。
+
+新增测试覆盖（22 个）：
+
+- 登录锁定：耗尽预算后正确密码也被拒；成功登录清空计数；未知邮箱永不锁定也不泄露
+- 验证码预算：耗尽后真实验证码失效；重发后可正常完成
+- 密码重置：注册与未注册地址响应完全一致；重置后旧会话与旧密码均失效；错误验证码；弱密码拒绝
+- 改密码：需当前密码；当前设备保留、其他设备被踢
+- 改邮箱：需当前密码；确认前旧邮箱仍可登录；错误验证码；确认后新邮箱生效且旧邮箱失效
+- 注销账号：需确认字符串 + 当前密码；注销后会话与登录均失效
+- 管理员会话：静态令牌换会话、会话可用、吊销后立即失效、伪造令牌被拒
+- 上传：伪造扩展名被拒、真实 PNG 通过
+- 点赞：更换客户端 visitorId 无法重复点赞
+- 下载票据：无审批被拒、单次使用、伪造票据被拒
+- 运维端点：robots / sitemap（不含 `/u/`）/ CSP 报告 / 管理员诊断
+
+是否部署 VPS：**否**。本轮未部署。
+
+VPS 备份路径：本轮未部署，未创建新备份。
+
+验证接口状态：仅本地验证（见上）。线上接口状态本轮未变更。
+
+待办事项：
+
+- **部署前必读**：本轮新增数据库列与表，首次启动会执行 `ensureSchema` 增量迁移。部署前请先按 `docs/OPERATIONS_BACKUP.md` 做一次全量备份并验证可恢复。
+- 部署前需在 `/etc/mrright-portfolio.env` 增加 `VISITOR_ID_SECRET`（任意长随机串），否则匿名点赞去重会在每次重启后重置。
+- 部署后用 `GET /api/admin/diagnostics` 核对 `resolvedIp`，确认 `TRUST_PROXY_HOPS` 与实际链路（是否有 Cloudflare）一致。
+- 安装备份 timer 并做第一次恢复演练，把结果记进本文件。
+- 配置备份异地副本（rclone 目标），当前备份仍与数据库同机。
+- 观察 CSP 报告若干天后，把 `contentSecurityPolicy` 从 report-only 切成 blocking。
+- 确认无脚本依赖静态管理员令牌后，设置 `ADMIN_ALLOW_STATIC_TOKEN=false`。
+- 仍未做：管理员账号体系 + TOTP、匿名项目评论的审核队列与反垃圾、react-router、拆分 `Admin.jsx`（2400+ 行）与 `postgresStores.js`（3000+ 行）、前端单元测试、SSR/预渲染 SEO。
+
 ## 2026-08-08：第一阶段基础设施改进（CI、部署安全、数据清理、SQL 安全）
 
 结论：完成第一阶段 4 项基础设施改进，全部通过 lint/build/test:api/test:api:db/test:openapi 验证。这一轮修复的是结构性问题：Web/API 完全没有 CI、部署脚本每次覆盖 nginx 配置会丢失 TLS 设置、visitor_sessions 只增不减、公开接口 SQL 查询仍在选取 email 列（虽然 mapper 会丢弃）、以及 `.map(toX)` 把数组索引当 options 传入的脆弱性。本轮**未部署、未改数据库 schema、未读取或输出任何 token/password/secret、未触碰生产环境**。

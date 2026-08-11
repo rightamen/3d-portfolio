@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   createAdminProject,
+  createAdminSession,
   deleteAdminComment,
   deleteAdminCommunityComment,
   deleteAdminCommunityPost,
@@ -9,6 +10,7 @@ import {
   deleteAdminDownloadRequest,
   deleteAdminProject,
   deleteAdminVisitor,
+  endAdminSession,
   getAdminComments,
   getAdminCommunityComments,
   getAdminCommunityPosts,
@@ -829,7 +831,9 @@ const Admin = () => {
         window.localStorage.removeItem(tokenKey)
         setToken('')
         setStatus('locked')
-        setAuthMessage('That admin token was rejected. Check the ADMIN_TOKEN value and try again.')
+        setAuthMessage(
+          'Admin session expired or rejected. Enter the ADMIN_TOKEN again to start a new session.',
+        )
       } else if (error?.status === 503) {
         setStatus('error')
         setAuthMessage('The admin data store is not configured on the server.')
@@ -849,27 +853,66 @@ const Admin = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // The typed ADMIN_TOKEN is exchanged for a session token and then dropped.
+  //
+  // It used to be stored verbatim in localStorage and reused as the credential
+  // on every request, with no expiry and no way to revoke it: one XSS on this
+  // page, or one look at someone's browser profile, handed over permanent
+  // control of every admin route. What gets persisted now expires on its own
+  // and can be revoked server-side. The static token stays valid on the API for
+  // scripts, but it is no longer what the browser holds.
   const unlock = async (event) => {
     event.preventDefault()
-    const nextToken = tokenInput.trim()
-    if (!nextToken) return
+    const staticToken = tokenInput.trim()
+    if (!staticToken) return
 
     setAuthMessage('')
-    setToken(nextToken)
-    const ok = await loadAdminData(nextToken)
-    // Only persist the token once it has been accepted by the server, so a
-    // wrong secret is not stored and re-filled on the next reload.
+
+    let sessionToken = staticToken
+    try {
+      const payload = await createAdminSession(staticToken)
+      sessionToken = payload?.session?.token || staticToken
+    } catch (error) {
+      if (error?.status === 401) {
+        setStatus('locked')
+        setAuthMessage('That admin token was rejected. Check the ADMIN_TOKEN value and try again.')
+        return
+      }
+
+      // A server too old to expose the exchange, or a transient failure: fall
+      // back to the static token so the dashboard stays usable.
+      console.warn('Admin session exchange unavailable, using the static token:', error.message)
+    }
+
+    setToken(sessionToken)
+    const ok = await loadAdminData(sessionToken)
+    // Only persist once the server has accepted it, so a rejected credential is
+    // not stored and re-filled on the next reload.
     if (ok) {
-      window.localStorage.setItem(tokenKey, nextToken)
+      window.localStorage.setItem(tokenKey, sessionToken)
+      // The typed secret has served its purpose; do not leave it in a form
+      // field that survives in a React DevTools snapshot or a screenshot.
+      setTokenInput('')
     }
   }
 
-  const logout = () => {
+  const logout = async () => {
+    const current = token
     window.localStorage.removeItem(tokenKey)
     setToken('')
     setTokenInput('')
     setAuthMessage('')
     setStatus('locked')
+
+    // Revoke server-side too, so signing out actually invalidates the session
+    // rather than only forgetting it locally.
+    if (current) {
+      try {
+        await endAdminSession(current)
+      } catch {
+        // Already expired or never a session token — nothing to clean up.
+      }
+    }
   }
 
   const updateRequestStatus = async (id, nextStatus) => {

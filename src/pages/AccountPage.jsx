@@ -1,13 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { assetCategoryProfiles, getAssetCategoryProfile } from '../lib/assetCategories'
 import {
+  cancelEmailChange,
+  changeVisitorPassword,
+  confirmEmailChange,
   createCommunityPost,
   deleteAccountCommunityPost,
   deleteAccountCommunityUpload,
+  deleteVisitorAccount,
   getAccountComments,
   getAccountCommunity,
   getAccountDownloads,
   getAccountProfile,
+  requestEmailChange,
+  revokeOtherSessions,
   updateAccountProfile,
   uploadAccountAvatar,
   uploadAccountBanner,
@@ -59,7 +65,16 @@ const accountTabs = [
   { key: 'comments', labelKey: 'accountNavComments' },
   { key: 'community', labelKey: 'accountNavCommunity' },
   { key: 'settings', labelKey: 'accountNavSettings' },
+  { key: 'security', labelKey: 'accountSecurityTitle' },
 ]
+
+const emptySecurityForm = {
+  confirm: '',
+  currentPassword: '',
+  emailCode: '',
+  newEmail: '',
+  newPassword: '',
+}
 
 const LanguageSwitch = ({ language, onLanguageChange, copy }) => (
   <div className="language-switch" aria-label={copy.toggleLanguage}>
@@ -175,6 +190,8 @@ const AccountPage = ({
   const [profileStatus, setProfileStatus] = useState('idle')
   const [profileMessage, setProfileMessage] = useState('')
   const [imageUploadState, setImageUploadState] = useState({ field: '', message: '', progress: 0 })
+  const [securityForm, setSecurityForm] = useState(emptySecurityForm)
+  const [securityState, setSecurityState] = useState({ message: '', phase: 'idle' })
   const isMountedRef = useRef(true)
 
   useEffect(() => {
@@ -906,6 +923,107 @@ const AccountPage = ({
     </div>
   )
 
+  const updateSecurityField = (field, value) => {
+    setSecurityForm((current) => ({ ...current, [field]: value }))
+    setSecurityState({ message: '', phase: 'idle' })
+  }
+
+  // Every security action follows the same shape: mark saving, run the call,
+  // report the outcome, and always clear the password fields afterwards so a
+  // credential is never left sitting in a form field on a shared machine.
+  const runSecurityAction = async (action, successMessage, { clear = [] } = {}) => {
+    setSecurityState({ message: '', phase: 'saving' })
+
+    try {
+      const result = await action()
+      setSecurityForm((current) => ({
+        ...current,
+        currentPassword: '',
+        newPassword: '',
+        ...Object.fromEntries(clear.map((field) => [field, ''])),
+      }))
+      setSecurityState({ message: successMessage, phase: 'done' })
+      return result
+    } catch (error) {
+      setSecurityForm((current) => ({ ...current, currentPassword: '', newPassword: '' }))
+      setSecurityState({ message: getApiErrorMessage(error, copy), phase: 'error' })
+      return null
+    }
+  }
+
+  const submitPasswordChange = async (event) => {
+    event.preventDefault()
+    await runSecurityAction(
+      () =>
+        changeVisitorPassword(authToken, {
+          currentPassword: securityForm.currentPassword,
+          newPassword: securityForm.newPassword,
+        }),
+      copy.accountPasswordSuccess,
+    )
+  }
+
+  const submitEmailChange = async (event) => {
+    event.preventDefault()
+    const result = await runSecurityAction(
+      () =>
+        requestEmailChange(authToken, {
+          currentPassword: securityForm.currentPassword,
+          email: securityForm.newEmail,
+        }),
+      copy.accountEmailPending,
+      { clear: ['newEmail'] },
+    )
+
+    // Reflect the pending address immediately so the panel switches to the
+    // confirmation step without waiting for a profile refetch.
+    if (result?.pendingEmail?.email) {
+      setProfile((current) =>
+        current ? { ...current, pendingEmail: result.pendingEmail.email } : current,
+      )
+    }
+  }
+
+  const submitEmailConfirm = async (event) => {
+    event.preventDefault()
+    const result = await runSecurityAction(
+      () => confirmEmailChange(authToken, { code: securityForm.emailCode }),
+      copy.accountEmailSuccess,
+      { clear: ['emailCode'] },
+    )
+
+    if (result?.profile) setProfile(result.profile)
+  }
+
+  const cancelEmailChangeFlow = async () => {
+    await runSecurityAction(() => cancelEmailChange(authToken), copy.accountEmailCancel, {
+      clear: ['emailCode'],
+    })
+    setProfile((current) => (current ? { ...current, pendingEmail: '' } : current))
+  }
+
+  const revokeSessions = async () => {
+    await runSecurityAction(() => revokeOtherSessions(authToken), copy.accountSessionsRevoked)
+  }
+
+  const submitAccountDeletion = async (event) => {
+    event.preventDefault()
+
+    const result = await runSecurityAction(
+      () =>
+        deleteVisitorAccount(authToken, {
+          confirm: securityForm.confirm,
+          currentPassword: securityForm.currentPassword,
+        }),
+      copy.accountDeleteSuccess,
+      { clear: ['confirm'] },
+    )
+
+    // The session died with the account; sign out locally so the app does not
+    // keep retrying with a token the server has forgotten.
+    if (result) onLogout()
+  }
+
   const renderSettings = () => (
     <div className="account-section-stack">
       <section className="admin-section">
@@ -1191,6 +1309,207 @@ const AccountPage = ({
     </div>
   )
 
+  // Account security: password change, sign-in email change, session revocation
+  // and deletion. None of these existed — a visitor could not rotate a password
+  // they thought was compromised, could not move to a new address, and could
+  // not leave.
+  const renderSecurity = () => (
+    <div className="account-section-stack">
+      <section className="admin-section">
+        <div className="admin-section-header">
+          <div>
+            <h2>{copy.accountSecurityTitle}</h2>
+            <p className="account-section-intro">{copy.accountSecurityIntro}</p>
+          </div>
+        </div>
+
+        <form className="account-form" onSubmit={submitPasswordChange}>
+          <div className="account-form-block">
+            <h3>{copy.accountPasswordTitle}</h3>
+            <label className="field-label">
+              {copy.accountCurrentPassword}
+              <input
+                autoComplete="current-password"
+                className="field-input field-input-focus"
+                type="password"
+                value={securityForm.currentPassword}
+                onChange={(event) => updateSecurityField('currentPassword', event.target.value)}
+                required
+              />
+            </label>
+            <label className="field-label">
+              {copy.accountNewPassword}
+              <input
+                autoComplete="new-password"
+                className="field-input field-input-focus"
+                minLength={8}
+                type="password"
+                value={securityForm.newPassword}
+                onChange={(event) => updateSecurityField('newPassword', event.target.value)}
+                required
+              />
+            </label>
+            <p className="account-section-intro">{copy.accountPasswordHint}</p>
+            <button
+              type="submit"
+              className="primary-action"
+              disabled={securityState.phase === 'saving'}
+            >
+              {securityState.phase === 'saving' ? copy.saving : copy.accountPasswordSubmit}
+            </button>
+          </div>
+        </form>
+      </section>
+
+      <section className="admin-section">
+        <div className="admin-section-header">
+          <div>
+            <h2>{copy.accountEmailTitle}</h2>
+            <p className="account-section-intro">{copy.accountEmailHint}</p>
+          </div>
+        </div>
+
+        {profile?.pendingEmail ? (
+          <form className="account-form" onSubmit={submitEmailConfirm}>
+            <div className="account-form-block">
+              <p className="account-section-intro">
+                {copy.accountEmailPending} <strong>{profile.pendingEmail}</strong>
+              </p>
+              <label className="field-label">
+                {copy.accountEmailCode}
+                <input
+                  className="field-input field-input-focus"
+                  inputMode="numeric"
+                  value={securityForm.emailCode}
+                  onChange={(event) => updateSecurityField('emailCode', event.target.value)}
+                  required
+                />
+              </label>
+              <div className="account-center-actions">
+                <button
+                  type="submit"
+                  className="primary-action"
+                  disabled={securityState.phase === 'saving'}
+                >
+                  {copy.accountEmailConfirm}
+                </button>
+                <button type="button" className="secondary-action" onClick={cancelEmailChangeFlow}>
+                  {copy.accountEmailCancel}
+                </button>
+              </div>
+            </div>
+          </form>
+        ) : (
+          <form className="account-form" onSubmit={submitEmailChange}>
+            <div className="account-form-block">
+              <label className="field-label">
+                {copy.accountNewEmail}
+                <input
+                  className="field-input field-input-focus"
+                  type="email"
+                  value={securityForm.newEmail}
+                  onChange={(event) => updateSecurityField('newEmail', event.target.value)}
+                  required
+                />
+              </label>
+              <label className="field-label">
+                {copy.accountCurrentPassword}
+                <input
+                  autoComplete="current-password"
+                  className="field-input field-input-focus"
+                  type="password"
+                  value={securityForm.currentPassword}
+                  onChange={(event) => updateSecurityField('currentPassword', event.target.value)}
+                  required
+                />
+              </label>
+              <button
+                type="submit"
+                className="primary-action"
+                disabled={securityState.phase === 'saving'}
+              >
+                {securityState.phase === 'saving' ? copy.saving : copy.accountEmailSubmit}
+              </button>
+            </div>
+          </form>
+        )}
+      </section>
+
+      <section className="admin-section">
+        <div className="admin-section-header">
+          <div>
+            <h2>{copy.accountSessionsTitle}</h2>
+            <p className="account-section-intro">{copy.accountSessionsIntro}</p>
+          </div>
+        </div>
+        <div className="account-center-actions">
+          <button
+            type="button"
+            className="secondary-action"
+            disabled={securityState.phase === 'saving'}
+            onClick={revokeSessions}
+          >
+            {copy.accountSessionsRevoke}
+          </button>
+        </div>
+      </section>
+
+      <section className="admin-section">
+        <div className="admin-section-header">
+          <div>
+            <h2>{copy.accountDangerTitle}</h2>
+            <p className="account-section-intro">{copy.accountDeleteIntro}</p>
+          </div>
+        </div>
+
+        <form className="account-form" onSubmit={submitAccountDeletion}>
+          <div className="account-form-block">
+            <label className="field-label">
+              {copy.accountCurrentPassword}
+              <input
+                autoComplete="current-password"
+                className="field-input field-input-focus"
+                type="password"
+                value={securityForm.currentPassword}
+                onChange={(event) => updateSecurityField('currentPassword', event.target.value)}
+                required
+              />
+            </label>
+            <label className="field-label">
+              {copy.accountDeleteConfirmLabel}
+              <input
+                className="field-input field-input-focus"
+                placeholder="DELETE"
+                value={securityForm.confirm}
+                onChange={(event) => updateSecurityField('confirm', event.target.value)}
+                required
+              />
+            </label>
+            <button
+              type="submit"
+              className="danger-action"
+              disabled={securityForm.confirm.trim().toUpperCase() !== 'DELETE'}
+            >
+              {copy.accountDeleteSubmit}
+            </button>
+          </div>
+        </form>
+      </section>
+
+      {securityState.message && (
+        <p
+          className={
+            securityState.phase === 'error'
+              ? 'text-sm leading-relaxed text-coral'
+              : 'text-sm leading-relaxed text-neutral-300'
+          }
+        >
+          {securityState.message}
+        </p>
+      )}
+    </div>
+  )
+
   const renderActiveTab = () => {
     switch (activeTab) {
       case 'downloads':
@@ -1201,6 +1520,8 @@ const AccountPage = ({
         return renderCommunity()
       case 'settings':
         return renderSettings()
+      case 'security':
+        return renderSecurity()
       default:
         return renderOverview()
     }

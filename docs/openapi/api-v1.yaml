@@ -1807,10 +1807,11 @@ components:
       type: string
       description: |
         Stable machine-readable codes. Mirrors API_ERROR_CODES in
-        server/responses.js (26 values, includes INTERNAL_ERROR). Clients
+        server/responses.js (33 values, includes INTERNAL_ERROR). Clients
         must treat unknown future codes as a generic failure keyed off HTTP
         status, not crash.
       enum:
+        - ACCOUNT_LOCKED
         - ADMIN_AUTH_REQUIRED
         - AUTH_REQUIRED
         - COMMENT_NOT_FOUND
@@ -1819,8 +1820,10 @@ components:
         - COMMUNITY_UPLOAD_NOT_FOUND
         - CONTACT_MESSAGE_NOT_FOUND
         - DOWNLOAD_REQUEST_NOT_FOUND
+        - DOWNLOAD_TICKET_INVALID
         - EMAIL_ALREADY_REGISTERED
         - EMAIL_ALREADY_VERIFIED
+        - EMAIL_CHANGE_INVALID
         - EMAIL_NOT_REGISTERED
         - EMAIL_NOT_VERIFIED
         - FILE_TOO_LARGE
@@ -1829,6 +1832,8 @@ components:
         - INTERNAL_ERROR
         - INVALID_FILE_TYPE
         - INVALID_TOKEN
+        - PASSWORD_INCORRECT
+        - PASSWORD_RESET_INVALID
         - PROFILE_ADMIN_DISABLED
         - PROJECT_NOT_FOUND
         - PROJECT_SLUG_TAKEN
@@ -1836,6 +1841,7 @@ components:
         - REQUEST_BODY_INVALID
         - RESOURCE_FORBIDDEN
         - SERVICE_UNAVAILABLE
+        - UPLOAD_QUOTA_EXCEEDED
         - VALIDATION_ERROR
         - VISITOR_NOT_FOUND
 

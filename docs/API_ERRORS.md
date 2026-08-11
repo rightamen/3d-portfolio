@@ -168,3 +168,25 @@ Every API-first migration should add or update tests to verify:
 - Validation failures return `VALIDATION_ERROR`.
 - Query parameters do not trigger 500.
 - No response leaks sensitive token, password, session, or verification fields.
+
+## Codes Added 2026-08-11 (Account Security and Download Hardening)
+
+These are live in `server/responses.js` and the OpenAPI `ApiErrorCode` enum, and
+each has a regression test in `tests/api/contract.db.spec.js`.
+
+| Code | HTTP status | Meaning | Client behavior |
+| --- | ---: | --- | --- |
+| `ACCOUNT_LOCKED` | 423 | The account exceeded its per-account failed sign-in budget and is temporarily locked. Returned even when the password is correct. | Show a "try again later or reset your password" state and surface the reset link. Do not retry automatically. |
+| `PASSWORD_INCORRECT` | 403 | Re-authentication for a sensitive change (password change, email change, account deletion) failed. | Clear the password field and prompt again. Never clear the session — the caller is still signed in. |
+| `PASSWORD_RESET_INVALID` | 400 | The password reset code is wrong, expired, or its attempt budget is spent. | Offer to request a new code. |
+| `EMAIL_CHANGE_INVALID` | 400 | The email change confirmation code is wrong or expired, or there is no pending change. | Return the panel to the "request a change" step. |
+| `UPLOAD_QUOTA_EXCEEDED` | 429 | The account exceeded its rolling upload count or byte budget. | Show remaining quota and when it resets. Distinct from `RATE_LIMITED`, which is per-IP and per-request. |
+| `DOWNLOAD_TICKET_INVALID` | 403 | The download ticket is unknown, already redeemed, or expired. | Request a new ticket and retry once; do not loop. |
+
+Two deliberate non-behaviours worth preserving:
+
+- **`ACCOUNT_LOCKED` is only ever returned for an account that exists.** An
+  unknown address always gets the same `401 VALIDATION_ERROR` a wrong password
+  gets, so the lock state cannot be used to enumerate registered addresses.
+- **`/api/auth/forgot-password` never returns a "no such account" code.** It
+  answers `200` with the same body whether or not the address is registered.
