@@ -20,9 +20,28 @@
 
 **待你决策的（我没有权限或不该替你决定）：**
 
-1. **配置 SMTP**。没有它，忘记密码邮件发不出去 —— 接口返回「已受理」但用户收不到验证码。
-   这是目前最影响用户的一个缺口。需要在 `/etc/mrright-portfolio.env` 加
-   `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` / `SMTP_FROM`。
+1. **配置 SMTP**（仍未完成，等用户注册服务商拿凭证）。没有它，忘记密码邮件发不出去 ——
+   接口返回「已受理」但用户收不到验证码。这是目前最影响用户的一个缺口。
+
+   2026-08-11 已查明的前提事实（下次不用重查）：
+
+   - **这个域名从来没有接过任何邮件服务**。用解析器查 `mrright.blog`：MX 无、TXT(SPF) 无、
+     DMARC 无、10 个常见 DKIM selector 全无。所以不存在「找回旧凭证」，是首次配置。
+     （注意：本机 `dig` 未安装，直接跑 `dig` 会得到空输出，**别把它误判成「没有记录」**；
+     VPS 上用 `node:dns` 查是可靠的。）
+   - **VPS 出站 25 / 465 / 587 全部可连通**，机房没有封 SMTP 端口，服务商可自由选。
+   - **DNS 托管在 Cloudflare**（`lorna/kayden.ns.cloudflare.com`），`mrright.blog` 的 A 记录
+     直指 `147.79.20.232`，即灰云。SPF/DKIM/DMARC 都是 TXT 记录，**不涉及橙云开关，
+     加它们不会影响机场节点**（与 `docs/OPERATIONS_CLIENT_IP.md` 的约束不冲突）。
+   - 没有 SPF/DKIM 就发信，密码重置邮件大概率进垃圾箱或被拒收，所以必须走能验证域名的服务商。
+
+   代码侧需要的键（`server/emailDelivery.js` 是手写 SMTP 客户端，非 nodemailer）：
+   `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` / `SMTP_FROM`，
+   可选 `SMTP_SECURE`（`true` 时走 465 隐式 TLS，否则 587 + STARTTLS）、`SMTP_STARTTLS`。
+   支持 AUTH LOGIN 与 AUTH PLAIN。
+
+   **坑：`SMTP_FROM` 必须是裸地址**（`noreply@mrright.blog`）。`escapeAddress()` 会剥掉 `<>`，
+   写成 `名字 <addr>` 会让 `MAIL FROM` 变成畸形指令被服务器拒绝。
 2. **备份异地副本**。当前备份和数据库在同一块磁盘上，磁盘坏了两者一起没。
    `docs/OPERATIONS_BACKUP.md` 里有 rclone 方案。
 3. ~~`/opt/mrright-portfolio.backup-*` 的保留策略~~ —— **2026-08-11 第四轮已按你的指示清理**：
@@ -42,9 +61,9 @@
 
 - ~~恢复演练~~ —— **2026-08-11 第四轮已完成**，结果见下方该轮记录。演练顺带修好了文档里
   一个从来没能跑通的步骤。下次演练建议在 2026-11 之前（文档要求每季度一次）。
-- **演练遗留：临时库 `mrright_restore_drill` 还留在 VPS 上没删**（CLAUDE.md 第 11 条禁止
-  `DROP DATABASE`，需要你一句话确认才能 `dropdb`）。它只占几十 KB，但里面是真实用户数据的副本，
-  确认后应尽快删掉。
+- ~~演练遗留的临时库~~ —— 用户已确认，`mrright_restore_drill` 已 `dropdb`（2026-08-11）。
+  删除后复查：`mrright_portfolio` 仍在、17 张表、`visitor_users=1`/`project_comments=2`、
+  `/api/health` 200，生产库未受影响。
 - 管理员账号体系 + TOTP（当前仍是「知道共享密钥就是管理员」，`admin_user_actions` 无法归因到人）
 - 拆 `Admin.jsx`（2400+ 行）与 `postgresStores.js`（3000+ 行）
 - react-router（现在靠 `window.location.pathname` 判断，页面跳转全是整页刷新，3D 场景每次重建）
