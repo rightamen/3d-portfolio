@@ -78,7 +78,7 @@
 
 新增 API error code（27 → 33）：`ACCOUNT_LOCKED`、`PASSWORD_INCORRECT`、`PASSWORD_RESET_INVALID`、`EMAIL_CHANGE_INVALID`、`UPLOAD_QUOTA_EXCEEDED`、`DOWNLOAD_TICKET_INVALID`
 
-commit hash：**未提交**（本轮只做本地修改，等待确认后再 commit / push）
+commit hash：`ca28780`（功能提交）→ `fe80a62`（合并到 main）。分支 `security/phase-2-hardening-20260811` 已推送，已 `--no-ff` 合并进 main 并推送 GitHub，未使用 force push、未 reset。
 
 本轮验证结果：
 
@@ -106,18 +106,92 @@ commit hash：**未提交**（本轮只做本地修改，等待确认后再 comm
 - 下载票据：无审批被拒、单次使用、伪造票据被拒
 - 运维端点：robots / sitemap（不含 `/u/`）/ CSP 报告 / 管理员诊断
 
-是否部署 VPS：**否**。本轮未部署。
+是否部署 VPS：**是**（2026-08-11 11:53 UTC）。
 
-VPS 备份路径：本轮未部署，未创建新备份。
+VPS 备份路径：
 
-验证接口状态：仅本地验证（见上）。线上接口状态本轮未变更。
+- 数据库（本轮新增的第一份）：`/var/backups/mrright-portfolio/mrright-portfolio-20260811-110750.dump`
+  - 结构校验通过（14 个 TABLE DATA 项），SHA-256 旁文件已写入
+  - 备份时行数：visitor_users=1、community_posts=1、community_uploads=0、download_requests=0、project_comments=2、visitor_sessions=27
+- 应用目录：`/opt/mrright-portfolio.backup-20260811-115304`
+- env：`/etc/mrright-portfolio.env.backup-20260811-115304`
+- 既有 backup 全部保留，未删除任何备份
+
+部署方式：`scripts/deploy-vps.mjs` 需要 `VPS_PASSWORD` 密码认证，本次环境只有 SSH 密钥，因此按该脚本的同一套远程步骤用密钥手动执行。**未改写 nginx 配置，未改写 systemd unit**（与脚本默认的幂等行为一致），只替换 `dist`/`server`/`scripts`/`package.json`/`package-lock.json` 并重装生产依赖；`data`、`public/uploads`、env 与全部 backup 未动。
+
+release 完整性：本地与 VPS 上 SHA-256 一致（`b810a989…c995e1`）。
+
+env 变更：`/etc/mrright-portfolio.env` **追加**一行 `VISITOR_ID_SECRET`（`openssl rand -hex 32` 生成，值未输出到任何地方）。文件未被覆盖，追加前已备份。
+
+数据库迁移结果：
+
+- `visitor_users` 新增 11 列、`download_requests` 新增 2 列、新建 3 张表 —— 全部确认存在
+- **数据完全一致**：visitor_users=1、community_posts=1、community_uploads=0、download_requests=0、project_comments=2 与备份时相同
+- `visitor_sessions` 由 27 降为 5，是新增的过期会话清理按设计执行（日志：`Removed 22 expired visitor session(s)`），非数据丢失
+
+验证接口状态（线上 HTTPS，全部通过）：
+
+- 必需项：`/api/health` 200、`/api/admin/summary` 200、`/` 200、`/community` 200、`/admin` 200、`/login?mode=login` 200、`/account` 200
+- 新增端点：`/robots.txt` 200、`/sitemap.xml` 200（6 条 URL，确认不含 `/u/`）、`/api/csp-report` 204
+- 管理员会话：静态令牌换会话 → 用会话调 summary 200 → 吊销后再调 401，闭环成立
+- `/api/v1/health` 返回严格信封（仅 data/pagination/error）——**确认 API v1 契约确实已上线**，2026-07-25 审查的第 3 项漂移问题就此关闭
+- 新流程线上实测：忘记密码对未注册地址返回统一 200 且不泄露 devCode；错误重置码返回 `PASSWORD_RESET_INVALID`；弱密码被拒；未认证访问改密码/注销返回 `AUTH_REQUIRED`；无审批申请下载票据返回 `RESOURCE_FORBIDDEN`；伪造票据返回 `DOWNLOAD_TICKET_INVALID`
+- production smoke（Playwright）：6 passed，1 skipped（未提供 `E2E_VISITOR_EMAIL`/`E2E_VISITOR_PASSWORD`，按测试设计跳过）
+- 启动自检线上输出：仅剩 2 条告警（SMTP 未配置、TRUST_PROXY_HOPS 未设置），其余配置项均已就绪
+- 部署后日志窗口未出现新的 API internal error
+
+## 2026-08-11 部署时发现的线上问题（尚未修复，需人工决策）
+
+**1. 真实客户端 IP 没有到达应用 —— 所有 IP 限流实际上是一个全局桶（高优先级）**
+
+本轮新增的 `GET /api/admin/diagnostics` 第一次使用就抓到了这个问题。从**外部**发起的请求，应用侧解析结果是：
+
+```
+resolvedIp    127.0.0.1
+forwardedFor  127.0.0.1
+protocol      https
+trustProxyHops 1
+```
+
+后果：
+
+- `/api/auth/login`、`/api/auth/register` 等所有按 IP 的限流退化成全站共享一个桶。
+  一个攻击者可以独占全部配额，同时把正常用户挤掉。
+- `download_requests.ip`、`admin_sessions.ip` 记录的全是 `127.0.0.1`，审计轨迹没有价值。
+- 本轮新增的账号维度限流**不受影响**（它按账号计数，不依赖 IP），这也正是当初把预算放在账号上的原因。
+
+现场证据：
+
+- `/etc/nginx/` 下**没有任何** `set_real_ip_from` / `real_ip_header` 配置，而 nginx 访问日志里出现过 Cloudflare 段的地址（`104.23.239.45`），说明 Cloudflare 确实在链路中。
+- 站点配置只有 `listen 80`，`proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for`。
+- 同机还跑着 `nps`（内网穿透代理，端口 8025），部分请求在 nginx 侧的 `$remote_addr` 就是 `127.0.0.1`。
+
+建议修复（**本轮没有执行**，因为改的是生产边缘配置，且 `set_real_ip_from` 写错会引入 IP 伪造漏洞，必须先确认拓扑）：
+
+```nginx
+# 仅在确认 Cloudflare 是唯一入口后加入
+set_real_ip_from <Cloudflare IPv4/IPv6 段>;   # https://www.cloudflare.com/ips/
+real_ip_header CF-Connecting-IP;
+real_ip_recursive on;
+```
+
+配好后用 `GET /api/admin/diagnostics` 复验：外部请求的 `resolvedIp` 应等于你的真实公网 IP。若确认链路是 Cloudflare → nginx 两跳，还需把 `TRUST_PROXY_HOPS` 设为 2。
+
+**2. `/etc/nginx/proxy.conf` 是一个未配置的遗留文件**
+
+它占用 443，`server_name` still 是占位符 `<write your domain>`，内容是把请求代理到 `registry-1.docker.io` 的 Docker 镜像加速模板。与本项目无关，建议确认是否还需要，以及它是否影响 mrright.blog 的 TLS 入口。
+
+**3. 磁盘水位**
+
+`/` 已用 73%（剩 3.9G），其中 `/opt/mrright-portfolio.backup-*` 合计 4.5G。按规则未删除任何备份，但需要你决定保留策略，否则再几次部署就会写满。数据库备份很小（37K），不是压力来源。
 
 待办事项：
 
-- **部署前必读**：本轮新增数据库列与表，首次启动会执行 `ensureSchema` 增量迁移。部署前请先按 `docs/OPERATIONS_BACKUP.md` 做一次全量备份并验证可恢复。
-- 部署前需在 `/etc/mrright-portfolio.env` 增加 `VISITOR_ID_SECRET`（任意长随机串），否则匿名点赞去重会在每次重启后重置。
-- 部署后用 `GET /api/admin/diagnostics` 核对 `resolvedIp`，确认 `TRUST_PROXY_HOPS` 与实际链路（是否有 Cloudflare）一致。
-- 安装备份 timer 并做第一次恢复演练，把结果记进本文件。
+- **最高优先级**：修复真实客户端 IP 不可见的问题（见上「部署时发现的线上问题」第 1 条）。在修好之前，所有按 IP 的限流等同于失效。
+- **SMTP 尚未配置**，所以忘记密码邮件目前发不出去：接口返回「已受理」但用户收不到验证码。密码重置要真正可用必须先配 `SMTP_HOST` 等键。注册验证码一直是同样状态。
+- 安装备份 timer（`docs/OPERATIONS_BACKUP.md` 的安装步骤，release 里已包含脚本与 unit 文件）并做第一次恢复演练，把结果记进本文件。本轮的手动备份只是部署前的一次性保险。
+- 决定 `/opt/mrright-portfolio.backup-*` 的保留策略（现已占 4.5G，磁盘 73%）。
+- 确认 `/etc/nginx/proxy.conf` 这个 Docker 镜像加速遗留配置是否还需要。
 - 配置备份异地副本（rclone 目标），当前备份仍与数据库同机。
 - 观察 CSP 报告若干天后，把 `contentSecurityPolicy` 从 report-only 切成 blocking。
 - 确认无脚本依赖静态管理员令牌后，设置 `ADMIN_ALLOW_STATIC_TOKEN=false`。
