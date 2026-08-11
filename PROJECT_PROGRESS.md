@@ -1,6 +1,6 @@
 # mrright.blog 项目进度记录
 
-## 下次从这里继续（截至 2026-08-11 第三轮收工）
+## 下次从这里继续（截至 2026-08-11 第四轮收工）
 
 **代码与线上的对应关系：**
 
@@ -25,9 +25,13 @@
    `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` / `SMTP_FROM`。
 2. **备份异地副本**。当前备份和数据库在同一块磁盘上，磁盘坏了两者一起没。
    `docs/OPERATIONS_BACKUP.md` 里有 rclone 方案。
-3. **`/opt/mrright-portfolio.backup-*` 的保留策略**。2026-08-11 第三轮部署后已是 **15 份、约 5.2G，
-   磁盘 78%（剩 3.2G）**。按规则我没删任何备份，但每次部署 +351M，再部署约 9 次就会写满。
-   这是目前最接近「会真的出事」的一项。数据库备份很小（42K/份），不是压力来源。
+3. ~~`/opt/mrright-portfolio.backup-*` 的保留策略~~ —— **2026-08-11 第四轮已按你的指示清理**：
+   15 份删到 3 份，磁盘 78% → **49%（剩 7.2G）**。但**保留策略仍未自动化**，每次部署
+   仍会 +351M，攒到十几份还会重演。要不要在部署步骤里加「只保留最近 3 份」的自动裁剪，
+   由你决定（数据库备份脚本已有 `--retain`，应用目录备份没有）。
+   顺带一提：一份应用备份 351M 里有 252M 是 `public/uploads` 的重复副本，
+   真正的代码部分很小且 git 里都有 —— 如果把上传目录挪出 `/opt/mrright-portfolio`
+   或备份时排除它，占用会降一个数量级。
 4. **`/etc/nginx/proxy.conf`** 是个占用 443、`server_name` 还是占位符的 Docker 镜像加速遗留配置，
    确认是否还需要。
 5. 确认没有脚本依赖静态管理员令牌后，设 `ADMIN_ALLOW_STATIC_TOKEN=false`
@@ -36,13 +40,85 @@
 
 **路线图上还没做的（按我建议的优先级）：**
 
-- 恢复演练：跑一次 `docs/OPERATIONS_BACKUP.md` 的演练流程，把结果记进本文件。备份没演练过等于没备份。
+- ~~恢复演练~~ —— **2026-08-11 第四轮已完成**，结果见下方该轮记录。演练顺带修好了文档里
+  一个从来没能跑通的步骤。下次演练建议在 2026-11 之前（文档要求每季度一次）。
+- **演练遗留：临时库 `mrright_restore_drill` 还留在 VPS 上没删**（CLAUDE.md 第 11 条禁止
+  `DROP DATABASE`，需要你一句话确认才能 `dropdb`）。它只占几十 KB，但里面是真实用户数据的副本，
+  确认后应尽快删掉。
 - 管理员账号体系 + TOTP（当前仍是「知道共享密钥就是管理员」，`admin_user_actions` 无法归因到人）
 - 拆 `Admin.jsx`（2400+ 行）与 `postgresStores.js`（3000+ 行）
 - react-router（现在靠 `window.location.pathname` 判断，页面跳转全是整页刷新，3D 场景每次重建）
 - 前端单元测试（目前只有 API 契约测试和 Playwright）
 - SSR / 预渲染 SEO（社区帖子和公开主页搜索引擎抓不到）
 - Asset Model（checksum / visibility / downloadPolicy）稳定后再回到 C++ SDK
+
+## 2026-08-11（第四轮）：清理应用备份 + 第一次真正跑通恢复演练
+
+结论：按用户明确指示清理了积压的应用目录备份（磁盘 78% → 49%），并完成路线图上排第一的
+**恢复演练**。演练本身通过了，但过程中发现 `docs/OPERATIONS_BACKUP.md` 里写的演练步骤
+**从来就跑不通** —— 这正是「没演练过的备份等于没备份」的实例。文档已修正。
+
+日期：2026-08-11。
+
+完成内容：
+
+1. **清理 `/opt` 应用备份（用户明确授权，覆盖 CLAUDE.md 第 3 条）**
+   - 删除前先做了安全检查：逐个比对 12 份待删备份里的 `public/uploads` 与 `data`，
+     确认**没有任何一个文件是 live 目录缺失的**（live: uploads 31 个文件 252M、data 2 个文件）。
+     应用备份里的代码部分 git 都有，真正不可再生的只有上传文件，所以这一步是必须的。
+   - 15 份 → 保留最近 3 份（`20260808-091326`、`20260811-115304`、`20260811-141721`），删除 12 份
+   - 磁盘 `78%（剩 3.2G）` → **`49%（剩 7.2G）`**，释放约 4.2G
+   - 删除后复查：服务 active、`/api/health` 200、uploads 31 个文件、data 2 个文件、
+     数据库 dump 3 份、env 备份 8 份 —— **全部未被波及**
+   - `/var/backups/mrright-portfolio`（数据库备份）**一份都没动**
+
+2. **恢复演练（第一次真正执行）**
+   - 目标归档：`mrright-portfolio-20260811-140623.dump`（本次部署前那一份）
+   - `sha256sum -c` 通过 → `createdb mrright_restore_drill` → `pg_restore` 无错误
+   - **表数量 17 = 生产 17**；行数 `visitor_users=1`、`community_posts=1`、`community_uploads=0`、
+     `download_requests=0`、`project_comments=2`、`project_likes=2` —— 与生产逐项一致
+   - 内容抽查为真实数据：最早评论 2026-06-03、1 个带邮箱的账号，不是空表
+   - 演练库中 `project_comments` **没有 `status` 列** —— 正确，这份 dump 取于迁移之前，
+     由此确认它是本次部署的**有效回滚点**
+
+3. **修正 `docs/OPERATIONS_BACKUP.md` 中跑不通的演练步骤**
+   - 原步骤让人 `cd /var/backups/mrright-portfolio` 后以 `postgres` 身份跑 `pg_restore` 相对路径。
+     但该目录是 `0700 root`，`postgres` 既进不去也读不到，报错还是**误导性的**
+     `could not open input file ... No such file or directory`（文件明明在，只是没权限）。
+   - 已改为：先 `install -m 0600 -o postgres` 把 dump 暂存到 `/tmp`，恢复后 `shred -u` 销毁暂存副本
+     （副本含真实用户数据，不能留、也不能用 0644）。
+   - 同时补上「表数量也要和生产对齐」这一判定 —— 只看行数看不出缺表；并写明第 6 步
+     `dropdb` 受 CLAUDE.md 第 11 条约束，需用户确认。
+
+修改文件：
+
+- `docs/OPERATIONS_BACKUP.md`
+- `PROJECT_PROGRESS.md`
+
+commit hash：本次提交（最终 hash 以 git log 为准）
+
+build / lint 结果：**未运行 —— 本轮未修改任何业务代码**（只改文档）。线上运行的仍是 `47d1cfc`。
+
+是否部署 VPS：**否**（本轮无代码变更，无需部署）。
+
+VPS 备份路径（本轮保留下来的）：
+
+- 数据库：`/var/backups/mrright-portfolio/` 共 3 份，最新 `mrright-portfolio-20260811-140623.dump`
+- 应用目录：`/opt/mrright-portfolio.backup-20260811-141721`（本次部署的回滚点，已演练验证同期 dump 可还原）、
+  `…-20260811-115304`、`…-20260808-091326`
+- env：8 份，未动
+
+验证接口状态：清理后 `/api/health` 200，服务 active。本轮未改代码，未重跑全量线上验证。
+
+待办事项：
+
+- **临时演练库 `mrright_restore_drill` 仍在 VPS 上**，等你确认后 `dropdb`（第 11 条禁止我自行 DROP）。
+  它含真实用户数据副本，不宜久留。
+- 应用备份的**自动保留策略**仍未做；一份备份 351M 中 252M 是 `public/uploads` 重复副本，
+  值得考虑把上传目录移出应用目录或在备份时排除。
+- SMTP 仍未配置（需要你的凭证）。
+- 备份异地副本仍未配置 —— 演练证明了备份能还原，但它和数据库仍在同一块磁盘上，
+  磁盘一坏两者一起没。这是现在备份体系里最后一个结构性缺口。
 
 ## 2026-08-11（第三轮）：把 47d1cfc 部署上线（签名 Cookie 身份 + 评论先审后发）
 

@@ -79,19 +79,34 @@ ExecStart=/usr/bin/rclone sync /var/backups/mrright-portfolio remote:mrright-bac
 
 恢复到一个临时数据库，验证数据完整，再删除临时库。**不要**直接恢复到生产库。
 
+> **先读这条，否则第 3 步必然失败。** 备份目录是 `0700 root`，而 `pg_restore` 要以 `postgres`
+> 用户身份运行 —— 它既进不去这个目录，也读不到里面的 dump，报错是
+> `could not open input file ... No such file or directory`（**误导性报错**：文件在，只是没权限）。
+> 所以必须先把 dump 暂存到 `postgres` 读得到的位置。dump 里是真实用户数据，
+> 暂存副本要 `0600` 且属主为 `postgres`，用完立刻销毁。
+>
+> 这个坑是 2026-08-11 第一次真跑演练时发现的 —— 在那之前本文档写的流程从来没能执行成功。
+
 ```bash
+# 0. 换到一个 postgres 用户 cd 得进去的目录，否则每条 sudo -u postgres 都会刷
+#    "could not change directory to ..." 的警告
+cd /tmp
+
+DUMPDIR=/var/backups/mrright-portfolio
+DUMP=$(ls -t $DUMPDIR/*.dump | head -1)   # 或手工指定某一份
+
 # 1. 校验归档完整性
-cd /var/backups/mrright-portfolio
-sha256sum -c mrright-portfolio-YYYYMMDD-HHMMSS.dump.sha256
+sha256sum -c "$DUMP.sha256"
 
 # 2. 建一个临时库
 sudo -u postgres createdb mrright_restore_drill
 
-# 3. 恢复
+# 3. 把 dump 暂存到 postgres 可读处，再恢复
+install -m 0600 -o postgres -g postgres "$DUMP" /tmp/restore-drill.dump
 sudo -u postgres pg_restore \
   --dbname=mrright_restore_drill \
   --no-owner --no-privileges \
-  mrright-portfolio-YYYYMMDD-HHMMSS.dump
+  /tmp/restore-drill.dump
 
 # 4. 抽查关键表行数，和生产对比量级
 sudo -u postgres psql -d mrright_restore_drill -c "
@@ -101,9 +116,21 @@ sudo -u postgres psql -d mrright_restore_drill -c "
   UNION ALL SELECT 'download_requests', count(*) FROM download_requests
   UNION ALL SELECT 'project_comments', count(*) FROM project_comments;"
 
-# 5. 清理演练库（只删演练库，不要碰 mrright_portfolio）
+# 表数量也要对齐（缺表说明归档不完整，光看行数看不出来）
+sudo -u postgres psql -d mrright_restore_drill -At -c \
+  "select count(*) from information_schema.tables where table_schema='public';"
+
+# 5. 销毁暂存副本（它含真实用户数据；这不是备份本体，删它不影响备份）
+shred -u /tmp/restore-drill.dump
+
+# 6. 清理演练库（只删演练库，不要碰 mrright_portfolio）
+#    注意：CLAUDE.md 第 11 条禁止 DROP DATABASE，执行前需要用户明确确认。
 sudo -u postgres dropdb mrright_restore_drill
 ```
+
+判定标准：`pg_restore` 无错误、**表数量与生产一致**、关键表行数与生产同量级，
+且抽查到的内容是真实数据而不是空表。只有归档能被 `pg_restore` 解析还不够 ——
+备份脚本已经在每次备份时做过那一层校验了，演练要验的是**还原出来的东西真的对**。
 
 把每次演练的日期和行数记进 `PROJECT_PROGRESS.md`。
 
