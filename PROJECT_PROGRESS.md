@@ -1,6 +1,6 @@
 # mrright.blog 项目进度记录
 
-## 下次从这里继续（截至 2026-08-11 第四轮收工）
+## 下次从这里继续（截至 2026-08-11 第五轮收工）
 
 **代码与线上的对应关系：**
 
@@ -20,29 +20,12 @@
 
 **待你决策的（我没有权限或不该替你决定）：**
 
-1. **配置 SMTP**（仍未完成，等用户注册服务商拿凭证）。没有它，忘记密码邮件发不出去 ——
-   接口返回「已受理」但用户收不到验证码。这是目前最影响用户的一个缺口。
-
-   2026-08-11 已查明的前提事实（下次不用重查）：
-
-   - **这个域名从来没有接过任何邮件服务**。用解析器查 `mrright.blog`：MX 无、TXT(SPF) 无、
-     DMARC 无、10 个常见 DKIM selector 全无。所以不存在「找回旧凭证」，是首次配置。
-     （注意：本机 `dig` 未安装，直接跑 `dig` 会得到空输出，**别把它误判成「没有记录」**；
-     VPS 上用 `node:dns` 查是可靠的。）
-   - **VPS 出站 25 / 465 / 587 全部可连通**，机房没有封 SMTP 端口，服务商可自由选。
-   - **DNS 托管在 Cloudflare**（`lorna/kayden.ns.cloudflare.com`），`mrright.blog` 的 A 记录
-     直指 `147.79.20.232`，即灰云。SPF/DKIM/DMARC 都是 TXT 记录，**不涉及橙云开关，
-     加它们不会影响机场节点**（与 `docs/OPERATIONS_CLIENT_IP.md` 的约束不冲突）。
-   - 没有 SPF/DKIM 就发信，密码重置邮件大概率进垃圾箱或被拒收，所以必须走能验证域名的服务商。
-
-   代码侧需要的键（`server/emailDelivery.js` 是手写 SMTP 客户端，非 nodemailer）：
-   `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` / `SMTP_FROM`，
-   可选 `SMTP_SECURE`（`true` 时走 465 隐式 TLS，否则 587 + STARTTLS）、`SMTP_STARTTLS`。
-   支持 AUTH LOGIN 与 AUTH PLAIN。
-
-   **坑：`SMTP_FROM` 必须是裸地址**（`noreply@mrright.blog`）。`escapeAddress()` 会剥掉 `<>`，
-   写成 `名字 <addr>` 会让 `MAIL FROM` 变成畸形指令被服务器拒绝。
-2. **备份异地副本**。当前备份和数据库在同一块磁盘上，磁盘坏了两者一起没。
+1. ~~配置 SMTP~~ —— **2026-08-11 第五轮已完成并端到端验证通过**（Resend）。
+   密码重置邮件已实测**直达 Gmail 收件匣，未进垃圾箱**。详见下方第五轮记录。
+   仅剩一项可选加固：**DMARC 记录仍未添加**（不加也能进收件匣，加了更稳）：
+   `_dmarc.mrright.blog` TXT `v=DMARC1; p=none; rua=mailto:<你的邮箱>`。
+2. **备份异地副本**（现在是最优先的未决项）。当前备份和数据库在同一块磁盘上，磁盘坏了两者一起没。
+   恢复演练已证明备份**内容**可还原，但没有解决**同盘**这个单点。
    `docs/OPERATIONS_BACKUP.md` 里有 rclone 方案。
 3. ~~`/opt/mrright-portfolio.backup-*` 的保留策略~~ —— **2026-08-11 第四轮已按你的指示清理**：
    15 份删到 3 份，磁盘 78% → **49%（剩 7.2G）**。但**保留策略仍未自动化**，每次部署
@@ -73,14 +56,38 @@
 
 ## 2026-08-11（第五轮）：接入 Resend，SMTP 首次配置完成
 
-结论：`mrright.blog` 首次接入邮件服务（Resend）。**启动自检的 SMTP 告警已消失**，
-密码重置发信路径确认已跑通到「Resend 已接收」这一步。**最终收件确认待用户回报**。
+结论：`mrright.blog` 首次接入邮件服务（Resend），**端到端验证通过**。启动自检的 SMTP 告警消失，
+密码重置邮件实测**直达 Gmail 收件匣、未落垃圾箱**。至此「忘记密码」这条链路第一次真正可用 ——
+在此之前接口一直返回「已受理」但用户永远收不到信。
 
 日期：2026-08-11。
 
+诊断前提（起因是用户说「忘记了 SMTP 凭证」，实际结论相反，下次不用重查）：
+
+- **这个域名从来没有接过任何邮件服务**，所以不存在「找回旧凭证」，是首次配置。
+  证据：查 `mrright.blog` 的 MX 无、TXT(SPF) 无、DMARC 无、10 个常见 DKIM selector 全无。
+  顺带一提，任何服务商的 SMTP 密码都只在创建时显示一次，本来也只能重置、不能找回。
+- **本机 `dig` 未安装**，直接跑 `dig` 会得到空输出，**极易被误判成「没有记录」**。
+  VPS 上用 `node:dns` 查是可靠的 —— 第一次查就是踩了这个坑，结论对但证据无效，重查过。
+- **VPS 出站 25 / 465 / 587 全部可连通**，机房没封 SMTP 端口，服务商可自由选。
+- **DNS 托管在 Cloudflare**（`lorna/kayden.ns.cloudflare.com`），`mrright.blog` 的 A 记录
+  直指 `147.79.20.232`，即灰云。SPF/DKIM/DMARC 都是 TXT 记录，**不涉及橙云开关，
+  加它们不会影响机场节点**（与 `docs/OPERATIONS_CLIENT_IP.md` 的约束不冲突）。
+
+代码侧需要的键（`server/emailDelivery.js` 是手写 SMTP 客户端，非 nodemailer）：
+`SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` / `SMTP_FROM`，
+可选 `SMTP_SECURE`（`true` 时走 465 隐式 TLS，否则 587 + STARTTLS）、`SMTP_STARTTLS`。
+支持 AUTH LOGIN 与 AUTH PLAIN。
+
+**两个坑：**
+
+- **`SMTP_FROM` 必须是裸地址**（`noreply@mrright.blog`）。`escapeAddress()` 会剥掉 `<>`，
+  写成 `名字 <addr>` 会让 `MAIL FROM` 变成畸形指令被服务器拒绝。
+- **`SMTP_USER` 是字面量 `resend`**，不是邮箱、不是账号名。这是 Resend 的设计，填错必然认证失败。
+
 完成内容：
 
-1. **确认这个域名此前从未接过邮件服务**（详见上方待办第 1 条记录的诊断），所以是首次配置而非凭证找回。
+1. **确认这个域名此前从未接过邮件服务**（见上方诊断前提），所以是首次配置而非凭证找回。
 2. **域名验证记录已在 Cloudflare 生效**（用 VPS 上的 `node:dns` 实测）：
    - `send.mrright.blog` TXT `v=spf1 include:amazonses.com ~all`
    - `send.mrright.blog` MX `feedback-smtp.ap-northeast-1.amazonses.com`
@@ -112,14 +119,21 @@ VPS 备份路径：
   - 真正的证据是：`email_verified_at` 非空（说明没走静默跳过分支）、
     `password_reset_code_hash` 已写入且过期时间与响应一致（说明进入了发信路径）、
     且日志中**没有** `Password reset email delivery failed:`（说明 SMTP 握手/AUTH/DATA 全部成功）。
-  - **最终收件确认：待用户回报**（收件箱/垃圾箱）。
+  - **最终收件确认：用户已回报收到（2026-08-11 23:34 UTC+8 / 15:34 UTC）。**
+    邮件落在 **Gmail 收件匣，不是垃圾箱**；发件人显示 `noreply@mrright.blog`；
+    主题 `mrright.blog password reset code`；正文含 6 位验证码与过期时间，
+    并带「Continue on mrright.blog」链接。至此端到端闭环成立。
+  - 值得记一笔：**只有 SPF + DKIM、尚未加 DMARC 的情况下就直达收件匣**，
+    说明 Resend 的域名验证配置是干净的。
 - 无法从服务端核对 Resend 投递日志：该 API key 是只写的，读操作返回
   `restricted to only send emails`。权限收紧是好事，但意味着投递状态只能到 Resend 后台看。
+  （后台列表把这把 key 显示为 Full access，与 API 实际行为不符，建议下次顺手核对一眼。）
 
 待办事项：
 
-- **等用户确认邮件是否真的收到、是否落入垃圾箱**。若进垃圾箱，加 DMARC 通常能改善。
-- DMARC 记录仍未添加。
+- DMARC 记录仍未添加（可选加固，当前不加也能进收件匣）：
+  `_dmarc.mrright.blog` TXT `v=DMARC1; p=none; rua=mailto:<你的邮箱>`。先用 `p=none` 只观察。
+- 注册验证码邮件走的是同一套 `emailDelivery.js`，**理论上现在也能发了，但本轮未单独实测**。
 - 备份异地副本仍未配置（备份体系最后一个结构性缺口）。
 - CSP 仍是 report-only；`ADMIN_ALLOW_STATIC_TOKEN` 仍未收紧；`/etc/nginx/proxy.conf` 遗留文件待确认。
 - 应用备份的自动保留策略仍未做。
