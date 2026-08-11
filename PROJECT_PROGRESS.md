@@ -1,26 +1,16 @@
 # mrright.blog 项目进度记录
 
-## 下次从这里继续（截至 2026-08-11 收工）
+## 下次从这里继续（截至 2026-08-11 第三轮收工）
 
-**代码与线上的对应关系 —— 这是最容易搞错的一点：**
+**代码与线上的对应关系：**
 
 | | commit | 说明 |
 | --- | --- | --- |
-| main 最新 | `47d1cfc` | 签名 Cookie 身份 + 评论先审后发 |
-| **线上实际运行** | `fe80a62` | 第二阶段安全加固（2026-08-11 11:53 UTC 部署） |
-| 未部署的差异 | `47d1cfc` | **有数据库改动**，见下 |
+| main 最新 | 见 git log | 本次进度记录（纯文档） |
+| **线上实际运行** | `47d1cfc` | 签名 Cookie 身份 + 评论先审后发（2026-08-11 14:23 UTC 部署） |
+| 未部署的差异 | 无 | 只剩文档提交，代码已全部上线 |
 
-`c8b2419` 是纯文档，不影响线上。
-
-**下次部署 `47d1cfc` 时必须知道：**
-
-- 会执行 `ALTER TABLE project_comments ADD COLUMN IF NOT EXISTS status, moderated_at` + 一个索引。
-  幂等新增，存量行默认 `published`，线上已有评论不会消失。
-- 部署前照例备份。备份 timer 已在线上运行（每日 03:30 UTC），但部署前应手动再跑一次：
-  `systemctl start mrright-backup.service`
-- 部署方式：`scripts/deploy-vps.mjs` 需要 `VPS_PASSWORD` 密码认证；若只有 SSH 密钥，按该脚本的
-  同一套远程步骤手动执行（上一轮就是这么做的，步骤记在本文件 2026-08-11 那节）。
-- 部署后按 `CLAUDE.md` 第 9 条逐项验证。
+**线上现在是最新代码，没有积压的未部署改动。** 下一轮开工可以直接做新东西。
 
 **已经不需要再排查的事（省得重复劳动）：**
 
@@ -35,7 +25,9 @@
    `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` / `SMTP_FROM`。
 2. **备份异地副本**。当前备份和数据库在同一块磁盘上，磁盘坏了两者一起没。
    `docs/OPERATIONS_BACKUP.md` 里有 rclone 方案。
-3. **`/opt/mrright-portfolio.backup-*` 的保留策略**。已占 4.5G，磁盘 73%。按规则我没删任何备份。
+3. **`/opt/mrright-portfolio.backup-*` 的保留策略**。2026-08-11 第三轮部署后已是 **15 份、约 5.2G，
+   磁盘 78%（剩 3.2G）**。按规则我没删任何备份，但每次部署 +351M，再部署约 9 次就会写满。
+   这是目前最接近「会真的出事」的一项。数据库备份很小（42K/份），不是压力来源。
 4. **`/etc/nginx/proxy.conf`** 是个占用 443、`server_name` 还是占位符的 Docker 镜像加速遗留配置，
    确认是否还需要。
 5. 确认没有脚本依赖静态管理员令牌后，设 `ADMIN_ALLOW_STATIC_TOKEN=false`
@@ -51,6 +43,106 @@
 - 前端单元测试（目前只有 API 契约测试和 Playwright）
 - SSR / 预渲染 SEO（社区帖子和公开主页搜索引擎抓不到）
 - Asset Model（checksum / visibility / downloadPolicy）稳定后再回到 C++ SDK
+
+## 2026-08-11（第三轮）：把 47d1cfc 部署上线（签名 Cookie 身份 + 评论先审后发）
+
+结论：上一轮写完但未部署的改动已全部上线，**线上代码与 main 的代码部分一致**。数据库迁移按预期
+幂等执行，**部署前后所有表行数完全一致**。本轮未改任何业务代码，只做部署与验证，外加本条进度记录。
+
+日期：2026-08-11（部署时刻 14:23 UTC）。
+
+完成内容：
+
+- 部署 `47d1cfc` 到 VPS，服务重启成功。
+- 执行 `project_comments` 的幂等迁移（新增 `status` / `moderated_at` + 一个索引）。
+- 按 `CLAUDE.md` 第 9 条逐项验证，并补充验证本轮新增的评论审核端点与签名 Cookie。
+
+修改文件：
+
+- `PROJECT_PROGRESS.md`（仅本条记录；本轮未改业务代码）
+
+commit hash：
+
+- 上线的代码：`47d1cfc`
+- 本条记录的提交：本次提交（最终 hash 以 git log 为准）
+
+build / lint / 测试结果（部署前本地全绿）：
+
+- `npm run lint`：通过
+- `npm run build`：通过
+- `npm run test:api`：37/37 通过
+- `npm run test:api:db`：54/54 通过
+- `npm run test:openapi`：通过（33 个 error code）
+- `git diff --check`：通过
+
+是否部署 VPS：**是**（2026-08-11 14:23 UTC）。
+
+VPS 备份路径（部署前全部先做好）：
+
+- 数据库：`/var/backups/mrright-portfolio/mrright-portfolio-20260811-140623.dump`
+  （41.4 KB，17 个 table data 项，SHA-256 旁文件已写入）
+- 应用目录：`/opt/mrright-portfolio.backup-20260811-141721`
+- env：`/etc/mrright-portfolio.env.backup-20260811-141721`
+- 既有备份全部保留，未删除任何备份
+
+部署方式：与上一轮相同 —— `scripts/deploy-vps.mjs` 需要 `VPS_PASSWORD`，本机只有 SSH 密钥，
+因此按该脚本的同一套远程步骤用密钥手动执行。**未改写 nginx 配置，未改写 systemd unit**，
+只替换 `dist`/`server`/`scripts`/`package.json`/`package-lock.json` 并 `npm ci --omit=dev`
+（安装 106 个包）；`data`、`public/uploads`、env 与全部 backup 未动。
+
+release 完整性：本地与 VPS 上 SHA-256 一致（`f8c23126…5fe2bc`）。
+
+> 传输踩坑记录（下次会遇到）：21MB 的 release 用 `scp` 单次传不完，300 秒超时后在离终点约 4KB
+> 处被中断；而且**中断产物不是本地文件的干净前缀**（前缀哈希对不上），所以不能靠续传字节拼接。
+> VPS 上**没有装 rsync**。可行做法是重传并逐次校验 SHA-256（脚本重试 4 次，实际第 1 次即成功）。
+
+数据库迁移结果：
+
+- `project_comments` 迁移前 6 列（`id/project_slug/author/message/created_at/user_id`），
+  迁移后新增 `status:text` 与 `moderated_at:timestamptz` —— 确认存在
+- 新增索引 `project_comments_status_created_idx` —— 确认存在
+- 存量 2 条评论全部为 `status=published`，与设计一致，线上已有评论未受影响
+- **数据完全一致**：`visitor_users=1`、`community_posts=1`、`community_uploads=0`、
+  `download_requests=0`、`project_comments=2`、`visitor_sessions=6` —— 部署前后完全相同
+- 本轮无过期会话清理输出（上一轮清了 22 条），与 `visitor_sessions` 保持 6 相符
+
+验证接口状态（线上 HTTPS，全部通过）：
+
+- 必需项：`/api/health` 200、`/api/admin/summary` 200、`/` 200、`/community` 200、`/admin` 200、
+  `/login?mode=login` 200、`/account` 200
+- 本轮新端点：`GET /api/admin/comments?status=pending` 200（队列当前为空）、
+  不带参数的全量视图 200（行为未变）
+- `PATCH /api/admin/comments/:id` 错误码正确：不存在的 id 返回 `COMMENT_NOT_FOUND`，
+  非法状态返回 `VALIDATION_ERROR`（两者均不改数据）
+- 运维端点：`/robots.txt` 200、`/sitemap.xml` 200
+- `/api/v1/health` 仍返回严格信封（仅 data/pagination/error）
+- production smoke（Playwright）：**10 passed，4 skipped**（跳过的是需要 `E2E_VISITOR_*`
+  与管理员令牌的可选用例，按测试设计跳过）
+- 部署后日志窗口内 internal error 计数为 **0**
+
+签名 Cookie 线上实测（唯一一次写入式验证，净变化为零）：
+
+- 首次 `POST /api/projects/:slug/like` 返回
+  `Set-Cookie: mrright-vid=…; Max-Age=31536000; Path=/; HttpOnly; Secure; SameSite=Lax` —— 与设计一致
+- 带同一 Cookie 再请求一次，**不再重新签发** Cookie，说明签名校验通过并沿用
+- 第二次请求故意传了**完全不同**的客户端 `visitorId`，结果仍然切换的是同一个赞
+  （`liked:true,count:1` → `liked:false,count:0`）—— **确认客户端 visitorId 的值确实已被忽略**，
+  身份来自服务端签发的 Cookie
+- toggle 回到原值，`project_likes` 仅剩 6 月的 2 条历史数据（不同项目、旧 UUID 格式），本次测试零残留
+
+启动自检线上输出：仍是 2 条告警（SMTP 未配置、`TRUST_PROXY_HOPS` 未设置）。
+后者在本机拓扑下无意义 —— 443 由 nginx stream 按 SNI 分流，改跳数也拿不到真实 IP，
+详见 `docs/OPERATIONS_CLIENT_IP.md`（该文档本轮已随代码上线）。
+
+待办事项：
+
+- **磁盘保留策略已升级为最紧迫项**：`/opt/mrright-portfolio.backup-*` 已 15 份约 5.2G，
+  磁盘 78%（剩 3.2G），每次部署 +351M。
+- SMTP 仍未配置，忘记密码/注册验证码邮件发不出去（接口返回「已受理」但用户收不到）。
+- 备份异地副本仍未配置（备份与数据库同机）；恢复演练仍未在生产备份上跑过。
+- CSP 仍是 report-only（线上已收到 `script-src`、`connect-src blob`、`wasm-eval` 若干报告，
+  切 blocking 前需要先看这些报告是否属于自家资源）。
+- `ADMIN_ALLOW_STATIC_TOKEN` 仍未收紧；`/etc/nginx/proxy.conf` 遗留文件仍待确认。
 
 ## 2026-08-11（第二轮）：接受 IP 不可得的现实，改用不依赖 IP 的补偿措施
 
