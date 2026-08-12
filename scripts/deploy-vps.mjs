@@ -5,6 +5,8 @@ import { execFile } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { promisify } from 'node:util'
 
+import { BACKUP_AND_EXTRACT, PRUNE_FUNCTION } from './lib/deploy-backup-script.mjs'
+
 const require = createRequire(import.meta.url)
 const { Client } = require('ssh2')
 const execFileAsync = promisify(execFile)
@@ -27,6 +29,20 @@ const archivePath = path.resolve('.deploy-tools', 'portfolio.tar.gz')
 // the caller explicitly opts in to a rewrite for this one deploy.
 const rewriteNginx = process.env.VPS_REWRITE_NGINX === 'true'
 const rewriteService = process.env.VPS_REWRITE_SERVICE === 'true'
+// Every deploy used to leave behind a full copy of $REMOTE_DIR. Most of that
+// copy is public/uploads (252M of the 351M as of 2026-08-11), which is byte for
+// byte identical across deploys, so fifteen rollback points cost fifteen copies
+// of the same uploads and filled the disk to 78%. The backup is now built with
+// hardlinks, which makes an unchanged file cost one directory entry instead of
+// its size, and old backups past VPS_BACKUP_RETAIN are pruned once the deploy
+// has proven healthy. Set VPS_BACKUP_RETAIN=0 to keep every backup forever
+// (the pre-2026-08-12 behaviour, minus the duplicated bytes).
+const backupRetainRaw = process.env.VPS_BACKUP_RETAIN
+const backupRetain = backupRetainRaw === undefined ? 3 : Number(backupRetainRaw)
+
+if (!Number.isInteger(backupRetain) || backupRetain < 0) {
+  throw new Error('VPS_BACKUP_RETAIN must be a non-negative integer (0 disables pruning).')
+}
 
 if (!host || !password) {
   throw new Error('VPS_HOST and VPS_PASSWORD are required.')
@@ -128,6 +144,8 @@ try {
       `SERVICE_NAME=${quotedServiceName}`,
       `DOMAIN=${quotedDomain}`,
       `ARCHIVE=${quotedRemoteArchivePath}`,
+      `BACKUP_RETAIN=${backupRetain}`,
+      PRUNE_FUNCTION,
       'if [ ! -f "$ENV_FILE" ]; then',
       '  echo "Missing $ENV_FILE. Create it manually before deploying." >&2',
       '  echo "Required keys: DATABASE_URL ADMIN_TOKEN" >&2',
@@ -159,14 +177,7 @@ try {
       'cp -a "$ENV_FILE" "$ENV_BACKUP"',
       'chmod 600 "$ENV_FILE" "$ENV_BACKUP"',
       'echo "Backed up env to $ENV_BACKUP"',
-      'if [ -e "$REMOTE_DIR" ]; then',
-      '  APP_BACKUP="$REMOTE_DIR.backup-$(date +%Y%m%d-%H%M%S)"',
-      '  cp -a "$REMOTE_DIR" "$APP_BACKUP"',
-      '  echo "Backed up app to $APP_BACKUP"',
-      'fi',
-      'mkdir -p "$REMOTE_DIR"',
-      'rm -rf "$REMOTE_DIR/dist" "$REMOTE_DIR/server" "$REMOTE_DIR/scripts"',
-      'tar -xzf "$ARCHIVE" -C "$REMOTE_DIR"',
+      BACKUP_AND_EXTRACT,
       'if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then apt-get update && apt-get install -y nodejs npm; fi',
       'if ! command -v nginx >/dev/null 2>&1; then apt-get update && apt-get install -y nginx; fi',
       'cd "$REMOTE_DIR" && npm ci --omit=dev',
@@ -237,6 +248,11 @@ try {
       'TOKEN="$(awk -F= \'$1 == "ADMIN_TOKEN" { print substr($0, index($0, $2)) }\' "$ENV_FILE")"',
       'curl -fsS -H "Authorization: Bearer $TOKEN" http://127.0.0.1:4173/api/admin/summary >/dev/null',
       'echo "Admin summary check passed."',
+      // Only now that the new release is serving traffic. Env backups are
+      // deliberately left alone: they are ~1KB each so they are not what fills
+      // the disk, and they are the only way back if $ENV_FILE is ever damaged.
+      'prune_app_backups',
+      'df -h "$REMOTE_DIR" | tail -n 1',
       'systemctl --no-pager --full status "$SERVICE_NAME"',
     ].join('\n'),
   )
