@@ -41,16 +41,29 @@ CSP 这件事能做完，就是因为 playwright 回来了。
 
 ### 待你决策的（我没有权限或不该替你决定）
 
-1. **`/etc/nginx/proxy.conf`** 是个占用 443、`server_name` 还是占位符的 Docker 镜像加速遗留配置，
-   确认是否还需要。**动它之前必读 `docs/OPERATIONS_CLIENT_IP.md`** —— 443 是网站与机场节点
-   按 SNI 分流共用的，改错会打挂正在服务的节点。
-   **这是现在唯一剩下的未决项。**
+**空了 —— 2026-08-12 第七轮把积压的四项全部结清。** 下面是它们各自的去向。
 
 **已由你拍板、不再是未决项的：**
 
+- ~~`/etc/nginx/proxy.conf`~~ —— **2026-08-12 已查清并清理，顺带纠正了一条我们自己写错的记录。**
+  **它并没有「占用 443」** —— 之前几轮一直这么写，是错的。它**根本没被 nginx 加载**：
+  `nginx -T` 列出的加载文件只有 `nginx.conf` / `mime.types` / `modules-enabled/50-mod-stream.conf` /
+  `sites-enabled/mrright-portfolio` / `sites-enabled/mrright-portfolio-internal-ssl` /
+  `stream-conf.d/mrright-sni.conf`，而 nginx.conf 的 include 只覆盖 `conf.d/*.conf`、
+  `sites-enabled/*`、`stream-conf.d/*.conf`、`modules-enabled/*.conf`，**没有一条匹配得到它**。
+  最干净的反证：它的证书路径是占位符 `<your 'domain.pem' path>`，
+  **一旦被加载 `nginx -t` 必然失败**，而每次部署 `nginx -t` 都是通过的。
+  内容是从没填过的 Docker Hub 镜像加速模板（`proxy_pass https://registry-1.docker.io`，
+  `server_name <write your domain>`），文件停在 2024-09-22。
+  处置：**不删，移出 `/etc/nginx`** → `/root/legacy-nginx-proxy.conf.20260812.bak`
+  （万一将来谁加了 `include /etc/nginx/*.conf` 也不会被误捡）。
+  **全程没有 reload nginx** —— 它本来就没被加载，没有理由为它去动 443。
+  移动后复验：`nginx -t` 通过、加载文件列表一字未变、80/443 仍 3 个监听、
+  `/` 200、`/community` 200、`/api/health` 200。
 - ~~DMARC 记录~~ —— **2026-08-12 已添加并验证上线**（方案 B，报告收在自己域内）。
   `_dmarc.mrright.blog` = `v=DMARC1; p=none; rua=mailto:dmarc@mrright.blog`，见下方第七轮记录。
-  **唯一还需要你亲眼确认的**：那两封实测邮件是否进了 Gmail 收件匣（我看不到你的邮箱）。
+  **唯一还需要你亲眼确认的**：重发的那封实测邮件在 Gmail「显示原始邮件」里
+  DMARC 是否已变成 PASS（第一封显示 FAIL 的原因见第七轮记录，是缓存，不是配置错）。
 
 - ~~备份异地副本~~ —— **2026-08-12 你明确答复「不需要异地备份」，此项关闭。**
   保留一句风险说明作为背景，不再当作待办：备份与数据库仍在同一块磁盘上，
@@ -116,8 +129,8 @@ CSP 这件事能做完，就是因为 playwright 回来了。
 3. ~~`/opt/mrright-portfolio.backup-*` 的保留策略~~ —— **2026-08-12 第六轮已完成并上线**：
    硬链接备份 + 保留最近 3 份的自动裁剪。一份 351M → 34M，磁盘 49% → 42%。
    历史：2026-08-11 第四轮按你的指示手工清理过一次，15 份删到 3 份，磁盘 78% → 49%。
-4. **`/etc/nginx/proxy.conf`** 是个占用 443、`server_name` 还是占位符的 Docker 镜像加速遗留配置，
-   确认是否还需要。
+4. ~~**`/etc/nginx/proxy.conf`**~~ —— **2026-08-12 第七轮已查清并清理。**
+   **当时写的「占用 443」是错的**：`nginx -T` 证明它根本没被加载。详见顶部说明。
 5. ~~设 `ADMIN_ALLOW_STATIC_TOKEN=false`~~ —— **2026-08-12 第六轮已完成并上线**。
    卡住它的两个调用方（部署脚本、admin E2E 套件）已改成先换会话再调 API。
 6. ~~CSP 切 blocking~~ —— **2026-08-12 第七轮已完成并上线**，见下方第七轮记录。
@@ -316,9 +329,37 @@ send.mrright.blog SPF、resend._domainkey 均未被改动
 1. 发给 `dmarc@mrright.blog` —— 验证「Resend 发信 → Cloudflare MX 收信 → 转发到 Gmail」整条链路
 2. 加完 DMARC 后发给 `adieb623@gmail.com` —— 验证新增的根域 MX/SPF 没有破坏原有发信
 
-**待用户确认的最后一环**：两封信是否真的进了收件匣（而不是垃圾箱），
-以及在 Gmail「显示原始邮件」里 SPF / DKIM / DMARC 三行是否都是 PASS。
-**`sent:true` 不算送达凭据** —— 这是第五轮就定下的规矩。
+**第一封实测信 Gmail 判定 DMARC = FAIL —— 不是配置错，是我自己造成的 DNS 否定缓存。**
+
+用户贴的「显示原始邮件」显示：SPF **PASS**、DKIM **PASS（domain: mrright.blog）**、
+DMARC **FAIL**。这个组合本身就自相矛盾 —— DKIM 的 `d=` 就是 From 域，
+对齐关系成立，DMARC 没有理由失败。真正的线索在 header 里：
+Google 的 `Authentication-Results` **压根没有 `dmarc=` 这一行**，
+说明它当时**没找到 DMARC 记录**，而不是找到了判定不通过。
+
+时间对得上：邮件 15:05 UTC 到达，而我在 **15:00 UTC** 用 `8.8.8.8`/`9.9.9.9`
+查过 `_dmarc`（当时记录还没加完），把 NXDOMAIN 缓存了 **1800 秒**。
+Google 收信时用的正是自家解析器，看到的还是「没有这条记录」。
+
+**决定性证据**（15:14 UTC 复查，同一家的两台解析器结论相反）：
+
+```
+8.8.8.8  => ENOTFOUND        ← 正是我探过的那台，仍在缓存 NXDOMAIN
+8.8.4.4  => v=DMARC1; ...    ← 同属 Google，没被我探过，正常
+9.9.9.9  => v=DMARC1; ...    ← 缓存到期，自己恢复
+1.1.1.1  => v=DMARC1; ...
+```
+
+处置：写了个脚本**轮询等 `8.8.8.8` 自己看到记录**（不靠猜时间），
+15:15:34 缓存过期后立刻重发一封。
+
+**教训（下次别再踩）：查一条「还没添加」的 DNS 记录时，不要去问公共解析器** ——
+一次探测就会在那台解析器上种下最长 1800 秒的否定缓存，而它可能正是收信方要用的那台。
+要确认记录是否写对，**直接问权威 NS**；要确认全球可见性，等否定缓存自然过期再查。
+
+**待用户确认的最后一环**：重发的那封在 Gmail「显示原始邮件」里 DMARC 是否已变成 PASS，
+以及两封是否都在收件匣而不是垃圾箱。
+**`sent:true` 不算送达凭据** —— 这是第五轮就定下的规矩，这次 DMARC 那条 FAIL 正是它的又一个例证。
 
 ## 2026-08-12（第六轮）：应用备份改硬链接 + 自动保留策略
 
@@ -548,6 +589,8 @@ VPS 备份路径：
   要加的记录：`_dmarc.mrright.blog` TXT `v=DMARC1; p=none; rua=mailto:<你的邮箱>`。先用 `p=none` 只观察。
 - `/etc/nginx/proxy.conf` 遗留文件待确认 —— **本轮刻意没碰**：它占用 443，而 443 是
   网站与机场节点按 SNI 分流共用的，动它有打挂机场节点的风险。见 `docs/OPERATIONS_CLIENT_IP.md`。
+  **（2026-08-12 第七轮更正：「它占用 443」是错的，`nginx -T` 证明它从未被加载；
+  谨慎本身没错，但依据是错的。已清理，见顶部。）**
 - 注册验证码邮件仍未单独实测（走的是同一套 `emailDelivery.js`，理论上已可发）。
 - `.gitattributes` 漏了 `*.mjs`，所以 `scripts/deploy-vps.mjs` 在 git 里是 CRLF，
   `git diff --check` 对它的新增行一律报 trailing whitespace。补 `*.mjs text eol=lf` 会产生
@@ -1039,6 +1082,10 @@ real_ip_recursive on;
 **2. `/etc/nginx/proxy.conf` 是一个未配置的遗留文件**
 
 它占用 443，`server_name` still 是占位符 `<write your domain>`，内容是把请求代理到 `registry-1.docker.io` 的 Docker 镜像加速模板。与本项目无关，建议确认是否还需要，以及它是否影响 mrright.blog 的 TLS 入口。
+
+**（2026-08-12 第七轮更正并结案：「它占用 443」是错的 —— `nginx -T` 显示它从未被加载，
+证书路径还是占位符，真被加载 `nginx -t` 就会失败。已移到
+`/root/legacy-nginx-proxy.conf.20260812.bak`。）**
 
 **3. 磁盘水位**
 
