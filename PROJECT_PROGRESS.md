@@ -1,11 +1,24 @@
 # mrright.blog 项目进度记录
 
-## 下次从这里继续（截至 2026-08-12 第六轮收工）
+## 下次从这里继续（截至 2026-08-12 第七轮收工）
 
-**线上运行 `48d3f69`（2026-08-12 05:11 UTC 部署，已逐项验证）。没有积压的未部署改动** ——
-main 上比它新的只有纯文档提交，不含任何需要上线的代码。
+**线上运行 `2cdb97d`（2026-08-12 14:09 UTC 部署，已逐项验证）。没有积压的未部署改动。**
 
-本轮完成三件事（详见下面「2026-08-12（第六轮）」）：
+本轮只做了一件事，但是把上一轮挂起的那件做完了（详见下面「2026-08-12（第七轮）」）：
+
+**CSP 已从 report-only 切成 blocking 并上线。** report-only 期间只报了两条违规，
+两条都是策略自己写漏了：补 `scriptSrc: ["'self'", "'wasm-unsafe-eval'"]` 与
+`connectSrc: ["'self'", 'blob:']` 后切换，本地和线上（含真实模型预览）全部验证通过，
+部署后收集器 0 上报。`report-uri` 保留，它是没走到的代码路径唯一的报警渠道。
+
+**回退办法**：`server/index.js` 的 `contentSecurityPolicy` 里加回 `reportOnly: true`
+即可退回只观察不拦截；或直接回滚到 `/opt/mrright-portfolio.backup-20260812-140940`。
+
+**注意部署方式变了**：`npm run deploy:vps` 在这台机器上跑不了（它要密码认证，本机只有密钥）。
+本轮改成 import `scripts/lib/deploy-backup-script.mjs` 的 shell 片段拼远端脚本再 `ssh bash -s`，
+细节见第七轮记录末尾。**这条路径还没固化成脚本，下次要么固化它，要么照着记录再拼一遍。**
+
+### 上一轮（第六轮）的三件事，仍然有效
 
 1. 应用备份改硬链接 + 自动保留策略 —— 一份备份 351M → **34M**，磁盘 49% → **42%**
 2. 修掉部署脚本里一个**一直存在的健康检查竞态**（第一次部署就是被它挂掉的）
@@ -22,10 +35,9 @@ curl -s -H "Authorization: Bearer $SESSION" https://mrright.blog/api/admin/summa
 curl -s -X DELETE -H "Authorization: Bearer $SESSION" https://mrright.blog/api/admin/session  # 用完吊销
 ```
 
-**MCP 已恢复注册（但需要重启会话才生效）：** `mrright-ops` 与 `playwright` 此前在
-`~/.claude.json` 里**根本没有注册**（不是断开）。实现文件一直都在
-（`/root/.claude/mcp/mrright-ops/`），本轮已重新写入全局 `mcpServers` 并冒烟测试通过。
-**MCP server 只在会话启动时连接，所以当前会话仍看不到它们，下次开新会话即可用。**
+**MCP 已确认可用：** `mrright-ops` 与 `playwright` 在第七轮的新会话里都正常工作
+（第六轮重新写入 `~/.claude.json` 的 `mcpServers` 之后需要开新会话才生效，现已生效）。
+CSP 这件事能做完，就是因为 playwright 回来了。
 
 ### 待你决策的（我没有权限或不该替你决定）
 
@@ -39,25 +51,30 @@ curl -s -X DELETE -H "Authorization: Bearer $SESSION" https://mrright.blog/api/a
 3. **`/etc/nginx/proxy.conf`** 是个占用 443、`server_name` 还是占位符的 Docker 镜像加速遗留配置，
    确认是否还需要。**动它之前必读 `docs/OPERATIONS_CLIENT_IP.md`** —— 443 是网站与机场节点
    按 SNI 分流共用的，改错会打挂正在服务的节点。
+4. **`sniproxy.service` 正在无限重启失败（第七轮查 CSP 日志时顺手发现的，与本项目无关）。**
+   它每 5 秒起一次、每次都因 `error parsing /etc/sniproxy.conf at 507` 退出，
+   **10 天内失败 13176 次**，一直在刷 journal。配置文件是 2024-04-15 的，3.6KB。
+   **网站不受影响**：443 现在是 nginx 在监听（`ss -tlnp` 已确认），
+   按 `docs/OPERATIONS_CLIENT_IP.md`，SNI 分流也是 nginx stream 做的，不是 sniproxy。
+   所以它看起来是个**没人用了却还开机自启的遗留服务**。
+   **我没有动它** —— 它挨着机场节点那一摊，该不该停由你定。
+   要停：`systemctl disable --now sniproxy`。
 
 ### 下一轮我建议先做的
 
-1. **CSP 切 blocking —— 答案已经查到，只差用浏览器过一遍。**
-   线上两条报告是 `script-src <- wasm-eval` 和 `connect-src <- blob`，对应
-   `server/index.js:169-177` 里 `scriptSrc` 未设（回落到 `defaultSrc 'self'`）
-   且 `connectSrc: ['self']` 缺 `blob:`。改法：加
-   `scriptSrc: ["'self'", "'wasm-unsafe-eval'"]` 与 `connectSrc: ["'self'", 'blob:']`，
-   再去掉 `reportOnly`。**必须先用 playwright 过一遍全站再切** —— 漏一条指令就是线上白屏。
-   第六轮没做正是因为当时沙箱起不了本地浏览器，MCP 恢复后就能做了。
-2. 管理员账号体系 + TOTP（当前仍是「知道共享密钥就是管理员」，`admin_user_actions` 无法归因到人）。
+1. 管理员账号体系 + TOTP（当前仍是「知道共享密钥就是管理员」，`admin_user_actions` 无法归因到人）。
    静态令牌已收紧成「只能换会话」，这是该方向的第 2 步；第 3 步见
    `docs/OPERATIONS_ADMIN_AUTH.md`。
+2. 把密钥认证的部署路径固化进 `scripts/deploy-vps.mjs`（现在只支持密码认证，
+   本机没有密码只有密钥，第七轮是临时拼脚本部署的）
 3. 拆 `Admin.jsx`（2492 行）与 `postgresStores.js`（3338 行）
 4. react-router（现在靠 `window.location.pathname` 判断，页面跳转全是整页刷新，3D 场景每次重建）
 5. 前端单元测试（目前只有 API 契约测试和 Playwright）
 6. SSR / 预渲染 SEO（社区帖子和公开主页搜索引擎抓不到）
 7. Asset Model（checksum / visibility / downloadPolicy）稳定后再回到 C++ SDK
 8. 下次恢复演练建议在 2026-11 之前（`docs/OPERATIONS_BACKUP.md` 要求每季度一次）
+9. CSP 还可以再紧一格：`style-src` 现在带 `'unsafe-inline'`（Tailwind 与 three.js 的内联样式），
+   要去掉得先上 nonce 或 hash，不是小改动，暂不动。
 
 ### 环境事实，省得下次重查
 
@@ -69,6 +86,13 @@ curl -s -X DELETE -H "Authorization: Bearer $SESSION" https://mrright.blog/api/a
 - **本机有 `http_proxy=http://172.29.176.1:7897`**（WSL 指向 Windows 宿主），
   所以 curl 访问 `127.0.0.1` 会被劫持成 502；沙箱还会阻断子进程访问 localhost。
   测本地服务时要注意这两点。
+- **但 playwright MCP 的浏览器能访问 `http://127.0.0.1:<port>`**（第七轮实测）。
+  它是独立进程，不受上面那个沙箱限制 —— 所以「本地起服务 + 浏览器验证」这条路是通的，
+  不用拿线上冒险。
+- **服务端不设 `DATABASE_URL` 也能起**（`server/index.js:108` 是三元回落到内存 store），
+  想在本地跑真实构建验证前端行为时很有用，社区/后台会降级但页面照常渲染。
+- **`npm run deploy:vps` 在这台机器上跑不了** —— 它走 ssh2 密码认证，要 `VPS_HOST` /
+  `VPS_PASSWORD`，本机两个都没有，只有 SSH 密钥。绕法见第七轮记录末尾。
 
 ## 第五轮收工时的快照（2026-08-11，已冻结，不要照着它动手）
 
@@ -98,7 +122,7 @@ curl -s -X DELETE -H "Authorization: Bearer $SESSION" https://mrright.blog/api/a
    确认是否还需要。
 5. ~~设 `ADMIN_ALLOW_STATIC_TOKEN=false`~~ —— **2026-08-12 第六轮已完成并上线**。
    卡住它的两个调用方（部署脚本、admin E2E 套件）已改成先换会话再调 API。
-6. CSP 切 blocking —— **仍未做，但答案已查到**，见上面「下一轮我建议先做的」第 1 条。
+6. ~~CSP 切 blocking~~ —— **2026-08-12 第七轮已完成并上线**，见下方第七轮记录。
 
 **路线图** —— 已上移到顶部「下一轮我建议先做的」，不在这里维护，免得两份清单各走各的。
 这一轮当时勾掉的两项留作记录：
@@ -107,6 +131,96 @@ curl -s -X DELETE -H "Authorization: Bearer $SESSION" https://mrright.blog/api/a
 - ~~演练遗留的临时库~~ —— 用户已确认，`mrright_restore_drill` 已 `dropdb`（2026-08-11）。
   删除后复查：`mrright_portfolio` 仍在、17 张表、`visitor_users=1`/`project_comments=2`、
   `/api/health` 200，生产库未受影响。
+
+## 2026-08-12（第七轮）：CSP 从 report-only 切成 blocking
+
+结论：**CSP 现在真的会拦了**，不再只是记录。策略从 2026-08-11 起 report-only 跑了一天，
+收集器一共只报了两条违规，而且两条都是**策略自己写漏了**，不是应用有问题：
+
+| 上报 | 真实原因 | 改法 |
+| --- | --- | --- |
+| `script-src <- wasm-eval` | `scriptSrc` 根本没写，回落到 `defaultSrc 'self'`，three.js 的解码器编译不了 WebAssembly | `scriptSrc: ["'self'", "'wasm-unsafe-eval'"]` |
+| `connect-src <- blob` | 后台上传预览要 fetch 自己刚 `createObjectURL` 出来的 blob | `connectSrc: ["'self'", 'blob:']` |
+
+`'wasm-unsafe-eval'` **只放开 WebAssembly 编译，不会把 `eval()` 或内联脚本放回来** ——
+这一点是实测过的，不是查文档得来的（见下面的验证方法）。
+顺带把 `upgrade-insecure-requests` 收了回来：它是 helmet 默认项，之前因为 report-only 模式下
+浏览器忽略它、还每页刷一条 console error 才被关掉，现在切 blocking 就没有这个理由了。
+
+线上最终生效的头（`content-security-policy`，已无 `-report-only` 那条）：
+
+```
+default-src 'self'; base-uri 'self'; font-src 'self' data: https://fonts.gstatic.com;
+form-action 'self'; frame-ancestors 'none'; img-src 'self' data: blob:; object-src 'none';
+script-src 'self' 'wasm-unsafe-eval'; script-src-attr 'none';
+style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; upgrade-insecure-requests;
+worker-src 'self' blob:; connect-src 'self' blob:; report-uri /api/csp-report
+```
+
+`report-uri` 特意留着：切 blocking 之后一条违规就等于一个坏掉的页面，
+它是**这次浏览器没走到的代码路径**唯一的报警渠道。
+
+### 验证方法（这次学到的两个坑）
+
+1. **不能靠「日志里没有新的 `[CSP]` 行」判断没违规。** 收集器只在第 1、10、每 100 次时打日志
+   （`server/index.js` 的 `cspReportCounts`），第 2～9 次是**静默**的。
+   可靠信号是浏览器控制台 0 error。
+2. **不能用 Playwright 的 `browser_evaluate` 直接测 `WebAssembly.instantiate`。**
+   CDP 注入的脚本不受页面 CSP 约束，那么测必然是**假阳性**。
+   正确做法是往 `dist/` 里放一个**同源的 `<script src>`**，让页面自己的脚本去跑。
+
+用后一种方法在**本地真实构建 + blocking 策略**下跑出来的结果：
+
+```
+["wasm: OK", "blob-fetch: OK", "blob-worker: OK", "eval: correctly blocked"]
+```
+
+最后一条是关键：`eval` 仍然被拦，证明加 `'wasm-unsafe-eval'` 没有把 `script-src` 放宽。
+探针文件测完已删除。
+
+本地验证（`PORT=4300`、不设 `DATABASE_URL`，走内存 store）：
+`/`、`/community`、`/login`、`/admin`、`/account` 全部 0 console error，
+宇航员 GLB 正常加载，blob worker 正常启动。
+
+线上验证（部署后用真实数据过了一遍）：
+
+- `/` 200，WebGL canvas 存活，GLB 已加载，外部主机只有 `fonts.googleapis.com` / `fonts.gstatic.com`
+- `/community` 200，真实数据渲染正常（1 Discussion / 6 Selected Work）
+- 社区帖子详情页 200
+- **「Open Model Preview」实测**：真实上传的 `/uploads/models/1781587753846-sc-jitan.glb`（908KB）
+  正常渲染，2 个 WebGL canvas 都活着，模型统计信息正常 —— 这是 drei/meshopt 那条 WASM 分支
+- `/admin`、`/login?mode=login`、`/account` 全部 200
+- **部署后收集器 0 条上报**，浏览器 0 console error
+
+日期：2026-08-12（第七轮）
+完成内容：CSP 切 blocking，补齐 `scriptSrc` 与 `connectSrc`，恢复 `upgrade-insecure-requests`
+修改文件：`server/index.js`
+commit：`2cdb97d`
+build：通过（`vite build`，7.02s）
+lint：通过（`eslint .`，无输出）
+部署 VPS：是（2026-08-12 14:09 UTC）
+VPS 备份路径：`/opt/mrright-portfolio.backup-20260812-140940`（硬链接）；
+env 备份 `/etc/mrright-portfolio.env.backup-20260812-140940`；
+本次部署后自动裁剪掉最旧的 `...backup-20260812-043445`，保留最新 3 份；磁盘仍 42%
+验证接口：`/api/health` 200、`admin_summary` 200（短会话，用完已吊销）、
+`/` `/community` `/admin` `/login?mode=login` `/account` 全部 200
+
+### 部署方式的一个变化（下次会用到）
+
+`npm run deploy:vps`（`scripts/deploy-vps.mjs`）**这台机器上跑不了** —— 它用 ssh2 的
+**密码认证**，要求 `VPS_HOST` 和 `VPS_PASSWORD`，而本机没有这两个环境变量。
+本机是 **SSH 密钥直连**可用。
+
+这次的做法是：写一个小生成器，**import `scripts/lib/deploy-backup-script.mjs` 里那几段 shell
+片段**（`BACKUP_AND_EXTRACT` / `WAIT_FOR_HEALTH` / `ADMIN_SESSION_CHECK` / `PRUNE_FUNCTION`），
+拼出和 `deploy-vps.mjs` 等价的远端脚本，再 `ssh root@... 'bash -s' < script`。
+**import 而不是手抄，正是为了不和被测试覆盖的那份漂移** —— 那个模块的注释里就是这么要求的。
+制品用 `ssh 'cat > /tmp/...'` 流式传（不用 scp）。
+本轮没有改写 nginx vhost 与 systemd unit（两者都存在，`deploy-vps.mjs` 本来也只在缺失时才写），
+**443 与机场节点共用，重写 vhost 会丢 TLS**，见 `docs/OPERATIONS_CLIENT_IP.md`。
+
+待办：把这条路径固化成脚本（比如给 `deploy-vps.mjs` 加一个密钥认证分支），
+否则下次还得临时拼一遍。
 
 ## 2026-08-12（第六轮）：应用备份改硬链接 + 自动保留策略
 
