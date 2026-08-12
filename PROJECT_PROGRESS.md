@@ -4,12 +4,17 @@
 
 **线上运行 `2cdb97d`（2026-08-12 14:09 UTC 部署，已逐项验证）。没有积压的未部署改动。**
 
-本轮只做了一件事，但是把上一轮挂起的那件做完了（详见下面「2026-08-12（第七轮）」）：
+本轮做完三件事，并且**把积压的「待你决策」清单清空了**（详见下面「2026-08-12（第七轮）」）：
 
-**CSP 已从 report-only 切成 blocking 并上线。** report-only 期间只报了两条违规，
-两条都是策略自己写漏了：补 `scriptSrc: ["'self'", "'wasm-unsafe-eval'"]` 与
-`connectSrc: ["'self'", 'blob:']` 后切换，本地和线上（含真实模型预览）全部验证通过，
-部署后收集器 0 上报。`report-uri` 保留，它是没走到的代码路径唯一的报警渠道。
+1. **CSP 已从 report-only 切成 blocking 并上线。** report-only 期间只报了两条违规，
+   两条都是策略自己写漏了：补 `scriptSrc: ["'self'", "'wasm-unsafe-eval'"]` 与
+   `connectSrc: ["'self'", 'blob:']` 后切换，本地和线上（含真实模型预览）全部验证通过，
+   部署后收集器 0 上报。`report-uri` 保留，它是没走到的代码路径唯一的报警渠道。
+2. **DMARC 已上线并实测 PASS**（方案 B：Cloudflare Email Routing 把 `dmarc@mrright.blog`
+   转发到 Gmail，`rua` 指向这个同域地址）。**用户已在 Gmail「显示原始邮件」确认
+   SPF / DKIM / DMARC 三行全 PASS。**
+3. **两个遗留物清掉了**：`sniproxy.service`（10 天失败 13176 次的重启循环）已停用；
+   `/etc/nginx/proxy.conf`（从没被加载过的 Docker 镜像加速模板）已移出 `/etc/nginx`。
 
 **回退办法**：`server/index.js` 的 `contentSecurityPolicy` 里加回 `reportOnly: true`
 即可退回只观察不拦截；或直接回滚到 `/opt/mrright-portfolio.backup-20260812-140940`。
@@ -60,10 +65,10 @@ CSP 这件事能做完，就是因为 playwright 回来了。
   **全程没有 reload nginx** —— 它本来就没被加载，没有理由为它去动 443。
   移动后复验：`nginx -t` 通过、加载文件列表一字未变、80/443 仍 3 个监听、
   `/` 200、`/community` 200、`/api/health` 200。
-- ~~DMARC 记录~~ —— **2026-08-12 已添加并验证上线**（方案 B，报告收在自己域内）。
-  `_dmarc.mrright.blog` = `v=DMARC1; p=none; rua=mailto:dmarc@mrright.blog`，见下方第七轮记录。
-  **唯一还需要你亲眼确认的**：重发的那封实测邮件在 Gmail「显示原始邮件」里
-  DMARC 是否已变成 PASS（第一封显示 FAIL 的原因见第七轮记录，是缓存，不是配置错）。
+- ~~DMARC 记录~~ —— **2026-08-12 已添加、上线并端到端实测通过**（方案 B，报告收在自己域内）。
+  `_dmarc.mrright.blog` = `v=DMARC1; p=none; rua=mailto:dmarc@mrright.blog`。
+  **用户已在 Gmail「显示原始邮件」确认 DMARC = PASS**（第一封显示 FAIL 是 DNS 否定缓存，
+  不是配置错，原因见下方第七轮记录）。此项完全结案。
 
 - ~~备份异地副本~~ —— **2026-08-12 你明确答复「不需要异地备份」，此项关闭。**
   保留一句风险说明作为背景，不再当作待办：备份与数据库仍在同一块磁盘上，
@@ -143,7 +148,10 @@ CSP 这件事能做完，就是因为 playwright 回来了。
   删除后复查：`mrright_portfolio` 仍在、17 张表、`visitor_users=1`/`project_comments=2`、
   `/api/health` 200，生产库未受影响。
 
-## 2026-08-12（第七轮）：CSP 从 report-only 切成 blocking
+## 2026-08-12（第七轮）：CSP 切 blocking + DMARC 上线 + 清掉两个遗留物
+
+本轮把「待你决策」清单清空了：CSP 切换（下面主体部分）、DMARC 端到端跑通（「DMARC」小节）、
+`sniproxy` 停用（「收尾」小节）、`/etc/nginx/proxy.conf` 结案（顶部「已由你拍板」）。
 
 结论：**CSP 现在真的会拦了**，不再只是记录。策略从 2026-08-11 起 report-only 跑了一天，
 收集器一共只报了两条违规，而且两条都是**策略自己写漏了**，不是应用有问题：
@@ -357,9 +365,12 @@ Google 收信时用的正是自家解析器，看到的还是「没有这条记�
 一次探测就会在那台解析器上种下最长 1800 秒的否定缓存，而它可能正是收信方要用的那台。
 要确认记录是否写对，**直接问权威 NS**；要确认全球可见性，等否定缓存自然过期再查。
 
-**待用户确认的最后一环**：重发的那封在 Gmail「显示原始邮件」里 DMARC 是否已变成 PASS，
-以及两封是否都在收件匣而不是垃圾箱。
-**`sent:true` 不算送达凭据** —— 这是第五轮就定下的规矩，这次 DMARC 那条 FAIL 正是它的又一个例证。
+**最终结果：用户在 Gmail「显示原始邮件」里确认重发的那封 DMARC = PASS。**
+至此 SPF / DKIM / DMARC 三行全部 PASS，邮件链路端到端验证完成，此项结案。
+
+顺带记一句方法论：**`sent:true` 不算送达凭据** —— 这是第五轮定下的规矩，
+而这次「Gmail 判 FAIL 但其实是我的探测污染了它的解析器缓存」是它的又一个例证：
+真正的判据永远是收件方那一侧看到的东西，不是发送侧的返回值。
 
 ## 2026-08-12（第六轮）：应用备份改硬链接 + 自动保留策略
 
