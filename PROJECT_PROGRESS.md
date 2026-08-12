@@ -2,19 +2,26 @@
 
 ## 下次从这里继续（截至 2026-08-12 第六轮收工）
 
-**线上仍是 `47d1cfc`。本轮改了部署脚本，但没有部署 —— 改动要到下次部署时才生效。**
+**线上运行 `615b961`，已部署并验证通过（2026-08-12 04:49 UTC）。没有积压的未部署改动。**
 
-本轮环境限制（下轮如果 MCP 恢复了就不用管）：`mrright-ops`（VPS SSH + PostgreSQL）与
-`playwright` 两个 MCP **都没连上**，只有 `github` 可用。所以本轮做不了 VPS 操作、DNS 查询、
-部署和浏览器测试，只做了本地代码工作。
+本轮完成：应用备份改硬链接 + 自动保留策略，并在部署过程中发现并修掉了部署脚本里一个
+**一直存在的健康检查竞态**。详见下面「2026-08-12（第六轮）」。
 
-**本轮完成：应用备份改硬链接 + 自动保留策略**（对应下面第五轮遗留清单里的第 3 项）。
-详见「2026-08-12（第六轮）」。**下次部署时会第一次真正跑到这段新代码**，届时应当确认：
+**MCP 已恢复注册（但需要重启会话才生效）：** `mrright-ops` 与 `playwright` 此前在
+`~/.claude.json` 里**根本没有注册**（不是断开）。实现文件一直都在
+（`/root/.claude/mcp/mrright-ops/`），本轮已重新写入全局 `mcpServers` 并冒烟测试通过。
+**MCP server 只在会话启动时连接，所以当前会话仍看不到它们，下次开新会话即可用。**
 
-- 部署输出里出现 `Backed up app to … (hardlinked; data/ copied)`，不是 `(full copy; …)`
-- 部署末尾出现 `Pruned …` 或 `Keeping all N app backup(s)`，以及一行 `df -h`
-- `du -sk /opt/mrright-portfolio /opt/mrright-portfolio.backup-*` 的第二行起应该很小
-- 现存 3 份旧备份是全量拷贝，不会因为这次改动缩小；省空间从下一份新备份开始体现
+顺带记两条环境事实，省得下次重查：
+
+- **不装 MCP 也能干 VPS 的活。** `mrright-ops` 本质就是 `ssh -o BatchMode=yes root@147.79.20.232`，
+  本机 SSH 密钥可直连，Bash 里直接用即可。
+- **本机 `grep` 是个 shell function**（Claude Code 装的，转发到 claude 二进制），而那个
+  native 二进制没装好，所以直接跑 `grep` 会报 "claude native binary not installed"。
+  用 `/usr/bin/grep` 或 `command grep` 绕过。
+- **本机有 `http_proxy=http://172.29.176.1:7897`**（WSL 指向 Windows 宿主），
+  所以 curl 访问 `127.0.0.1` 会被劫持成 502；沙箱还会阻断子进程访问 localhost。
+  测本地服务时要注意这两点。
 
 ## 上一轮的继续点（截至 2026-08-11 第五轮收工）
 
@@ -71,12 +78,14 @@
 
 结论：部署脚本每次留下的 351M 全量备份改成了硬链接备份，并加上「保留最近 N 份」的自动裁剪。
 根治的是那个反复出现的磁盘问题 —— 上一轮手工从 15 份清到 3 份，但机制没变，攒回去只是时间问题。
-**本轮未部署**，改动要到下次部署才生效。
+**已部署上线并验证通过**，实测新备份 33M（原 351M），磁盘 49% → 45%。
+过程中还发现并修掉了部署脚本里一个一直存在的健康检查竞态。
 
 日期：2026-08-12。
 
-本轮环境限制：`mrright-ops` 与 `playwright` 两个 MCP 都没连上，只有 `github` 可用。
-因此没有做任何 VPS 操作、DNS 查询、部署或浏览器测试，全部是本地代码工作。
+commit：`24e069b`（备份改动）→ `4855438`（合并到 main）→ `615b961`（竞态修复）。
+分支 `ops/deploy-backup-retention-20260812` 已推送，`--no-ff` 合并进 main 并推 GitHub。
+未 force push、未 reset。
 
 完成内容：
 
@@ -90,7 +99,8 @@
    - 原因：`contactMessagesStore.js:16` 与 `downloadRequestsStore.js:17` 用 `appendFile`
      **原地追加**，同一个 inode，会把历史写进所有硬链接备份里。
    - 这两个 store 只在 `DATABASE_URL` 缺失时才加载（`server/index.js:108`），生产走 Postgres
-     用不到；但 `data/` 只有 ~17KB，与其赌那个前提永远成立，不如直接真实拷贝。
+     用不到；但 `data/` 只有 8KB（线上实测：2 个文件，最后修改停在 6 月 3 日，是迁移后的冻结遗留物），
+     与其赌那个前提永远成立，不如直接真实拷贝。
    - `interactionsStore.js:35-36` 是 temp + `rename`，换 inode，本身安全。
 
 3. **解包加 `tar --unlink-first`**
@@ -98,6 +108,8 @@
    - **实测确认：GNU tar 1.35 默认就是先 unlink**（live inode 会变），所以这不是在修现存 bug。
      加它是为了把行为钉死 —— 实测 `TAR_OPTIONS=--overwrite` 会翻转成原地截断并**确实写穿备份**，
      而带上 `--unlink-first` 后备份完好。
+   - 值得一提：**VPS 上是 GNU tar 1.34，本机是 1.35**。正因为显式加了这个 flag，
+     版本差异不构成风险 —— 这类「本机验证过就以为线上一样」的假设，正是应该用 flag 钉死的地方。
    - 顺带纠正一条我一开始写错的注释：原本写的是「tar 默认 `O_TRUNC` 会写穿」，与实测不符，已改。
 
 4. **自动裁剪 `prune_app_backups`（`VPS_BACKUP_RETAIN`，默认 3，设 0 关闭）**
@@ -116,26 +128,25 @@
 
 修改文件：
 
-- `scripts/deploy-vps.mjs`（备份/解包/裁剪；新增 `VPS_BACKUP_RETAIN` 及其入参校验）
-- 新增 `scripts/lib/deploy-backup-script.mjs`（两段可导入的 shell 片段）
+- `scripts/deploy-vps.mjs`（备份/解包/裁剪/健康检查；新增 `VPS_BACKUP_RETAIN`、`VPS_APP_ORIGIN`）
+- 新增 `scripts/lib/deploy-backup-script.mjs`（三段可导入的 shell 片段）
 - 新增 `scripts/verify-deploy-backup.mjs`（本地验证）
 - `package.json`（新增 `test:deploy-backup`）
 - `.github/workflows/web.yml`（checks job 增加一步）
 - `docs/OPERATIONS_BACKUP.md`（新增「应用目录备份」整节 + 修正已知缺口的表述）
 - `PROJECT_PROGRESS.md`
 
-commit hash：本次提交（最终 hash 以 git log 为准）
-
-build / lint / 测试结果（全部本地跑过）：
+build / lint / 测试结果（部署前后各跑一次，全绿）：
 
 - `npm run lint`：通过
 - `npm run build`：通过；`dist/` 保持 untracked
 - `npm run test:api`：37/37 通过
+- `npm run test:api:db`：54/54 通过（一次性 PostgreSQL 集群已销毁）
 - `npm run test:openapi`：通过（200 个 `$ref`、33 个 error code）
 - `npm run test:deploy-backup`：通过（新增）
-- `npm run test:api:db`：**未跑**（本轮未改服务端代码，且该套件需要起 PostgreSQL 集群）
+- production smoke（线上）：6 passed，1 skipped
 
-**注入回归验证（证明新测试确实抓得住问题，不是白跑）**：逐个把 4 个 bug 注入回去，
+**注入回归验证（证明新测试确实抓得住问题，不是白跑）**：逐个把 6 个 bug 注入回去，
 全部被抓到并给出对应报错：
 
 | 注入 | 结果 |
@@ -144,28 +155,100 @@ build / lint / 测试结果（全部本地跑过）：
 | 删掉 `--unlink-first` | 抓到：备份的 `package.json` 被写穿 |
 | `data/` 也走硬链接 | 抓到：inode 相同 + 追加污染了备份 |
 | 裁剪改成宽松通配 `.backup-*` | 抓到：删掉了手工命名的目录 |
+| 健康检查退回不等待的裸 curl | 抓到：curl 只被调用 1 次，没有重试到第 3 次 |
+| 健康检查超限后不退出 | 抓到：服务从未应答却判为通过 |
 
 > 过程中我自己写错过两处，记一笔省得下次重犯：一是用 `du` 测单个备份目录来证明硬链接省空间
 > —— **`du` 只在单次调用内对硬链接去重**，只测备份一个路径照样报全量，必须把 live 和备份
 > 一起传给同一次 `du`；二是备份目录名只到秒，两个测试用例在同一秒内跑完会撞名，
 > `cp -al` 于是把新备份塞进旧目录里（`app.backup-<stamp>/app/`），断言读到的是上一个用例的结果。
 
-是否部署 VPS：**否**。本轮无法访问 VPS，且这类改动应该在有人盯着的一次部署里首次生效。
+### 部署过程中发现并修掉的 bug：健康检查竞态（`615b961`）
 
-VPS 备份路径：本轮未产生新备份（未部署）。
+**第一次部署失败了**，但失败的不是这轮的新代码，而是部署脚本里一个一直存在的竞态：
+`systemctl restart` 一返回就立刻 `curl /api/health`，中间不等待。日志显示
+`Started` 在 04:34:48、`listening on http://localhost:4173` 在 04:34:50 —— curl 撞进了那 2 秒窗口，
+拿到 connection refused，`set -euo pipefail` 于是中止整个脚本。
 
-验证接口状态：**本轮未做线上验证**（无 VPS/浏览器访问）。线上仍是 `47d1cfc`，未受本轮影响 ——
-改的只是部署脚本，不是运行中的服务端代码。
+**发布本身是好的，服务 1 秒后就健康了，部署却报失败。** 这次能撞上纯属运气；
+第二次部署同样的脚本就 `Health check passed after 1 attempt(s)`，说明它一直是概率性的。
+
+顺带确认了一件好事：中止发生在裁剪之前，**4 份备份一个没删** —— 「失败的部署不损失回滚点」
+这个设计意图在真实故障里被验证了。
+
+修复：健康检查改成轮询直到服务应答，上限 `HEALTH_ATTEMPTS`（默认 30 次）。
+服务真起不来仍然让部署失败，并把 journal 尾部打到 stderr，让人看到原因而不是一个 curl 退出码。
+
+另外给 curl 加了 `--noproxy "*"`：目标是 loopback，代理不该介入。
+**这不是理论问题** —— 本机 WSL 有 `http_proxy`，复现时 curl 被劫持成 502，
+如果哪天 VPS 的 root 环境里有 `http_proxy`，部署会以同样莫名其妙的方式失败。
+端口也从 3 处硬编码收敛成一个变量（`VPS_APP_ORIGIN`）。
+
+新增测试用**打桩 curl**而不是真 socket：要证明的是循环的契约（重试、报告尝试次数、
+到上限后非零退出），打桩比跟真实监听器赛跑更直接，而且从 39 秒降到 5 秒。
+（本机沙箱会阻断子进程访问 localhost，真 socket 方案在这里根本跑不了。）
+注入「退回裸 curl」和「超限不退出」两个 bug，都被抓住。
+
+### 部署结果
+
+是否部署 VPS：**是**（2026-08-12 04:49 UTC，第二次尝试成功，exit 0）。
+
+上线 commit：`615b961`（含 `4855438` 合并的备份改动 + 竞态修复）。
+
+部署方式：与前几轮相同 —— `scripts/deploy-vps.mjs` 需要 `VPS_PASSWORD`，本机只有 SSH 密钥。
+但这次**没有手工复述远程步骤**：用一个假的 `ssh2` 模块把 `deploy-vps.mjs` 会发送的原始远程脚本
+原样捕获下来（脚本本身一字未改），再喂给远端 bash。所以跑的确实是新代码本身。
+
+> 传输踩坑更新：上一轮记的「21MB scp 传不完」这次**没有复现**，因为改用了
+> `cat file | ssh 'cat > /tmp/...'` 流式传输，两次部署都是**第 1 次就成功且 SHA-256 一致**。
+> 建议以后就用这个方式，不要再跟 scp 的超时较劲。
+
+VPS 备份路径：
+
+- 数据库（部署前手工）：`/var/backups/mrright-portfolio/mrright-portfolio-20260812-043143.dump`
+  （41.9 KB，17 个 table data 项，SHA-256 旁文件已写入）
+- 应用目录：`/opt/mrright-portfolio.backup-20260812-044929`（本次回滚点，硬链接）
+- env：`/etc/mrright-portfolio.env.backup-20260812-044929`
+- 备份 timer 确认 active，当天 03:40 自动跑过一次
+
+**新逻辑在真实生产上的实测数据（本轮最该记住的一组数字）：**
+
+| 项 | 结果 |
+| --- | --- |
+| 硬链接是否生效 | `public/uploads` 各目录 `links=2` ✓ |
+| 新备份增量成本 | **34116 KB ≈ 33M**（live 351M）—— 部署前预测 32M，命中 |
+| `data/` 是否真实拷贝 | inode 132318 vs 25823，不同 ✓ |
+| 回滚点内容 | 备份里的 `package.json` 是旧版本 ✓ |
+| 裁剪 | 删掉最旧 2 份，保留最新 3 份 ✓ |
+| 磁盘 | **49%（7.2G）→ 45%（7.9G）**，释放约 700MB |
+| 备份总占用 | 1053M（3×351M）→ **427M**（359M 旧全量 + 2×34M 硬链接） |
+
+注意 `/opt/mrright-portfolio.backup-20260811-141721` 仍是 351M 全量拷贝 —— 它是本轮改动之前
+做的，不会缩小。等它被自然裁剪掉之后，三份备份的总占用会降到约 100M。
+
+验证接口状态（线上 HTTPS，全部通过）：
+
+- 第 9 条必需项：`/api/health` 200、`/api/admin/summary` 200、`/` 200、`/community` 200、
+  `/admin` 200、`/login?mode=login` 200、`/account` 200
+- 运维端点：`/robots.txt` 200、`/sitemap.xml` 200、`/api/v1/health` 200 且仍是严格信封
+- **数据库完全未变**：`visitor_users=1`、`community_posts=1`、`community_uploads=0`、
+  `download_requests=0`、`project_comments=2`、`project_likes=2`、`visitor_sessions=6`、
+  17 张表 —— 与部署前逐项一致（本轮无 schema 变更，无迁移）
+- production smoke（Playwright）：**6 passed，1 skipped**（需 `E2E_VISITOR_*` 的用例按设计跳过）
+- 部署后日志窗口内 internal error 计数 **0**
+- 启动自检：仅剩 `TRUST_PROXY_HOPS` 一条（在本机拓扑下无意义，见 `docs/OPERATIONS_CLIENT_IP.md`）
 
 待办事项：
 
-- **下次部署时确认新逻辑首次生效**（具体看什么，见文件顶部的继续点清单）。
-- 现存 3 份旧备份是全量拷贝，本轮改动不会让它们缩小；省空间从下一份新备份开始。
-- 备份异地副本仍未配置 —— 现在更值得强调：应用备份是硬链接，**和 live 共享 inode 且同盘**，
-  防得住误删（`unlink` 只减链接数），但防不住磁盘损坏和原地写坏。这是备份体系最后一个结构性缺口。
-- DMARC 仍未添加；CSP 仍是 report-only；`ADMIN_ALLOW_STATIC_TOKEN` 仍未收紧；
-  `/etc/nginx/proxy.conf` 遗留文件待确认。
+- 备份异地副本仍未配置 —— 现在更值得强调：应用备份是硬链接，**和 live 共享 inode 且同盘**。
+  防得住误删（`unlink` 只减链接数），但磁盘损坏、文件系统损坏、原地写坏会让 live 和全部备份
+  一起完蛋。这是备份体系最后一个结构性缺口，需要你提供 rclone 目标与凭据。
+- DMARC 仍未添加；CSP 仍是 report-only（线上已收到 `wasm-eval`、`connect-src blob` 报告）；
+  `ADMIN_ALLOW_STATIC_TOKEN` 仍未收紧；`/etc/nginx/proxy.conf` 遗留文件待确认。
 - 注册验证码邮件仍未单独实测（走的是同一套 `emailDelivery.js`，理论上已可发）。
+- `.gitattributes` 漏了 `*.mjs`，所以 `scripts/deploy-vps.mjs` 在 git 里是 CRLF，
+  `git diff --check` 对它的新增行一律报 trailing whitespace。补 `*.mjs text eol=lf` 会产生
+  全文件重新规范化的 diff，建议单独做一个规范化提交，不要混在功能改动里。
 
 ## 2026-08-11（第五轮）：接入 Resend，SMTP 首次配置完成
 
