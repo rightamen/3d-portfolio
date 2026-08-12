@@ -160,11 +160,13 @@ app.disable('x-powered-by')
 
 app.use(
   helmet({
-    // Report-only for now: the SPA loads Google Fonts over @import and three.js
-    // creates blob: workers, so a blocking policy needs a browser pass first.
-    // Switch to contentSecurityPolicy once the report shows a clean run.
+    // Blocking since 2026-08-12. It ran report-only from 2026-08-11 and the
+    // collector below reported exactly two violations, both of them the
+    // policy's fault rather than the app's:
+    //   script-src <- wasm-eval    three.js decoders compile WebAssembly
+    //   connect-src <- blob        the admin upload preview fetches a blob: URL
+    // Both are covered by the directives below; see scriptSrc / connectSrc.
     contentSecurityPolicy: {
-      reportOnly: true,
       directives: {
         defaultSrc: ["'self'"],
         baseUri: ["'self'"],
@@ -172,19 +174,28 @@ app.use(
         objectSrc: ["'none'"],
         imgSrc: ["'self'", 'data:', 'blob:'],
         workerSrc: ["'self'", 'blob:'],
+        // 'wasm-unsafe-eval' allows WebAssembly.instantiate and nothing else —
+        // it does not bring back eval() or inline script. Without it the
+        // three.js draco/meshopt decoders cannot compile and the model silently
+        // fails to load. scriptSrc has to be spelled out: leaving it unset
+        // falls back to defaultSrc, which is where the reported violation came
+        // from.
+        scriptSrc: ["'self'", "'wasm-unsafe-eval'"],
         styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
         fontSrc: ["'self'", 'data:', 'https://fonts.gstatic.com'],
-        connectSrc: ["'self'"],
-        // Report-only without a collector produced nothing at all: violations
-        // went to the browser console on someone else's machine. With an
-        // endpoint the policy can be tightened against evidence instead of
-        // guesses. reportUri is the widely-supported directive; reportTo needs
-        // a Report-To/Reporting-Endpoints header pair to be useful.
+        // blob: is needed to read back an object URL, not to reach the network.
+        connectSrc: ["'self'", 'blob:'],
+        // The collector is what made this policy tightenable against evidence
+        // instead of guesses, and it matters more now than in report-only mode:
+        // a violation is a broken page, and this is the only signal for a code
+        // path the browser pass did not cover. reportUri is the widely
+        // supported directive; reportTo needs a Report-To/Reporting-Endpoints
+        // header pair to be useful.
         reportUri: ['/api/csp-report'],
-        // Helmet adds upgrade-insecure-requests by default. It is ignored by
-        // browsers in report-only mode and emits a console error on every SPA
-        // page, so leave it out until CSP is ready to become blocking.
-        upgradeInsecureRequests: null,
+        // upgrade-insecure-requests is helmet's default and is back now that
+        // the policy blocks. It was disabled while report-only because browsers
+        // ignore it there and log an error about it on every SPA page.
+        // Browsers exempt localhost, so it does not affect a local http run.
       },
     },
     crossOriginEmbedderPolicy: false,
