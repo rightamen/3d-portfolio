@@ -41,17 +41,16 @@ CSP 这件事能做完，就是因为 playwright 回来了。
 
 ### 待你决策的（我没有权限或不该替你决定）
 
-1. **DMARC 记录仍未添加 —— 现在是唯一等你动手的事**（需要 Cloudflare 权限，我没有）。
-   **2026-08-12 你已选定方案 B**：先用 Cloudflare Email Routing 把
-   `dmarc@mrright.blog` 转发到你的 Gmail，再把 `rua` 指向这个**同域**地址，
-   绕开「Gmail 没有 RFC 7489 外部授权记录」那个坑。
-   最终要加的记录：`_dmarc` TXT `v=DMARC1; p=none; rua=mailto:dmarc@mrright.blog`。
-   完整步骤与坑见下方第七轮的「DMARC」小节。
-2. **`/etc/nginx/proxy.conf`** 是个占用 443、`server_name` 还是占位符的 Docker 镜像加速遗留配置，
+1. **`/etc/nginx/proxy.conf`** 是个占用 443、`server_name` 还是占位符的 Docker 镜像加速遗留配置，
    确认是否还需要。**动它之前必读 `docs/OPERATIONS_CLIENT_IP.md`** —— 443 是网站与机场节点
    按 SNI 分流共用的，改错会打挂正在服务的节点。
+   **这是现在唯一剩下的未决项。**
 
 **已由你拍板、不再是未决项的：**
+
+- ~~DMARC 记录~~ —— **2026-08-12 已添加并验证上线**（方案 B，报告收在自己域内）。
+  `_dmarc.mrright.blog` = `v=DMARC1; p=none; rua=mailto:dmarc@mrright.blog`，见下方第七轮记录。
+  **唯一还需要你亲眼确认的**：那两封实测邮件是否进了 Gmail 收件匣（我看不到你的邮箱）。
 
 - ~~备份异地副本~~ —— **2026-08-12 你明确答复「不需要异地备份」，此项关闭。**
   保留一句风险说明作为背景，不再当作待办：备份与数据库仍在同一块磁盘上，
@@ -283,7 +282,43 @@ mrright.blog._report._dmarc.dmarc.postmarkapp.com => "v=DMARC1;"  ← 通配符�
 - 根域**当前无 TXT**，Cloudflare 加的 `v=spf1 include:_spf.mx.cloudflare.net ~all`
   **不会影响 Resend 发信** —— Resend 的信封域是 `send.mrright.blog`，SPF 查的是那条
   （`include:amazonses.com`），根域这条管的是「谁能以 @mrright.blog 作信封域发信」。
-  而且 DMARC 这边本来就靠 DKIM 对齐（`d=` 就是根域）。**加完仍要实测发一封密码重置邮件复验。**
+  而且 DMARC 这边本来就靠 DKIM 对齐（`d=` 就是根域）。
+
+#### 已完成的最终状态（2026-08-12）
+
+用户当天完成了全部四步，逐项复验结果：
+
+**Cloudflare Email Routing（用户操作，截图确认）**
+
+- 目标地址 `adieb623@gmail.com`：**已验证**
+- 路由规则 `dmarc@mrright.blog` → Gmail：**活跃**
+- catch-all「全收」：**保持禁用**（不然会收一堆垃圾）
+- 自动下发的 DNS：MX `route1/2/3.mx.cloudflare.net`（优先级 42/33/32）、
+  根域 SPF、Cloudflare 自己的 DKIM `cf2024-1._domainkey`
+
+**DNS 复验（VPS 上用 `node:dns` 查）**
+
+```
+_dmarc.mrright.blog  =>  v=DMARC1; p=none; rua=mailto:dmarc@mrright.blog
+标签解析：v=DMARC1 / p=none / rua=mailto:dmarc@mrright.blog
+rua 域 = mrright.blog，与 DMARC 域同域 → 不需要外部授权记录（这正是选方案 B 的原因）
+send.mrright.blog SPF、resend._domainkey 均未被改动
+```
+
+**踩到的第二个缓存坑**：刚加完时 `1.1.1.1` 已能查到，但 `8.8.8.8` / `9.9.9.9` 仍报
+`ENOTFOUND`。原因是我**在记录添加之前查过这些解析器**，留下了否定缓存：
+`mrright.blog` 的 SOA `minimum` 是 **1800 秒**，所以要等 30 分钟才会自己消失。
+分辨方法是**直接问权威 NS**（`kayden.ns.cloudflare.com` → `162.159.44.74`），
+权威上有记录就说明写对了，剩下的只是等缓存。
+
+**发信实测**（两封，都用线上应用的真实 Resend 通道发出，`{"delivery":"email","sent":true}`）
+
+1. 发给 `dmarc@mrright.blog` —— 验证「Resend 发信 → Cloudflare MX 收信 → 转发到 Gmail」整条链路
+2. 加完 DMARC 后发给 `adieb623@gmail.com` —— 验证新增的根域 MX/SPF 没有破坏原有发信
+
+**待用户确认的最后一环**：两封信是否真的进了收件匣（而不是垃圾箱），
+以及在 Gmail「显示原始邮件」里 SPF / DKIM / DMARC 三行是否都是 PASS。
+**`sent:true` 不算送达凭据** —— 这是第五轮就定下的规矩。
 
 ## 2026-08-12（第六轮）：应用备份改硬链接 + 自动保留策略
 
