@@ -2,7 +2,8 @@
 
 ## 下次从这里继续（截至 2026-08-12 第六轮收工）
 
-**线上运行 `48d3f69`，已部署并验证通过（2026-08-12 05:11 UTC）。没有积压的未部署改动。**
+**线上运行 `48d3f69`（2026-08-12 05:11 UTC 部署，已逐项验证）。没有积压的未部署改动** ——
+main 上比它新的只有纯文档提交，不含任何需要上线的代码。
 
 本轮完成三件事（详见下面「2026-08-12（第六轮）」）：
 
@@ -26,7 +27,39 @@ curl -s -X DELETE -H "Authorization: Bearer $SESSION" https://mrright.blog/api/a
 （`/root/.claude/mcp/mrright-ops/`），本轮已重新写入全局 `mcpServers` 并冒烟测试通过。
 **MCP server 只在会话启动时连接，所以当前会话仍看不到它们，下次开新会话即可用。**
 
-顺带记两条环境事实，省得下次重查：
+### 待你决策的（我没有权限或不该替你决定）
+
+1. **备份异地副本 —— 现在是最优先的未决项。** 备份和数据库在同一块磁盘上。
+   本轮把应用备份改成硬链接后**更要紧了**：硬链接和 live 共享 inode，防得住误删
+   （`unlink` 只减链接数），但磁盘损坏、文件系统损坏、原地写坏会让 live 和全部备份一起完蛋。
+   `docs/OPERATIONS_BACKUP.md` 里有 rclone 方案，需要你先提供目标（S3/B2/Drive 等）与凭据。
+2. **DMARC 记录仍未添加**（需要 Cloudflare 权限）。2026-08-12 用 VPS 的 `node:dns` 复查确认
+   `_dmarc.mrright.blog` 无记录，而 `send.mrright.blog` 的 SPF 与 `resend._domainkey` 的 DKIM 都在。
+   要加：`_dmarc.mrright.blog` TXT `v=DMARC1; p=none; rua=mailto:<你的邮箱>`。先用 `p=none` 只观察。
+3. **`/etc/nginx/proxy.conf`** 是个占用 443、`server_name` 还是占位符的 Docker 镜像加速遗留配置，
+   确认是否还需要。**动它之前必读 `docs/OPERATIONS_CLIENT_IP.md`** —— 443 是网站与机场节点
+   按 SNI 分流共用的，改错会打挂正在服务的节点。
+
+### 下一轮我建议先做的
+
+1. **CSP 切 blocking —— 答案已经查到，只差用浏览器过一遍。**
+   线上两条报告是 `script-src <- wasm-eval` 和 `connect-src <- blob`，对应
+   `server/index.js:169-177` 里 `scriptSrc` 未设（回落到 `defaultSrc 'self'`）
+   且 `connectSrc: ['self']` 缺 `blob:`。改法：加
+   `scriptSrc: ["'self'", "'wasm-unsafe-eval'"]` 与 `connectSrc: ["'self'", 'blob:']`，
+   再去掉 `reportOnly`。**必须先用 playwright 过一遍全站再切** —— 漏一条指令就是线上白屏。
+   第六轮没做正是因为当时沙箱起不了本地浏览器，MCP 恢复后就能做了。
+2. 管理员账号体系 + TOTP（当前仍是「知道共享密钥就是管理员」，`admin_user_actions` 无法归因到人）。
+   静态令牌已收紧成「只能换会话」，这是该方向的第 2 步；第 3 步见
+   `docs/OPERATIONS_ADMIN_AUTH.md`。
+3. 拆 `Admin.jsx`（2492 行）与 `postgresStores.js`（3338 行）
+4. react-router（现在靠 `window.location.pathname` 判断，页面跳转全是整页刷新，3D 场景每次重建）
+5. 前端单元测试（目前只有 API 契约测试和 Playwright）
+6. SSR / 预渲染 SEO（社区帖子和公开主页搜索引擎抓不到）
+7. Asset Model（checksum / visibility / downloadPolicy）稳定后再回到 C++ SDK
+8. 下次恢复演练建议在 2026-11 之前（`docs/OPERATIONS_BACKUP.md` 要求每季度一次）
+
+### 环境事实，省得下次重查
 
 - **不装 MCP 也能干 VPS 的活。** `mrright-ops` 本质就是 `ssh -o BatchMode=yes root@147.79.20.232`，
   本机 SSH 密钥可直连，Bash 里直接用即可。
@@ -37,19 +70,13 @@ curl -s -X DELETE -H "Authorization: Bearer $SESSION" https://mrright.blog/api/a
   所以 curl 访问 `127.0.0.1` 会被劫持成 502；沙箱还会阻断子进程访问 localhost。
   测本地服务时要注意这两点。
 
-## 上一轮的继续点（截至 2026-08-11 第五轮收工）
+## 第五轮收工时的快照（2026-08-11，已冻结，不要照着它动手）
 
-**代码与线上的对应关系：**
+> **这一节是历史，不是当前状态。** 待办与决策清单已在上面的「下次从这里继续」里重新整理过；
+> 这里保留原文只是为了看得到当时的判断。当时线上跑的是 `47d1cfc`，
+> 下面第 3、5 两项都已在第六轮完成。
 
-| | commit | 说明 |
-| --- | --- | --- |
-| main 最新 | 见 git log | 本次进度记录（纯文档） |
-| **线上实际运行** | `47d1cfc` | 签名 Cookie 身份 + 评论先审后发（2026-08-11 14:23 UTC 部署） |
-| 未部署的差异 | 无 | 只剩文档提交，代码已全部上线 |
-
-**线上现在是最新代码，没有积压的未部署改动。** 下一轮开工可以直接做新东西。
-
-**已经不需要再排查的事（省得重复劳动）：**
+**当时已经不需要再排查的事（这部分仍然有效）：**
 
 - 真实客户端 IP 拿不到 —— 原因已查明（443 与机场节点共用 SNI 分流），**已决定不修**，
   已用不依赖 IP 的方案补偿。见 `docs/OPERATIONS_CLIENT_IP.md`。**动 nginx 或 443 之前必读这份文档。**
@@ -64,36 +91,30 @@ curl -s -X DELETE -H "Authorization: Bearer $SESSION" https://mrright.blog/api/a
 2. **备份异地副本**（现在是最优先的未决项）。当前备份和数据库在同一块磁盘上，磁盘坏了两者一起没。
    恢复演练已证明备份**内容**可还原，但没有解决**同盘**这个单点。
    `docs/OPERATIONS_BACKUP.md` 里有 rclone 方案。
-3. ~~`/opt/mrright-portfolio.backup-*` 的保留策略~~ —— **2026-08-12 第六轮已按你的选择做完**：
-   应用备份改为硬链接 + 只保留最近 3 份的自动裁剪（`VPS_BACKUP_RETAIN`，设 0 关闭）。
-   代码已就绪并本地验证通过，但**要到下次部署才生效**。
-   历史：2026-08-11 第四轮按你的指示手工清理过一次，15 份删到 3 份，磁盘 78% → 49%（剩 7.2G）。
+3. ~~`/opt/mrright-portfolio.backup-*` 的保留策略~~ —— **2026-08-12 第六轮已完成并上线**：
+   硬链接备份 + 保留最近 3 份的自动裁剪。一份 351M → 34M，磁盘 49% → 42%。
+   历史：2026-08-11 第四轮按你的指示手工清理过一次，15 份删到 3 份，磁盘 78% → 49%。
 4. **`/etc/nginx/proxy.conf`** 是个占用 443、`server_name` 还是占位符的 Docker 镜像加速遗留配置，
    确认是否还需要。
-5. 确认没有脚本依赖静态管理员令牌后，设 `ADMIN_ALLOW_STATIC_TOKEN=false`
-   （见 `docs/OPERATIONS_ADMIN_AUTH.md` 的收紧路径）。
-6. 观察 CSP 报告几天后，把 `contentSecurityPolicy` 从 report-only 切成 blocking。
+5. ~~设 `ADMIN_ALLOW_STATIC_TOKEN=false`~~ —— **2026-08-12 第六轮已完成并上线**。
+   卡住它的两个调用方（部署脚本、admin E2E 套件）已改成先换会话再调 API。
+6. CSP 切 blocking —— **仍未做，但答案已查到**，见上面「下一轮我建议先做的」第 1 条。
 
-**路线图上还没做的（按我建议的优先级）：**
+**路线图** —— 已上移到顶部「下一轮我建议先做的」，不在这里维护，免得两份清单各走各的。
+这一轮当时勾掉的两项留作记录：
 
-- ~~恢复演练~~ —— **2026-08-11 第四轮已完成**，结果见下方该轮记录。演练顺带修好了文档里
-  一个从来没能跑通的步骤。下次演练建议在 2026-11 之前（文档要求每季度一次）。
+- ~~恢复演练~~ —— 2026-08-11 第四轮已完成，顺带修好了文档里一个从来没能跑通的步骤。
 - ~~演练遗留的临时库~~ —— 用户已确认，`mrright_restore_drill` 已 `dropdb`（2026-08-11）。
   删除后复查：`mrright_portfolio` 仍在、17 张表、`visitor_users=1`/`project_comments=2`、
   `/api/health` 200，生产库未受影响。
-- 管理员账号体系 + TOTP（当前仍是「知道共享密钥就是管理员」，`admin_user_actions` 无法归因到人）
-- 拆 `Admin.jsx`（2400+ 行）与 `postgresStores.js`（3000+ 行）
-- react-router（现在靠 `window.location.pathname` 判断，页面跳转全是整页刷新，3D 场景每次重建）
-- 前端单元测试（目前只有 API 契约测试和 Playwright）
-- SSR / 预渲染 SEO（社区帖子和公开主页搜索引擎抓不到）
-- Asset Model（checksum / visibility / downloadPolicy）稳定后再回到 C++ SDK
 
 ## 2026-08-12（第六轮）：应用备份改硬链接 + 自动保留策略
 
 结论：部署脚本每次留下的 351M 全量备份改成了硬链接备份，并加上「保留最近 N 份」的自动裁剪。
 根治的是那个反复出现的磁盘问题 —— 上一轮手工从 15 份清到 3 份，但机制没变，攒回去只是时间问题。
-**已部署上线并验证通过**，实测新备份 33M（原 351M），磁盘 49% → 45%。
-过程中还发现并修掉了部署脚本里一个一直存在的健康检查竞态。
+**已部署上线并验证通过**，实测一份备份 351M → **34M**，三次部署后磁盘 49% → **42%**。
+过程中还发现并修掉了部署脚本里一个一直存在的健康检查竞态，
+并顺带完成了被它卡住的 `ADMIN_ALLOW_STATIC_TOKEN=false` 收紧。
 
 日期：2026-08-12。
 
