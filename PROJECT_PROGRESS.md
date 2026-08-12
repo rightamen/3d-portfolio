@@ -42,8 +42,11 @@ CSP 这件事能做完，就是因为 playwright 回来了。
 ### 待你决策的（我没有权限或不该替你决定）
 
 1. **DMARC 记录仍未添加 —— 现在是唯一等你动手的事**（需要 Cloudflare 权限，我没有）。
-   记录内容与操作步骤见下方第七轮的「DMARC」小节，**那里有一个必须注意的坑：
-   `rua` 不能直接填 Gmail 地址**。
+   **2026-08-12 你已选定方案 B**：先用 Cloudflare Email Routing 把
+   `dmarc@mrright.blog` 转发到你的 Gmail，再把 `rua` 指向这个**同域**地址，
+   绕开「Gmail 没有 RFC 7489 外部授权记录」那个坑。
+   最终要加的记录：`_dmarc` TXT `v=DMARC1; p=none; rua=mailto:dmarc@mrright.blog`。
+   完整步骤与坑见下方第七轮的「DMARC」小节。
 2. **`/etc/nginx/proxy.conf`** 是个占用 443、`server_name` 还是占位符的 Docker 镜像加速遗留配置，
    确认是否还需要。**动它之前必读 `docs/OPERATIONS_CLIENT_IP.md`** —— 443 是网站与机场节点
    按 SNI 分流共用的，改错会打挂正在服务的节点。
@@ -266,7 +269,21 @@ mrright.blog._report._dmarc.dmarc.postmarkapp.com => "v=DMARC1;"  ← 通配符�
 ```
 
 也就是说 `rua=mailto:<你的 Gmail>` 写了，**Google/Microsoft/Yahoo 这些大厂根本不会把报告发过来**，
-等于白写。可选做法见「下一轮」里的说明。
+等于白写。
+
+**用户 2026-08-12 选定方案 B：报告收在自己域内。** 即先用 Cloudflare Email Routing
+（免费）把 `dmarc@mrright.blog` 转发到 Gmail，`rua` 填这个同域地址 —— 同域就不需要外部授权记录。
+
+最终记录：`_dmarc` TXT `v=DMARC1; p=none; rua=mailto:dmarc@mrright.blog`
+（Name 只填 `_dmarc`，Cloudflare 会自动补上域名）。
+
+启用 Email Routing 会给**根域**加 MX 和一条 SPF TXT。两个已核实的前提：
+
+- 根域**当前无 MX**（`ENODATA`），不会冲突；
+- 根域**当前无 TXT**，Cloudflare 加的 `v=spf1 include:_spf.mx.cloudflare.net ~all`
+  **不会影响 Resend 发信** —— Resend 的信封域是 `send.mrright.blog`，SPF 查的是那条
+  （`include:amazonses.com`），根域这条管的是「谁能以 @mrright.blog 作信封域发信」。
+  而且 DMARC 这边本来就靠 DKIM 对齐（`d=` 就是根域）。**加完仍要实测发一封密码重置邮件复验。**
 
 ## 2026-08-12（第六轮）：应用备份改硬链接 + 自动保留策略
 
