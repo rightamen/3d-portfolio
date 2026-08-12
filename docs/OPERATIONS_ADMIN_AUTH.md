@@ -45,13 +45,32 @@ POST /api/admin/session          ← 唯一无条件接受静态 token 的路由
 
 **第 1 步（已完成）**：浏览器不再持有静态 token。
 
-**第 2 步**：确认没有脚本还在直接用静态 token 调 API 之后，设置
-`ADMIN_ALLOW_STATIC_TOKEN=false`。此时静态 token 只能用于换取会话，
-任何直接的 API 调用都会被拒绝 —— 泄露的静态 token 至少需要一次可观测的
-`POST /api/admin/session` 才能变成访问权，而那次调用会被记录 IP。
+**第 2 步（2026-08-12 已完成并上线）**：`ADMIN_ALLOW_STATIC_TOKEN=false` 已在 VPS 生效。
+静态 token 现在只能用于换取会话，任何直接的 API 调用都会被拒绝 —— 泄露的静态 token 至少需要
+一次可观测的 `POST /api/admin/session` 才能变成访问权，而那次调用会被记录 IP。
 
-注意：部署脚本和 `CLAUDE.md` 第 9 条的验证步骤会用静态 token 调
-`/api/admin/summary`。切换前需要先把它们改成"先换会话再调用"。
+切换前先改掉了两个仍在直接用静态 token 调 API 的调用方：
+
+- `scripts/deploy-vps.mjs` 与 `scripts/package-vps-release.mjs` 的部署后验证
+- `tests/e2e/admin-visitors.spec.js`
+
+它们现在都先 `POST /api/admin/session` 换会话再调 API。**部署脚本用完必定吊销**
+（包括检查失败的路径 —— 那正是遗留会话最容易被忽视的时候）；E2E 套件不吊销，
+理由写在该文件的注释里，会话会自行过期。
+
+线上实测（2026-08-12 05:12 UTC 切换后）：
+
+| 调用 | 结果 |
+| --- | --- |
+| 静态 token → `/api/admin/summary`、`/visitors`、`/comments` | 全部 **401 `ADMIN_AUTH_REQUIRED`** |
+| 静态 token → `POST /api/admin/session` | **201**（这是设计上保留的唯一用途） |
+| 会话 → 上述三个端点 | 全部 200 |
+| `DELETE /api/admin/session` 之后复用该会话 | 401 |
+| 伪造 token → 换会话 | 401 |
+
+**回退办法**：把 `/etc/mrright-portfolio.env` 里的 `ADMIN_ALLOW_STATIC_TOKEN=false`
+删掉或改成 `true`，然后 `systemctl restart mrright-portfolio`。
+切换前的 env 备份在 `/etc/mrright-portfolio.env.backup-20260812-051212`。
 
 **第 3 步（尚未实现）**：管理员账号体系 + TOTP。
 当前模型仍然是"知道一个共享密钥就是管理员"。真正的多因素需要：

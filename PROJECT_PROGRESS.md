@@ -2,10 +2,24 @@
 
 ## 下次从这里继续（截至 2026-08-12 第六轮收工）
 
-**线上运行 `615b961`，已部署并验证通过（2026-08-12 04:49 UTC）。没有积压的未部署改动。**
+**线上运行 `48d3f69`，已部署并验证通过（2026-08-12 05:11 UTC）。没有积压的未部署改动。**
 
-本轮完成：应用备份改硬链接 + 自动保留策略，并在部署过程中发现并修掉了部署脚本里一个
-**一直存在的健康检查竞态**。详见下面「2026-08-12（第六轮）」。
+本轮完成三件事（详见下面「2026-08-12（第六轮）」）：
+
+1. 应用备份改硬链接 + 自动保留策略 —— 一份备份 351M → **34M**，磁盘 49% → **42%**
+2. 修掉部署脚本里一个**一直存在的健康检查竞态**（第一次部署就是被它挂掉的）
+3. **`ADMIN_ALLOW_STATIC_TOKEN=false` 已收紧并上线** —— 静态管理员令牌现在只能换会话，
+   不能直调 API。回退办法见 `docs/OPERATIONS_ADMIN_AUTH.md` 第 2 步。
+
+**收紧后如果要手动调管理端 API，必须先换会话**（直接带静态令牌会 401）：
+
+```sh
+SESSION=$(curl -s -X POST -H "Authorization: Bearer $ADMIN_TOKEN" \
+  https://mrright.blog/api/admin/session \
+  | node -e 'let s="";process.stdin.on("data",d=>{s+=d}).on("end",()=>process.stdout.write(JSON.parse(s).data.session.token))')
+curl -s -H "Authorization: Bearer $SESSION" https://mrright.blog/api/admin/summary
+curl -s -X DELETE -H "Authorization: Bearer $SESSION" https://mrright.blog/api/admin/session  # 用完吊销
+```
 
 **MCP 已恢复注册（但需要重启会话才生效）：** `mrright-ops` 与 `playwright` 此前在
 `~/.claude.json` 里**根本没有注册**（不是断开）。实现文件一直都在
@@ -189,11 +203,55 @@ build / lint / 测试结果（部署前后各跑一次，全绿）：
 （本机沙箱会阻断子进程访问 localhost，真 socket 方案在这里根本跑不了。）
 注入「退回裸 curl」和「超限不退出」两个 bug，都被抓住。
 
+### 收紧 `ADMIN_ALLOW_STATIC_TOKEN`（`48d3f69`）
+
+`docs/OPERATIONS_ADMIN_AUTH.md` 的收紧路径第 2 步写着「确认没有脚本还在直接用静态 token 调 API
+之后再设 false」，紧接着又写「注意：部署脚本会用静态 token 调 `/api/admin/summary`」。
+**卡了几轮的就是这一条，而且答案一直写在文档里。** 排查确认只有两个调用方：
+
+- `scripts/deploy-vps.mjs:252` 与 `scripts/package-vps-release.mjs:78`（部署后验证）
+- `tests/e2e/admin-visitors.spec.js`（8 处）
+
+三处都改成先 `POST /api/admin/session` 换会话再调 API。该端点**刻意不走 `requireAdmin`**
+（`server/index.js:2840`），所以收紧后它仍然接受静态 token —— 这正是设计意图。
+
+**部署脚本用完必定吊销会话，包括检查失败的路径。** 失败路径才是遗留 12 小时管理员会话
+最容易被忽视的地方。E2E 套件不吊销（operator-run、偶发，且 `afterAll` 钩子拿不到 test 作用域的
+`request` fixture），会话自行过期，理由写在该文件注释里。
+
+会话 token 用 `node` 解析而不是 `grep`：它是 JSON 信封里的 base64url，
+手写匹配器正是「响应被截断了检查还通过」的经典来源。
+
+顺带修掉一个隐患：**`package-vps-release.mjs` 是部署步骤的第二份拷贝，而且已经漂移了** ——
+还是 `cp -a` 全量备份、没有裁剪、`sleep 3` 代替等待服务、静态令牌。现在它 emit 的是同一批
+共享片段，从根上不会再漂。
+
+线上实测（2026-08-12 05:12 UTC 切换后）：
+
+| 调用 | 结果 |
+| --- | --- |
+| 静态 token → `/api/admin/summary`、`/visitors`、`/comments` | 全部 **401 `ADMIN_AUTH_REQUIRED`** |
+| 静态 token → `POST /api/admin/session` | **201** |
+| 会话 → 上述三个端点 | 全部 200 |
+| 吊销后复用该会话 | 401 |
+| 伪造 token → 换会话 | 401 |
+| **部署脚本那段 admin 检查（收紧后重跑）** | **通过** —— 证明将来的部署不会被这次收紧打断 |
+
+env 变更：**追加**一行 `ADMIN_ALLOW_STATIC_TOKEN=false`，追加前已备份到
+`/etc/mrright-portfolio.env.backup-20260812-051212`，文件权限仍为 `600 root`，未覆盖。
+回退：删掉该行或改成 `true`，然后 `systemctl restart mrright-portfolio`。
+
 ### 部署结果
 
-是否部署 VPS：**是**（2026-08-12 04:49 UTC，第二次尝试成功，exit 0）。
+是否部署 VPS：**是**，本轮共 3 次部署：
 
-上线 commit：`615b961`（含 `4855438` 合并的备份改动 + 竞态修复）。
+| 时刻 (UTC) | commit | 结果 |
+| --- | --- | --- |
+| 04:34 | `4855438` | **失败**（健康检查竞态；发布本身是好的，裁剪未执行，4 份备份一个没删） |
+| 04:49 | `615b961` | 成功，裁剪掉最旧 2 份，磁盘 49% → 45% |
+| 05:11 | `48d3f69` | 成功，裁剪掉最后一份全量备份，磁盘 45% → **42%（8.2G）** |
+
+上线 commit：`48d3f69`。
 
 部署方式：与前几轮相同 —— `scripts/deploy-vps.mjs` 需要 `VPS_PASSWORD`，本机只有 SSH 密钥。
 但这次**没有手工复述远程步骤**：用一个假的 `ssh2` 模块把 `deploy-vps.mjs` 会发送的原始远程脚本
@@ -223,8 +281,9 @@ VPS 备份路径：
 | 磁盘 | **49%（7.2G）→ 45%（7.9G）**，释放约 700MB |
 | 备份总占用 | 1053M（3×351M）→ **427M**（359M 旧全量 + 2×34M 硬链接） |
 
-注意 `/opt/mrright-portfolio.backup-20260811-141721` 仍是 351M 全量拷贝 —— 它是本轮改动之前
-做的，不会缩小。等它被自然裁剪掉之后，三份备份的总占用会降到约 100M。
+**收工时的最终状态**：三份备份**全部**是硬链接（34116 / 34144 / 34152 KB），
+最后一份 351M 全量拷贝已在第 3 次部署时被自然裁剪掉。
+备份总占用 1053M → **100M**，磁盘 49%（7.2G）→ **42%（8.2G）**。
 
 验证接口状态（线上 HTTPS，全部通过）：
 
@@ -243,8 +302,19 @@ VPS 备份路径：
 - 备份异地副本仍未配置 —— 现在更值得强调：应用备份是硬链接，**和 live 共享 inode 且同盘**。
   防得住误删（`unlink` 只减链接数），但磁盘损坏、文件系统损坏、原地写坏会让 live 和全部备份
   一起完蛋。这是备份体系最后一个结构性缺口，需要你提供 rclone 目标与凭据。
-- DMARC 仍未添加；CSP 仍是 report-only（线上已收到 `wasm-eval`、`connect-src blob` 报告）；
-  `ADMIN_ALLOW_STATIC_TOKEN` 仍未收紧；`/etc/nginx/proxy.conf` 遗留文件待确认。
+- ~~`ADMIN_ALLOW_STATIC_TOKEN` 收紧~~ —— **本轮已完成并上线**。
+- **CSP 切 blocking 的答案已经查到，但没做**：线上收到的两条报告分别是
+  `script-src <- wasm-eval` 和 `connect-src <- blob`，对应 `server/index.js:169-177` 里
+  `scriptSrc` 未设（回落到 `defaultSrc 'self'`）且 `connectSrc: ['self']` 缺 `blob:`。
+  改法应是加 `scriptSrc: ["'self'", "'wasm-unsafe-eval'"]` 与 `connectSrc: ["'self'", 'blob:']`，
+  然后把 `reportOnly` 去掉。**没做的原因**：切 blocking 前必须用真浏览器过一遍全站，
+  而当前会话的沙箱阻断子进程访问 localhost，本地 Playwright 跑不起来 ——
+  漏一条指令就是线上白屏，不能靠推理上线。下轮 MCP 恢复后用 playwright 过一遍再切。
+- **DMARC 仍未添加**（需要你在 Cloudflare 操作，我没有 DNS 权限）。已用 VPS 上的 `node:dns` 复查：
+  `_dmarc.mrright.blog` 无记录；`send.mrright.blog` 的 SPF 与 `resend._domainkey` 的 DKIM 都在。
+  要加的记录：`_dmarc.mrright.blog` TXT `v=DMARC1; p=none; rua=mailto:<你的邮箱>`。先用 `p=none` 只观察。
+- `/etc/nginx/proxy.conf` 遗留文件待确认 —— **本轮刻意没碰**：它占用 443，而 443 是
+  网站与机场节点按 SNI 分流共用的，动它有打挂机场节点的风险。见 `docs/OPERATIONS_CLIENT_IP.md`。
 - 注册验证码邮件仍未单独实测（走的是同一套 `emailDelivery.js`，理论上已可发）。
 - `.gitattributes` 漏了 `*.mjs`，所以 `scripts/deploy-vps.mjs` 在 git 里是 CRLF，
   `git diff --check` 对它的新增行一律报 trailing whitespace。补 `*.mjs text eol=lf` 会产生
