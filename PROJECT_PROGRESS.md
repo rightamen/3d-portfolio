@@ -41,24 +41,20 @@ CSP 这件事能做完，就是因为 playwright 回来了。
 
 ### 待你决策的（我没有权限或不该替你决定）
 
-1. **备份异地副本 —— 现在是最优先的未决项。** 备份和数据库在同一块磁盘上。
-   本轮把应用备份改成硬链接后**更要紧了**：硬链接和 live 共享 inode，防得住误删
-   （`unlink` 只减链接数），但磁盘损坏、文件系统损坏、原地写坏会让 live 和全部备份一起完蛋。
-   `docs/OPERATIONS_BACKUP.md` 里有 rclone 方案，需要你先提供目标（S3/B2/Drive 等）与凭据。
-2. **DMARC 记录仍未添加**（需要 Cloudflare 权限）。2026-08-12 用 VPS 的 `node:dns` 复查确认
-   `_dmarc.mrright.blog` 无记录，而 `send.mrright.blog` 的 SPF 与 `resend._domainkey` 的 DKIM 都在。
-   要加：`_dmarc.mrright.blog` TXT `v=DMARC1; p=none; rua=mailto:<你的邮箱>`。先用 `p=none` 只观察。
-3. **`/etc/nginx/proxy.conf`** 是个占用 443、`server_name` 还是占位符的 Docker 镜像加速遗留配置，
+1. **DMARC 记录仍未添加 —— 现在是唯一等你动手的事**（需要 Cloudflare 权限，我没有）。
+   记录内容与操作步骤见下方第七轮的「DMARC」小节，**那里有一个必须注意的坑：
+   `rua` 不能直接填 Gmail 地址**。
+2. **`/etc/nginx/proxy.conf`** 是个占用 443、`server_name` 还是占位符的 Docker 镜像加速遗留配置，
    确认是否还需要。**动它之前必读 `docs/OPERATIONS_CLIENT_IP.md`** —— 443 是网站与机场节点
    按 SNI 分流共用的，改错会打挂正在服务的节点。
-4. **`sniproxy.service` 正在无限重启失败（第七轮查 CSP 日志时顺手发现的，与本项目无关）。**
-   它每 5 秒起一次、每次都因 `error parsing /etc/sniproxy.conf at 507` 退出，
-   **10 天内失败 13176 次**，一直在刷 journal。配置文件是 2024-04-15 的，3.6KB。
-   **网站不受影响**：443 现在是 nginx 在监听（`ss -tlnp` 已确认），
-   按 `docs/OPERATIONS_CLIENT_IP.md`，SNI 分流也是 nginx stream 做的，不是 sniproxy。
-   所以它看起来是个**没人用了却还开机自启的遗留服务**。
-   **我没有动它** —— 它挨着机场节点那一摊，该不该停由你定。
-   要停：`systemctl disable --now sniproxy`。
+
+**已由你拍板、不再是未决项的：**
+
+- ~~备份异地副本~~ —— **2026-08-12 你明确答复「不需要异地备份」，此项关闭。**
+  保留一句风险说明作为背景，不再当作待办：备份与数据库仍在同一块磁盘上，
+  硬链接备份防得住误删（`unlink` 只减链接数），但**磁盘或文件系统损坏会让 live
+  和全部备份一起没**。`docs/OPERATIONS_BACKUP.md` 里的 rclone 方案留着，哪天改主意可直接用。
+- ~~`sniproxy.service` 无限重启失败~~ —— **2026-08-12 已按你的指示停用**，见下方第七轮记录。
 
 ### 下一轮我建议先做的
 
@@ -221,6 +217,56 @@ env 备份 `/etc/mrright-portfolio.env.backup-20260812-140940`；
 
 待办：把这条路径固化成脚本（比如给 `deploy-vps.mjs` 加一个密钥认证分支），
 否则下次还得临时拼一遍。
+
+### 收尾：停用 sniproxy（按用户指示）
+
+查 CSP 日志时发现 `sniproxy.service` 在无限重启失败，**10 天内失败 13176 次**，
+每 5 秒一轮，报 `error parsing /etc/sniproxy.conf at 507`（配置是 2024-04-15 的，3.6KB）。
+
+停之前确认过它确实是死的、且和 443 分流无关：
+
+- `systemctl is-active` = `activating`（永远起不来），**无进程、无监听端口**
+- 它配置里要占的是 `0.0.0.0:80` 与 `0.0.0.0:443`，而这两个端口**早就被 nginx 占着** ——
+  就算配置能解析也绑不上
+- SNI 分流是 nginx stream 做的（`docs/OPERATIONS_CLIENT_IP.md`），不是它
+
+用户 2026-08-12 指示停用，已执行 `systemctl disable --now sniproxy`：
+现在 `inactive` / `disabled`，`multi-user.target.wants` 里的软链已移除，之后无重启日志。
+停用后复验：80/443 仍是 nginx（3 个监听项）、nginx 与 mrright-portfolio 均 `active`、
+`/` 200、`/community` 200、`/api/health` 200。
+
+**注意 `mcp__mrright-ops__ssh_exec` 会吞掉 `--` 开头的参数** —— 第一次
+`systemctl disable --now sniproxy` 经 MCP 执行时，实际跑成了裸 `systemctl`（打印了单元列表），
+服务纹丝不动；`journalctl -u xxx --since` 也中过同样的招（把别的单元的日志混进来）。
+**要带长参数就用 Bash 里的 `ssh root@147.79.20.232 '...'` 直连**，别走 MCP。
+
+### DMARC：记录内容与一个必须避开的坑
+
+2026-08-12 用 VPS 的 `node:dns` 查到的现状：
+
+| 名称 | 现状 |
+| --- | --- |
+| `mrright.blog` NS | `kayden.ns.cloudflare.com` / `lorna.ns.cloudflare.com`（DNS 在 Cloudflare） |
+| `_dmarc.mrright.blog` | **不存在** |
+| `send.mrright.blog` TXT | `v=spf1 include:amazonses.com ~all`（SPF 在） |
+| `resend._domainkey.mrright.blog` | DKIM 公钥在（**在根域，不在 `send.` 子域**） |
+| `mrright.blog` MX | **无** —— 这个域不收信 |
+| `SMTP_FROM` 的域 | `@mrright.blog` |
+
+因为发件域是 `mrright.blog`，DMARC 就查 `_dmarc.mrright.blog`。
+对齐关系是够的：DKIM 的 `d=` 是根域（严格对齐也过），SPF 的信封域是 `send.mrright.blog`
+（宽松对齐过，宽松是默认）。所以 `p=none` 完全安全。
+
+**坑：`rua` 不能直接填 Gmail 地址。** RFC 7489 §7.1 规定，报告地址与 DMARC 记录不同域时，
+接收方必须先查 `<你的域>._report._dmarc.<对方域>` 拿授权。实测：
+
+```
+mrright.blog._report._dmarc.gmail.com        => ENOTFOUND   ← Gmail 没开这个口子
+mrright.blog._report._dmarc.dmarc.postmarkapp.com => "v=DMARC1;"  ← 通配符，已授权
+```
+
+也就是说 `rua=mailto:<你的 Gmail>` 写了，**Google/Microsoft/Yahoo 这些大厂根本不会把报告发过来**，
+等于白写。可选做法见「下一轮」里的说明。
 
 ## 2026-08-12（第六轮）：应用备份改硬链接 + 自动保留策略
 
