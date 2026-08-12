@@ -16,7 +16,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, statSync, rmSync, 
 import os from 'node:os'
 import path from 'node:path'
 
-import { BACKUP_AND_EXTRACT, PRUNE_FUNCTION } from './lib/deploy-backup-script.mjs'
+import { BACKUP_AND_EXTRACT, PRUNE_FUNCTION, WAIT_FOR_HEALTH } from './lib/deploy-backup-script.mjs'
 
 const failures = []
 const fail = (message) => failures.push(message)
@@ -238,6 +238,77 @@ try {
   fail(`prune failed when there were no backups to consider: ${error.message}`)
 }
 
+// --- 6. the health check waits for a service that is still starting ----------
+// This is the 2026-08-12 deploy failure, reproduced: systemctl returns once the
+// unit is started, but node needs about two seconds more to reach listen(), and
+// a bare curl in that window aborts the whole deploy on a healthy release.
+//
+// curl is stubbed rather than pointed at a real socket. What needs proving is
+// the loop's contract -- keep trying, report how many attempts it took, give up
+// non-zero at the cap -- and a stub states the service's behaviour directly
+// instead of leaving it to a race against a real listener's startup.
+const stubBin = path.join(sandbox, 'bin')
+mkdirSync(stubBin, { recursive: true })
+const counterFile = path.join(sandbox, 'curl-calls')
+
+// Fails until it has been called `succeedOnCall` times, like a unit that is up
+// but not yet listening. 0 means it never succeeds.
+const installCurlStub = (succeedOnCall) => {
+  writeFileSync(counterFile, '0')
+  writeFileSync(
+    path.join(stubBin, 'curl'),
+    [
+      '#!/bin/bash',
+      `n=$(( $(cat ${JSON.stringify(counterFile)}) + 1 ))`,
+      `echo "$n" > ${JSON.stringify(counterFile)}`,
+      `if [ ${succeedOnCall} -gt 0 ] && [ "$n" -ge ${succeedOnCall} ]; then exit 0; fi`,
+      'exit 7', // curl's "failed to connect"
+    ].join('\n'),
+    { mode: 0o755 },
+  )
+}
+
+const waitScript = (attempts) =>
+  [
+    'set -euo pipefail',
+    'HEALTH_URL="http://127.0.0.1:4173/api/health"',
+    'SERVICE_NAME=not-a-real-unit',
+    `HEALTH_ATTEMPTS=${attempts}`,
+    WAIT_FOR_HEALTH,
+  ].join('\n')
+
+const stubbedPath = { PATH: `${stubBin}:${process.env.PATH}` }
+
+installCurlStub(3)
+try {
+  const waitOutput = bash(waitScript(30), sandbox, stubbedPath)
+  check(
+    waitOutput.includes('Health check passed after 3 attempt(s)'),
+    `wait loop did not retry to the third attempt: ${waitOutput.trim()}`,
+  )
+  check(
+    Number(readFileSync(counterFile, 'utf8').trim()) === 3,
+    'wait loop kept calling curl after it had already succeeded',
+  )
+} catch (error) {
+  fail(`wait loop gave up on a service that needed three attempts: ${error.message}`)
+}
+
+// A service that never answers must still fail the deploy rather than hang or
+// pass silently, and must stop at the cap instead of retrying forever.
+installCurlStub(0)
+let deadServiceFailed = false
+try {
+  bash(waitScript(4), sandbox, stubbedPath)
+} catch {
+  deadServiceFailed = true
+}
+check(deadServiceFailed, 'wait loop passed even though the service never answered')
+check(
+  Number(readFileSync(counterFile, 'utf8').trim()) === 4,
+  `wait loop did not stop at HEALTH_ATTEMPTS=4 (curl was called ${readFileSync(counterFile, 'utf8').trim()} times)`,
+)
+
 rmSync(sandbox, { recursive: true, force: true })
 
 if (failures.length > 0) {
@@ -249,3 +320,4 @@ if (failures.length > 0) {
 console.log('[deploy-backup] hardlinked backup + retention verification passed')
 console.log('[deploy-backup] checked: uploads shared, data/ copied, rollback point intact after extract')
 console.log('[deploy-backup] checked: prune keeps newest N, ignores hand-named dirs, honours retain=0')
+console.log('[deploy-backup] checked: health check waits out a slow start, still fails on a dead service')

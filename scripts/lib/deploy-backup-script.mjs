@@ -13,6 +13,39 @@
 //   ARCHIVE         release tarball to extract (BACKUP_AND_EXTRACT only)
 //   BACKUP_RETAIN   how many timestamped app backups to keep; 0 disables pruning
 
+// `systemctl restart` returns as soon as the unit is started, not when the
+// server is accepting connections -- node takes about two seconds to get to
+// listen(). The deploy used to curl immediately after the restart and abort the
+// whole script on the connection refused that follows, which is exactly what
+// happened on 2026-08-12: the release was fine, the service was healthy a second
+// later, and the deploy still failed with the site reporting itself down.
+//
+// Polling closes that window without hiding a real failure: a service that never
+// comes up still fails the deploy, and the journal tail goes to stderr so the
+// operator sees why rather than just a curl exit code.
+//
+// Expects: HEALTH_URL, SERVICE_NAME.
+export const WAIT_FOR_HEALTH = [
+  'HEALTH_ATTEMPTS="${HEALTH_ATTEMPTS:-30}"',
+  'attempt=1',
+  'while true; do',
+  // --noproxy because $HEALTH_URL is loopback: a proxy has no business in this
+  // request, and an http_proxy in root's environment would otherwise turn the
+  // health check into a confusing 502 against a service that is perfectly fine.
+  '  if curl -fsS -m 5 --noproxy "*" "$HEALTH_URL" >/dev/null 2>&1; then',
+  '    echo "Health check passed after $attempt attempt(s)."',
+  '    break',
+  '  fi',
+  '  if [ "$attempt" -ge "$HEALTH_ATTEMPTS" ]; then',
+  '    echo "Service did not answer $HEALTH_URL after $attempt attempt(s)." >&2',
+  '    journalctl -u "$SERVICE_NAME" -n 40 --no-pager >&2 2>/dev/null || true',
+  '    exit 1',
+  '  fi',
+  '  attempt=$((attempt + 1))',
+  '  sleep 1',
+  'done',
+].join('\n')
+
 // Matches only the exact suffix writeAppBackup produces, so a hand-named
 // directory parked next to $REMOTE_DIR is never a deletion candidate. The
 // timestamp format sorts lexically, so plain `sort` is chronological.

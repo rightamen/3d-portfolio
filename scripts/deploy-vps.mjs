@@ -5,7 +5,7 @@ import { execFile } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { promisify } from 'node:util'
 
-import { BACKUP_AND_EXTRACT, PRUNE_FUNCTION } from './lib/deploy-backup-script.mjs'
+import { BACKUP_AND_EXTRACT, PRUNE_FUNCTION, WAIT_FOR_HEALTH } from './lib/deploy-backup-script.mjs'
 
 const require = createRequire(import.meta.url)
 const { Client } = require('ssh2')
@@ -19,6 +19,8 @@ const remoteDir = process.env.VPS_REMOTE_DIR || '/opt/mrright-portfolio'
 const serviceName = process.env.VPS_SERVICE || 'mrright-portfolio'
 const domain = process.env.VPS_DOMAIN || 'mrright.blog'
 const envFile = process.env.VPS_ENV_FILE || `/etc/${serviceName}.env`
+// Where the unit listens, as seen from the VPS itself. nginx proxies to it.
+const appOrigin = process.env.VPS_APP_ORIGIN || 'http://127.0.0.1:4173'
 const archivePath = path.resolve('.deploy-tools', 'portfolio.tar.gz')
 // The generated nginx config below is HTTP-only (listen 80; TLS is terminated
 // upstream). Overwriting an existing config would therefore discard whatever a
@@ -145,6 +147,8 @@ try {
       `DOMAIN=${quotedDomain}`,
       `ARCHIVE=${quotedRemoteArchivePath}`,
       `BACKUP_RETAIN=${backupRetain}`,
+      `APP_ORIGIN=${shellQuote(appOrigin)}`,
+      'HEALTH_URL="$APP_ORIGIN/api/health"',
       PRUNE_FUNCTION,
       'if [ ! -f "$ENV_FILE" ]; then',
       '  echo "Missing $ENV_FILE. Create it manually before deploying." >&2',
@@ -244,9 +248,9 @@ try {
       // reload keeps existing connections; fall back to restart if the running
       // config cannot be reloaded in place.
       'systemctl reload nginx || systemctl restart nginx',
-      'curl -fsS http://127.0.0.1:4173/api/health',
+      WAIT_FOR_HEALTH,
       'TOKEN="$(awk -F= \'$1 == "ADMIN_TOKEN" { print substr($0, index($0, $2)) }\' "$ENV_FILE")"',
-      'curl -fsS -H "Authorization: Bearer $TOKEN" http://127.0.0.1:4173/api/admin/summary >/dev/null',
+      'curl -fsS -H "Authorization: Bearer $TOKEN" "$APP_ORIGIN/api/admin/summary" >/dev/null',
       'echo "Admin summary check passed."',
       // Only now that the new release is serving traffic. Env backups are
       // deliberately left alone: they are ~1KB each so they are not what fills
@@ -256,7 +260,7 @@ try {
       'systemctl --no-pager --full status "$SERVICE_NAME"',
     ].join('\n'),
   )
-  const health = await run(connection, 'curl -fsS http://127.0.0.1:4173/api/health')
+  const health = await run(connection, `curl -fsS ${shellQuote(`${appOrigin}/api/health`)}`)
   console.log(health.stdout.trim())
 } finally {
   connection.end()
