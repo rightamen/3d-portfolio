@@ -77,6 +77,13 @@ jobs:
       - name: OpenAPI contract validation
         run: npm run test:openapi
 
+      # Runs the deploy script's backup fragments against a scratch directory.
+      # It never connects to the VPS; it exists because that logic both
+      # hardlinks and deletes, and the alternative to checking it here is
+      # checking it in production.
+      - name: Deploy backup and retention verification
+        run: npm run test:deploy-backup
+
   api-db-contract:
     name: API contract against PostgreSQL
     runs-on: ubuntu-latest

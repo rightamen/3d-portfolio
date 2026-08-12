@@ -21,6 +21,7 @@
     "test:api": "playwright test --config=playwright.api.config.js",
     "test:api:db": "node scripts/run-api-db-tests.mjs",
     "test:openapi": "node scripts/validate-openapi.mjs",
+    "test:deploy-backup": "node scripts/verify-deploy-backup.mjs",
     "test:e2e:headed": "playwright test --headed",
     "test:e2e:report": "playwright show-report",
     "verify:visitor-studio": "node scripts/verify-visitor-studio.mjs"

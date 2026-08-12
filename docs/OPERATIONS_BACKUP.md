@@ -144,9 +144,61 @@ sudo -u postgres dropdb mrright_restore_drill
 3. 核对数据后，修改 `/etc/mrright-portfolio.env` 中的 `DATABASE_URL` 指向新库。
 4. `systemctl start mrright-portfolio`，按 `CLAUDE.md` 第 9 条逐项验证线上接口。
 
+## 应用目录备份（部署脚本产生，与上面的数据库备份是两回事）
+
+`scripts/deploy-vps.mjs` 在每次部署前把 `/opt/mrright-portfolio` 备份成
+`/opt/mrright-portfolio.backup-YYYYMMDD-HHMMSS`。它的用途是**回滚点**，不是数据备份。
+
+**2026-08-12 起改为硬链接备份。** 此前是 `cp -a` 全量拷贝，每份 351M，其中 252M 是
+`public/uploads` 的逐字节重复副本；攒到 15 份占了 5.2G，磁盘一度到 78%。现在用 `cp -al`，
+未被这次部署改动的文件只占一个目录项，一份备份的增量成本降到代码那部分。
+
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `VPS_BACKUP_RETAIN` | `3` | 保留最近 N 份应用备份，更旧的在部署验证通过后删除 |
+| `VPS_BACKUP_RETAIN=0` | — | 关闭自动裁剪，永不删除（仍然享受硬链接省空间） |
+
+裁剪的三个约束：
+
+1. **只在部署健康检查通过之后执行。** 远程脚本是 `set -euo pipefail`，部署中途失败会在裁剪
+   之前中止，所以失败的部署不会损失任何回滚点。
+2. **只匹配脚本自己写出的时间戳格式**（`.backup-` + 8 位日期 + `-` + 6 位时间）。
+   手工命名的目录（例如 `…​.backup-before-migration`）永远不是删除候选。
+3. **env 备份不裁剪。** `/etc/mrright-portfolio.env.backup-*` 每份约 1KB，不是磁盘压力来源，
+   而它是 env 文件损坏时唯一的退路。
+
+### 硬链接备份的使用约束（重要）
+
+硬链接备份和 live 目录**共享 inode**。任何**原地写入**（追加、截断后重写）会同时改掉所有备份里
+的那份。因此：
+
+- 不要用 `>>` 往 `/opt/mrright-portfolio` 里的文件追加内容；
+- 不要在服务器上原地编辑该目录下的文件。`sed -i` 与 `vim` 是安全的（它们写临时文件再 rename，
+  换掉 inode），但 `echo x >> file` 不是。
+
+代码侧已知的唯一原地追加点是 `data/` 下的 `.jsonl`（`contactMessagesStore` /
+`downloadRequestsStore` 用 `appendFile`）。这两个 store 只在 `DATABASE_URL` 缺失时才加载
+（见 `server/index.js:108`），生产环境走 Postgres 用不到，但 `data/` 只有 ~17KB，
+**所以备份脚本对它做真实拷贝而不是硬链接**，不去赌那个前提永远成立。
+
+同理，解包用 `tar --unlink-first`：`package.json` 和 `package-lock.json` 不在被 `rm -rf`
+的列表里，会被直接覆盖到备份仍然链接着的路径上。GNU tar 1.35 默认就是先 unlink，所以这不是在修
+现存 bug，而是把行为钉死 —— `--overwrite`（可由 `TAR_OPTIONS` 环境变量注入）会把它翻转成原地
+截断，那样就会写穿到刚做好的备份里。
+
+### 验证
+
+`npm run test:deploy-backup` 在临时目录上跑部署脚本里**同一份** shell 片段（两者从
+`scripts/lib/deploy-backup-script.mjs` 导入同一个字符串，不存在测试与实现漂移），断言：
+uploads 共享 inode 且增量成本远低于全量、`data/` 未被硬链接且追加不污染备份、
+回滚点在新版本解包后仍是旧代码、裁剪保留最新 N 份且不碰手工命名的目录、`retain=0` 确实不删。
+CI（`.github/workflows/web.yml` 的 checks job）会跑它。
+
 ## 已知缺口
 
 - 只有每日全量，没有 WAL 归档 / PITR。最坏情况丢失 24 小时数据。
   数据量增长后应升级为 `archive_mode=on` + 基础备份。
-- 上传文件（`public/uploads`）不在这份备份里，由部署脚本的目录备份覆盖，
-  但同样没有异地副本 —— 建议纳入同一个 rclone 目标。
+- 上传文件（`public/uploads`）不在这份备份里，由上面的应用目录备份覆盖。注意它防得住什么：
+  live 文件被删或被替换时，备份那一份链接仍在（`unlink` 只减少链接数），所以**误删是防得住的**；
+  但它和 live 在**同一块磁盘、同一个 inode 上**，磁盘损坏、文件系统损坏、以及任何原地写入
+  都会让 live 和全部备份一起完蛋。上传文件仍然没有任何异地副本，建议纳入同一个 rclone 目标。

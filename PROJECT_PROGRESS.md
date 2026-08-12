@@ -1,6 +1,22 @@
 # mrright.blog 项目进度记录
 
-## 下次从这里继续（截至 2026-08-11 第五轮收工）
+## 下次从这里继续（截至 2026-08-12 第六轮收工）
+
+**线上仍是 `47d1cfc`。本轮改了部署脚本，但没有部署 —— 改动要到下次部署时才生效。**
+
+本轮环境限制（下轮如果 MCP 恢复了就不用管）：`mrright-ops`（VPS SSH + PostgreSQL）与
+`playwright` 两个 MCP **都没连上**，只有 `github` 可用。所以本轮做不了 VPS 操作、DNS 查询、
+部署和浏览器测试，只做了本地代码工作。
+
+**本轮完成：应用备份改硬链接 + 自动保留策略**（对应下面第五轮遗留清单里的第 3 项）。
+详见「2026-08-12（第六轮）」。**下次部署时会第一次真正跑到这段新代码**，届时应当确认：
+
+- 部署输出里出现 `Backed up app to … (hardlinked; data/ copied)`，不是 `(full copy; …)`
+- 部署末尾出现 `Pruned …` 或 `Keeping all N app backup(s)`，以及一行 `df -h`
+- `du -sk /opt/mrright-portfolio /opt/mrright-portfolio.backup-*` 的第二行起应该很小
+- 现存 3 份旧备份是全量拷贝，不会因为这次改动缩小；省空间从下一份新备份开始体现
+
+## 上一轮的继续点（截至 2026-08-11 第五轮收工）
 
 **代码与线上的对应关系：**
 
@@ -27,13 +43,10 @@
 2. **备份异地副本**（现在是最优先的未决项）。当前备份和数据库在同一块磁盘上，磁盘坏了两者一起没。
    恢复演练已证明备份**内容**可还原，但没有解决**同盘**这个单点。
    `docs/OPERATIONS_BACKUP.md` 里有 rclone 方案。
-3. ~~`/opt/mrright-portfolio.backup-*` 的保留策略~~ —— **2026-08-11 第四轮已按你的指示清理**：
-   15 份删到 3 份，磁盘 78% → **49%（剩 7.2G）**。但**保留策略仍未自动化**，每次部署
-   仍会 +351M，攒到十几份还会重演。要不要在部署步骤里加「只保留最近 3 份」的自动裁剪，
-   由你决定（数据库备份脚本已有 `--retain`，应用目录备份没有）。
-   顺带一提：一份应用备份 351M 里有 252M 是 `public/uploads` 的重复副本，
-   真正的代码部分很小且 git 里都有 —— 如果把上传目录挪出 `/opt/mrright-portfolio`
-   或备份时排除它，占用会降一个数量级。
+3. ~~`/opt/mrright-portfolio.backup-*` 的保留策略~~ —— **2026-08-12 第六轮已按你的选择做完**：
+   应用备份改为硬链接 + 只保留最近 3 份的自动裁剪（`VPS_BACKUP_RETAIN`，设 0 关闭）。
+   代码已就绪并本地验证通过，但**要到下次部署才生效**。
+   历史：2026-08-11 第四轮按你的指示手工清理过一次，15 份删到 3 份，磁盘 78% → 49%（剩 7.2G）。
 4. **`/etc/nginx/proxy.conf`** 是个占用 443、`server_name` 还是占位符的 Docker 镜像加速遗留配置，
    确认是否还需要。
 5. 确认没有脚本依赖静态管理员令牌后，设 `ADMIN_ALLOW_STATIC_TOKEN=false`
@@ -53,6 +66,106 @@
 - 前端单元测试（目前只有 API 契约测试和 Playwright）
 - SSR / 预渲染 SEO（社区帖子和公开主页搜索引擎抓不到）
 - Asset Model（checksum / visibility / downloadPolicy）稳定后再回到 C++ SDK
+
+## 2026-08-12（第六轮）：应用备份改硬链接 + 自动保留策略
+
+结论：部署脚本每次留下的 351M 全量备份改成了硬链接备份，并加上「保留最近 N 份」的自动裁剪。
+根治的是那个反复出现的磁盘问题 —— 上一轮手工从 15 份清到 3 份，但机制没变，攒回去只是时间问题。
+**本轮未部署**，改动要到下次部署才生效。
+
+日期：2026-08-12。
+
+本轮环境限制：`mrright-ops` 与 `playwright` 两个 MCP 都没连上，只有 `github` 可用。
+因此没有做任何 VPS 操作、DNS 查询、部署或浏览器测试，全部是本地代码工作。
+
+完成内容：
+
+1. **应用备份改为 `cp -al` 硬链接**
+   - 未被本次部署改动的文件只占一个目录项，不再逐字节重复。一份备份 351M 里有 252M 是
+     `public/uploads` 的重复副本，这部分开销消失。
+   - `cp -al` 失败时（异种文件系统、跨设备）自动回退到 `cp -a` 全量拷贝 ——
+     **绝不允许因为省空间而让某次部署没有回滚点**。
+
+2. **`data/` 单独做真实拷贝，不走硬链接**
+   - 原因：`contactMessagesStore.js:16` 与 `downloadRequestsStore.js:17` 用 `appendFile`
+     **原地追加**，同一个 inode，会把历史写进所有硬链接备份里。
+   - 这两个 store 只在 `DATABASE_URL` 缺失时才加载（`server/index.js:108`），生产走 Postgres
+     用不到；但 `data/` 只有 ~17KB，与其赌那个前提永远成立，不如直接真实拷贝。
+   - `interactionsStore.js:35-36` 是 temp + `rename`，换 inode，本身安全。
+
+3. **解包加 `tar --unlink-first`**
+   - `package.json` / `package-lock.json` 不在被 `rm -rf` 的列表里，会被直接覆盖到备份仍链接着的路径上。
+   - **实测确认：GNU tar 1.35 默认就是先 unlink**（live inode 会变），所以这不是在修现存 bug。
+     加它是为了把行为钉死 —— 实测 `TAR_OPTIONS=--overwrite` 会翻转成原地截断并**确实写穿备份**，
+     而带上 `--unlink-first` 后备份完好。
+   - 顺带纠正一条我一开始写错的注释：原本写的是「tar 默认 `O_TRUNC` 会写穿」，与实测不符，已改。
+
+4. **自动裁剪 `prune_app_backups`（`VPS_BACKUP_RETAIN`，默认 3，设 0 关闭）**
+   - **只在部署健康检查通过之后执行**。远程脚本是 `set -euo pipefail`，部署中途失败会在裁剪前中止，
+     所以失败的部署不损失任何回滚点。
+   - **只匹配脚本自己写出的时间戳格式**（`.backup-` + 8 位日期 + `-` + 6 位时间）。
+     手工命名的目录（如 `…​.backup-before-migration`）永远不是删除候选。
+   - **env 备份不裁剪**：每份约 1KB，不是磁盘压力来源，而它是 env 损坏时唯一的退路。
+
+5. **新增本地验证 `npm run test:deploy-backup`，并接入 CI**
+   - 这段逻辑既做硬链接又做删除，且正确性取决于光看代码定不下来的文件系统行为。
+     不验证就上线不可接受 —— 尤其这个项目上一轮刚踩过「文档里的备份步骤从来跑不通」。
+   - 为此把这两段 shell 抽到 `scripts/lib/deploy-backup-script.mjs`，部署脚本和测试
+     **导入同一个字符串**，所以不存在「测试的是实现的副本」这种漂移。
+     部署脚本其余部分（env 校验、nginx、systemd）一行未动。
+
+修改文件：
+
+- `scripts/deploy-vps.mjs`（备份/解包/裁剪；新增 `VPS_BACKUP_RETAIN` 及其入参校验）
+- 新增 `scripts/lib/deploy-backup-script.mjs`（两段可导入的 shell 片段）
+- 新增 `scripts/verify-deploy-backup.mjs`（本地验证）
+- `package.json`（新增 `test:deploy-backup`）
+- `.github/workflows/web.yml`（checks job 增加一步）
+- `docs/OPERATIONS_BACKUP.md`（新增「应用目录备份」整节 + 修正已知缺口的表述）
+- `PROJECT_PROGRESS.md`
+
+commit hash：本次提交（最终 hash 以 git log 为准）
+
+build / lint / 测试结果（全部本地跑过）：
+
+- `npm run lint`：通过
+- `npm run build`：通过；`dist/` 保持 untracked
+- `npm run test:api`：37/37 通过
+- `npm run test:openapi`：通过（200 个 `$ref`、33 个 error code）
+- `npm run test:deploy-backup`：通过（新增）
+- `npm run test:api:db`：**未跑**（本轮未改服务端代码，且该套件需要起 PostgreSQL 集群）
+
+**注入回归验证（证明新测试确实抓得住问题，不是白跑）**：逐个把 4 个 bug 注入回去，
+全部被抓到并给出对应报错：
+
+| 注入 | 结果 |
+| --- | --- |
+| `cp -al` 退回 `cp -a` | 抓到：uploads 未共享 inode + 增量成本等于全量 |
+| 删掉 `--unlink-first` | 抓到：备份的 `package.json` 被写穿 |
+| `data/` 也走硬链接 | 抓到：inode 相同 + 追加污染了备份 |
+| 裁剪改成宽松通配 `.backup-*` | 抓到：删掉了手工命名的目录 |
+
+> 过程中我自己写错过两处，记一笔省得下次重犯：一是用 `du` 测单个备份目录来证明硬链接省空间
+> —— **`du` 只在单次调用内对硬链接去重**，只测备份一个路径照样报全量，必须把 live 和备份
+> 一起传给同一次 `du`；二是备份目录名只到秒，两个测试用例在同一秒内跑完会撞名，
+> `cp -al` 于是把新备份塞进旧目录里（`app.backup-<stamp>/app/`），断言读到的是上一个用例的结果。
+
+是否部署 VPS：**否**。本轮无法访问 VPS，且这类改动应该在有人盯着的一次部署里首次生效。
+
+VPS 备份路径：本轮未产生新备份（未部署）。
+
+验证接口状态：**本轮未做线上验证**（无 VPS/浏览器访问）。线上仍是 `47d1cfc`，未受本轮影响 ——
+改的只是部署脚本，不是运行中的服务端代码。
+
+待办事项：
+
+- **下次部署时确认新逻辑首次生效**（具体看什么，见文件顶部的继续点清单）。
+- 现存 3 份旧备份是全量拷贝，本轮改动不会让它们缩小；省空间从下一份新备份开始。
+- 备份异地副本仍未配置 —— 现在更值得强调：应用备份是硬链接，**和 live 共享 inode 且同盘**，
+  防得住误删（`unlink` 只减链接数），但防不住磁盘损坏和原地写坏。这是备份体系最后一个结构性缺口。
+- DMARC 仍未添加；CSP 仍是 report-only；`ADMIN_ALLOW_STATIC_TOKEN` 仍未收紧；
+  `/etc/nginx/proxy.conf` 遗留文件待确认。
+- 注册验证码邮件仍未单独实测（走的是同一套 `emailDelivery.js`，理论上已可发）。
 
 ## 2026-08-11（第五轮）：接入 Resend，SMTP 首次配置完成
 
