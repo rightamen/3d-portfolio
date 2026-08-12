@@ -10,6 +10,46 @@ const testDatabaseUrl = process.env.E2E_TEST_DATABASE_URL
 const isLocalBaseURL = (baseURL = '') => /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?/i.test(baseURL)
 const jsonHeaders = { 'Content-Type': 'application/json' }
 const authHeaders = (token) => ({ Authorization: `Bearer ${token}` })
+
+// These tests and the deploy script were the last two callers hitting the admin
+// API with the static ADMIN_TOKEN directly, which is what kept
+// ADMIN_ALLOW_STATIC_TOKEN at true. They now exchange it for a session first --
+// POST /api/admin/session deliberately still accepts the static token, so this
+// works whether the flag is on or off.
+//
+// The exchange is memoised because the session is just a string: one per token
+// per run is enough, and a session per request would flood admin_sessions.
+// Unlike the deploy, this does not revoke afterwards -- the suite is
+// operator-run and occasional, and a teardown hook cannot reach the test-scoped
+// `request` fixture without building a second context for the sake of it. The
+// sessions expire on their own (ADMIN_SESSION_HOURS, default 12).
+const adminSessionTokens = new Map()
+
+const adminAuthHeaders = async (request, staticToken) => {
+  if (!staticToken) return {}
+
+  if (!adminSessionTokens.has(staticToken)) {
+    adminSessionTokens.set(
+      staticToken,
+      request
+        .post('/api/admin/session', { headers: authHeaders(staticToken) })
+        .then(async (response) => {
+          if (!response.ok()) {
+            throw new Error(
+              `Could not exchange the admin token for a session (HTTP ${response.status()}).`,
+            )
+          }
+          const sessionToken = (await response.json())?.data?.session?.token
+          if (!sessionToken) {
+            throw new Error('The admin session response did not carry a token.')
+          }
+          return sessionToken
+        }),
+    )
+  }
+
+  return authHeaders(await adminSessionTokens.get(staticToken))
+}
 const detailTabNames = ['Overview', 'Comments', 'Posts', 'Resources', 'Downloads', 'Moderation Log']
 
 const isSafeTestDatabaseUrl = (databaseUrl = '') => {
@@ -150,7 +190,7 @@ test.describe('admin visitors API read-only access', () => {
 
     for (const endpoint of cases) {
       const response = await request.get(endpoint, {
-        headers: authHeaders(adminToken),
+        headers: await adminAuthHeaders(request, adminToken),
       })
 
       expect(response.status(), endpoint).toBe(200)
@@ -171,7 +211,7 @@ test.describe('admin visitors API read-only access', () => {
     test.skip(!adminToken, 'Set E2E_ADMIN_TOKEN to run admin visitors read-only API tests.')
 
     const listResponse = await request.get('/api/admin/visitors?page=1&limit=1', {
-      headers: authHeaders(adminToken),
+      headers: await adminAuthHeaders(request, adminToken),
     })
     expect(listResponse.status()).toBe(200)
     const listPayload = await listResponse.json()
@@ -180,7 +220,7 @@ test.describe('admin visitors API read-only access', () => {
     test.skip(!firstVisitor?.id, 'No visitor exists for visitor detail read-only API coverage.')
 
     const detailResponse = await request.get(`/api/admin/visitors/${firstVisitor.id}`, {
-      headers: authHeaders(adminToken),
+      headers: await adminAuthHeaders(request, adminToken),
     })
 
     expect(detailResponse.status()).toBe(200)
@@ -490,7 +530,7 @@ test.describe('admin visitors local write workflow', () => {
       const disableResponse = await request.patch(`/api/admin/visitors/${visitorId}/profile-visibility`, {
         data: { disabled: true, reason },
         headers: {
-          ...authHeaders(writeAdminToken),
+          ...(await adminAuthHeaders(request, writeAdminToken)),
           ...jsonHeaders,
         },
       })
@@ -545,7 +585,7 @@ test.describe('admin visitors local write workflow', () => {
       const moderationResponse = await request.patch(`/api/admin/visitors/${visitorId}/profile-moderation`, {
         data: { clear: ['avatar', 'banner', 'bio', 'contacts'], reason },
         headers: {
-          ...authHeaders(writeAdminToken),
+          ...(await adminAuthHeaders(request, writeAdminToken)),
           ...jsonHeaders,
         },
       })
@@ -574,7 +614,7 @@ test.describe('admin visitors local write workflow', () => {
       )
 
       const actionsResponse = await request.get(`/api/admin/visitors/${visitorId}/actions`, {
-        headers: authHeaders(writeAdminToken),
+        headers: await adminAuthHeaders(request, writeAdminToken),
       })
       expect(actionsResponse.status()).toBe(200)
       const actionsPayload = await actionsResponse.json()
@@ -592,7 +632,7 @@ test.describe('admin visitors local write workflow', () => {
       const restoreResponse = await request.patch(`/api/admin/visitors/${visitorId}/profile-visibility`, {
         data: { disabled: false, reason },
         headers: {
-          ...authHeaders(writeAdminToken),
+          ...(await adminAuthHeaders(request, writeAdminToken)),
           ...jsonHeaders,
         },
       })
@@ -629,7 +669,7 @@ test.describe('admin visitors local write workflow', () => {
         await request.patch(`/api/admin/visitors/${visitorId}/profile-visibility`, {
           data: { disabled: false, reason: 'e2e cleanup restore public profile' },
           headers: {
-            ...authHeaders(writeAdminToken),
+            ...(await adminAuthHeaders(request, writeAdminToken)),
             ...jsonHeaders,
           },
         }).catch(() => {})

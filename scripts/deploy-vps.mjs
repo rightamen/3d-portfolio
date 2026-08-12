@@ -5,7 +5,12 @@ import { execFile } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { promisify } from 'node:util'
 
-import { BACKUP_AND_EXTRACT, PRUNE_FUNCTION, WAIT_FOR_HEALTH } from './lib/deploy-backup-script.mjs'
+import {
+  ADMIN_SESSION_CHECK,
+  BACKUP_AND_EXTRACT,
+  PRUNE_FUNCTION,
+  WAIT_FOR_HEALTH,
+} from './lib/deploy-backup-script.mjs'
 
 const require = createRequire(import.meta.url)
 const { Client } = require('ssh2')
@@ -249,9 +254,7 @@ try {
       // config cannot be reloaded in place.
       'systemctl reload nginx || systemctl restart nginx',
       WAIT_FOR_HEALTH,
-      'TOKEN="$(awk -F= \'$1 == "ADMIN_TOKEN" { print substr($0, index($0, $2)) }\' "$ENV_FILE")"',
-      'curl -fsS -H "Authorization: Bearer $TOKEN" "$APP_ORIGIN/api/admin/summary" >/dev/null',
-      'echo "Admin summary check passed."',
+      ADMIN_SESSION_CHECK,
       // Only now that the new release is serving traffic. Env backups are
       // deliberately left alone: they are ~1KB each so they are not what fills
       // the disk, and they are the only way back if $ENV_FILE is ever damaged.

@@ -16,7 +16,12 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, statSync, rmSync, 
 import os from 'node:os'
 import path from 'node:path'
 
-import { BACKUP_AND_EXTRACT, PRUNE_FUNCTION, WAIT_FOR_HEALTH } from './lib/deploy-backup-script.mjs'
+import {
+  ADMIN_SESSION_CHECK,
+  BACKUP_AND_EXTRACT,
+  PRUNE_FUNCTION,
+  WAIT_FOR_HEALTH,
+} from './lib/deploy-backup-script.mjs'
 
 const failures = []
 const fail = (message) => failures.push(message)
@@ -309,6 +314,116 @@ check(
   `wait loop did not stop at HEALTH_ATTEMPTS=4 (curl was called ${readFileSync(counterFile, 'utf8').trim()} times)`,
 )
 
+// --- 7. the admin check uses a session, and always gives it back -------------
+// This is what gates ADMIN_ALLOW_STATIC_TOKEN=false: the deploy was the last
+// thing calling the admin API with the static token. What has to hold is that
+// the static token only ever buys a session, the API call uses that session,
+// and the session does not outlive the deploy -- including when the deploy
+// fails, which is exactly when a leaked 12-hour session would go unnoticed.
+const envFixture = path.join(sandbox, 'service.env')
+writeFileSync(envFixture, 'DATABASE_URL=postgres://x\nADMIN_TOKEN=static-token-value\n')
+const curlLog = path.join(sandbox, 'curl-log')
+
+// Answers the session exchange with a real-shaped envelope, and lets the caller
+// decide whether the summary call succeeds.
+const installAdminCurlStub = ({ summaryFails = false, sessionGarbage = false } = {}) => {
+  writeFileSync(curlLog, '')
+  writeFileSync(
+    path.join(stubBin, 'curl'),
+    [
+      '#!/bin/bash',
+      'method=GET; url=""; auth=""',
+      'while [ $# -gt 0 ]; do',
+      '  case "$1" in',
+      '    -X) method="$2"; shift 2 ;;',
+      '    -H) case "$2" in "Authorization: Bearer "*) auth="${2#Authorization: Bearer }" ;; esac; shift 2 ;;',
+      '    http*) url="$1"; shift ;;',
+      '    *) shift ;;',
+      '  esac',
+      'done',
+      `echo "$method $url auth=$auth" >> ${JSON.stringify(curlLog)}`,
+      'case "$method $url" in',
+      '  "POST "*/api/admin/session)',
+      sessionGarbage
+        ? '    echo "<html>gateway timeout</html>"; exit 0 ;;'
+        : '    echo \'{"data":{"session":{"expiresAt":"2026-08-12T17:00:00.000Z","token":"session-token-value"}},"pagination":{},"error":null}\'; exit 0 ;;',
+      '  "GET "*/api/admin/summary)',
+      summaryFails ? '    exit 22 ;;' : '    echo \'{"data":{}}\'; exit 0 ;;',
+      '  "DELETE "*/api/admin/session) exit 0 ;;',
+      'esac',
+      'exit 0',
+    ].join('\n'),
+    { mode: 0o755 },
+  )
+}
+
+const adminScript = [
+  'set -euo pipefail',
+  `ENV_FILE=${JSON.stringify(envFixture)}`,
+  'APP_ORIGIN="http://127.0.0.1:4173"',
+  ADMIN_SESSION_CHECK,
+].join('\n')
+
+const curlCalls = () =>
+  readFileSync(curlLog, 'utf8').trim().split('\n').filter(Boolean)
+
+installAdminCurlStub()
+try {
+  const output = bash(adminScript, sandbox, stubbedPath)
+  const calls = curlCalls()
+  check(
+    output.includes('Admin summary check passed'),
+    `admin check did not report success: ${output.trim()}`,
+  )
+  check(
+    calls.some((c) => c.startsWith('POST') && c.endsWith('auth=static-token-value')),
+    'the static token was not exchanged for a session',
+  )
+  check(
+    calls.some((c) => c.includes('/api/admin/summary') && c.endsWith('auth=session-token-value')),
+    `the summary call did not use the session token: ${calls.join(' | ')}`,
+  )
+  check(
+    !calls.some((c) => c.includes('/api/admin/summary') && c.includes('static-token-value')),
+    'the summary call still carries the static admin token',
+  )
+  check(
+    calls.some((c) => c.startsWith('DELETE') && c.endsWith('auth=session-token-value')),
+    'the deploy session was never revoked',
+  )
+} catch (error) {
+  fail(`admin session check failed on the happy path: ${error.message}`)
+}
+
+// A failing summary must fail the deploy and still revoke.
+installAdminCurlStub({ summaryFails: true })
+let adminCheckFailed = false
+try {
+  bash(adminScript, sandbox, stubbedPath)
+} catch {
+  adminCheckFailed = true
+}
+check(adminCheckFailed, 'a failing admin summary did not fail the deploy')
+check(
+  curlCalls().some((c) => c.startsWith('DELETE')),
+  'the deploy session was left behind when the summary check failed',
+)
+
+// A session exchange that returns something other than the envelope must stop
+// the deploy rather than carry an empty Authorization header forward.
+installAdminCurlStub({ sessionGarbage: true })
+let exchangeFailed = false
+try {
+  bash(adminScript, sandbox, stubbedPath)
+} catch {
+  exchangeFailed = true
+}
+check(exchangeFailed, 'a garbage session response did not stop the deploy')
+check(
+  !curlCalls().some((c) => c.includes('/api/admin/summary')),
+  'the summary was called even though no session was obtained',
+)
+
 rmSync(sandbox, { recursive: true, force: true })
 
 if (failures.length > 0) {
@@ -321,3 +436,4 @@ console.log('[deploy-backup] hardlinked backup + retention verification passed')
 console.log('[deploy-backup] checked: uploads shared, data/ copied, rollback point intact after extract')
 console.log('[deploy-backup] checked: prune keeps newest N, ignores hand-named dirs, honours retain=0')
 console.log('[deploy-backup] checked: health check waits out a slow start, still fails on a dead service')
+console.log('[deploy-backup] checked: admin check exchanges a session, never reuses the static token, always revokes')

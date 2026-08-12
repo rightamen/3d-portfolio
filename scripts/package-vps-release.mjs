@@ -3,6 +3,18 @@ import path from 'node:path'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 
+// The same shell deploy-vps.mjs sends. This script prints instructions for an
+// operator to run by hand, and until now it carried its own copy of those steps
+// -- which had already drifted: still a full-copy backup, no pruning, `sleep 3`
+// instead of waiting for the service, and the static admin token. Sharing the
+// fragments is what stops the two from diverging again.
+import {
+  ADMIN_SESSION_CHECK,
+  BACKUP_AND_EXTRACT,
+  PRUNE_FUNCTION,
+  WAIT_FOR_HEALTH,
+} from './lib/deploy-backup-script.mjs'
+
 const execFileAsync = promisify(execFile)
 const archivePath = path.resolve('.deploy-tools', 'mrright-portfolio-release.tar.gz')
 const archiveItems = ['dist', 'server', 'scripts', 'package.json', 'package-lock.json']
@@ -18,10 +30,15 @@ console.log(`Created ${archivePath} (${sizeMb} MB)`)
 console.log('Upload this file to /tmp/mrright-portfolio-release.tar.gz on the VPS, then run:')
 console.log(`
 set -euo pipefail
-APP_DIR=/opt/mrright-portfolio
-SERVICE=mrright-portfolio
+REMOTE_DIR=/opt/mrright-portfolio
+SERVICE_NAME=mrright-portfolio
 ARCHIVE=/tmp/mrright-portfolio-release.tar.gz
 ENV_FILE=/etc/mrright-portfolio.env
+BACKUP_RETAIN=3
+APP_ORIGIN=http://127.0.0.1:4173
+HEALTH_URL="$APP_ORIGIN/api/health"
+
+${PRUNE_FUNCTION}
 
 if [ ! -f "$ENV_FILE" ]; then
   echo "Missing $ENV_FILE. Create it manually before deploying." >&2
@@ -60,23 +77,16 @@ cp -a "$ENV_FILE" "$ENV_BACKUP"
 chmod 600 "$ENV_FILE" "$ENV_BACKUP"
 echo "Backed up env to $ENV_BACKUP"
 
-if [ -e "$APP_DIR" ]; then
-  APP_BACKUP="$APP_DIR.backup-$(date +%Y%m%d-%H%M%S)"
-  cp -a "$APP_DIR" "$APP_BACKUP"
-  echo "Backed up app to $APP_BACKUP"
-fi
-
-mkdir -p "$APP_DIR"
-rm -rf "$APP_DIR/dist" "$APP_DIR/server" "$APP_DIR/scripts"
-tar -xzf "$ARCHIVE" -C "$APP_DIR"
-cd "$APP_DIR"
+${BACKUP_AND_EXTRACT}
+cd "$REMOTE_DIR"
 npm ci --omit=dev
-systemctl restart "$SERVICE"
-sleep 3
-curl -fsS http://127.0.0.1:4173/api/health
-printf '\\n'
-TOKEN="$(awk -F= '$1 == "ADMIN_TOKEN" { print substr($0, index($0, $2)) }' "$ENV_FILE")"
-curl -fsS -H "Authorization: Bearer $TOKEN" http://127.0.0.1:4173/api/admin/summary >/dev/null
-echo "Admin summary check passed."
-systemctl --no-pager --full status "$SERVICE"
+systemctl restart "$SERVICE_NAME"
+
+${WAIT_FOR_HEALTH}
+
+${ADMIN_SESSION_CHECK}
+
+prune_app_backups
+df -h "$REMOTE_DIR" | tail -n 1
+systemctl --no-pager --full status "$SERVICE_NAME"
 `)

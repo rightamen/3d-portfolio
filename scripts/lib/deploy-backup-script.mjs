@@ -46,6 +46,48 @@ export const WAIT_FOR_HEALTH = [
   'done',
 ].join('\n')
 
+// The deploy's admin check used to call /api/admin/summary with the static
+// ADMIN_TOKEN straight from the env file. That is the one remaining thing
+// keeping ADMIN_ALLOW_STATIC_TOKEN at true: docs/OPERATIONS_ADMIN_AUTH.md names
+// this script as the blocker for step 2 of the tightening path.
+//
+// It now exchanges the static token for a short-lived session and calls the API
+// with that instead. POST /api/admin/session deliberately does not go through
+// requireAdmin (server/index.js), so this keeps working once direct static-token
+// API access is switched off -- which is the whole point.
+//
+// The session is always revoked, including when the summary check fails. A
+// deploy has no business leaving a 12-hour admin session behind it, and the
+// failure path is exactly when one would go unnoticed.
+//
+// Expects: APP_ORIGIN, ENV_FILE.
+export const ADMIN_SESSION_CHECK = [
+  'STATIC_TOKEN="$(awk -F= \'$1 == "ADMIN_TOKEN" { print substr($0, index($0, $2)) }\' "$ENV_FILE")"',
+  'if [ -z "$STATIC_TOKEN" ]; then',
+  '  echo "ADMIN_TOKEN is empty in $ENV_FILE." >&2',
+  '  exit 1',
+  'fi',
+  // node rather than grep/sed: the token is base64url, and hand-rolling a
+  // matcher for it inside a JSON envelope is how you get a check that passes on
+  // a truncated response. node is guaranteed here -- the service runs on it.
+  'ADMIN_SESSION="$(curl -fsS -m 15 --noproxy "*" -X POST -H "Authorization: Bearer $STATIC_TOKEN" "$APP_ORIGIN/api/admin/session" 2>/dev/null | node -e \'let s="";process.stdin.on("data",d=>{s+=d}).on("end",()=>{try{const t=JSON.parse(s)?.data?.session?.token;if(t)process.stdout.write(t)}catch{}})\' || true)"',
+  'if [ -z "$ADMIN_SESSION" ]; then',
+  '  echo "Could not exchange ADMIN_TOKEN for an admin session at $APP_ORIGIN." >&2',
+  '  exit 1',
+  'fi',
+  'if curl -fsS -m 15 --noproxy "*" -H "Authorization: Bearer $ADMIN_SESSION" "$APP_ORIGIN/api/admin/summary" >/dev/null 2>&1; then',
+  '  ADMIN_CHECK_OK=1',
+  'else',
+  '  ADMIN_CHECK_OK=0',
+  'fi',
+  'curl -fsS -m 15 --noproxy "*" -X DELETE -H "Authorization: Bearer $ADMIN_SESSION" "$APP_ORIGIN/api/admin/session" >/dev/null 2>&1 || echo "Warning: could not revoke the deploy admin session." >&2',
+  'if [ "$ADMIN_CHECK_OK" != "1" ]; then',
+  '  echo "Admin summary check failed." >&2',
+  '  exit 1',
+  'fi',
+  'echo "Admin summary check passed (short-lived session, revoked)."',
+].join('\n')
+
 // Matches only the exact suffix writeAppBackup produces, so a hand-named
 // directory parked next to $REMOTE_DIR is never a deletion candidate. The
 // timestamp format sorts lexically, so plain `sort` is chronological.
