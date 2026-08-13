@@ -1,10 +1,23 @@
 # mrright.blog 项目进度记录
 
-## 下次从这里继续（截至 2026-08-12 第七轮收工）
+## 下次从这里继续（截至 2026-08-13 第八轮收工）
 
-**线上运行 `2cdb97d`（2026-08-12 14:09 UTC 部署，已逐项验证）。没有积压的未部署改动。**
+**线上运行第八轮部署的版本（2026-08-13 10:21 UTC，已逐项验证）。没有积压的未部署改动。
+应用代码本身与 `2cdb97d` 相同 —— 第八轮改的是部署脚本，那次部署本身就是验收。**
 
-本轮做完三件事，并且**把积压的「待你决策」清单清空了**（详见下面「2026-08-12（第七轮）」）：
+第八轮只做一件事：**把密钥认证的部署路径固化进 `npm run deploy:vps`**，
+这是第七轮留下的待办（详见下面「2026-08-13（第八轮）」）。结论：
+**这台机器上现在可以直接 `npm run deploy:vps`**，不用再手工拼远端脚本。
+顺带修掉了一个还没发作过的隐患：远端脚本以前是喂给 `bash -s` 的，脚本正文占着 stdin，
+中途任何读 stdin 的命令都会吃掉后半段；现在改成先传成文件再执行。
+
+新文档：`docs/OPERATIONS_DEPLOY.md`（部署方式、环境变量、干跑、测试、回滚）。
+
+### 第七轮（2026-08-12）的三件事，仍然有效
+
+**线上曾运行 `2cdb97d`（2026-08-12 14:09 UTC 部署，已逐项验证）。**
+
+那一轮做完三件事，并且**把积压的「待你决策」清单清空了**（详见下面「2026-08-12（第七轮）」）：
 
 1. **CSP 已从 report-only 切成 blocking 并上线。** report-only 期间只报了两条违规，
    两条都是策略自己写漏了：补 `scriptSrc: ["'self'", "'wasm-unsafe-eval'"]` 与
@@ -19,9 +32,8 @@
 **回退办法**：`server/index.js` 的 `contentSecurityPolicy` 里加回 `reportOnly: true`
 即可退回只观察不拦截；或直接回滚到 `/opt/mrright-portfolio.backup-20260812-140940`。
 
-**注意部署方式变了**：`npm run deploy:vps` 在这台机器上跑不了（它要密码认证，本机只有密钥）。
-本轮改成 import `scripts/lib/deploy-backup-script.mjs` 的 shell 片段拼远端脚本再 `ssh bash -s`，
-细节见第七轮记录末尾。**这条路径还没固化成脚本，下次要么固化它，要么照着记录再拼一遍。**
+~~**注意部署方式变了**：`npm run deploy:vps` 在这台机器上跑不了~~ ——
+**2026-08-13 第八轮已固化，这条限制不再成立。** 直接 `npm run deploy:vps` 即可（默认密钥认证）。
 
 ### 上一轮（第六轮）的三件事，仍然有效
 
@@ -81,8 +93,7 @@ CSP 这件事能做完，就是因为 playwright 回来了。
 1. 管理员账号体系 + TOTP（当前仍是「知道共享密钥就是管理员」，`admin_user_actions` 无法归因到人）。
    静态令牌已收紧成「只能换会话」，这是该方向的第 2 步；第 3 步见
    `docs/OPERATIONS_ADMIN_AUTH.md`。
-2. 把密钥认证的部署路径固化进 `scripts/deploy-vps.mjs`（现在只支持密码认证，
-   本机没有密码只有密钥，第七轮是临时拼脚本部署的）
+2. ~~把密钥认证的部署路径固化进 `scripts/deploy-vps.mjs`~~ —— **2026-08-13 第八轮已完成并实测部署**。
 3. 拆 `Admin.jsx`（2492 行）与 `postgresStores.js`（3338 行）
 4. react-router（现在靠 `window.location.pathname` 判断，页面跳转全是整页刷新，3D 场景每次重建）
 5. 前端单元测试（目前只有 API 契约测试和 Playwright）
@@ -107,8 +118,9 @@ CSP 这件事能做完，就是因为 playwright 回来了。
   不用拿线上冒险。
 - **服务端不设 `DATABASE_URL` 也能起**（`server/index.js:108` 是三元回落到内存 store），
   想在本地跑真实构建验证前端行为时很有用，社区/后台会降级但页面照常渲染。
-- **`npm run deploy:vps` 在这台机器上跑不了** —— 它走 ssh2 密码认证，要 `VPS_HOST` /
-  `VPS_PASSWORD`，本机两个都没有，只有 SSH 密钥。绕法见第七轮记录末尾。
+- **`npm run deploy:vps` 现在在这台机器上能跑**（2026-08-13 第八轮起，默认走 SSH 密钥认证，
+  默认主机 `147.79.20.232`）。想先看远端脚本而不连服务器：`VPS_DRY_RUN=true npm run deploy:vps`。
+  完整说明见 `docs/OPERATIONS_DEPLOY.md`。
 
 ## 第五轮收工时的快照（2026-08-11，已冻结，不要照着它动手）
 
@@ -147,6 +159,83 @@ CSP 这件事能做完，就是因为 playwright 回来了。
 - ~~演练遗留的临时库~~ —— 用户已确认，`mrright_restore_drill` 已 `dropdb`（2026-08-11）。
   删除后复查：`mrright_portfolio` 仍在、17 张表、`visitor_users=1`/`project_comments=2`、
   `/api/health` 200，生产库未受影响。
+
+## 2026-08-13（第八轮）：把密钥认证的部署路径固化进 `npm run deploy:vps`
+
+结论：**这台机器上现在可以直接 `npm run deploy:vps`**，并且已经用它真实部署过一次作为验收。
+
+第七轮留下的问题是：`deploy-vps.mjs` 只会 ssh2 的**密码认证**（要 `VPS_HOST` + `VPS_PASSWORD`），
+而工作机上只有 SSH 密钥、没有密码，所以那条命令实际跑不了；那次上线是**临时拼一份等价的
+远端脚本再 `ssh bash -s`** 完成的。能拼对是因为 shell 片段是 import 的，但那条路径
+**没固化、没测试，也没人能保证下次拼得一样** —— 真正的风险不是「麻烦」，是「不可复现」。
+
+### 改了什么
+
+| 文件 | 作用 |
+| --- | --- |
+| `scripts/lib/deploy-remote-script.mjs`（新） | **远端脚本的唯一生成器**（原来内联在 `deploy-vps.mjs` 里） |
+| `scripts/lib/ssh-transport.mjs`（新） | 两种传输方式同一个接口：`run` / `upload` / `end` |
+| `scripts/deploy-vps.mjs` | 只剩「读环境变量 → 打包 → 上传 → 驱动」 |
+| `scripts/verify-deploy-script.mjs`（新） | 不连服务器的校验，`npm run test:deploy-script` |
+| `docs/OPERATIONS_DEPLOY.md`（新） | 部署方式、环境变量、干跑、测试、回滚 |
+
+关键设计（两条都是为了「两条路做的事必须一样」这件事能被验证，而不是被承诺）：
+
+- **远端脚本只有一个生成器。** 密钥路径和密码路径共用它，校验脚本再逐字节比一遍两者的输出。
+- **密钥路径直接调系统 `ssh`**，不去教 ssh2 认密钥 —— `~/.ssh/config`、agent、`known_hosts`
+  这些系统客户端本来就都会处理。制品用 `ssh 'cat > ...'` 流式传（不用 scp）。
+
+新增开关：`VPS_AUTH`（`key` / `password`，无密码时默认 `key`）、`VPS_SSH_KEY`、
+`VPS_DRY_RUN=true`（只打印远端脚本就退出，不连接、不打包、不需要先 build）。
+`VPS_HOST` 默认 `147.79.20.232`，不再是必填。
+
+### 顺手修掉的一个隐患（还没发作过）
+
+远端脚本以前是**喂给 `bash -s`** 的。这么做时**脚本正文占着远端 stdin**，
+中途任何读 stdin 的命令都会把剩下的脚本吃掉 —— 现在没踩到只是因为 `npm ci` 不读 stdin，
+而 `systemctl status` 带了 `--no-pager`。改成**先把脚本上传成文件再 `bash <文件> < /dev/null`**，
+顺带的好处是部署半途失败时服务器上留得下现场。两种传输方式都走这条路径。
+
+### 验证
+
+- `npm run test:deploy-script`：通过。断言四件事 ——
+  1. 生成的脚本 `bash -n` 通过（`VPS_REWRITE_NGINX` × `VPS_REWRITE_SERVICE` 四种组合都测）
+  2. 环境变量里的值都被正确引号包住：用 `/opt/we ird'dir; touch <marker>` 和
+     `svc'$(touch <marker>)` 这类恶意值试注入，回读值必须原样、marker 必须不存在
+  3. 脚本正文**不含任何密钥**（`ADMIN_TOKEN` 是在服务器上从 env 文件读的）——
+     这条是 `VPS_DRY_RUN` 能放心打印全文的前提
+  4. `VPS_AUTH=key` 与 `VPS_AUTH=password` 的干跑输出**逐字节相同**
+- `npm run test:deploy-backup`：通过（未改动那部分，回归确认）
+- **传输层真机冒烟**（不部署，只验传输）：3MB 文件上传后 sha256 与本地一致；
+  远端路径带引号和空格也正确；读 stdin 的命令不会挂也不会吃脚本；
+  非零退出会 reject；流式输出正常
+- `npm run build`：通过（`vite build`，5.98s）
+- `npm run lint`：通过（`eslint .`，无输出）
+
+日期：2026-08-13（第八轮）
+完成内容：`npm run deploy:vps` 支持 SSH 密钥认证并固化；远端脚本改为上传后执行；新增校验与文档
+修改文件：`scripts/deploy-vps.mjs`、`scripts/lib/deploy-remote-script.mjs`（新）、
+`scripts/lib/ssh-transport.mjs`（新）、`scripts/verify-deploy-script.mjs`（新）、
+`docs/OPERATIONS_DEPLOY.md`（新）、`package.json`
+commit：见本轮提交
+build：通过　lint：通过
+部署 VPS：是（2026-08-13 10:21 UTC，**就是用新路径部署的，这次部署本身就是验收**）
+VPS 备份路径：`/opt/mrright-portfolio.backup-20260813-102109`（硬链接）；
+env 备份 `/etc/mrright-portfolio.env.backup-20260813-102109`；
+本次自动裁剪掉最旧的 `...backup-20260812-044929`，保留最新 3 份；磁盘仍 42%
+验证接口：`/api/health` 200、`admin_summary` 200（部署脚本用短会话查的，用完已吊销）、
+`/` `/community` `/admin` `/login?mode=login` `/account` 全部 200（HTTPS 外部实测）
+
+部署过程中值得记一句：**健康检查是在第 2 次轮询才通过的** —— 第六轮修的那个竞态
+（`systemctl restart` 返回时 node 还没 `listen()`）在这次部署里确实起了作用，
+按老逻辑这次就会误报部署失败。
+
+### 还没做的（不属于本轮范围）
+
+`scripts/package-vps-release.mjs` 打印的手工脚本仍是自己拼的一个**子集**
+（不写 nginx/systemd）。它 import 的是同几段 shell 片段，所以不会在备份/健康检查/admin
+校验这些关键处漂移，但它没有共用新的 `buildRemoteScript`。要彻底消除漂移，
+可以让它也走生成器 + 一个「跳过 nginx/systemd」的开关。
 
 ## 2026-08-12（第七轮）：CSP 切 blocking + DMARC 上线 + 清掉两个遗留物
 
