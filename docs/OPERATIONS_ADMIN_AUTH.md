@@ -119,15 +119,45 @@ API 能创建管理员，但要求调用者**已经是**管理员 —— 所以�
 
 ```sh
 cd /opt/mrright-portfolio
-DATABASE_URL=... node scripts/admin-user.mjs create <用户名> --display-name "名字"
-DATABASE_URL=... node scripts/admin-user.mjs list
-DATABASE_URL=... node scripts/admin-user.mjs reset-totp <用户名>     # 换手机 / 怀疑泄露
-DATABASE_URL=... node scripts/admin-user.mjs recovery-codes <用户名> # 重发一套恢复码
-DATABASE_URL=... node scripts/admin-user.mjs disable <用户名>        # 同时吊销其全部会话
+export DATABASE_URL="$(grep -m1 '^DATABASE_URL=' /etc/mrright-portfolio.env | cut -d= -f2-)"
+
+node scripts/admin-user.mjs list
+node scripts/admin-user.mjs create <用户名> --display-name "名字"
+node scripts/admin-user.mjs reset-password <用户名>    # 忘了密码
+node scripts/admin-user.mjs reset-totp <用户名>        # 换手机 / 怀疑泄露（同时吊销其会话）
+node scripts/admin-user.mjs recovery-codes <用户名>    # 重发一套恢复码（旧的立即作废）
+node scripts/admin-user.mjs disable <用户名>           # 同时吊销其全部会话
 ```
+
+只取 `DATABASE_URL` 这一行，而不是 `. /etc/mrright-portfolio.env` 整份 source ——
+整份 source 会把 `ADMIN_TOKEN` 一并灌进当前 shell 及其所有子进程，这个脚本只需要数据库连接。
+（那份 env 本身是可以 source 的，没有含空格的裸值；这里是范围最小化，不是绕开语法问题。）
 
 密码从终端读、**不走 argv**（argv 会出现在 `ps` 里，也会进 shell 历史）。
 TOTP secret 与恢复码**只打印这一次**：secret 实际上是只写的，恢复码只存哈希。
+
+**非交互驱动**：readline 的 `terminal` 跟随 `stdin.isTTY`，所以密码也可以用管道喂
+（`printf '%s\n%s\n' "$PW" "$PW" | node scripts/admin-user.mjs create ...`）。
+这是脚本可测试的原因，也是代人建号时的用法 —— 此时**密码必须在服务器本机生成**
+（`openssl rand -base64 18`）、只经 shell 变量与管道传递，输出重定向进一个
+`chmod 600` 的一次性文件，取走后 `shred -u`。切忌把密码写进命令行参数。
+
+### 第一个账号（2026-08-13）
+
+`right`（display name `Right`）已于 2026-08-13 12:30 UTC 按上述方式创建，
+并在 12:31 UTC 用真实 TOTP 码对线上做过端到端验证：
+
+| 检查 | 结果 |
+| --- | --- |
+| `POST /api/admin/login`（用户名 + 密码 + 6 位码） | 201，签发会话 |
+| `GET /api/admin/me` | `username: "right"` —— 归因生效，不再是 `null` |
+| 该会话 → `GET /api/admin/summary` | 200 |
+| **重放同一个 6 位码** | **401** —— `totp_last_step` 在线上确实挡住重放 |
+| `DELETE /api/admin/session` | 200 |
+| `admin-user.mjs list` | `enabled totp:confirmed codes:10` |
+
+`totp_confirmed_at` 就是被这次登录写上的 —— 注册流程里没有单独的「确认」步骤，
+**第一次成功登录即确认**。
 
 ### 接口
 
@@ -170,7 +200,8 @@ TOTP secret 与恢复码**只打印这一次**：secret 实际上是只写的，
 
 ### 待办
 
-- 现在还没有「改自己密码」的接口（用 CLI `reset-password`）。
+- 现在还没有「改自己密码」的接口（用 CLI `reset-password`）。这也意味着**改密码需要 SSH**，
+  对只有浏览器的管理员来说等于改不了 —— 要加人之前值得先补上这个接口。
 - 审计归因目前覆盖两条会写 `admin_user_actions` 的路径（资料可见性、资料字段清理）；
   其他管理动作还没有写审计行 —— 要扩大覆盖面，得先给那些动作补审计写入。
 
