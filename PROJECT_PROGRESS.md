@@ -1,9 +1,19 @@
 # mrright.blog 项目进度记录
 
-## 下次从这里继续（截至 2026-08-13 第十轮收工）
+## 下次从这里继续（截至 2026-08-14 第十一轮收工）
 
 **线上运行 `edf33da`（2026-08-13 15:01 UTC 部署，已逐项验证）。
-本地领先 `origin/main` 一个 commit —— 第十轮的改动还没 push。**
+本地领先 `origin/main` 三个 commit，其中第十一轮的 `9daf048` ⚠️ 尚未部署、尚未 push。**
+
+第十一轮：**在 `/admin` 里做了自助重新绑定认证器的页面，带真正的二维码。**
+起因是「我为什么从来没见过什么二维码」—— 查下来是这个项目里**根本就没有过二维码**：
+CLI 的 `printEnrolment` 只打印文本密钥，`/admin` 连这个都不显示，
+所以此前每个账号都是手输 base32 绑上去的，丢手机只能 SSH 上服务器跑 `reset-totp`。
+详见下面「2026-08-14（第十一轮）」。
+
+⚠️ **`9daf048` 含一处 schema 变更**（`admin_users` 加 `pending_totp_secret` /
+`pending_totp_expires_at`，`ADD COLUMN IF NOT EXISTS`，服务启动时自动执行）。
+部署即生效，无需手工跑 SQL；回滚只需回到上一个备份目录，多出来的两列不影响旧代码。
 
 第十轮起因是一句「模型加载太慢，是服务器太差吗」。**不是慢，是根本加载不出来**：
 次世代灭火器的 3D 预览会把 42.4 MB 下完，然后在解析阶段失败、永远停在 86%，
@@ -194,6 +204,72 @@ CSP 这件事能做完，就是因为 playwright 回来了。
 - ~~演练遗留的临时库~~ —— 用户已确认，`mrright_restore_drill` 已 `dropdb`（2026-08-11）。
   删除后复查：`mrright_portfolio` 仍在、17 张表、`visitor_users=1`/`project_comments=2`、
   `/api/health` 200，生产库未受影响。
+
+## 2026-08-14（第十一轮）：自助换认证器 + 补上从来没有过的二维码
+
+日期：2026-08-14
+commit：`9daf048`
+
+### 完成内容
+
+`/admin` 新增 **Security** 标签页：填用户名 + 账号密码 → 显示二维码（外加可手输的
+base32 密钥）→ 扫码后输入 6 位码 → 完成切换，并一次性给出新恢复码。
+
+**为什么是两步而不是一步。** 新密钥先作为候选存进 `pending_totp_secret`，
+放在还在用的密钥**旁边**，只有用候选生成的码验证通过才替换 `totp_secret`。
+一步式重置会把「扫错 / 扫漏 / 中途关页面」直接变成锁死账号 ——
+而那正是这条流程要救的处境。**中途放弃，原来的认证器照常能登录。**
+提升动作是单条带条件的 UPDATE，所以两个并发确认不会互相覆盖。
+
+**为什么两步都要密码。** 光有 admin 会话不够：共享令牌开出来的会话背后没有具体的人，
+不能让它把某个具名账号的第二因素挪到新设备上。用户名不存在与密码错返回完全一致的
+响应（且都跑一次 pbkdf2），不做账号枚举器。确认步骤收 6 位码，而账号锁定只统计**登录**
+失败、盖不住这里，所以这两个路由自带限流（`ADMIN_TOTP_ENROL_LIMIT_PER_WINDOW`，
+默认 15 分钟 10 次）。
+
+**不吊销现有会话**，与 `reset-password` 一致：这条流程是「手机丢了」的恢复；
+CLI 的 `reset-totp` 是「怀疑泄露」的响应，那个才需要把别人踹下线，两者刻意不同。
+
+二维码用动态 import，落在单独的 25.8 kB chunk 里，只有真正打开这个面板的人才会下载，
+Admin 主包只涨 4.6 kB。
+
+### 修改文件
+
+- `server/index.js`（两个端点 + 限流）
+- `server/postgresStores.js`（两列 schema + 三个 store 方法 + mapper）
+- `src/components/AdminTotpEnrolment.jsx`（新增）
+- `src/Admin.jsx`、`src/lib/api.js`、`src/index.css`
+- `tests/api/admin-auth.db.spec.js`（+4 项）
+- `docs/OPERATIONS_ADMIN_AUTH.md`
+- `package.json` / `package-lock.json`（devDep：qrcode）
+
+### 数据库变更
+
+`ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS pending_totp_secret text,
+pending_totp_expires_at timestamptz;` —— 幂等，随服务启动的 `ensureSchema` 自动执行，
+不改动任何现有数据。
+
+### 验证结果
+
+- npm run build：通过
+- npm run lint：通过
+- npm run test:api:db：**67 项全过**（`admin-auth.db.spec.js` 13 项，其中重新绑定 4 项）
+- npm run test:admin-totp：通过（RFC 6238 向量）
+- npm run test:openapi：通过（200 个 $ref、36 个错误码）
+- npm run test:deploy-backup：通过
+- **VPS 部署：未执行**（用户中止了部署命令）
+- 线上验证：**未做**，等部署后再走一遍绑定流程
+- GitHub push：未执行
+
+新增的 4 项测试断言的不是「顺利路径能走通」，而是**每一种中断方式都不动到还在用的密钥**：
+绑定进行中旧码照样登录、旧码不能确认新绑定、切换后旧码与旧恢复码同时失效、
+没开始就确认会被拒绝、候选密钥不出现在任何列表里。
+
+### 待办事项
+
+1. **部署 `9daf048` 并线上实测一遍绑定流程**（这是这一轮唯一没做完的事）。
+2. push 到 GitHub（本地领先三个 commit）。
+3. 第十轮遗留的 `studio-tomoco.exr` 不是 EXR 文件的问题仍未处理，见下。
 
 ## 2026-08-13（第十轮）：模型预览根本没加载出来，以及 42.4 MB 的贴图
 
