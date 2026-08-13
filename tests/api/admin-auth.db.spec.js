@@ -385,3 +385,157 @@ test('no admin listing or session listing ever carries a secret', async () => {
   expect(sessions.payload.data.sessions.some((session) => session.username === null)).toBe(true)
   expect(JSON.stringify(sessions.payload)).not.toContain('token_hash')
 })
+
+// Re-enrolling an authenticator. The property that matters is not that the
+// happy path works -- it is that every way the flow can be interrupted leaves
+// the account signing in with the secret it already had.
+test('re-enrolment does not touch the live secret until a code from the new one arrives', async () => {
+  const admin = await createAdmin('reenrol-atomic')
+
+  const started = await sendJson(
+    'POST',
+    '/api/admin/totp/enrolment',
+    { password: adminPassword, username: admin.username },
+    staticSession,
+  )
+  expect(started.response.status).toBe(200)
+  const pendingSecret = started.payload.data.enrolment.totpSecret
+  expect(pendingSecret).not.toBe(admin.totpSecret)
+  expect(started.payload.data.enrolment.otpauthUrl).toContain(admin.username)
+
+  // Mid-enrolment: the old authenticator is still the one that signs in.
+  const stillOld = await sendJson('POST', '/api/admin/login', {
+    password: adminPassword,
+    totp: codeFor(admin),
+    username: admin.username,
+  })
+  expect(stillOld.response.status).toBe(201)
+
+  // A code from the *old* secret cannot confirm the new one, or an attacker who
+  // could reach this endpoint would need nothing they did not already have.
+  const wrongCode = await sendJson(
+    'POST',
+    '/api/admin/totp/enrolment/confirm',
+    { password: adminPassword, totp: codeFor(admin, 1), username: admin.username },
+    staticSession,
+  )
+  expect(wrongCode.response.status).toBe(401)
+
+  const confirmed = await sendJson(
+    'POST',
+    '/api/admin/totp/enrolment/confirm',
+    {
+      password: adminPassword,
+      totp: totpCodeForStep(pendingSecret, totpStepAt(Date.now())),
+      username: admin.username,
+    },
+    staticSession,
+  )
+  expect(confirmed.response.status).toBe(200)
+  expect(confirmed.payload.data.recoveryCodes).toHaveLength(admin.recoveryCodes.length)
+
+  // The switch is total in both directions: new secret in, old secret out.
+  const withNew = await sendJson('POST', '/api/admin/login', {
+    password: adminPassword,
+    totp: totpCodeForStep(pendingSecret, totpStepAt(Date.now()) + 1),
+    username: admin.username,
+  })
+  expect(withNew.response.status).toBe(201)
+
+  const withOld = await sendJson('POST', '/api/admin/login', {
+    password: adminPassword,
+    totp: codeFor(admin, 2),
+    username: admin.username,
+  })
+  expect(withOld.response.status).toBe(401)
+
+  // Old recovery codes are voided by the new set, so a stolen envelope does not
+  // survive the phone it was printed for.
+  const oldRecovery = await sendJson('POST', '/api/admin/login', {
+    password: adminPassword,
+    recoveryCode: admin.recoveryCodes[0],
+    username: admin.username,
+  })
+  expect(oldRecovery.response.status).toBe(401)
+
+  const newRecovery = await sendJson('POST', '/api/admin/login', {
+    password: adminPassword,
+    recoveryCode: confirmed.payload.data.recoveryCodes[0],
+    username: admin.username,
+  })
+  expect(newRecovery.response.status).toBe(201)
+})
+
+test('re-enrolment needs the account password, not just an admin session', async () => {
+  const admin = await createAdmin('reenrol-password')
+
+  const wrongPassword = await sendJson(
+    'POST',
+    '/api/admin/totp/enrolment',
+    { password: `${adminPassword}-wrong`, username: admin.username },
+    staticSession,
+  )
+  expect(wrongPassword.response.status).toBe(401)
+
+  // An unknown username answers exactly like a wrong password: this endpoint
+  // must not become an account-enumeration oracle.
+  const unknownUser = await sendJson(
+    'POST',
+    '/api/admin/totp/enrolment',
+    { password: adminPassword, username: 'no-such-admin-here' },
+    staticSession,
+  )
+  expect(unknownUser.response.status).toBe(401)
+  expect(unknownUser.payload.error.message).toBe(wrongPassword.payload.error.message)
+
+  // And no admin session at all is refused before any of that.
+  const anonymous = await sendJson('POST', '/api/admin/totp/enrolment', {
+    password: adminPassword,
+    username: admin.username,
+  })
+  expect(anonymous.response.status).toBe(401)
+
+  // Nothing above should have parked a candidate: the old code still signs in.
+  const login = await sendJson('POST', '/api/admin/login', {
+    password: adminPassword,
+    totp: codeFor(admin),
+    username: admin.username,
+  })
+  expect(login.response.status).toBe(201)
+})
+
+test('confirming without a live enrolment is refused rather than silently starting one', async () => {
+  const admin = await createAdmin('reenrol-unstarted')
+
+  const confirmed = await sendJson(
+    'POST',
+    '/api/admin/totp/enrolment/confirm',
+    { password: adminPassword, totp: codeFor(admin), username: admin.username },
+    staticSession,
+  )
+  expect(confirmed.response.status).toBe(400)
+
+  const login = await sendJson('POST', '/api/admin/login', {
+    password: adminPassword,
+    totp: codeFor(admin, 1),
+    username: admin.username,
+  })
+  expect(login.response.status).toBe(201)
+})
+
+test('an enrolment response is the only place the candidate secret appears', async () => {
+  const admin = await createAdmin('reenrol-no-leak')
+
+  await sendJson(
+    'POST',
+    '/api/admin/totp/enrolment',
+    { password: adminPassword, username: admin.username },
+    staticSession,
+  )
+
+  const users = await sendJson('GET', '/api/admin/users', undefined, staticSession)
+  const serialised = JSON.stringify(users.payload)
+  for (const forbidden of ['pendingTotpSecret', 'pending_totp_secret']) {
+    expect(serialised).not.toContain(forbidden)
+  }
+})

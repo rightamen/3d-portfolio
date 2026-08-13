@@ -34,6 +34,7 @@ import {
   updateAdminVisitorProfileVisibility,
   uploadAdminAsset,
 } from './lib/api'
+import AdminTotpEnrolment from './components/AdminTotpEnrolment'
 import { assetCategoryProfiles, getAssetCategoryProfile } from './lib/assetCategories'
 
 const tokenKey = 'mrright-admin-token'
@@ -45,6 +46,7 @@ const sections = [
   { key: 'community', label: 'Community' },
   { key: 'downloads', label: 'Downloads' },
   { key: 'messages', label: 'Messages' },
+  { key: 'security', label: 'Security' },
 ]
 
 const localizedEditorLanguages = [
@@ -2660,6 +2662,10 @@ const Admin = () => {
               )}
             </div>
           </section>
+          )}
+
+          {activeSection === 'security' && (
+            <AdminTotpEnrolment signedInUsername={identity?.username} token={token} />
           )}
         </>
       )}

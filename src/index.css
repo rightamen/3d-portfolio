@@ -1488,6 +1488,38 @@ html {
   @apply grid gap-3;
 }
 
+/* Authenticator enrolment. Capped at a readable column rather than stretched
+   across the dashboard: it is a form to work through in order, not a table. */
+.admin-totp-panel {
+  @apply grid max-w-md gap-4 rounded-lg border border-white/10 bg-white/[0.03] p-5;
+}
+
+.admin-totp-form {
+  @apply grid gap-3;
+}
+
+/* White plate behind the QR on purpose. The dashboard is dark and a scanner
+   expects dark-on-light; an inverted code is a code that will not scan. */
+.admin-totp-qr {
+  @apply justify-self-center rounded-md bg-white p-3;
+}
+
+.admin-totp-secret {
+  @apply grid gap-1 rounded-md border border-white/10 bg-black/30 px-3 py-2;
+}
+
+.admin-totp-secret span {
+  @apply text-xs uppercase tracking-wide text-neutral-500;
+}
+
+.admin-totp-secret code {
+  @apply font-mono text-sm break-all text-teal-200;
+}
+
+.admin-totp-codes {
+  @apply grid gap-1 rounded-md border border-white/10 bg-black/30 px-4 py-3 font-mono text-sm text-teal-200 sm:grid-cols-2;
+}
+
 .admin-subsection-title {
   @apply mt-2 flex items-center justify-between gap-3 rounded-md border border-white/10 bg-white/[0.03] px-4 py-3 first:mt-0;
 }

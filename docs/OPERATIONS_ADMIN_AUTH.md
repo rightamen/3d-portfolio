@@ -169,6 +169,8 @@ TOTP secret 与恢复码**只打印这一次**：secret 实际上是只写的，
 | `POST` | `/api/admin/users` | 新建账号，**仅此一次**返回 secret / otpauth URL / 恢复码 |
 | `PATCH` | `/api/admin/users/:id` | 停用 / 启用（停用会立即删掉其会话） |
 | `POST` | `/api/admin/me/recovery-codes` | 给自己换一套恢复码（旧的立即作废） |
+| `POST` | `/api/admin/totp/enrolment` | 换认证器第 1 步：用户名 + 密码，返回二维码用的 otpauth URL |
+| `POST` | `/api/admin/totp/enrolment/confirm` | 第 2 步：新码验证通过才真正切换，并发一套新恢复码 |
 | `GET` | `/api/admin/actions` | 审计流，带 `actorUsername`（共享令牌为 `null`） |
 
 行为上几个刻意的选择：
@@ -182,6 +184,31 @@ TOTP secret 与恢复码**只打印这一次**：secret 实际上是只写的，
 - 失败 `ADMIN_LOGIN_LOCK_AFTER`（默认 5）次锁 `ADMIN_LOGIN_LOCK_MINUTES`（默认 15）分钟，
   **锁定期间正确密码也拒绝**。
 
+### 换手机：自助重新绑定认证器（2026-08-14）
+
+**这是丢手机的正常出口，`reset-totp` 不再是唯一办法。** `/admin` → **Security** 标签页：
+填用户名 + 账号密码 → 页面显示**二维码**（外加可手输的 base32 密钥）→ 扫码后输入 6 位码 →
+切换完成，同时给出一套新恢复码。
+
+几个刻意的选择：
+
+- **两步，不是一步。** 新密钥先作为**候选**存进 `pending_totp_secret`，
+  只有用它生成的码验证通过才会替换 `totp_secret`。一步式重置的问题是：扫错、扫漏、
+  中途关掉页面，都会把还能用的密钥换成没有任何手机持有的密钥 —— 正好把「丢手机」
+  变成「彻底锁死」。**中途放弃，账号照旧能用原来的认证器登录。**
+- **提升是单条 SQL**（`WHERE pending_totp_secret IS NOT NULL AND pending_totp_expires_at > now()`），
+  所以两个并发确认不会一个覆盖另一个。候选默认 10 分钟过期（`ADMIN_TOTP_ENROLMENT_TTL_MS`）。
+- **两步都要账号密码，光有会话不够。** 共享令牌开出来的会话背后没有具体的人，
+  这种会话不能把某个具名账号的第二因素挪到新设备上。
+- **不吊销现有会话**，与 `reset-password` 一致 —— 这条流程是「手机丢了」的恢复，
+  而 CLI 的 `reset-totp` 是「怀疑泄露」的响应，后者才需要把别人踹下线。
+- 限流 `ADMIN_TOTP_ENROL_LIMIT_PER_WINDOW`（默认 15 分钟 10 次）：确认步骤收 6 位码，
+  而账号锁定只统计**登录**失败，盖不住这里。
+- 旧恢复码在切换时**全部作废**，新的一套只显示这一次。
+
+**顺带修掉的一件事：在此之前这个项目里根本没有二维码。** CLI 的 `printEnrolment`
+只打印文本密钥，`/admin` 连这个都不显示，所以早期账号全是手输 base32 绑上去的。
+
 ### 前端
 
 `/admin` 登录页默认是账号模式（用户名 / 密码 / 6 位码），可切「使用恢复码」，
@@ -194,9 +221,12 @@ TOTP secret 与恢复码**只打印这一次**：secret 实际上是只写的，
 - `npm run test:admin-totp` —— 对着 **RFC 6238 自带的测试向量**验证 TOTP 实现，
   外加窗口、重放、恢复码格式。手写的 TOTP 只有对着标准验证才有意义：自洽的实现
   可以完全自洽却和所有认证器 App 不兼容。
-- `npm run test:api:db`（`tests/api/admin-auth.db.spec.js`，9 项）—— 真数据库端到端：
+- `npm run test:api:db`（`tests/api/admin-auth.db.spec.js`，13 项）—— 真数据库端到端：
   必须第二因素、错密码与不存在用户不可区分、码不可重放、恢复码一次性、锁定、
   停用即时吊销会话、不能停用自己、审计归因、以及**任何列表都不会带出密钥**。
+  重新绑定占 4 项，断言的重点不是「顺利路径能走通」，而是**每一种中断方式都不会动到
+  还在用的密钥**：绑定进行中旧码照样能登录、旧码不能确认新绑定、切换后旧码与旧恢复码
+  同时失效、没开始就确认会被拒绝、候选密钥不出现在任何列表里。
 
 ### 待办
 

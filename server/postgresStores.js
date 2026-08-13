@@ -73,6 +73,9 @@ const toAdminUser = (row) =>
         totpConfirmedAt: row.totp_confirmed_at?.toISOString?.() || row.totp_confirmed_at || null,
         // bigint comes back as a string from pg; the caller compares it against
         // a JS number, so the conversion happens once, here.
+        pendingTotpExpiresAt:
+          row.pending_totp_expires_at?.toISOString?.() || row.pending_totp_expires_at || null,
+        pendingTotpSecret: row.pending_totp_secret || null,
         totpLastStep: Number(row.totp_last_step || 0),
         totpSecret: row.totp_secret,
         username: row.username,
@@ -603,6 +606,19 @@ const ensureSchema = async (pool) => {
 
     ALTER TABLE admin_user_actions
       ADD COLUMN IF NOT EXISTS actor_admin_user_id text REFERENCES admin_users(id) ON DELETE SET NULL;
+
+    -- Self-service re-enrolment of the second factor. Before this, a lost
+    -- authenticator meant SSH and scripts/admin-user.mjs, which is a poor
+    -- answer to the most ordinary failure a TOTP setup has.
+    --
+    -- The candidate secret is kept *beside* the live one rather than replacing
+    -- it, because the account has to stay usable until the new secret has
+    -- proven it reached a phone: overwriting first would turn a mis-scan into a
+    -- lockout, which is exactly the situation being recovered from. The live
+    -- totp_secret is only replaced by a code generated from the candidate.
+    ALTER TABLE admin_users
+      ADD COLUMN IF NOT EXISTS pending_totp_secret text,
+      ADD COLUMN IF NOT EXISTS pending_totp_expires_at timestamptz;
 
     ALTER TABLE project_overrides
       ADD COLUMN IF NOT EXISTS asset_category text;
@@ -3223,6 +3239,63 @@ export const createPostgresStores = async (databaseUrl) => {
           WHERE id = $1
         `,
         [id, totpSecret, recoveryCodeHashes ? JSON.stringify(recoveryCodeHashes) : null],
+      )
+    },
+
+    // Parks a candidate secret next to the live one. Each call overwrites the
+    // previous candidate, so an abandoned enrolment cannot be resumed later
+    // with a stale QR code that is still sitting in someone's scrollback.
+    startAdminUserTotpEnrolment: async (id, { expiresAt, totpSecret }) => {
+      await pool.query(
+        `
+          UPDATE admin_users
+          SET pending_totp_secret = $2,
+              pending_totp_expires_at = $3,
+              updated_at = now()
+          WHERE id = $1
+        `,
+        [id, totpSecret, expiresAt],
+      )
+    },
+
+    // The promotion is one statement, guarded on the candidate still being
+    // present and unexpired. Reading, checking and writing separately would let
+    // two confirmations race, and the loser would silently install a secret the
+    // winner had already replaced. Returns false when there was nothing valid
+    // to promote, which the caller reports as "start the enrolment again".
+    confirmAdminUserTotpEnrolment: async (id, { recoveryCodeHashes, step }) => {
+      const result = await pool.query(
+        `
+          UPDATE admin_users
+          SET totp_secret = pending_totp_secret,
+              totp_confirmed_at = now(),
+              totp_last_step = $2::bigint,
+              recovery_code_hashes = $3::jsonb,
+              pending_totp_secret = null,
+              pending_totp_expires_at = null,
+              failed_login_count = 0,
+              locked_until = null,
+              updated_at = now()
+          WHERE id = $1
+            AND pending_totp_secret IS NOT NULL
+            AND pending_totp_expires_at > now()
+          RETURNING id
+        `,
+        [id, String(step), JSON.stringify(recoveryCodeHashes)],
+      )
+      return Boolean(result.rows[0])
+    },
+
+    cancelAdminUserTotpEnrolment: async (id) => {
+      await pool.query(
+        `
+          UPDATE admin_users
+          SET pending_totp_secret = null,
+              pending_totp_expires_at = null,
+              updated_at = now()
+          WHERE id = $1
+        `,
+        [id],
       )
     },
 

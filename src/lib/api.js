@@ -110,6 +110,27 @@ export const adminLogin = ({ password, recoveryCode, totp, username }) =>
 
 export const getAdminMe = (token) => adminRequest('/api/admin/me', token, { cache: 'no-store' })
 
+// Moving the second factor to a new phone. Two calls: the first parks a
+// candidate secret and hands back the otpauth URL to render as a QR, the second
+// promotes it once a code produced by that QR comes back. The account password
+// is required by both -- a session on its own, especially a shared-token one,
+// must not be able to re-point someone's authenticator.
+export const startAdminTotpEnrolment = (token, { password, username }) =>
+  adminRequest('/api/admin/totp/enrolment', token, {
+    cache: 'no-store',
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password, username }),
+  })
+
+export const confirmAdminTotpEnrolment = (token, { password, totp, username }) =>
+  adminRequest('/api/admin/totp/enrolment/confirm', token, {
+    cache: 'no-store',
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password, totp, username }),
+  })
+
 const adminRequest = (path, token, options = {}) =>
   request(path, {
     ...options,

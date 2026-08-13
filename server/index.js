@@ -426,6 +426,15 @@ app.use('/api/admin/login', createLimiter({
   message: 'Too many sign-in attempts. Please try again in a few minutes.',
 }))
 
+// Re-enrolling the second factor. The confirm step accepts a six-digit code,
+// so without a budget it is a 10^6 space to walk; the account lockout does not
+// cover it, because that counts *sign-in* failures. Same window as admin login.
+app.use('/api/admin/totp/enrolment', createLimiter({
+  windowMs: minutes(15),
+  limit: Math.max(1, Number(process.env.ADMIN_TOTP_ENROL_LIMIT_PER_WINDOW || 10)),
+  message: 'Too many enrolment attempts. Please try again in a few minutes.',
+}))
+
 app.use('/api/auth/verify-email', createLimiter({
   windowMs: minutes(15),
   limit: Math.max(1, Number(process.env.VERIFY_LIMIT_PER_WINDOW || 10)),
@@ -3183,6 +3192,144 @@ app.post('/api/admin/me/recovery-codes', requireAdmin, async (request, response)
   const recoveryCodes = generateRecoveryCodes()
   await adminStore.replaceAdminRecoveryCodes(adminUserId, recoveryCodes.map(hashRecoveryCode))
 
+  return sendData(response, { recoveryCodes })
+})
+
+// Re-enrolling an authenticator, without SSH.
+//
+// The most ordinary thing that happens to a TOTP setup is that the phone it
+// lives on is replaced, wiped or lost, and until now the only answer was
+// scripts/admin-user.mjs on the VPS. That is a bad answer twice over: it needs
+// shell access to recover from a routine event, and it is the reason nobody
+// ever saw a QR code -- the CLI prints a secret as text, so every enrolment so
+// far has been a manual key entry.
+//
+// Two steps, because a one-step reset can lock you out of the account it was
+// meant to rescue: a mis-scan would replace the working secret with one no
+// phone holds. Step one parks a *candidate* secret; step two promotes it, and
+// only a code generated from the candidate can do the promoting.
+//
+// Both steps sit behind requireAdmin *and* the account's own password. The
+// session alone is deliberately not enough: sessions minted from the shared
+// ADMIN_TOKEN have no person behind them, and one of those must not be able to
+// silently move a named account's second factor onto a new device.
+const ADMIN_TOTP_ENROLMENT_TTL_MS = Math.max(
+  minutes(2),
+  Number(process.env.ADMIN_TOTP_ENROLMENT_TTL_MS || minutes(10)),
+)
+
+const findEnrolmentTarget = async (request) => {
+  const username = String(request.body?.username ?? '').trim().toLowerCase().slice(0, 80)
+  const admin = username ? await adminStore.getAdminUserByUsername(username) : null
+  return { admin, username }
+}
+
+app.post('/api/admin/totp/enrolment', requireAdmin, async (request, response) => {
+  if (!adminAccountsAvailable()) {
+    return sendError(
+      response,
+      API_ERROR_CODES.SERVICE_UNAVAILABLE,
+      'Admin data store is not configured.',
+      503,
+    )
+  }
+
+  const { admin } = await findEnrolmentTarget(request)
+  const password = String(request.body?.password ?? '')
+  // One derivation whatever happens, so an unknown username costs the same as
+  // a wrong password and this cannot be used to enumerate accounts.
+  const passwordMatches = await verifyPassword(password, admin?.passwordHash ?? dummyPasswordHash)
+
+  if (!admin || admin.disabledAt || !passwordMatches) {
+    return sendError(
+      response,
+      API_ERROR_CODES.VALIDATION_ERROR,
+      'Username or password is incorrect.',
+      401,
+    )
+  }
+
+  const totpSecret = generateTotpSecret()
+  const expiresAt = new Date(Date.now() + ADMIN_TOTP_ENROLMENT_TTL_MS)
+  await adminStore.startAdminUserTotpEnrolment(admin.id, { expiresAt, totpSecret })
+
+  return sendData(response, {
+    enrolment: {
+      expiresAt: expiresAt.toISOString(),
+      otpauthUrl: buildOtpAuthUrl({ account: admin.username, secret: totpSecret }),
+      // Shown alongside the QR for the case the QR cannot be scanned -- a
+      // desktop authenticator, a camera that will not focus, a printed page.
+      totpSecret,
+    },
+  })
+})
+
+app.post('/api/admin/totp/enrolment/confirm', requireAdmin, async (request, response) => {
+  if (!adminAccountsAvailable()) {
+    return sendError(
+      response,
+      API_ERROR_CODES.SERVICE_UNAVAILABLE,
+      'Admin data store is not configured.',
+      503,
+    )
+  }
+
+  const { admin } = await findEnrolmentTarget(request)
+  const password = String(request.body?.password ?? '')
+  const totp = String(request.body?.totp ?? '').trim().slice(0, 12)
+  const passwordMatches = await verifyPassword(password, admin?.passwordHash ?? dummyPasswordHash)
+
+  if (!admin || admin.disabledAt || !passwordMatches) {
+    return sendError(
+      response,
+      API_ERROR_CODES.VALIDATION_ERROR,
+      'Username or password is incorrect.',
+      401,
+    )
+  }
+
+  if (!admin.pendingTotpSecret || new Date(admin.pendingTotpExpiresAt || 0) <= new Date()) {
+    return sendError(
+      response,
+      API_ERROR_CODES.VALIDATION_ERROR,
+      'This enrolment has expired. Start again to get a new QR code.',
+      400,
+    )
+  }
+
+  // afterStep is not carried over from the live secret: the candidate is a
+  // different secret, so its steps have never been used. Replay protection for
+  // it begins at the step this confirmation claims, which is written below.
+  const attempt = verifyTotp(admin.pendingTotpSecret, totp)
+  if (!attempt.ok) {
+    return sendError(
+      response,
+      API_ERROR_CODES.VALIDATION_ERROR,
+      'That code does not match the new QR code. Check the clock on your phone and try the next one.',
+      401,
+    )
+  }
+
+  const recoveryCodes = generateRecoveryCodes()
+  const promoted = await adminStore.confirmAdminUserTotpEnrolment(admin.id, {
+    recoveryCodeHashes: recoveryCodes.map(hashRecoveryCode),
+    step: attempt.step,
+  })
+
+  if (!promoted) {
+    return sendError(
+      response,
+      API_ERROR_CODES.VALIDATION_ERROR,
+      'This enrolment is no longer valid. Start again to get a new QR code.',
+      409,
+    )
+  }
+
+  // Live sessions are left alone, matching reset-password rather than the
+  // CLI's reset-totp. This flow is recovery from a lost phone, and the person
+  // driving it just proved both factors; reset-totp drops sessions because it
+  // is the answer to a *compromise*, where the point is to evict whoever else
+  // is holding one.
   return sendData(response, { recoveryCodes })
 })
 
