@@ -2,8 +2,8 @@
 
 ## 下次从这里继续（截至 2026-08-14 第十一轮收工）
 
-**线上运行 `edf33da`（2026-08-13 15:01 UTC 部署，已逐项验证）。
-本地领先 `origin/main` 三个 commit，其中第十一轮的 `9daf048` ⚠️ 尚未部署、尚未 push。**
+**线上运行 `9daf048`（2026-08-13 16:20 UTC 部署，已逐项验证）。
+本地领先 `origin/main` 五个 commit —— 还没 push。**
 
 第十一轮：**在 `/admin` 里做了自助重新绑定认证器的页面，带真正的二维码。**
 起因是「我为什么从来没见过什么二维码」—— 查下来是这个项目里**根本就没有过二维码**：
@@ -257,8 +257,19 @@ pending_totp_expires_at timestamptz;` —— 幂等，随服务启动的 `ensure
 - npm run test:admin-totp：通过（RFC 6238 向量）
 - npm run test:openapi：通过（200 个 $ref、36 个错误码）
 - npm run test:deploy-backup：通过
-- **VPS 部署：未执行**（用户中止了部署命令）
-- 线上验证：**未做**，等部署后再走一遍绑定流程
+- VPS 部署：成功（2026-08-13 16:20 UTC）
+- VPS 备份路径：`/opt/mrright-portfolio.backup-20260813-162029`
+- schema 迁移：已生效，`admin_users` 上 `pending_totp_secret` / `pending_totp_expires_at` 两列已存在
+- /api/health：200；/：200，/community：200，/admin：200，/login?mode=login：200，/account：200
+- 模型预览：仍 200（3,881,284 字节）
+- 服务日志近 10 分钟 error/500：0
+- **线上接口实测（失败路径，token 全程只在服务器 shell 变量里）**：
+  无凭证 401；有会话 + 错密码 401；有会话 + 不存在的用户 401 且**文案与错密码逐字相同**；
+  未开始就确认 401。事后查库：`right` 账号**没有**被这些失败调用写入任何候选密钥。
+- 线上前端：Admin chunk 里能取到 `Show QR code` / `Authenticator QR code` /
+  `Confirm and switch`，二维码 chunk `browser-rVazBmbX.js` 200（25,783 字节）
+- **成功路径未由我实测**：需要 `right` 的账号密码，按既定做法密码不进对话，
+  留给用户在浏览器里走完最后一步
 - GitHub push：未执行
 
 新增的 4 项测试断言的不是「顺利路径能走通」，而是**每一种中断方式都不动到还在用的密钥**：
@@ -267,8 +278,9 @@ pending_totp_expires_at timestamptz;` —— 幂等，随服务启动的 `ensure
 
 ### 待办事项
 
-1. **部署 `9daf048` 并线上实测一遍绑定流程**（这是这一轮唯一没做完的事）。
-2. push 到 GitHub（本地领先三个 commit）。
+1. **用户在浏览器里走完一次真实绑定**（/admin → Security），确认扫码与切换成功 ——
+   成功路径需要账号密码，不由 Claude 代跑。
+2. push 到 GitHub（本地领先五个 commit）。
 3. 第十轮遗留的 `studio-tomoco.exr` 不是 EXR 文件的问题仍未处理，见下。
 
 ## 2026-08-13（第十轮）：模型预览根本没加载出来，以及 42.4 MB 的贴图
