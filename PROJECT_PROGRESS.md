@@ -1,16 +1,33 @@
 # mrright.blog 项目进度记录
 
-## 下次从这里继续（截至 2026-08-13 第八轮收工）
+## 下次从这里继续（截至 2026-08-13 第九轮收工）
 
-**线上运行第八轮部署的版本（2026-08-13 10:21 UTC，已逐项验证）。没有积压的未部署改动。
-应用代码本身与 `2cdb97d` 相同 —— 第八轮改的是部署脚本，那次部署本身就是验收。**
+**线上运行 `a041014`（2026-08-13 12:16 UTC 部署，已逐项验证）。没有积压的未部署改动，
+本地与 `origin/main` 一致。**
 
-第八轮只做一件事：**把密钥认证的部署路径固化进 `npm run deploy:vps`**，
-这是第七轮留下的待办（详见下面「2026-08-13（第八轮）」）。结论：
-**这台机器上现在可以直接 `npm run deploy:vps`**，不用再手工拼远端脚本。
-顺带修掉了一个还没发作过的隐患：远端脚本以前是喂给 `bash -s` 的，脚本正文占着 stdin，
-中途任何读 stdin 的命令都会吃掉后半段；现在改成先传成文件再执行。
+第九轮做的是「下一轮建议」里的第 1 项：**命名管理员账号 + TOTP + 审计归因**
+（详见下面「2026-08-13（第九轮）」）。至此「管理员」不再等于「知道 `ADMIN_TOKEN` 的人」：
+用户名 + 密码 + 6 位码换会话，会话指向具体的人，动作写进 `admin_user_actions.actor_admin_user_id`。
+静态 token 降级为**引导 / 救援凭证** —— 它仍能换会话（否则第一个账号无从创建），
+但用它做的每件事在审计里都记为「无人」，`/admin` 页头会明说这一点。
 
+> **唯一待办，而且只能由你来做：线上还没有任何管理员账号**（`admin_users` 为 0 行，
+> `GET /api/admin/users` 返回 `[]`）。第一个账号必须从 API 之外创建，密码要在终端里输，
+> 所以我没有代劳。在 VPS 上跑：
+>
+> ```sh
+> cd /opt/mrright-portfolio
+> set -a; . /etc/mrright-portfolio.env; set +a
+> node scripts/admin-user.mjs create <用户名> --display-name "名字"
+> ```
+>
+> 它会**只打印这一次** TOTP secret / otpauth URL 和一套恢复码 —— secret 是只写的，
+> 恢复码只存哈希，关掉终端就找不回来了，先存进密码管理器再继续。
+> 之后在 `/admin` 用账号模式登录，`GET /api/admin/me` 应当回你的用户名而不是 `null`。
+> 建好账号前，`/admin` 仍可用共享令牌模式进入，功能不受影响。
+
+上一轮（第八轮）：**把密钥认证的部署路径固化进 `npm run deploy:vps`**，
+所以这次部署是直接一条命令跑完的，不用再手工拼远端脚本。
 新文档：`docs/OPERATIONS_DEPLOY.md`（部署方式、环境变量、干跑、测试、回滚）。
 
 ### 第七轮（2026-08-12）的三件事，仍然有效
@@ -90,9 +107,10 @@ CSP 这件事能做完，就是因为 playwright 回来了。
 
 ### 下一轮我建议先做的
 
-1. 管理员账号体系 + TOTP（当前仍是「知道共享密钥就是管理员」，`admin_user_actions` 无法归因到人）。
-   静态令牌已收紧成「只能换会话」，这是该方向的第 2 步；第 3 步见
-   `docs/OPERATIONS_ADMIN_AUTH.md`。
+1. ~~管理员账号体系 + TOTP~~ —— **2026-08-13 第九轮已完成并上线**。剩下的收尾（都不大）：
+   - **审计归因目前只覆盖两条路径**（资料可见性、资料字段清理），因为只有这两处会写
+     `admin_user_actions`。要扩大覆盖面，得先给其他管理动作补审计写入。
+   - 没有「改自己密码」的接口，只能用 CLI `reset-password`。
 2. ~~把密钥认证的部署路径固化进 `scripts/deploy-vps.mjs`~~ —— **2026-08-13 第八轮已完成并实测部署**。
 3. 拆 `Admin.jsx`（2492 行）与 `postgresStores.js`（3338 行）
 4. react-router（现在靠 `window.location.pathname` 判断，页面跳转全是整页刷新，3D 场景每次重建）
@@ -159,6 +177,83 @@ CSP 这件事能做完，就是因为 playwright 回来了。
 - ~~演练遗留的临时库~~ —— 用户已确认，`mrright_restore_drill` 已 `dropdb`（2026-08-11）。
   删除后复查：`mrright_portfolio` 仍在、17 张表、`visitor_users=1`/`project_comments=2`、
   `/api/health` 200，生产库未受影响。
+
+## 2026-08-13（第九轮）：命名管理员账号 + TOTP + 审计归因
+
+日期：2026-08-13
+commit：`fa64795`（主体）、`a041014`（CLI 用户名大小写）
+线上版本：`a041014`（2026-08-13 12:16 UTC 部署）
+
+在此之前，「管理员」的意思是「知道 `ADMIN_TOKEN` 的人」：一个共享密钥、没有第二因素，
+而且审计表 `admin_user_actions` 记的是**对哪个访客做了什么**，不是**谁做的**。
+第六轮把静态令牌收紧成「只能换会话」是这个方向的第 2 步，这一轮是第 3 步。
+
+现在：用户名 + 密码 + 6 位 TOTP（或一枚恢复码）→ `POST /api/admin/login` → 12 小时会话，
+`admin_sessions.admin_user_id` 指向这个人，这期间的动作写 `admin_user_actions.actor_admin_user_id`。
+静态 token 仍能换会话（引导 / 救援），但那种会话在审计里记为「无人」，
+`/admin` 页头会写明 **Signed in with the shared admin token (actions are not attributed)** ——
+不可归因应该在干活时就看得见，而不是事后才发现。
+
+### 修改文件
+
+| 文件 | 作用 |
+| --- | --- |
+| `server/adminTotp.js`（新） | TOTP 生成 / 校验、恢复码 |
+| `server/passwordHash.js` | 抽出与访客共用的 pbkdf2 实现 |
+| `server/postgresStores.js` | `admin_users` 表、两处 `ADD COLUMN IF NOT EXISTS`、账号与归因查询 |
+| `server/index.js` | `/api/admin/login`、`/me`、`/users`、`/me/recovery-codes`、`/actions` |
+| `server/responses.js` | 新错误码 |
+| `src/Admin.jsx`、`src/lib/api.js` | 账号 / 恢复码 / 共享令牌三种登录模式，页头显示当前身份 |
+| `scripts/admin-user.mjs`（新） | 引导与救援 CLI（create / list / reset-totp / recovery-codes / disable） |
+| `scripts/verify-admin-totp.mjs`（新） | 对着 RFC 6238 测试向量验证 TOTP |
+| `tests/api/admin-auth.db.spec.js`（新） | 真数据库端到端 9 项 |
+| `docs/OPERATIONS_ADMIN_AUTH.md`、`docs/openapi/api-v1.yaml` | 文档与契约 |
+
+### 几个刻意的设计选择
+
+- **`totp_last_step` 让 6 位码一次性。** TOTP 天然在 30 秒内可重放；记住上次成功的时间步、
+  拒绝小于等于它的步之后重放才真的被挡住，抢同一个码的两个请求只有一个能赢
+  （`UPDATE ... WHERE totp_last_step < $2`）。
+- **恢复码是敢于强制第二因素的前提。** 手机丢了的答案是信封里的一枚恢复码，
+  不是 SSH 上去手写 UPDATE。SHA-256 存哈希、一枚一用；不用 pbkdf2 是因为它们是 80 位机器熵，
+  而且「若还在则删掉这一枚」必须是单条语句才没有竞态。
+- **密码错与用户名不存在返回完全相同的码和文案**，且都跑一次 pbkdf2 —— 否则这个接口就是账号枚举器。
+- **停用账号同步删掉它的会话**，否则「停用」最长 12 小时后才生效；**不能停用自己正在用的账号**。
+- **CLI 的密码从终端读，不走 argv**（argv 会进 `ps` 和 shell 历史）。
+- `a041014`：CLI 现在和 API 一样按大小写不敏感匹配用户名 —— 两边不一致会让
+  「明明创建过却 reset 不了」这种问题很难查。
+
+### 验证
+
+- `npm run build`：通过
+- `npm run lint`：通过
+- `npm run test:admin-totp`：通过（RFC 6238 向量 + 窗口 + 重放 + 恢复码格式）
+- GitHub push：`a041014` 已推，本地与 `origin/main` 一致
+- VPS 部署：成功（`npm run deploy:vps`，密钥认证一条命令跑完）
+- 服务重启：成功，健康检查第 1 次即通过
+- 数据库迁移（服务启动时自动、幂等、纯加法）：
+  `admin_users` 建表；`admin_sessions.admin_user_id`、`admin_user_actions.actor_admin_user_id`
+  两个 `ADD COLUMN IF NOT EXISTS`。线上复验两列均已存在，无删除无改写。
+- 线上 `/api/health`、`/`、`/community`、`/admin`、`/login?mode=login`、`/account`：全部 200
+- 线上 admin_summary：200（部署脚本用短时会话验证并已吊销）
+- 线上 `POST /api/admin/login`（不存在的用户 + 错密码）：401，文案为统一的
+  「Username, password or verification code is incorrect.」，不泄露账号是否存在
+- 线上 `GET /api/admin/me` 未带凭证：401；带共享令牌会话：`username: null`（归因如预期为空）
+- 线上 `GET /api/admin/users`：`[]`（尚未创建账号）
+- 磁盘：42%
+
+备份路径：
+
+- `/opt/mrright-portfolio.backup-20260813-121618`（应用，硬链接）
+- `/etc/mrright-portfolio.env.backup-20260813-121618`（env）
+- 本轮裁剪掉 `/opt/mrright-portfolio.backup-20260812-051116`，保留最新 3 份
+
+待办：
+
+- **线上还没有任何管理员账号**，第一个必须用 CLI 在 VPS 上创建（密码要在终端输）。
+  命令与注意事项见顶部「下次从这里继续」。
+- 审计归因目前只覆盖两条会写 `admin_user_actions` 的路径。
+- 没有「改自己密码」的接口。
 
 ## 2026-08-13（第八轮）：把密钥认证的部署路径固化进 `npm run deploy:vps`
 
