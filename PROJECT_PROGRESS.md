@@ -1,9 +1,20 @@
 # mrright.blog 项目进度记录
 
-## 下次从这里继续（截至 2026-08-13 第九轮收工）
+## 下次从这里继续（截至 2026-08-13 第十轮收工）
 
-**线上运行 `a041014`（2026-08-13 12:16 UTC 部署，已逐项验证）。没有积压的未部署改动，
-本地与 `origin/main` 一致。**
+**线上运行 `edf33da`（2026-08-13 15:01 UTC 部署，已逐项验证）。
+本地领先 `origin/main` 一个 commit —— 第十轮的改动还没 push。**
+
+第十轮起因是一句「模型加载太慢，是服务器太差吗」。**不是慢，是根本加载不出来**：
+次世代灭火器的 3D 预览会把 42.4 MB 下完，然后在解析阶段失败、永远停在 86%，
+右侧顶点/三角面/材质全是 `Unknown`。原因是 drei 的 `useGLTF` 默认去
+`www.gstatic.com` 取 Draco 解码器，而本站 CSP 是 `connect-src 'self'`，
+请求被自己拦掉，报错只出现在没人看的 console 里。**任何 Draco 模型都会这样，
+包括社区上传的。** 详见下面「2026-08-13（第十轮）」。
+
+⚠️ 教训：第七轮记的「本地和线上（含真实模型预览）全部验证通过」是**不成立的** ——
+当时只确认了页面能开、没有 CSP 上报，没有确认模型**真的渲染出来**。
+以后验证模型预览，必须看顶点/三角面这些统计值是不是有数字。
 
 第九轮做的是「下一轮建议」里的第 1 项：**命名管理员账号 + TOTP + 审计归因**
 （详见下面「2026-08-13（第九轮）」）。至此「管理员」不再等于「知道 `ADMIN_TOKEN` 的人」：
@@ -183,6 +194,107 @@ CSP 这件事能做完，就是因为 playwright 回来了。
 - ~~演练遗留的临时库~~ —— 用户已确认，`mrright_restore_drill` 已 `dropdb`（2026-08-11）。
   删除后复查：`mrright_portfolio` 仍在、17 张表、`visitor_users=1`/`project_comments=2`、
   `/api/health` 200，生产库未受影响。
+
+## 2026-08-13（第十轮）：模型预览根本没加载出来，以及 42.4 MB 的贴图
+
+日期：2026-08-13
+commit：`edf33da`
+
+### 完成内容
+
+**1. 真正的 bug：Draco 解码器被自家 CSP 拦掉，模型永远加载不出来。**
+
+drei 的 `useGLTF` 默认把 DRACOLoader 指向 `https://www.gstatic.com/draco/...`，
+而本站 CSP 是 `connect-src 'self'`。灭火器模型是 `KHR_draco_mesh_compression`
+**required** 的，于是：42.4 MB 下完 → 解析阶段 `Failed to fetch` → 卡在 86% 不动，
+统计栏全是 `Unknown`。用户看到的是「加载很慢」，实际是永远加载不完。
+
+解码器已从 `three/examples/jsm/libs/draco/gltf/` 复制进 `public/draco/`（同源），
+并通过 `src/three/dracoDecoderPath.js` 显式传给每一处 `useGLTF` / `preload`
+（不用 `useGLTF.setDecoderPath` 全局设置，因为它依赖「在第一次加载前执行」这个
+没人保证的时序）。
+
+**2. 体积：42.4 MB 里有 40.35 MB 是三张 4096×4096 无损 PNG。**
+
+几何体只有 12,649 三角面，而且本来就压过 Draco。传输层压缩没有意义
+（`gzip -9` 压整个 GLB 只省 0.04%，PNG 已经 deflate 过），所以只能改像素编码。
+新增 `scripts/optimize-model.mjs`，按贴图用途分别选参数，参数是**量出来的**：
+
+| 贴图 | 前 | 后 | 依据 |
+| --- | --- | --- | --- |
+| baseColor | 17.68 MB | 0.81 MB | q82，PSNR 37.8 dB |
+| normal | 11.38 MB | 1.21 MB | q92，法线平均角度误差 1.0° |
+| metal/rough | 11.29 MB | 1.60 MB | near-lossless + 限制 2K |
+
+金属/粗糙度图是唯一需要特殊对待的：它的蓝通道是接近二值的金属遮罩，
+有损编码在硬边上的振铃把 **0.63% 的像素判成了错误材质**（材质交界处一圈毛边），
+而且**从 q88 提到 q95 完全没改善**（0.635% → 0.628%）—— 说明这是边缘振铃，
+不是码率不够，加质量只是白花体积。near-lossless 把它压到 0.03%；
+它同时是三张图里最不依赖分辨率的一张（粗糙度是平滑场、金属是大块遮罩），
+所以把它限制在 2K 来付这笔账。
+
+**42.4 MB → 3.7 MB，基础色和法线仍然是 4K。**
+
+**3. 缓存。** 优化后的预览文件名带 8 位内容哈希，`setStaticCacheHeaders`
+现在对任何带哈希的文件名发 `max-age=31536000, immutable`
+（之前几 MB 的 GLB 每次访问都要付一次回源验证）。`/draco/` 给一周。
+
+**4. 归位。** 11 MB 的 2K 源文件从 `public/models/` 移到 `art-source/`，
+不再被打包进 dist、不再每次部署都传一遍。**VPS 上那个 42.4 MB 的上传文件原样保留**，
+它是这份资产的存档，`public/uploads/models/1781017698552-tl-miehuoqi.glb`。
+
+### 修改文件
+
+- `src/three/dracoDecoderPath.js`（新增）
+- `src/components/ModelPreview.jsx`、`src/three/objects/Astronaut.jsx`
+- `scripts/optimize-model.mjs`（新增）
+- `public/draco/`（新增，来自 three r182）
+- `public/models/fire-extinguisher-4k.3fa834b2.glb`（新增，3.7 MB）
+- `public/models/fire-extinguisher.glb` → `art-source/models/fire-extinguisher.glb`
+- `server/content.js`（modelUrl、modelSize、workflow 文案）
+- `server/index.js`（`setStaticCacheHeaders`）
+- `package.json` / `package-lock.json`（devDeps：sharp、@gltf-transform/\*、draco3d）
+
+### 数据库变更
+
+`project_overrides` 里 `slug = 'fire-extinguisher-next-gen'` 的**一行**，
+`UPDATE 1`：`model_url` 指向新预览文件，`model_size` / `model_size_en` /
+`model_size_zh` / `model_size_ja` 从「40 MB」「11.1 MB GLB 预览」改成 3.7 MB。
+（`model_size_en` 之前存的是中文，一并改正。）没有删除任何行。
+
+### 验证结果
+
+- npm run build：通过
+- npm run lint：通过
+- VPS 部署：成功（2026-08-13 15:01 UTC）
+- VPS 备份路径：`/opt/mrright-portfolio.backup-20260813-150109`
+- /api/health：200
+- admin_summary：200（部署脚本用短时会话验证后已吊销）
+- /：200，/community：200，/admin：200，/login?mode=login：200，/account：200
+- /api/account/profile：未登录 401，正常
+- /api/users/not-exist-test-handle：404，正常
+- 服务日志近 20 分钟 error/500：0
+- **线上 Playwright 实测模型预览：模型渲染成功，顶点 9,295 / 三角面 12,649 /
+  材质 1 / 贴图 3 / 包围盒 0.30 × 0.61 × 0.17 —— 修复前这些全是 `Unknown`**
+- 线上实际请求：`/models/fire-extinguisher-4k.3fa834b2.glb`（3.88 MB，
+  `cache-control: public, max-age=31536000, immutable`）+ `/draco/draco_wasm_wrapper.js`
+  + `/draco/draco_decoder.wasm`，全部 200，无 CSP 违规
+- GitHub push：**未执行**（本地领先 origin/main 一个 commit）
+
+### 待办事项
+
+1. **`public/assets/environments/studio-tomoco.exr` 不是 EXR 文件。**
+   它的文件头是 UTF-16 文本 `resource_ver...`，`file(1)` 判定为 `data`。
+   于是 `EXRLoader.parse()` 抛错，Studio 环境光（IBL）**从来没生效过**，
+   并且因为 three 的 `DataTextureLoader` 在调用 `onError` 之后没有 `return`，
+   还会在 console 留一条 `Cannot read properties of undefined (reading 'image')`。
+   这是旧问题，之前被「模型永远加载不出来」挡住了（环境和模型在同一个 Suspense 里）。
+   修它需要一张真的 HDRI/EXR，属于美术资产决定，等用户定。
+2. 4K 基础色 + 4K 法线在移动端显存占用不小（各 4096²×4 ≈ 67 MB 解码后）。
+   如果移动端反馈卡，把它们也降到 2K 即可：改 `scripts/optimize-model.mjs` 里的
+   `MAX_DATA_MAP_SIZE` 适用范围重跑，产出 2K 版只有 2.12 MB。
+3. 其它项目的模型预览没有逐个点开验证过，只验证了第一个（能正常渲染）。
+4. push 到 GitHub。
 
 ## 2026-08-13（第九轮）：命名管理员账号 + TOTP + 审计归因
 
