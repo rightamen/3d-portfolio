@@ -5,6 +5,23 @@
 **线上运行 `9daf048`（2026-08-13 16:20 UTC 部署，已逐项验证）。
 本地领先 `origin/main` 五个 commit —— 还没 push。**
 
+### 收工时的未完项（第十、十一轮合并，按优先级）
+
+1. **用户自己在 /admin → Security 走完一次真实绑定**，确认扫码与切换成功。
+   成功路径需要 `right` 的账号密码，密码不进对话，所以这一步只能由用户完成。
+   出问题就直接关页面 —— 两步式设计保证原有绑定不受影响。
+2. **`git push`**：本地领先 `origin/main` 五个 commit
+   （`edf33da` 模型修复、`c6075dd` 第十轮记录、`9daf048` 绑定页、
+   `4caa339` + `918a29d` 第十一轮记录）。线上跑的代码目前只存在于本机和 VPS。
+3. **`public/assets/environments/studio-tomoco.exr` 不是 EXR 文件**（第十轮挖出）。
+   文件头是 UTF-16 文本 `resource_ver...`，`file(1)` 判定为 `data`，
+   所以 Studio 环境光（IBL）从来没生效过，且每次打开模型预览都会在 console 留一条
+   `Cannot read properties of undefined (reading 'image')`。
+   修它需要一张真的 HDRI/EXR，属于美术资产决定。
+4. 4K 基础色 + 法线在移动端显存占用不小；真有人反馈卡，重跑
+   `scripts/optimize-model.mjs` 出 2K 版（2.12 MB）即可。
+5. 其它三个项目的模型预览只点开验证了第一个，其余未逐个确认。
+
 第十一轮：**在 `/admin` 里做了自助重新绑定认证器的页面，带真正的二维码。**
 起因是「我为什么从来没见过什么二维码」—— 查下来是这个项目里**根本就没有过二维码**：
 CLI 的 `printEnrolment` 只打印文本密钥，`/admin` 连这个都不显示，
