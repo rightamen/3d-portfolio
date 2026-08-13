@@ -54,6 +54,31 @@ const toAccountUserRecord = (row) =>
       }
     : null
 
+// The full admin row, secrets included: this one is only ever handed to the
+// sign-in path in server/index.js, never to a response. Anything an API returns
+// about an admin account goes through listAdminUsers instead, which selects the
+// columns explicitly and cannot leak a hash or a TOTP secret by accident.
+const toAdminUser = (row) =>
+  row
+    ? {
+        createdAt: row.created_at?.toISOString?.() || row.created_at,
+        disabledAt: row.disabled_at?.toISOString?.() || row.disabled_at || null,
+        displayName: row.display_name,
+        failedLoginCount: Number(row.failed_login_count || 0),
+        id: row.id,
+        lastLoginAt: row.last_login_at?.toISOString?.() || row.last_login_at || null,
+        lockedUntil: row.locked_until?.toISOString?.() || row.locked_until || null,
+        passwordHash: row.password_hash,
+        recoveryCodeHashes: Array.isArray(row.recovery_code_hashes) ? row.recovery_code_hashes : [],
+        totpConfirmedAt: row.totp_confirmed_at?.toISOString?.() || row.totp_confirmed_at || null,
+        // bigint comes back as a string from pg; the caller compares it against
+        // a JS number, so the conversion happens once, here.
+        totpLastStep: Number(row.totp_last_step || 0),
+        totpSecret: row.totp_secret,
+        username: row.username,
+      }
+    : null
+
 const toPrivateUser = (row) =>
   row
     ? {
@@ -502,6 +527,38 @@ const ensureSchema = async (pool) => {
     CREATE INDEX IF NOT EXISTS admin_sessions_expires_idx
       ON admin_sessions (expires_at);
 
+    -- Named admin accounts. Until now "administrator" meant "whoever knows
+    -- ADMIN_TOKEN": one shared secret, no second factor, and an audit trail
+    -- (admin_user_actions) that records what was done to a visitor but not by
+    -- whom. A row here is a person, so a session and every action taken in it
+    -- can be attributed to one.
+    --
+    -- totp_last_step is what makes a six-digit code single-use: the step that
+    -- last succeeded is remembered, and anything at or below it is refused.
+    -- Without it a code shoulder-surfed or read out of a log stays valid for
+    -- the rest of its 30 seconds.
+    --
+    -- recovery_code_hashes holds one-shot codes, hashed like passwords. They
+    -- are what makes it safe to *require* the second factor: the answer to a
+    -- lost phone is a code from the envelope, not an SSH session and a hand
+    -- written UPDATE.
+    CREATE TABLE IF NOT EXISTS admin_users (
+      id text PRIMARY KEY,
+      username text NOT NULL UNIQUE,
+      display_name text,
+      password_hash text NOT NULL,
+      totp_secret text,
+      totp_confirmed_at timestamptz,
+      totp_last_step bigint NOT NULL DEFAULT 0,
+      recovery_code_hashes jsonb NOT NULL DEFAULT '[]'::jsonb,
+      failed_login_count integer NOT NULL DEFAULT 0,
+      locked_until timestamptz,
+      disabled_at timestamptz,
+      last_login_at timestamptz,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    );
+
     -- One-shot download tickets. The Web client used to pull the whole source
     -- archive through fetch() into a Blob just to attach an Authorization
     -- header, which OOMs the tab on large archives. A ticket lets the browser
@@ -536,6 +593,17 @@ const ensureSchema = async (pool) => {
   `)
 
   await pool.query(`
+    -- Attribution, added with the admin_users table. Both are nullable and
+    -- ON DELETE SET NULL: sessions minted from the static ADMIN_TOKEN have no
+    -- person behind them, and history must survive an account being removed --
+    -- a NULL here means "the shared token", which is itself worth seeing in the
+    -- audit trail.
+    ALTER TABLE admin_sessions
+      ADD COLUMN IF NOT EXISTS admin_user_id text REFERENCES admin_users(id) ON DELETE SET NULL;
+
+    ALTER TABLE admin_user_actions
+      ADD COLUMN IF NOT EXISTS actor_admin_user_id text REFERENCES admin_users(id) ON DELETE SET NULL;
+
     ALTER TABLE project_overrides
       ADD COLUMN IF NOT EXISTS asset_category text;
 
@@ -2750,7 +2818,11 @@ export const createPostgresStores = async (databaseUrl) => {
       }
     },
 
-    setVisitorProfileVisibility: async (id, disabled, reason) => {
+    // `actor` is the admin_users row id of whoever is making the change, or
+    // null when the call arrived on the shared static token. It is written into
+    // the audit row rather than inferred afterwards, because "who did this" is
+    // not recoverable after the fact.
+    setVisitorProfileVisibility: async (id, disabled, reason, actor = null) => {
       const client = await pool.connect()
       try {
         await client.query('BEGIN')
@@ -2773,8 +2845,8 @@ export const createPostgresStores = async (databaseUrl) => {
         }
         await client.query(
           `
-            INSERT INTO admin_user_actions (id, visitor_user_id, action, fields, reason)
-            VALUES ($1, $2, $3, $4::jsonb, $5)
+            INSERT INTO admin_user_actions (id, visitor_user_id, action, fields, reason, actor_admin_user_id)
+            VALUES ($1, $2, $3, $4::jsonb, $5, $6)
           `,
           [
             createId(),
@@ -2782,6 +2854,7 @@ export const createPostgresStores = async (databaseUrl) => {
             disabled ? 'profile_disabled' : 'profile_restored',
             JSON.stringify(['profile']),
             reason || null,
+            actor,
           ],
         )
         await client.query('COMMIT')
@@ -2794,7 +2867,7 @@ export const createPostgresStores = async (databaseUrl) => {
       }
     },
 
-    moderateVisitorProfile: async (id, fields, reason) => {
+    moderateVisitorProfile: async (id, fields, reason, actor = null) => {
       const assignments = []
       if (fields.includes('avatar')) assignments.push("avatar_url = ''")
       if (fields.includes('banner')) assignments.push("banner_url = ''")
@@ -2822,10 +2895,10 @@ export const createPostgresStores = async (databaseUrl) => {
         }
         await client.query(
           `
-            INSERT INTO admin_user_actions (id, visitor_user_id, action, fields, reason)
-            VALUES ($1, $2, 'profile_fields_cleared', $3::jsonb, $4)
+            INSERT INTO admin_user_actions (id, visitor_user_id, action, fields, reason, actor_admin_user_id)
+            VALUES ($1, $2, 'profile_fields_cleared', $3::jsonb, $4, $5)
           `,
-          [createId(), id, JSON.stringify(fields), reason || null],
+          [createId(), id, JSON.stringify(fields), reason || null, actor],
         )
         await client.query('COMMIT')
         return adminStore.getVisitor(id)
@@ -2950,16 +3023,20 @@ export const createPostgresStores = async (databaseUrl) => {
     // holds on to.
     // ---------------------------------------------------------------------
 
-    createAdminSession: async ({ expiresAt, ip, tokenHash, userAgent }) => {
+    createAdminSession: async ({ adminUserId, expiresAt, ip, tokenHash, userAgent }) => {
       await pool.query(
         `
-          INSERT INTO admin_sessions (token_hash, ip, user_agent, expires_at, last_seen_at)
-          VALUES ($1, $2, $3, $4, now())
+          INSERT INTO admin_sessions (token_hash, ip, user_agent, expires_at, last_seen_at, admin_user_id)
+          VALUES ($1, $2, $3, $4, now(), $5)
         `,
-        [tokenHash, ip || null, userAgent || null, expiresAt],
+        [tokenHash, ip || null, userAgent || null, expiresAt, adminUserId || null],
       )
     },
 
+    // Resolves the session and the person behind it in one round trip, and
+    // refuses a session whose account has since been disabled -- otherwise
+    // disabling an admin would leave them working normally for up to
+    // ADMIN_SESSION_HOURS, which is not what anyone means by "disable".
     getAdminSession: async (tokenHash) => {
       const result = await pool.query(
         `
@@ -2967,13 +3044,35 @@ export const createPostgresStores = async (databaseUrl) => {
           SET last_seen_at = now()
           WHERE token_hash = $1
             AND expires_at > now()
-          RETURNING expires_at
+            AND (
+              admin_user_id IS NULL
+              OR EXISTS (
+                SELECT 1 FROM admin_users
+                WHERE admin_users.id = admin_sessions.admin_user_id
+                  AND admin_users.disabled_at IS NULL
+              )
+            )
+          RETURNING expires_at, admin_user_id
         `,
         [tokenHash],
       )
 
       const row = result.rows[0]
-      return row ? { expiresAt: row.expires_at.toISOString() } : null
+      if (!row) return null
+
+      let username = null
+      if (row.admin_user_id) {
+        const owner = await pool.query('SELECT username FROM admin_users WHERE id = $1', [
+          row.admin_user_id,
+        ])
+        username = owner.rows[0]?.username || null
+      }
+
+      return {
+        adminUserId: row.admin_user_id || null,
+        expiresAt: row.expires_at.toISOString(),
+        username,
+      }
     },
 
     deleteAdminSession: async (tokenHash) => {
@@ -2988,20 +3087,304 @@ export const createPostgresStores = async (databaseUrl) => {
     listAdminSessions: async () => {
       const result = await pool.query(
         `
-          SELECT ip, user_agent, expires_at, last_seen_at, created_at
+          SELECT
+            admin_sessions.ip,
+            admin_sessions.user_agent,
+            admin_sessions.expires_at,
+            admin_sessions.last_seen_at,
+            admin_sessions.created_at,
+            admin_sessions.admin_user_id,
+            admin_users.username
           FROM admin_sessions
-          WHERE expires_at > now()
-          ORDER BY created_at DESC
+          LEFT JOIN admin_users ON admin_users.id = admin_sessions.admin_user_id
+          WHERE admin_sessions.expires_at > now()
+          ORDER BY admin_sessions.created_at DESC
           LIMIT 50
         `,
       )
 
       return result.rows.map((row) => ({
+        adminUserId: row.admin_user_id || null,
         createdAt: row.created_at.toISOString(),
         expiresAt: row.expires_at.toISOString(),
         ip: row.ip,
         lastSeenAt: row.last_seen_at?.toISOString?.() || null,
+        // null means the session was minted from the shared static token. It is
+        // shown as such rather than hidden: an unattributable session is the
+        // thing an operator most wants to notice in this list.
+        username: row.username || null,
         userAgent: row.user_agent,
+      }))
+    },
+
+    // ---------------------------------------------------------------------
+    // Admin accounts.
+    //
+    // The password/lockout halves deliberately mirror the visitor equivalents
+    // above (pbkdf2 hash supplied by the caller, per-account failure counter),
+    // because the attack is the same one and there is no reason for the admin
+    // path to have its own subtly different rules.
+    // ---------------------------------------------------------------------
+
+    createAdminUser: async ({
+      displayName,
+      id,
+      passwordHash,
+      recoveryCodeHashes = [],
+      totpSecret = null,
+      username,
+    }) => {
+      const result = await pool.query(
+        `
+          INSERT INTO admin_users (
+            id, username, display_name, password_hash, totp_secret, recovery_code_hashes
+          )
+          VALUES ($1, lower($2), $3, $4, $5, $6::jsonb)
+          RETURNING id, username
+        `,
+        [
+          id,
+          username,
+          displayName || null,
+          passwordHash,
+          totpSecret,
+          JSON.stringify(recoveryCodeHashes),
+        ],
+      )
+
+      return { id: result.rows[0].id, username: result.rows[0].username }
+    },
+
+    getAdminUserByUsername: async (username) => {
+      const result = await pool.query(
+        'SELECT * FROM admin_users WHERE username = lower($1)',
+        [String(username || '')],
+      )
+      return toAdminUser(result.rows[0])
+    },
+
+    getAdminUserById: async (id) => {
+      const result = await pool.query('SELECT * FROM admin_users WHERE id = $1', [id])
+      return toAdminUser(result.rows[0])
+    },
+
+    listAdminUsers: async () => {
+      const result = await pool.query(
+        `
+          SELECT id, username, display_name, totp_confirmed_at, disabled_at, locked_until,
+                 failed_login_count, last_login_at, created_at,
+                 jsonb_array_length(recovery_code_hashes) AS recovery_codes_left
+          FROM admin_users
+          ORDER BY created_at
+        `,
+      )
+
+      return result.rows.map((row) => ({
+        createdAt: row.created_at.toISOString(),
+        disabledAt: row.disabled_at?.toISOString?.() || null,
+        displayName: row.display_name,
+        failedLoginCount: row.failed_login_count,
+        id: row.id,
+        lastLoginAt: row.last_login_at?.toISOString?.() || null,
+        lockedUntil: row.locked_until?.toISOString?.() || null,
+        recoveryCodesLeft: row.recovery_codes_left,
+        totpConfirmedAt: row.totp_confirmed_at?.toISOString?.() || null,
+        username: row.username,
+      }))
+    },
+
+    setAdminUserPassword: async (id, passwordHash) => {
+      await pool.query(
+        `
+          UPDATE admin_users
+          SET password_hash = $2,
+              failed_login_count = 0,
+              locked_until = null,
+              updated_at = now()
+          WHERE id = $1
+        `,
+        [id, passwordHash],
+      )
+    },
+
+    // Enrolment is two-phase on purpose: the secret is stored unconfirmed, and
+    // only a code the account holder actually produced flips totp_confirmed_at.
+    // Confirming on write instead would let a mistyped secret lock the account
+    // out of its own second factor.
+    setAdminUserTotpSecret: async (id, { recoveryCodeHashes, totpSecret }) => {
+      await pool.query(
+        `
+          UPDATE admin_users
+          SET totp_secret = $2,
+              totp_confirmed_at = null,
+              totp_last_step = 0,
+              recovery_code_hashes = COALESCE($3::jsonb, recovery_code_hashes),
+              updated_at = now()
+          WHERE id = $1
+        `,
+        [id, totpSecret, recoveryCodeHashes ? JSON.stringify(recoveryCodeHashes) : null],
+      )
+    },
+
+    confirmAdminUserTotp: async (id, step) => {
+      await pool.query(
+        `
+          UPDATE admin_users
+          SET totp_confirmed_at = COALESCE(totp_confirmed_at, now()),
+              totp_last_step = GREATEST(totp_last_step, $2::bigint),
+              updated_at = now()
+          WHERE id = $1
+        `,
+        [id, String(step)],
+      )
+    },
+
+    // Conditional on the step still being unused, so two requests racing with
+    // the same code cannot both win: the second UPDATE matches zero rows.
+    consumeAdminUserTotpStep: async (id, step) => {
+      const result = await pool.query(
+        `
+          UPDATE admin_users
+          SET totp_last_step = $2::bigint,
+              updated_at = now()
+          WHERE id = $1
+            AND totp_last_step < $2::bigint
+          RETURNING id
+        `,
+        [id, String(step)],
+      )
+      return Boolean(result.rows[0])
+    },
+
+    // Removes the matching hash and reports whether it was there, in one
+    // statement, so a recovery code cannot be spent twice by two racing
+    // requests.
+    consumeAdminRecoveryCode: async (id, codeHash) => {
+      const result = await pool.query(
+        `
+          UPDATE admin_users
+          SET recovery_code_hashes = recovery_code_hashes - $2::text,
+              updated_at = now()
+          WHERE id = $1
+            AND recovery_code_hashes ? $2::text
+          RETURNING jsonb_array_length(recovery_code_hashes) AS remaining
+        `,
+        [id, codeHash],
+      )
+
+      const row = result.rows[0]
+      return row ? { ok: true, remaining: row.remaining } : { ok: false, remaining: null }
+    },
+
+    replaceAdminRecoveryCodes: async (id, codeHashes) => {
+      await pool.query(
+        `
+          UPDATE admin_users
+          SET recovery_code_hashes = $2::jsonb,
+              updated_at = now()
+          WHERE id = $1
+        `,
+        [id, JSON.stringify(codeHashes)],
+      )
+    },
+
+    setAdminUserDisabled: async (id, disabled) => {
+      const result = await pool.query(
+        `
+          UPDATE admin_users
+          SET disabled_at = CASE WHEN $2 THEN COALESCE(disabled_at, now()) ELSE null END,
+              updated_at = now()
+          WHERE id = $1
+          RETURNING id
+        `,
+        [id, disabled],
+      )
+
+      if (!result.rows[0]) return false
+
+      // A disabled account keeps no live sessions. getAdminSession already
+      // refuses them, but leaving the rows around makes GET /api/admin/sessions
+      // lie about who is currently able to act.
+      if (disabled) {
+        await pool.query('DELETE FROM admin_sessions WHERE admin_user_id = $1', [id])
+      }
+
+      return true
+    },
+
+    registerAdminLoginFailure: async (id, { lockAfter, lockMs }) => {
+      const result = await pool.query(
+        `
+          UPDATE admin_users
+          SET failed_login_count = failed_login_count + 1,
+              locked_until = CASE
+                WHEN failed_login_count + 1 >= $2
+                  THEN now() + ($3::bigint * interval '1 millisecond')
+                ELSE locked_until
+              END,
+              updated_at = now()
+          WHERE id = $1
+          RETURNING failed_login_count, locked_until
+        `,
+        [id, lockAfter, lockMs],
+      )
+
+      const row = result.rows[0]
+      if (!row) return { failedCount: 0, lockedUntil: null }
+
+      return {
+        failedCount: row.failed_login_count,
+        lockedUntil: row.locked_until?.toISOString?.() || null,
+      }
+    },
+
+    registerAdminLoginSuccess: async (id) => {
+      await pool.query(
+        `
+          UPDATE admin_users
+          SET failed_login_count = 0,
+              locked_until = null,
+              last_login_at = now(),
+              updated_at = now()
+          WHERE id = $1
+        `,
+        [id],
+      )
+    },
+
+    listAdminActions: async (limit = 50) => {
+      const result = await pool.query(
+        `
+          SELECT
+            admin_user_actions.id,
+            admin_user_actions.action,
+            admin_user_actions.fields,
+            admin_user_actions.reason,
+            admin_user_actions.created_at,
+            admin_user_actions.visitor_user_id,
+            admin_user_actions.actor_admin_user_id,
+            admin_users.username AS actor_username,
+            visitor_users.email AS target_email
+          FROM admin_user_actions
+          LEFT JOIN admin_users ON admin_users.id = admin_user_actions.actor_admin_user_id
+          LEFT JOIN visitor_users ON visitor_users.id = admin_user_actions.visitor_user_id
+          ORDER BY admin_user_actions.created_at DESC
+          LIMIT $1
+        `,
+        [limit],
+      )
+
+      return result.rows.map((row) => ({
+        action: row.action,
+        // null actor = taken with the shared static token, before named
+        // accounts existed or by a script that still uses it.
+        actorUsername: row.actor_username || null,
+        createdAt: row.created_at.toISOString(),
+        fields: row.fields,
+        id: row.id,
+        reason: row.reason,
+        targetEmail: row.target_email || null,
+        targetUserId: row.visitor_user_id || null,
       }))
     },
 

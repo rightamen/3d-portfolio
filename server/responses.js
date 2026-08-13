@@ -3,6 +3,12 @@ import { validateResponseShape } from './contracts/responseValidator.js'
 export const API_ERROR_CODES = Object.freeze({
   ACCOUNT_LOCKED: 'ACCOUNT_LOCKED',
   ADMIN_AUTH_REQUIRED: 'ADMIN_AUTH_REQUIRED',
+  // Distinct from a wrong password on purpose: the client has to know whether
+  // to show the six-digit field. It is only ever returned once the password has
+  // already been accepted, so it reveals nothing an attacker did not have.
+  ADMIN_TOTP_REQUIRED: 'ADMIN_TOTP_REQUIRED',
+  ADMIN_USER_NOT_FOUND: 'ADMIN_USER_NOT_FOUND',
+  ADMIN_USERNAME_TAKEN: 'ADMIN_USERNAME_TAKEN',
   AUTH_REQUIRED: 'AUTH_REQUIRED',
   COMMENT_NOT_FOUND: 'COMMENT_NOT_FOUND',
   COMMUNITY_COMMENT_NOT_FOUND: 'COMMUNITY_COMMENT_NOT_FOUND',

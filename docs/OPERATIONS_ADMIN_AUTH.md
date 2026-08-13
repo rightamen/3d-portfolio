@@ -72,15 +72,107 @@ POST /api/admin/session          ← 唯一无条件接受静态 token 的路由
 删掉或改成 `true`，然后 `systemctl restart mrright-portfolio`。
 切换前的 env 备份在 `/etc/mrright-portfolio.env.backup-20260812-051212`。
 
-**第 3 步（尚未实现）**：管理员账号体系 + TOTP。
-当前模型仍然是"知道一个共享密钥就是管理员"。真正的多因素需要：
+**第 3 步（2026-08-13 已实现）**：管理员账号体系 + TOTP。见下面「命名管理员账号」一节。
+静态 token 至此降级为**引导 / 救援凭证**：它仍然能换会话（否则第一个账号无法创建，
+账号出问题时也无路可退），但用它做的每一件事在审计里都记为「无人」。
 
-- `admin_users` 表（用户名、密码哈希、TOTP secret）
-- 登录时校验密码 + 6 位 TOTP
-- `admin_sessions` 增加 `admin_user_id`，让 `admin_user_actions` 能归因到人
-- 静态 token 降级为纯粹的引导/救援凭证
+## 命名管理员账号（2026-08-13）
 
-这是下一阶段的工作，不在本轮范围内。
+在此之前，「管理员」的意思是「知道 `ADMIN_TOKEN` 的人」：一个共享密钥、没有第二因素，
+而且审计表 `admin_user_actions` 记的是**对哪个访客做了什么**，不是**谁做的**。
+
+现在的模型：
+
+```
+用户名 + 密码 + 6 位 TOTP（或一枚恢复码）
+        │
+        ▼
+POST /api/admin/login
+        │
+        ▼
+返回会话令牌（同样 12 小时）      ← admin_sessions.admin_user_id 指向这个人
+        │
+        ▼
+这期间的每个动作都写 admin_user_actions.actor_admin_user_id
+```
+
+### 表
+
+`admin_users`：`username`、`password_hash`（pbkdf2，与访客同一套实现）、`totp_secret`、
+`totp_confirmed_at`、`totp_last_step`、`recovery_code_hashes`、
+`failed_login_count` / `locked_until`、`disabled_at`。
+
+两个字段值得单独说：
+
+- **`totp_last_step`** 是让 6 位码**一次性**的东西。TOTP 天然在 30 秒内可重放，
+  记住上次成功的时间步、并拒绝小于等于它的步，重放才真的被挡住。
+  抢同一个码的两个请求里只有一个能成功（`UPDATE ... WHERE totp_last_step < $2`）。
+- **`recovery_code_hashes`** 是**敢于强制要求第二因素**的前提。手机丢了的答案是信封里的
+  一枚恢复码，不是 SSH 上去手写 UPDATE。恢复码用 SHA-256 存哈希、一枚一用；
+  用 SHA-256 而不是 pbkdf2 是因为它们是 80 位机器熵（没有字典可拉伸），
+  而且「若还在则删掉这一枚」必须是**单条语句**才没有竞态。
+
+### 命令行（引导与救援）
+
+API 能创建管理员，但要求调用者**已经是**管理员 —— 所以第一个账号必须从 API 之外来。
+在 VPS 上（脚本随部署一起上传，`DATABASE_URL` 用服务同一份）：
+
+```sh
+cd /opt/mrright-portfolio
+DATABASE_URL=... node scripts/admin-user.mjs create <用户名> --display-name "名字"
+DATABASE_URL=... node scripts/admin-user.mjs list
+DATABASE_URL=... node scripts/admin-user.mjs reset-totp <用户名>     # 换手机 / 怀疑泄露
+DATABASE_URL=... node scripts/admin-user.mjs recovery-codes <用户名> # 重发一套恢复码
+DATABASE_URL=... node scripts/admin-user.mjs disable <用户名>        # 同时吊销其全部会话
+```
+
+密码从终端读、**不走 argv**（argv 会出现在 `ps` 里，也会进 shell 历史）。
+TOTP secret 与恢复码**只打印这一次**：secret 实际上是只写的，恢复码只存哈希。
+
+### 接口
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `POST` | `/api/admin/login` | 用户名 + 密码 + `totp` 或 `recoveryCode`，换短时会话 |
+| `GET` | `/api/admin/me` | 当前会话属于谁（共享令牌会话返回 `username: null`） |
+| `GET` | `/api/admin/users` | 账号列表（**不含任何密钥**） |
+| `POST` | `/api/admin/users` | 新建账号，**仅此一次**返回 secret / otpauth URL / 恢复码 |
+| `PATCH` | `/api/admin/users/:id` | 停用 / 启用（停用会立即删掉其会话） |
+| `POST` | `/api/admin/me/recovery-codes` | 给自己换一套恢复码（旧的立即作废） |
+| `GET` | `/api/admin/actions` | 审计流，带 `actorUsername`（共享令牌为 `null`） |
+
+行为上几个刻意的选择：
+
+- **密码错与用户名不存在返回完全相同的码和文案**，且都跑一次 pbkdf2 —— 否则这个接口
+  就是账号枚举器。
+- **`ADMIN_TOTP_REQUIRED` 是独立错误码**，只在密码已经正确时才会返回。客户端得知道
+  该不该显示验证码输入框，而这条信息对攻击者没有增量价值。
+- **停用账号会同步删掉它的会话**，而不是等会话自然过期 —— 否则「停用」最长 12 小时后才生效。
+- **不能停用自己正在使用的账号**（会话会被自己吊销，若还是最后一个启用账号就没人能撤销了）。
+- 失败 `ADMIN_LOGIN_LOCK_AFTER`（默认 5）次锁 `ADMIN_LOGIN_LOCK_MINUTES`（默认 15）分钟，
+  **锁定期间正确密码也拒绝**。
+
+### 前端
+
+`/admin` 登录页默认是账号模式（用户名 / 密码 / 6 位码），可切「使用恢复码」，
+也可切回**共享令牌**模式（救援用）。登录后页头明确写出当前身份；用共享令牌登录时写的是
+**「Signed in with the shared admin token (actions are not attributed)」** ——
+不可归因这件事应该在干活时就看得见，而不是事后才发现。
+
+### 测试
+
+- `npm run test:admin-totp` —— 对着 **RFC 6238 自带的测试向量**验证 TOTP 实现，
+  外加窗口、重放、恢复码格式。手写的 TOTP 只有对着标准验证才有意义：自洽的实现
+  可以完全自洽却和所有认证器 App 不兼容。
+- `npm run test:api:db`（`tests/api/admin-auth.db.spec.js`，9 项）—— 真数据库端到端：
+  必须第二因素、错密码与不存在用户不可区分、码不可重放、恢复码一次性、锁定、
+  停用即时吊销会话、不能停用自己、审计归因、以及**任何列表都不会带出密钥**。
+
+### 待办
+
+- 现在还没有「改自己密码」的接口（用 CLI `reset-password`）。
+- 审计归因目前覆盖两条会写 `admin_user_actions` 的路径（资料可见性、资料字段清理）；
+  其他管理动作还没有写审计行 —— 要扩大覆盖面，得先给那些动作补审计写入。
 
 ## 轮换静态 token
 

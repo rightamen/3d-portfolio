@@ -1807,12 +1807,15 @@ components:
       type: string
       description: |
         Stable machine-readable codes. Mirrors API_ERROR_CODES in
-        server/responses.js (33 values, includes INTERNAL_ERROR). Clients
+        server/responses.js (36 values, includes INTERNAL_ERROR). Clients
         must treat unknown future codes as a generic failure keyed off HTTP
         status, not crash.
       enum:
         - ACCOUNT_LOCKED
         - ADMIN_AUTH_REQUIRED
+        - ADMIN_TOTP_REQUIRED
+        - ADMIN_USERNAME_TAKEN
+        - ADMIN_USER_NOT_FOUND
         - AUTH_REQUIRED
         - COMMENT_NOT_FOUND
         - COMMUNITY_COMMENT_NOT_FOUND

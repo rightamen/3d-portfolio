@@ -3,17 +3,10 @@ import express from 'express'
 import rateLimit from 'express-rate-limit'
 import helmet from 'helmet'
 import multer from 'multer'
-import {
-  createHash,
-  createHmac,
-  pbkdf2 as pbkdf2Callback,
-  randomBytes,
-  timingSafeEqual,
-} from 'node:crypto'
+import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 import { mkdir, unlink, access, open } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { promisify } from 'node:util'
 import { createContactMessagesStore } from './contactMessagesStore.js'
 import { experience, profile, projects as staticProjects, skills } from './content.js'
 import { createDownloadRequestsStore } from './downloadRequestsStore.js'
@@ -27,6 +20,14 @@ import {
 import { createInteractionsStore } from './interactionsStore.js'
 import { convertModelToGlb } from './modelConverter.js'
 import { createPostgresStores } from './postgresStores.js'
+import { hashPassword, verifyPassword } from './passwordHash.js'
+import {
+  buildOtpAuthUrl,
+  generateRecoveryCodes,
+  generateTotpSecret,
+  normalizeRecoveryCode,
+  verifyTotp,
+} from './adminTotp.js'
 import { API_ERROR_CODES, describeUploadError, sendData, sendError, sendPage } from './responses.js'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -38,7 +39,6 @@ const distIndexPath = path.join(distDir, 'index.html')
 const uploadRoot = path.join(rootDir, 'public', 'uploads')
 const modelConverterScript = path.join(rootDir, 'scripts', 'convert-model-to-glb.py')
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-const pbkdf2 = promisify(pbkdf2Callback)
 // Opt-in, not derived from NODE_ENV. The deploy script's systemd unit only sets
 // EnvironmentFile, so NODE_ENV is usually undefined in production — keying the
 // code echo off `!== 'production'` meant an unauthenticated caller could read a
@@ -89,6 +89,12 @@ const ADMIN_SESSION_TTL_MS =
 // Set ADMIN_ALLOW_STATIC_TOKEN=false once every admin client exchanges the
 // token for a session, to retire direct static-token API access entirely.
 const allowStaticAdminToken = process.env.ADMIN_ALLOW_STATIC_TOKEN !== 'false'
+// Named admin accounts (docs/OPERATIONS_ADMIN_AUTH.md, step 3). The lockout
+// budget is tighter than the visitor one: there are a handful of these accounts
+// and every one of them is worth more than any visitor account.
+const ADMIN_LOGIN_LOCK_AFTER = Math.max(3, Number(process.env.ADMIN_LOGIN_LOCK_AFTER || 5))
+const ADMIN_LOGIN_LOCK_MS =
+  Math.max(1, Number(process.env.ADMIN_LOGIN_LOCK_MINUTES || 15)) * 60 * 1000
 
 // Storage budget per account, independent of the per-IP request limiter.
 const UPLOAD_QUOTA_WINDOW_MS = Math.max(1, Number(process.env.UPLOAD_QUOTA_HOURS || 24)) * 3600 * 1000
@@ -389,6 +395,15 @@ app.use('/api', createLimiter({
 app.use('/api/auth/login', createLimiter({
   windowMs: minutes(15),
   limit: Math.max(1, Number(process.env.LOGIN_LIMIT_PER_WINDOW || 10)),
+  message: 'Too many sign-in attempts. Please try again in a few minutes.',
+}))
+
+// Sign-in for named admin accounts. Tighter than the visitor budget for the
+// same reason the lockout is: the value of the account being guessed at is
+// much higher, and no legitimate operator signs in ten times in a quarter hour.
+app.use('/api/admin/login', createLimiter({
+  windowMs: minutes(15),
+  limit: Math.max(1, Number(process.env.ADMIN_LOGIN_LIMIT_PER_WINDOW || 10)),
   message: 'Too many sign-in attempts. Please try again in a few minutes.',
 }))
 
@@ -706,27 +721,8 @@ const describePasswordProblem = (password, { displayName = '', email = '' } = {}
   return null
 }
 
-// 600k iterations is the current OWASP guidance for PBKDF2-HMAC-SHA256, up from
-// 120k. The synchronous variant used before blocked Node's only thread for the
-// whole derivation, so raising the count without also going async would have
-// turned every concurrent sign-in into a site-wide stall. The iteration count
-// lives in the stored hash, so existing 120k records keep verifying.
-const PBKDF2_ITERATIONS = 600000
-
-const hashPassword = async (password) => {
-  const salt = randomBytes(16).toString('hex')
-  const hash = await pbkdf2(password, salt, PBKDF2_ITERATIONS, 32, 'sha256')
-  return `pbkdf2_sha256$${PBKDF2_ITERATIONS}$${salt}$${hash.toString('hex')}`
-}
-
-const verifyPassword = async (password, storedHash = '') => {
-  const [algorithm, iterationsRaw, salt, expected] = storedHash.split('$')
-  if (algorithm !== 'pbkdf2_sha256' || !iterationsRaw || !salt || !expected) return false
-
-  const expectedBuffer = Buffer.from(expected, 'hex')
-  const actual = await pbkdf2(password, salt, Number(iterationsRaw), expectedBuffer.length, 'sha256')
-  return actual.length === expectedBuffer.length && timingSafeEqual(actual, expectedBuffer)
-}
+// hashPassword / verifyPassword live in ./passwordHash.js so the admin-user CLI
+// derives hashes identically; see the comment at the top of that file.
 
 // Burned so that "no such account" costs the same as a wrong password. Without
 // it the missing-user branch returned in microseconds while a real account paid
@@ -1400,7 +1396,17 @@ const resolveAdminAuth = async (request) => {
   if (typeof adminStore?.getAdminSession !== 'function') return null
 
   const session = await adminStore.getAdminSession(hashToken(token))
-  return session ? { expiresAt: session.expiresAt, kind: 'session' } : null
+  if (!session) return null
+
+  return {
+    // null for a session minted from the shared static token. Routes that write
+    // to the audit trail pass this straight through, so "nobody in particular"
+    // is recorded as such instead of being attributed to whoever is handy.
+    adminUserId: session.adminUserId ?? null,
+    expiresAt: session.expiresAt,
+    kind: 'session',
+    username: session.username ?? null,
+  }
 }
 
 const requireAdmin = async (request, response, next) => {
@@ -2844,6 +2850,141 @@ app.get('/api/projects/:slug/download', async (request, response) => {
   return streamProjectArchive(request, response, { actor: 'visitor', slug, userId: user?.id })
 })
 
+// Recovery codes are hashed with a plain SHA-256 rather than pbkdf2. That is
+// not a shortcut: they are 80 bits of machine-generated entropy, so there is no
+// dictionary to stretch against, and the hash has to be *deterministic* for the
+// single-statement "delete this one code if it is still there" to work at all.
+// Passwords remain pbkdf2 because they are chosen by people.
+const hashRecoveryCode = (code) => hashToken(normalizeRecoveryCode(code))
+
+const adminAccountsAvailable = () => typeof adminStore?.getAdminUserByUsername === 'function'
+
+const issueAdminSession = async (request, adminUserId = null) => {
+  const token = randomBytes(32).toString('base64url')
+  const expiresAt = new Date(Date.now() + ADMIN_SESSION_TTL_MS)
+
+  await adminStore.createAdminSession({
+    adminUserId,
+    expiresAt,
+    ip: request.ip,
+    tokenHash: hashToken(token),
+    userAgent: String(request.get('User-Agent') || '').slice(0, 300),
+  })
+
+  return { expiresAt: expiresAt.toISOString(), token }
+}
+
+// Sign-in for a named admin account: password plus a second factor, in
+// exchange for the same short-lived session the static token yields — except
+// this one is attributable to a person, which is the entire point of it
+// existing. See docs/OPERATIONS_ADMIN_AUTH.md step 3.
+app.post('/api/admin/login', async (request, response) => {
+  if (!adminAccountsAvailable()) {
+    return sendError(
+      response,
+      API_ERROR_CODES.SERVICE_UNAVAILABLE,
+      'Admin data store is not configured.',
+      503,
+    )
+  }
+
+  const username = String(request.body?.username ?? '').trim().toLowerCase().slice(0, 80)
+  const password = String(request.body?.password ?? '')
+  const totp = String(request.body?.totp ?? '').trim().slice(0, 12)
+  const recoveryCode = String(request.body?.recoveryCode ?? '').trim().slice(0, 40)
+
+  const admin = username ? await adminStore.getAdminUserByUsername(username) : null
+  // One derivation always, so an unknown username costs the same as a wrong
+  // password and the endpoint cannot be used to enumerate accounts.
+  const passwordMatches = await verifyPassword(password, admin?.passwordHash ?? dummyPasswordHash)
+
+  const rejectCredentials = async () => {
+    // Only a real, enabled account can accumulate failures: counting them for
+    // an unknown username would create state an attacker could probe for.
+    if (admin && !admin.disabledAt) {
+      await adminStore.registerAdminLoginFailure(admin.id, {
+        lockAfter: ADMIN_LOGIN_LOCK_AFTER,
+        lockMs: ADMIN_LOGIN_LOCK_MS,
+      })
+    }
+
+    return sendError(
+      response,
+      API_ERROR_CODES.VALIDATION_ERROR,
+      'Username, password or verification code is incorrect.',
+      401,
+    )
+  }
+
+  if (admin?.lockedUntil && new Date(admin.lockedUntil) > new Date()) {
+    return sendError(
+      response,
+      API_ERROR_CODES.ACCOUNT_LOCKED,
+      'Too many failed sign-in attempts. Please try again later.',
+      423,
+    )
+  }
+
+  if (!admin || admin.disabledAt || !passwordMatches) return rejectCredentials()
+
+  if (!admin.totpSecret) {
+    // Accounts are created with a secret; this is the defensive branch for one
+    // that somehow has none. Refusing is the only safe answer -- signing in
+    // without a second factor would quietly turn the account into a password.
+    return sendError(
+      response,
+      API_ERROR_CODES.ADMIN_TOTP_REQUIRED,
+      'This account has no second factor enrolled. Re-enrol it with scripts/admin-user.mjs.',
+      403,
+    )
+  }
+
+  let recoveryCodesLeft = null
+
+  if (recoveryCode) {
+    const consumed = await adminStore.consumeAdminRecoveryCode(admin.id, hashRecoveryCode(recoveryCode))
+    if (!consumed.ok) return rejectCredentials()
+    recoveryCodesLeft = consumed.remaining
+  } else if (totp) {
+    const attempt = verifyTotp(admin.totpSecret, totp, { afterStep: admin.totpLastStep })
+    if (!attempt.ok) return rejectCredentials()
+
+    // Claiming the step is what enforces single use. If two requests present
+    // the same code at once, exactly one of them wins here.
+    const claimed = await adminStore.consumeAdminUserTotpStep(admin.id, attempt.step)
+    if (!claimed) return rejectCredentials()
+
+    // First accepted code confirms enrolment: the secret is only proven to
+    // have reached the authenticator app once a code produced by it arrives.
+    if (!admin.totpConfirmedAt) await adminStore.confirmAdminUserTotp(admin.id, attempt.step)
+  } else {
+    return sendError(
+      response,
+      API_ERROR_CODES.ADMIN_TOTP_REQUIRED,
+      'A verification code from your authenticator app is required.',
+      401,
+    )
+  }
+
+  await adminStore.registerAdminLoginSuccess(admin.id)
+  const session = await issueAdminSession(request, admin.id)
+
+  return sendData(
+    response,
+    {
+      admin: {
+        displayName: admin.displayName || admin.username,
+        id: admin.id,
+        // Surfaced so the dashboard can warn before the envelope runs out.
+        recoveryCodesLeft,
+        username: admin.username,
+      },
+      session,
+    },
+    201,
+  )
+})
+
 // Exchanges the static ADMIN_TOKEN for a short-lived session. This is the only
 // admin route that accepts the static token unconditionally — everything else
 // goes through requireAdmin, which will stop accepting it once
@@ -2867,21 +3008,180 @@ app.post('/api/admin/session', async (request, response) => {
     )
   }
 
-  const token = randomBytes(32).toString('base64url')
-  const expiresAt = new Date(Date.now() + ADMIN_SESSION_TTL_MS)
+  // No admin_user_id: a session minted from the shared token has no person
+  // behind it, and the audit trail says so rather than guessing.
+  return sendData(response, { session: await issueAdminSession(request, null) }, 201)
+})
 
-  await adminStore.createAdminSession({
-    expiresAt,
-    ip: request.ip,
-    tokenHash: hashToken(token),
-    userAgent: String(request.get('User-Agent') || '').slice(0, 300),
+// Who the caller is, as the server sees them. The dashboard uses it to show the
+// signed-in name; it is also the quickest way for an operator to check whether
+// a token in their hand is a person's session or the shared one.
+app.get('/api/admin/me', requireAdmin, async (_request, response) => {
+  const { adminUserId = null, kind, username = null } = _request.adminAuth || {}
+
+  return sendData(response, {
+    admin: {
+      id: adminUserId,
+      kind,
+      username,
+    },
+  })
+})
+
+app.get('/api/admin/users', requireAdmin, async (_request, response) => {
+  if (!adminAccountsAvailable()) {
+    return sendError(
+      response,
+      API_ERROR_CODES.SERVICE_UNAVAILABLE,
+      'Admin data store is not configured.',
+      503,
+    )
+  }
+
+  return sendData(response, { users: await adminStore.listAdminUsers() })
+})
+
+// Creates another named admin. The TOTP secret and the recovery codes are
+// returned exactly once, here: they are stored hashed (codes) or write-only
+// (secret) and there is deliberately no endpoint that reads them back.
+app.post('/api/admin/users', requireAdmin, async (request, response) => {
+  if (!adminAccountsAvailable()) {
+    return sendError(
+      response,
+      API_ERROR_CODES.SERVICE_UNAVAILABLE,
+      'Admin data store is not configured.',
+      503,
+    )
+  }
+
+  const username = String(request.body?.username ?? '').trim().toLowerCase().slice(0, 80)
+  const displayName = String(request.body?.displayName ?? '').trim().slice(0, 120)
+  const password = String(request.body?.password ?? '')
+
+  if (!/^[a-z0-9][a-z0-9._-]{2,79}$/.test(username)) {
+    return sendError(
+      response,
+      API_ERROR_CODES.VALIDATION_ERROR,
+      'Username must be 3-80 characters: letters, digits, dot, dash or underscore.',
+      400,
+    )
+  }
+
+  const passwordProblem = describePasswordProblem(password, { displayName: displayName || username })
+  if (passwordProblem) {
+    return sendError(response, API_ERROR_CODES.VALIDATION_ERROR, passwordProblem, 400)
+  }
+
+  if (await adminStore.getAdminUserByUsername(username)) {
+    return sendError(
+      response,
+      API_ERROR_CODES.ADMIN_USERNAME_TAKEN,
+      'That admin username is already in use.',
+      409,
+    )
+  }
+
+  const totpSecret = generateTotpSecret()
+  const recoveryCodes = generateRecoveryCodes()
+  const created = await adminStore.createAdminUser({
+    displayName: displayName || null,
+    id: createId(),
+    passwordHash: await hashPassword(password),
+    recoveryCodeHashes: recoveryCodes.map(hashRecoveryCode),
+    totpSecret,
+    username,
   })
 
   return sendData(
     response,
-    { session: { expiresAt: expiresAt.toISOString(), token } },
+    {
+      enrolment: {
+        otpauthUrl: buildOtpAuthUrl({ account: username, secret: totpSecret }),
+        recoveryCodes,
+        totpSecret,
+      },
+      user: { id: created.id, username: created.username },
+    },
     201,
   )
+})
+
+// Disable / re-enable. Disabling also drops the account's live sessions, so it
+// takes effect now rather than whenever the session would have expired.
+app.patch('/api/admin/users/:id', requireAdmin, async (request, response) => {
+  if (!adminAccountsAvailable()) {
+    return sendError(
+      response,
+      API_ERROR_CODES.SERVICE_UNAVAILABLE,
+      'Admin data store is not configured.',
+      503,
+    )
+  }
+
+  const disabled = request.body?.disabled
+  if (typeof disabled !== 'boolean') {
+    return sendError(response, API_ERROR_CODES.VALIDATION_ERROR, 'disabled must be a boolean.', 400)
+  }
+
+  // Disabling the account you are signed in as would revoke the session making
+  // the request: the call would appear to fail while having succeeded, and if
+  // it were the last enabled account nobody could undo it.
+  if (disabled && request.adminAuth?.adminUserId === request.params.id) {
+    return sendError(
+      response,
+      API_ERROR_CODES.VALIDATION_ERROR,
+      'You cannot disable the account you are signed in as.',
+      400,
+    )
+  }
+
+  const updated = await adminStore.setAdminUserDisabled(request.params.id, disabled)
+  if (!updated) {
+    return sendError(
+      response,
+      API_ERROR_CODES.ADMIN_USER_NOT_FOUND,
+      'Admin user not found.',
+      404,
+    )
+  }
+
+  return sendData(response, { users: await adminStore.listAdminUsers() })
+})
+
+// Fresh recovery codes for the signed-in account. Issuing a new set voids the
+// old one, which is what you want after using one or losing the paper.
+app.post('/api/admin/me/recovery-codes', requireAdmin, async (request, response) => {
+  const adminUserId = request.adminAuth?.adminUserId
+  if (!adminUserId) {
+    return sendError(
+      response,
+      API_ERROR_CODES.ADMIN_AUTH_REQUIRED,
+      'Recovery codes belong to a named admin account; sign in as one first.',
+      403,
+    )
+  }
+
+  const recoveryCodes = generateRecoveryCodes()
+  await adminStore.replaceAdminRecoveryCodes(adminUserId, recoveryCodes.map(hashRecoveryCode))
+
+  return sendData(response, { recoveryCodes })
+})
+
+// The audit trail, now with an actor. Rows written before named accounts
+// existed (or by a script still using the shared token) report a null actor,
+// which is the honest answer rather than a guess.
+app.get('/api/admin/actions', requireAdmin, async (request, response) => {
+  if (typeof adminStore?.listAdminActions !== 'function') {
+    return sendError(
+      response,
+      API_ERROR_CODES.SERVICE_UNAVAILABLE,
+      'Admin data store is not configured.',
+      503,
+    )
+  }
+
+  const limit = Math.min(200, Math.max(1, Number(request.query?.limit) || 50))
+  return sendData(response, { actions: await adminStore.listAdminActions(limit) })
 })
 
 app.delete('/api/admin/session', requireAdmin, async (request, response) => {
@@ -3053,6 +3353,7 @@ app.patch('/api/admin/visitors/:id/profile-visibility', requireAdmin, async (req
     request.params.id,
     request.body.disabled,
     reason,
+    request.adminAuth?.adminUserId ?? null,
   )
   if (!visitor) {
     return sendError(response, API_ERROR_CODES.VISITOR_NOT_FOUND, 'Visitor not found.', 404)
@@ -3074,7 +3375,12 @@ app.patch('/api/admin/visitors/:id/profile-moderation', requireAdmin, async (req
     )
   }
   const reason = String(request.body?.reason ?? '').trim().slice(0, 500)
-  const visitor = await adminStore.moderateVisitorProfile(request.params.id, fields, reason)
+  const visitor = await adminStore.moderateVisitorProfile(
+    request.params.id,
+    fields,
+    reason,
+    request.adminAuth?.adminUserId ?? null,
+  )
   if (!visitor) {
     return sendError(response, API_ERROR_CODES.VISITOR_NOT_FOUND, 'Visitor not found.', 404)
   }

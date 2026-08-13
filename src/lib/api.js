@@ -92,6 +92,24 @@ export const endAdminSession = (token) =>
     headers: { Authorization: `Bearer ${token}` },
   })
 
+// Sign-in for a named admin account: password plus a code from an
+// authenticator app (or one recovery code). Yields the same kind of session the
+// static token does, except this one is attributable to a person.
+export const adminLogin = ({ password, recoveryCode, totp, username }) =>
+  request('/api/admin/login', {
+    cache: 'no-store',
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      password,
+      ...(recoveryCode ? { recoveryCode } : {}),
+      ...(totp ? { totp } : {}),
+      username,
+    }),
+  })
+
+export const getAdminMe = (token) => adminRequest('/api/admin/me', token, { cache: 'no-store' })
+
 const adminRequest = (path, token, options = {}) =>
   request(path, {
     ...options,

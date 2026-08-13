@@ -23,6 +23,8 @@
     "test:openapi": "node scripts/validate-openapi.mjs",
     "test:deploy-backup": "node scripts/verify-deploy-backup.mjs",
     "test:deploy-script": "node scripts/verify-deploy-script.mjs",
+    "test:admin-totp": "node scripts/verify-admin-totp.mjs",
+    "admin:user": "node scripts/admin-user.mjs",
     "test:e2e:headed": "playwright test --headed",
     "test:e2e:report": "playwright show-report",
     "verify:visitor-studio": "node scripts/verify-visitor-studio.mjs"

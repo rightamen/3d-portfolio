@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import {
+  adminLogin,
   createAdminProject,
   createAdminSession,
   deleteAdminComment,
@@ -18,6 +19,7 @@ import {
   getAdminContactMessages,
   getAdminDownloadRequests,
   getAdminLikes,
+  getAdminMe,
   getAdminProjects,
   getAdminSummary,
   getAdminVisitor,
@@ -730,6 +732,16 @@ const Admin = () => {
   const [tokenInput, setTokenInput] = useState(() => window.localStorage.getItem(tokenKey) || '')
   const [status, setStatus] = useState('locked')
   const [authMessage, setAuthMessage] = useState('')
+  // 'account' is the normal way in: a named admin with a password and a code
+  // from an authenticator app. 'token' is the shared ADMIN_TOKEN, kept as the
+  // way back in when an account is the thing that is broken.
+  const [authMode, setAuthMode] = useState('account')
+  const [credentials, setCredentials] = useState({ password: '', totp: '', username: '' })
+  const [recoveryCode, setRecoveryCode] = useState('')
+  const [useRecoveryCode, setUseRecoveryCode] = useState(false)
+  // Who the server says this session belongs to. null while signed in on the
+  // shared token, which the header then says out loud.
+  const [identity, setIdentity] = useState(null)
   const [data, setData] = useState({
     comments: [],
     communityComments: [],
@@ -849,7 +861,10 @@ const Admin = () => {
   // operator back to the login form. An invalid stored token is cleared by
   // loadAdminData's 401 handling.
   useEffect(() => {
-    if (token) loadAdminData(token)
+    if (!token) return
+    loadAdminData(token).then((ok) => {
+      if (ok) loadIdentity(token)
+    })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -861,6 +876,74 @@ const Admin = () => {
   // control of every admin route. What gets persisted now expires on its own
   // and can be revoked server-side. The static token stays valid on the API for
   // scripts, but it is no longer what the browser holds.
+  // Asks the server who the session belongs to. Failure is not fatal: an older
+  // server without the route simply leaves the header unattributed.
+  const loadIdentity = async (sessionToken) => {
+    try {
+      const payload = await getAdminMe(sessionToken)
+      setIdentity(payload?.admin || null)
+    } catch {
+      setIdentity(null)
+    }
+  }
+
+  // Sign-in with a named account. The password and the code are held in state
+  // only until the session comes back, then dropped -- neither is persisted,
+  // and only the session token reaches localStorage.
+  const signIn = async (event) => {
+    event.preventDefault()
+    const username = credentials.username.trim()
+    const password = credentials.password
+    if (!username || !password) return
+
+    setAuthMessage('')
+
+    let payload
+    try {
+      payload = await adminLogin({
+        password,
+        recoveryCode: useRecoveryCode ? recoveryCode.trim() : '',
+        totp: useRecoveryCode ? '' : credentials.totp.trim(),
+        username,
+      })
+    } catch (error) {
+      setStatus('locked')
+      if (error?.code === 'ADMIN_TOTP_REQUIRED') {
+        // The password was right; the account just has not presented its second
+        // factor yet. Saying so is safe here and saves an operator staring at a
+        // form wondering which field is wrong.
+        setAuthMessage('Enter the 6-digit code from your authenticator app.')
+        return
+      }
+      if (error?.status === 423) {
+        setAuthMessage('This account is temporarily locked after too many failed attempts.')
+        return
+      }
+      setAuthMessage(error?.message || 'Sign-in failed. Check the username, password and code.')
+      return
+    }
+
+    const sessionToken = payload?.session?.token
+    if (!sessionToken) {
+      setAuthMessage('The server did not return a session. Try again.')
+      return
+    }
+
+    setToken(sessionToken)
+    const ok = await loadAdminData(sessionToken)
+    if (ok) {
+      window.localStorage.setItem(tokenKey, sessionToken)
+      setCredentials({ password: '', totp: '', username: '' })
+      setRecoveryCode('')
+      setUseRecoveryCode(false)
+      setIdentity(payload?.admin || null)
+      const left = payload?.admin?.recoveryCodesLeft
+      if (typeof left === 'number' && left <= 2) {
+        setActionMessage(`Recovery codes left: ${left}. Generate a new set from your account soon.`)
+      }
+    }
+  }
+
   const unlock = async (event) => {
     event.preventDefault()
     const staticToken = tokenInput.trim()
@@ -893,6 +976,7 @@ const Admin = () => {
       // The typed secret has served its purpose; do not leave it in a form
       // field that survives in a React DevTools snapshot or a screenshot.
       setTokenInput('')
+      await loadIdentity(sessionToken)
     }
   }
 
@@ -902,6 +986,7 @@ const Admin = () => {
     setToken('')
     setTokenInput('')
     setAuthMessage('')
+    setIdentity(null)
     setStatus('locked')
 
     // Revoke server-side too, so signing out actually invalidates the session
@@ -1307,27 +1392,111 @@ const Admin = () => {
   if (!token || status === 'locked') {
     return (
       <main className="admin-shell">
-        <form className="admin-login" onSubmit={unlock}>
+        <form
+          className="admin-login"
+          onSubmit={authMode === 'account' ? signIn : unlock}
+        >
           <div>
             <p className="section-kicker">Admin</p>
             <h1 className="text-3xl font-semibold text-white">mrright.blog control</h1>
           </div>
-          <input
-            className="field-input field-input-focus"
-            placeholder="Admin token"
-            type="password"
-            value={tokenInput}
-            onChange={(event) => setTokenInput(event.target.value)}
-            required
-          />
+
+          {authMode === 'account' ? (
+            <>
+              <input
+                autoComplete="username"
+                className="field-input field-input-focus"
+                placeholder="Username"
+                type="text"
+                value={credentials.username}
+                onChange={(event) =>
+                  setCredentials((current) => ({ ...current, username: event.target.value }))
+                }
+                required
+              />
+              <input
+                autoComplete="current-password"
+                className="field-input field-input-focus"
+                placeholder="Password"
+                type="password"
+                value={credentials.password}
+                onChange={(event) =>
+                  setCredentials((current) => ({ ...current, password: event.target.value }))
+                }
+                required
+              />
+              {useRecoveryCode ? (
+                <input
+                  className="field-input field-input-focus"
+                  placeholder="Recovery code"
+                  type="text"
+                  value={recoveryCode}
+                  onChange={(event) => setRecoveryCode(event.target.value)}
+                  required
+                />
+              ) : (
+                <input
+                  // one-time-code lets a phone offer the code from the
+                  // notification instead of making the operator retype it.
+                  autoComplete="one-time-code"
+                  className="field-input field-input-focus"
+                  inputMode="numeric"
+                  maxLength={6}
+                  placeholder="6-digit code"
+                  type="text"
+                  value={credentials.totp}
+                  onChange={(event) =>
+                    setCredentials((current) => ({ ...current, totp: event.target.value }))
+                  }
+                  required
+                />
+              )}
+            </>
+          ) : (
+            <input
+              className="field-input field-input-focus"
+              placeholder="Shared admin token"
+              type="password"
+              value={tokenInput}
+              onChange={(event) => setTokenInput(event.target.value)}
+              required
+            />
+          )}
+
           {(authMessage || status === 'error') && (
             <p className="text-sm text-coral">
               {authMessage || 'Could not reach the admin API. Check your connection and try again.'}
             </p>
           )}
+
           <button type="submit" className="primary-action">
             Open Dashboard
           </button>
+
+          <div className="flex flex-wrap gap-4 text-sm text-neutral-400">
+            {authMode === 'account' && (
+              <button
+                type="button"
+                className="underline decoration-dotted underline-offset-4"
+                onClick={() => {
+                  setUseRecoveryCode((current) => !current)
+                  setAuthMessage('')
+                }}
+              >
+                {useRecoveryCode ? 'Use authenticator code' : 'Use a recovery code'}
+              </button>
+            )}
+            <button
+              type="button"
+              className="underline decoration-dotted underline-offset-4"
+              onClick={() => {
+                setAuthMode((current) => (current === 'account' ? 'token' : 'account'))
+                setAuthMessage('')
+              }}
+            >
+              {authMode === 'account' ? 'Sign in with the shared token' : 'Sign in with an account'}
+            </button>
+          </div>
         </form>
       </main>
     )
@@ -1339,6 +1508,15 @@ const Admin = () => {
         <div>
           <p className="section-kicker mb-1">Admin</p>
           <h1 className="text-3xl font-semibold text-white">Portfolio Operations</h1>
+          {/* Whose session this is. Saying "shared token" out loud matters:
+              actions taken on it cannot be attributed to anyone in the audit
+              trail, and that should be visible while working, not discovered
+              later. */}
+          <p className="text-sm text-neutral-400">
+            {identity?.username
+              ? `Signed in as ${identity.username}`
+              : 'Signed in with the shared admin token (actions are not attributed)'}
+          </p>
         </div>
         <div className="flex flex-wrap gap-3">
           <button type="button" className="secondary-action" onClick={() => loadAdminData(token)}>

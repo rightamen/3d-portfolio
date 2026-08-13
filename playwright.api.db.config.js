@@ -7,7 +7,7 @@ export default defineConfig({
   forbidOnly: Boolean(process.env.CI),
   reporter: [['list']],
   testDir: './tests/api',
-  testMatch: '**/contract.db.spec.js',
+  testMatch: '**/*.db.spec.js',
   // The suite is strictly sequential: one shared server + seeded fixtures.
   workers: 1,
   timeout: 60_000,
