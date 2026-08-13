@@ -100,7 +100,11 @@ const printEnrolment = ({ otpauthUrl, recoveryCodes, totpSecret, username }) => 
 const databaseUrl = process.env.DATABASE_URL
 if (!databaseUrl) die('DATABASE_URL is required (the same one the service uses).')
 
-const [command, usernameArg, ...rest] = process.argv.slice(2)
+const [command, usernameRaw, ...rest] = process.argv.slice(2)
+// The API lowercases before validating and the column is written with lower(),
+// so "Right" and "right" are one account. Normalising here too keeps the CLI
+// from rejecting a name the API would have accepted.
+const usernameArg = usernameRaw === undefined ? undefined : String(usernameRaw).trim().toLowerCase()
 if (!command) die('Usage: node scripts/admin-user.mjs <list|create|reset-password|reset-totp|recovery-codes|disable|enable> [username]')
 
 const displayNameFlag = rest.indexOf('--display-name')
