@@ -143,14 +143,33 @@ const setNoStoreHeaders = (response) => {
   response.setHeader('Expires', '0')
 }
 
+// Vite's own output is content-hashed, so /assets can be cached forever. Model
+// previews live in /models and are not built by Vite, but the big one is hashed
+// by hand (scripts/optimize-model.mjs) precisely so it can join that deal: a
+// multi-megabyte GLB served with the express.static default of max-age=0 pays a
+// revalidation round-trip on every single visit. Only hashed names qualify --
+// an unhashed file could change under a URL a browser has been told to trust
+// for a year.
+const HASHED_ASSET_PATTERN = /\.[0-9a-f]{8}\.[a-z0-9]+$/
+
 const setStaticCacheHeaders = (response, filePath) => {
   if (path.basename(filePath) === 'index.html') {
     setNoStoreHeaders(response)
     return
   }
 
-  if (filePath.includes(`${path.sep}assets${path.sep}`)) {
+  if (
+    filePath.includes(`${path.sep}assets${path.sep}`) ||
+    HASHED_ASSET_PATTERN.test(path.basename(filePath))
+  ) {
     response.setHeader('Cache-Control', 'public, max-age=31536000, immutable')
+    return
+  }
+
+  // The Draco decoder is versioned by the three release it was copied from, not
+  // by its filename, so it gets a week rather than a year.
+  if (filePath.includes(`${path.sep}draco${path.sep}`)) {
+    response.setHeader('Cache-Control', 'public, max-age=604800')
   }
 }
 

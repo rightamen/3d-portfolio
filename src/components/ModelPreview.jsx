@@ -15,6 +15,7 @@ import {
 } from 'three'
 import { EXRLoader } from 'three/examples/jsm/loaders/EXRLoader.js'
 import ModelErrorBoundary from './ModelErrorBoundary'
+import { DRACO_DECODER_PATH } from '../three/dracoDecoderPath'
 import { inferAssetCategory } from '../lib/assetCategories'
 import { pickLocalized, translateKnownLabel } from '../lib/i18n'
 import useDialogAccessibility from '../hooks/useDialogAccessibility'
@@ -330,7 +331,7 @@ const ModelScene = ({
   sceneMode,
   url,
 }) => {
-  const { scene } = useGLTF(url)
+  const { scene } = useGLTF(url, DRACO_DECODER_PATH)
   const { camera } = useThree()
   const displayScene = useMemo(() => {
     const clonedScene = scene.clone(true)

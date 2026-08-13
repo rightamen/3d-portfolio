@@ -38,7 +38,13 @@ export const projects = [
     titleZh: '次世代灭火器',
     titleJa: '次世代消火器',
     image: '/assets/projects/fire-extinguisher.png',
-    modelUrl: '/models/fire-extinguisher.glb',
+    // Content-hashed on purpose: the preview is cached immutably for a year
+    // (setStaticCacheHeaders in server/index.js), so a re-export has to arrive
+    // under a new name. Derived from the 4K upload that production actually
+    // serves (public/uploads/models/1781017698552-tl-miehuoqi.glb on the VPS,
+    // 42.4 MB of PNG), regenerated with:
+    //   node scripts/optimize-model.mjs <that file> public/models
+    modelUrl: '/models/fire-extinguisher-4k.3fa834b2.glb',
     summary:
       'A real FBX production asset converted into a GLB model preview with embedded PBR texture maps for asset presentation.',
     summaryZh:
@@ -46,15 +52,15 @@ export const projects = [
     summaryJa:
       '実制作FBXアセットをGLBモデルプレビューに変換し、PBRテクスチャを保持した展示用作品です。',
     workflow:
-      'The original FBX asset was prepared from a 3ds Max workflow, paired with Substance-style PBR maps, downsampled to 2K for realtime preview, then exported through Blender as a Draco-compressed GLB.',
+      'The original FBX asset was prepared from a 3ds Max workflow, paired with 4K Substance-style PBR maps, then exported through Blender as a Draco-compressed GLB. For realtime preview the textures are re-encoded to WebP, with the metal/roughness map capped at 2K.',
     workflowZh:
-      '原始 FBX 来自 3ds Max 制作流程，配合 Substance 风格 PBR 贴图，降采样到 2K 后通过 Blender 导出为 Draco 压缩 GLB。',
+      '原始 FBX 来自 3ds Max 制作流程，配合 Substance 风格 4K PBR 贴图，通过 Blender 导出为 Draco 压缩 GLB。实时预览版的贴图再编码为 WebP，金属/粗糙度图限制在 2K。',
     workflowJa:
-      '元のFBXは3ds Maxワークフローで作成し、Substance系PBRマップを組み合わせ、2Kに調整してBlenderからDraco圧縮GLBとして書き出しました。',
+      '元のFBXは3ds Maxワークフローで作成し、Substance系の4K PBRマップを組み合わせ、BlenderからDraco圧縮GLBとして書き出しました。リアルタイムプレビュー版はテクスチャをWebPに再エンコードし、メタル／ラフネスマップは2Kに抑えています。',
     format: 'GLB / PBR',
-    modelSize: '11.1 MB GLB preview',
-    modelSizeZh: '11.1 MB GLB 预览',
-    modelSizeJa: '11.1 MB GLBプレビュー',
+    modelSize: '3.7 MB GLB preview',
+    modelSizeZh: '3.7 MB GLB 预览',
+    modelSizeJa: '3.7 MB GLBプレビュー',
     downloadPolicy: 'Authorization required',
     downloadPolicyZh: '需要授权',
     downloadPolicyJa: '許可が必要',
