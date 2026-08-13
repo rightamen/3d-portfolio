@@ -11,20 +11,26 @@
 静态 token 降级为**引导 / 救援凭证** —— 它仍能换会话（否则第一个账号无从创建），
 但用它做的每件事在审计里都记为「无人」，`/admin` 页头会明说这一点。
 
-> **唯一待办，而且只能由你来做：线上还没有任何管理员账号**（`admin_users` 为 0 行，
-> `GET /api/admin/users` 返回 `[]`）。第一个账号必须从 API 之外创建，密码要在终端里输，
-> 所以我没有代劳。在 VPS 上跑：
->
-> ```sh
-> cd /opt/mrright-portfolio
-> set -a; . /etc/mrright-portfolio.env; set +a
-> node scripts/admin-user.mjs create <用户名> --display-name "名字"
-> ```
->
-> 它会**只打印这一次** TOTP secret / otpauth URL 和一套恢复码 —— secret 是只写的，
-> 恢复码只存哈希，关掉终端就找不回来了，先存进密码管理器再继续。
-> 之后在 `/admin` 用账号模式登录，`GET /api/admin/me` 应当回你的用户名而不是 `null`。
-> 建好账号前，`/admin` 仍可用共享令牌模式进入，功能不受影响。
+**第一个管理员账号 `right` 已于 2026-08-13 12:30 UTC 创建并实测登录通过**
+（`totp:confirmed`，10 枚恢复码未用）。创建时的密码 / TOTP secret / otpauth URL / 恢复码
+写在 VPS 上一个 root 专属（`chmod 600`）的一次性文件里，**取走后就该 `shred -u` 删掉**，
+路径当面给过，不写进这个仓库。
+
+后续要加人或救援，都在 VPS 上跑（密码从终端读，不走 argv）：
+
+```sh
+cd /opt/mrright-portfolio
+export DATABASE_URL="$(grep -m1 '^DATABASE_URL=' /etc/mrright-portfolio.env | cut -d= -f2-)"
+node scripts/admin-user.mjs list
+node scripts/admin-user.mjs create <用户名> --display-name "名字"
+node scripts/admin-user.mjs reset-password <用户名>   # 忘了密码
+node scripts/admin-user.mjs reset-totp <用户名>       # 换手机 / 怀疑泄露
+```
+
+只取 `DATABASE_URL` 这一行，而不是 `. /etc/mrright-portfolio.env` 整份 source：
+整份 source 会把 `ADMIN_TOKEN` 等一并灌进当前 shell 及其所有子进程的环境，
+这个脚本只需要数据库连接。（那份 env 本身是可以被 source 的，没有含空格的裸值，
+这里是范围最小化，不是绕开语法问题。）
 
 上一轮（第八轮）：**把密钥认证的部署路径固化进 `npm run deploy:vps`**，
 所以这次部署是直接一条命令跑完的，不用再手工拼远端脚本。
@@ -239,7 +245,13 @@ commit：`fa64795`（主体）、`a041014`（CLI 用户名大小写）
 - 线上 `POST /api/admin/login`（不存在的用户 + 错密码）：401，文案为统一的
   「Username, password or verification code is incorrect.」，不泄露账号是否存在
 - 线上 `GET /api/admin/me` 未带凭证：401；带共享令牌会话：`username: null`（归因如预期为空）
-- 线上 `GET /api/admin/users`：`[]`（尚未创建账号）
+- 线上 `GET /api/admin/users`：部署后为 `[]`；12:30 UTC 创建第一个账号 `right` 后不再为空
+- **账号体系端到端实测（2026-08-13 12:31 UTC，拿真实 TOTP 码打线上接口）**：
+  `POST /api/admin/login` 201 并签发会话；`GET /api/admin/me` 返回 `username: "right"`
+  （归因生效，不再是 `null`）；该会话调 `/api/admin/summary` 200；
+  **重放同一个 6 位码 401**（`totp_last_step` 在线上确实挡住重放）；
+  `DELETE /api/admin/session` 200，验证用的会话已吊销；
+  `admin-user.mjs list` 显示 `enabled totp:confirmed codes:10`
 - 磁盘：42%
 
 备份路径：
@@ -250,8 +262,8 @@ commit：`fa64795`（主体）、`a041014`（CLI 用户名大小写）
 
 待办：
 
-- **线上还没有任何管理员账号**，第一个必须用 CLI 在 VPS 上创建（密码要在终端输）。
-  命令与注意事项见顶部「下次从这里继续」。
+- ~~线上还没有任何管理员账号~~ —— **同日 12:30 UTC 已创建 `right` 并实测登录通过**。
+  一次性的凭证文件在 VPS 上（root 专属），取走后应 `shred -u`。
 - 审计归因目前只覆盖两条会写 `admin_user_actions` 的路径。
 - 没有「改自己密码」的接口。
 
