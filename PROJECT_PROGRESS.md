@@ -1,20 +1,24 @@
 # mrright.blog 项目进度记录
 
-## 下次从这里继续（截至 2026-08-14 第十三轮收工）
+## 下次从这里继续（截至 2026-08-14 第十四轮收工）
 
-**线上运行 `c54c787`（2026-08-14 04:26 UTC 部署，已逐项验证）。
-`origin/main` 与本地同步。第十二、十三轮都无数据库变更。
-回滚：`/opt/mrright-portfolio.backup-20260814-042611`。**
+**线上运行 `39ac799`（2026-08-14 14:15 UTC 部署，已逐项验证）。
+`origin/main` 与本地同步。第十二、十三、十四轮都无数据库变更。
+回滚：`/opt/mrright-portfolio.backup-20260814-141513`。**
 
-**线上内容健康：0 critical / 1 warning / 0 note。**
-唯一那条是 `studio-tomoco.exr` 不是 EXR —— **第十四轮已在本地修掉，尚未部署**：
-用户给了真 HDRI，已转换并接上，部署后这条 warning 应该归零。
+**线上内容健康：0 critical / 0 warning / 0 note —— 第一次全绿。**
 
-第十四轮（本地完成，**未提交未部署**）：**Studio 环境光（IBL）第一次真正生效。**
+第十四轮：**Studio 环境光（IBL）第一次真正生效。**
 用户提供 `monochrome_studio_02`（1K 影棚 HDRI）。原文件 5.65 MB（32 位浮点 + 一条
 恒为 14.37 的无用 alpha），转成半浮点 + ZIP 后 **1.47 MB（-74%）**，
 经站点同款 `EXRLoader` 往返校验：最大相对误差 0.0488%，逐行朝向一致。
+旧的 `studio-tomoco.exr`（其实是个 shelf 缩略图）已删除，
+`StudioEnvironment` 的 error 回调加了一行报错 —— 那是全文件唯一一处 `console.`。
 详见下面「2026-08-14（第十四轮）」。
+
+⚠️ **本机 `curl localhost` 会走机场代理**（`http_proxy=...:7897`），
+请求会被静默转发到线上，"本地验证"其实在验证线上那份旧代码。
+**测本地服务一律 `curl --noproxy '*'`。** 第十四轮踩过，详见那一节的教训。
 
 第十三轮：`/admin` 新增 **Content Health** 分区 + `GET /api/admin/content-health`。
 它把目录里每个 URL 在服务端真的打开，按**文件头**而不是扩展名判断格式，
@@ -331,14 +335,38 @@ y=0/128/256/384/511 各行均值与原文件完全一致（证明**没有上下�
 - `scripts/verify-content-health.mjs`（fixture 文件名跟着改，否则检查器找不到文件）
 - `public/assets/environments/studio-tomoco.exr`（**删除**）
 
+### 部署
+
+- commit hash：`39ac799`（已 push 到 `origin/main`）
+- 部署：`npm run deploy:vps`，2026-08-14 14:15 UTC 完成，服务已重启
+- **VPS 应用备份：`/opt/mrright-portfolio.backup-20260814-141513`**（回滚回这里）
+- 部署前确认：`ADMIN_TOKEN=[set]`、`DATABASE_URL=[set]`
+- 无数据库变更
+
 ### 验证结果
+
+本地：
 
 - `npm run build`：通过
 - `npm run lint`：通过（exit 0）
 - `npm run test:content-health`：通过
-- 新 EXR 已确认进入 `dist/assets/environments/`，本地服务返回 1537452 字节、`image/aces`
-- commit hash：**无（未提交）**
-- 部署：**未部署**，无备份路径
+
+线上（全部 200）：
+
+- `/api/health`、`/`、`/community`、`/admin`、`/login?mode=login`、`/account`
+- `admin_summary`：200（短会话，用后已吊销）
+- `/assets/environments/monochrome-studio-02-1k.exr`：200、`image/aces`、1537452 字节，
+  且远端取前 4 字节是 `76 2f 31 01` —— **线上这份是真 EXR**
+- **`/admin → Content Health`：0 critical / 0 warning / 0 note**（那条 warning 归零了）
+  环境贴图那项：`found=exr`、`issue=none`
+
+浏览器端到端（Playwright，线上真实页面）：
+
+- 打开次世代灭火器的模型预览，`.exr` 请求 200、302 ms
+- **console 0 errors** —— 以前每次打开必留的
+  `Cannot read properties of undefined (reading 'image')` 不再出现
+- 顶点 9,295 / 三角面 12,649 / 材质 1，都是真数字（不是 `Unknown`），
+  按第十轮的教训，这才算确认"真的渲染出来了"
 
 ### 用户拍板的三件事（同一轮内完成）
 
