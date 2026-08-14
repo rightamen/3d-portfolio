@@ -8,6 +8,18 @@
 
 **线上内容健康：0 critical / 0 warning / 0 note。**
 
+⚠️ **VPS 只保留最新 3 个应用备份**，脚本每次部署自动清理旧的。
+所以下面各轮里写的历史回滚路径**大多已经不存在了**。截至第十五轮收工，
+`/opt` 上实际存在的是：
+
+```text
+/opt/mrright-portfolio.backup-20260814-162845   第十五轮部署（第二次，同样代码）
+/opt/mrright-portfolio.backup-20260814-162519   第十五轮之前 ← 要回滚就用这个
+/opt/mrright-portfolio.backup-20260814-141513   第十四轮之前
+```
+
+要回滚先 `ls -dt /opt/mrright-portfolio.backup-*` 确认实际有什么，别照抄旧记录。
+
 第十五轮做了两件事：**社区上传进入 Content Health**（并纠正了第十三轮记错的前提 ——
 社区上传从来不进预览器，四个使用点全是下载链接），以及**屏幕适配**。
 
@@ -15,13 +27,6 @@
 账号菜单被排到视口外再被 `overflow-x:hidden` 剪掉，平板和小笔电上无法登录。**
 起因是桌面导航在 `sm`(640px) 就展开，而整条 header 要 ~960px。已把断点提到 `lg`。
 **以后动 `Navbar.jsx` 或 `.nav-ul` 的断点，两边必须一起改** —— 同一个 `<ul>` 服务两种布局。
-
-
-**线上运行 `39ac799`（2026-08-14 14:15 UTC 部署，已逐项验证）。
-`origin/main` 与本地同步。第十二、十三、十四轮都无数据库变更。
-回滚：`/opt/mrright-portfolio.backup-20260814-141513`。**
-
-**线上内容健康：0 critical / 0 warning / 0 note —— 第一次全绿。**
 
 第十四轮：**Studio 环境光（IBL）第一次真正生效。**
 用户提供 `monochrome_studio_02`（1K 影棚 HDRI）。原文件 5.65 MB（32 位浮点 + 一条
@@ -48,32 +53,47 @@
 
 第十二轮把 `/admin` 整个重做了：新增 `GET /api/admin/overview` 聚合接口、
 分组侧边栏 + 待办角标 + ⌘K 命令面板、Dashboard 分区、System 分区。
-回滚只需回到 `/opt/mrright-portfolio.backup-20260814-032910`。
+（那一轮记的回滚路径 `...-032910` **已被保留策略清掉**，见上面的备份说明。）
 详见下面「2026-08-14（第十二轮）」。
+
+⚠️ 第十二轮把侧边栏里的 **Visitors 改名成 Members**，但没同步测试。
+`tests/e2e/admin-visitors.spec.js` 里那两条一直红着，直到第十五轮才发现 ——
+因为 **`npm run test:e2e` 默认打的是线上**（`E2E_BASE_URL` 不设就是 `https://mrright.blog`），
+平时没人跑。**改后台导航文案时记得连测试一起改。**
 
 ⚠️ **`npm run deploy:vps` 的干跑开关只认字面量 `true`**：
 `VPS_DRY_RUN=1` 是**假值**，会真的部署。要干跑必须写 `VPS_DRY_RUN=true`。
 第十二轮就是这么误触发的一次真实部署（结果无害：脚本本来就会备份 env、
 备份应用、健康检查、admin session 检查、清理旧备份）。
 
-### 收工时的未完项（截至第十三轮，按优先级重整）
+### 收工时的未完项（截至第十五轮，按优先级重整）
 
-1. ~~**`studio-tomoco.exr` 不是 EXR 文件**~~ —— **第十四轮已解决并上线**。
-   用户给了真 HDRI，代码指向 `monochrome-studio-02-1k.exr`，旧文件已 `git rm`。
+第十四、十五轮关掉了原来的第 1、3 条（假 EXR、社区上传无校验），不再列出，
+各自的经过写在对应轮次那一节。现在还开着的是：
 
-2. **用户自己在 `/admin → Security` 走完一次真实绑定**，确认扫码与切换成功。
+1. **用户自己在 `/admin → Security` 走完一次真实绑定**，确认扫码与切换成功。
    成功路径需要 `right` 的账号密码，密码不进对话，所以这一步只能由用户完成。
-   出问题就直接关页面 —— 两步式设计保证原有绑定不受影响。（第十一轮起挂着，一直没做。）
+   出问题就直接关页面 —— 两步式设计保证原有绑定不受影响。
+   （第十一轮起挂着，四轮没动，**是目前唯一只有用户能做的事**。）
 
-3. ~~**社区上传的 GLB 没有任何校验**~~ —— **第十五轮已解决（本地，未部署）**，
-   同时纠正了这条的前提：社区上传从来不进预览器，四个使用点全是下载链接，
-   所以第十轮那个 Draco 失败模式对它们不适用；magic bytes 校验也早就有了。
-   真正缺的是「行还在、文件没了」，现在 Content Health 会查了。详见第十五轮。
-
-4. **模型「能加载」和「能渲染」仍然是两件事。**
+2. **模型「能加载」和「能渲染」仍然是两件事。**
    Content Health 现在能确认文件可服务、是真 GLB、所需扩展有解码器，
-   但它**不渲染**。四个项目里只有灭火器被人眼确认真的画出来过。
-   验证渲染仍然要看顶点/三角面统计值是不是有数字（见下面那条教训）。
+   但它**不渲染**。四个项目里只有灭火器被人眼确认真的画出来过
+   （第十四轮又确认了一次：顶点 9,295 / 三角面 12,649）。
+   验证渲染仍然要看这些统计值是不是有数字，不能只看页面能开。
+
+3. **本地测试会把文件漏进生产构建。** `npm run test:api:db` 每跑一次就在
+   `public/uploads/images/` 留下一个 `pixel.png`（现存 20 个），
+   vite 把 `public/` 整个拷进 `dist/`，`deploy:vps` 再把 `dist` 打包上传。
+   **目前无害** —— 线上 `/uploads` 从持久化的 `public/uploads` 提供，
+   `dist/uploads` 被遮蔽，永远不会被服务 —— 但这是测试垃圾在往生产环境流。
+   两个方向：测试结束时清理自己写的文件，或给 vite 配置排除 `public/uploads`。
+   按安全规则第 3 条（不删上传文件）没有擅自清理，等用户拍板。
+
+4. **社区上传的检查目前无数据可验。** 第十五轮把 `community_uploads` 接进了
+   Content Health，但线上 approved/pending 都是 0，所以 `communityUploads: 0 checked`。
+   **等真有人上传后，要回去看一眼它报的东西对不对** —— 现在只有 fixture 和
+   一条端到端测试证明它工作。
 
 5. 4K 基础色 + 法线在移动端显存占用不小；真有人反馈卡，重跑
    `scripts/optimize-model.mjs` 出 2K 版（2.12 MB）即可。
@@ -81,6 +101,9 @@
 6. **仪表盘故意没接内容健康的信号** —— 那个检查要读文件，
    而仪表盘是每次打开都拉的。想改成有 critical 时在侧边栏出角标的话，
    需要给它加缓存，别直接在 overview 里同步跑。
+
+7. `H:\HDRIs\` 里还有三张 4K HDRI（photostudio / citrus orchard / qwantani dusk）。
+   想做「按项目切换环境光」时可以复用第十四轮那套转换流程，**先降到 2K 再转**。
 
 第十一轮：**在 `/admin` 里做了自助重新绑定认证器的页面，带真正的二维码。**
 起因是「我为什么从来没见过什么二维码」—— 查下来是这个项目里**根本就没有过二维码**：
@@ -216,9 +239,12 @@ CSP 这件事能做完，就是因为 playwright 回来了。
      `admin_user_actions`。要扩大覆盖面，得先给其他管理动作补审计写入。
    - 没有「改自己密码」的接口，只能用 CLI `reset-password`。
 2. ~~把密钥认证的部署路径固化进 `scripts/deploy-vps.mjs`~~ —— **2026-08-13 第八轮已完成并实测部署**。
-2b. **把资源检查接到社区上传上**（第十三轮发现的缺口，详见上面未完项第 3 条）。
-   检查器 `server/contentHealth.js` 是现成的，缺的是在上传流程里调用它 ——
-   最好在**接收时**就拒掉不是 GLB 的文件，而不是等它进了库再报。
+2b. ~~**把资源检查接到社区上传上**~~ —— **第十五轮已完成并上线。**
+   ⚠️ **这条原来写的建议是错的**，别照着做：它说「最好在接收时就拒掉不是 GLB 的文件」。
+   但 (a) 按 magic bytes 拒收**早就有了**（`fileSignatures`），
+   (b) 社区上传**从来不进预览器**，四个使用点全是 `<a href>` 下载链接，
+   允许的扩展名本来就含 `.obj` / `.fbx` / `.zip` —— 所以「渲染不了就拒收」会拒掉能用的文件。
+   实际做的是查「行还在、文件没了」。详见第十五轮那一节。
 3. 拆 `Admin.jsx` 与 `postgresStores.js`。
    ⚠️ 行数已经不是 2492/3338 了：第十三轮收工时
    `Admin.jsx` **2875 行**、`postgresStores.js` **4065 行**。
@@ -239,9 +265,20 @@ CSP 这件事能做完，就是因为 playwright 回来了。
 - **本机 `grep` 是个 shell function**（Claude Code 装的，转发到 claude 二进制），而那个
   native 二进制没装好，所以直接跑 `grep` 会报 "claude native binary not installed"。
   用 `/usr/bin/grep` 或 `command grep` 绕过。
-- **本机有 `http_proxy=http://172.29.176.1:7897`**（WSL 指向 Windows 宿主），
-  所以 curl 访问 `127.0.0.1` 会被劫持成 502；沙箱还会阻断子进程访问 localhost。
-  测本地服务时要注意这两点。
+- **本机有 `http_proxy=http://172.29.176.1:7897`**（WSL 指向 Windows 宿主，
+  `https_proxy` 和大写同名变量都有），curl 默认遵守它，**连 localhost 也走代理**。
+  ⚠️ 第十四轮实测的后果比「502」严重得多：**请求被转发到了线上 mrright.blog 并返回真实响应** ——
+  本地新加的 `.exr` 返回 index.html（线上没这文件，走了 SPA fallback），
+  `/api/health` 却返回真 JSON，响应头还带着 `report-uri /api/csp-report`。
+  识别信号：**`ss -tlnp` 显示端口上只有 vite、没有 Express，响应却像 Express。**
+  **测本地服务一律加 `curl --noproxy '*'`。** 不加的话「本地验证通过」可能是在验证线上旧代码。
+- **`npm run test:e2e` 默认打线上**（`E2E_BASE_URL` 不设即 `https://mrright.blog`）。
+  要测本地构建：`E2E_BASE_URL=http://127.0.0.1:<port> npx playwright test tests/e2e/`
+  —— 但 vite preview 没有 API，依赖接口的用例会失败，这是预期的。
+  ⚠️ **部署重启后立刻跑 e2e 会有偶发失败**（服务冷启动），等一会儿再跑。
+- **`npm run test:api:db` 在这台机器上能跑**：它自己 `initdb` 一个临时 Postgres 集群、
+  跑完销毁，不碰任何现有数据库。第十五轮实测 68 通过。
+  ⚠️ 它每跑一次会在 `public/uploads/images/` 留一个 `pixel.png`（见未完项第 3 条）。
 - **但 playwright MCP 的浏览器能访问 `http://127.0.0.1:<port>`**（第七轮实测）。
   它是独立进程，不受上面那个沙箱限制 —— 所以「本地起服务 + 浏览器验证」这条路是通的，
   不用拿线上冒险。
@@ -266,7 +303,12 @@ CSP 这件事能做完，就是因为 playwright 回来了。
 - **想看后台真实长什么样，不用连线上**：起 `npm run dev`，用 Playwright 拦截
   `**/api/admin/**` 喂假数据即可（第十二、十三轮就是这么核对布局和空状态的）。
   从 scratchpad 目录跑脚本时，Node 的 ESM 解析找不到 `node_modules` ——
-  在那边建个软链指向仓库的 `node_modules` 就行。
+  建软链指向仓库的 `node_modules`，或者更省事：**直接写绝对路径 import**，
+  例如 `import { EXRLoader } from '/root/Code/3d-portfolio/node_modules/three/examples/jsm/loaders/EXRLoader.js'`
+  （它内部对 `three` 的裸导入会相对自身位置解析，照样能找到，第十四轮就是这么转的 HDRI）。
+- ⚠️ **拦截 `**/api/admin/**` 喂假数据时注意 Playwright 的路由优先级：
+  后注册的先匹配。** 通配规则要先注册，具体路由后注册，否则具体的那条会被通配吃掉
+  （第十五轮在这上面卡过一次，表现是面板显示「none stored」）。
 
 ## 第五轮收工时的快照（2026-08-11，已冻结，不要照着它动手）
 
