@@ -2,7 +2,12 @@
 
 ## 下次从这里继续（截至 2026-08-14 第十三轮收工）
 
-**`origin/main` 与本地同步。第十二、十三轮都无数据库变更。**
+**线上运行 `c54c787`（2026-08-14 04:26 UTC 部署，已逐项验证）。
+`origin/main` 与本地同步。第十二、十三轮都无数据库变更。
+回滚：`/opt/mrright-portfolio.backup-20260814-042611`。**
+
+**线上内容健康：0 critical / 1 warning / 0 note。**
+唯一那条是 `studio-tomoco.exr` 不是 EXR —— 需要一张真 HDRI，属美术资产决定。
 
 第十三轮：`/admin` 新增 **Content Health** 分区 + `GET /api/admin/content-health`。
 它把目录里每个 URL 在服务端真的打开，按**文件头**而不是扩展名判断格式，
@@ -241,7 +246,8 @@ CSP 这件事能做完，就是因为 playwright 回来了。
 ## 2026-08-14（第十三轮）：内容健康检查 —— 让沉默的资源损坏自己说话
 
 日期：2026-08-14
-commit：`<见 git log>`
+commit：`a681ee7`（功能）+ `c54c787`（修误报），均已 push 并部署
+备份路径：`/opt/mrright-portfolio.backup-20260814-042611`
 
 起因是第十轮那件事的**根因还在**：灭火器预览「从来没加载出来过」，
 而且**没人知道**，因为报错只出现在没人看的 console 里。
@@ -307,13 +313,41 @@ glTF 的网格/材质/贴图数与所需扩展）、以及不属于任何项目�
 
 **无。**
 
-### 线上真实结论（本地对真实目录跑的结果）
+### ⚠️ 第一版上线后报了 7 条 critical，全是误报 —— 已修（`c54c787`）
 
-- **0 broken / 1 degraded / 4 notes**
+**教训值得记下来，因为它正是这个模块想避免的那种失败。**
+
+第一版断言「所有资源都必须在 `dist/` 里」，结果对着一个**全部资源都返回 200**
+的生产站点报了 7 条 critical。原因：线上四个项目的图片和模型**全是 `/uploads/...`**，
+而这个路径是**直接从 `public/uploads` 提供**的，挂载顺序在 dist 静态之前 ——
+对上传文件来说，`public/` 不是过期副本，它就是正确答案。
+
+修法：**按 URL 分别推导预期来源**（构建产物 → `dist/`，上传文件 → `public/uploads`）。
+反向的情况仍然算真故障：只存在于 `dist/` 里的上传文件，下次部署就会被抹掉。
+
+已补 fixture 并做变异测试：把 `expectedRootFor` 改回常量，两条断言立刻失败。
+
+也顺带证明了那条备忘：**线上目录跟 `content.js` 完全不是一套**
+（线上是 crimson-rune-greatsword / md-leimu / shadow-altar-candle-shrine /
+fire-extinguisher-next-gen），本地对着 `content.js` 跑出来的结论不能代表线上。
+
+### 线上真实结论（修复后，对线上库 + 线上文件跑的结果）
+
+- **0 critical / 1 warning / 0 note**
+- 四个项目全部 clean
 - 唯一那条真警告：`studio-tomoco.exr` 不是 EXR（第十轮就记过，现在后台会自己说）
 - 灭火器已可验证正常：`glb · 3.7 MB · served from dist/`、
   `requires EXT_texture_webp, KHR_draco_mesh_compression`，解码器在位
-- 4 条 note 都是「这个项目没有 3D 预览」，属实、不是问题
+
+### 线上验证
+
+- `/api/health` 200 · `/` 200 · `/community` 200 · `/admin` 200 ·
+  `/login?mode=login` 200 · `/account` 200
+- `/api/admin/content-health` 200；未带凭证 401
+- 资源实测：`/uploads/images/...` 200、`/uploads/models/...` 200、
+  `/models/fire-extinguisher-4k...glb` 200、`/draco/draco_decoder.wasm` 200
+- 线上 Playwright：`/admin`、`/`、`/community`、`/account` 无 console 报错、无 5xx
+- 用于验证的短时会话已 revoke
 
 ### 待办
 
