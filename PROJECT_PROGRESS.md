@@ -1,14 +1,19 @@
 # mrright.blog 项目进度记录
 
-## 下次从这里继续（截至 2026-08-14 第十二轮收工）
+## 下次从这里继续（截至 2026-08-14 第十三轮收工）
 
-**线上运行 `b54fcce`（2026-08-14 03:29 UTC 部署，已逐项验证）。
-`origin/main` 已与本地同步 —— 积压的五个 commit 加这一轮，一次性 push 完了。**
+**`origin/main` 与本地同步。第十二、十三轮都无数据库变更。**
+
+第十三轮：`/admin` 新增 **Content Health** 分区 + `GET /api/admin/content-health`。
+它把目录里每个 URL 在服务端真的打开，按**文件头**而不是扩展名判断格式，
+并且查的是 `dist/`（被服务的那份）而不是 `public/`。
+顺手修掉一个一直在误报「EN fallback」的翻译状态判断。
+新增 `npm run test:content-health`，且做过变异测试。
+详见下面「2026-08-14（第十三轮）」。
 
 第十二轮把 `/admin` 整个重做了：新增 `GET /api/admin/overview` 聚合接口、
 分组侧边栏 + 待办角标 + ⌘K 命令面板、Dashboard 分区、System 分区。
-**无数据库变更**（全是只读聚合查询），回滚只需回到
-`/opt/mrright-portfolio.backup-20260814-032910`。
+回滚只需回到 `/opt/mrright-portfolio.backup-20260814-032910`。
 详见下面「2026-08-14（第十二轮）」。
 
 ⚠️ **`npm run deploy:vps` 的干跑开关只认字面量 `true`**：
@@ -232,6 +237,90 @@ CSP 这件事能做完，就是因为 playwright 回来了。
 - ~~演练遗留的临时库~~ —— 用户已确认，`mrright_restore_drill` 已 `dropdb`（2026-08-11）。
   删除后复查：`mrright_portfolio` 仍在、17 张表、`visitor_users=1`/`project_comments=2`、
   `/api/health` 200，生产库未受影响。
+
+## 2026-08-14（第十三轮）：内容健康检查 —— 让沉默的资源损坏自己说话
+
+日期：2026-08-14
+commit：`<见 git log>`
+
+起因是第十轮那件事的**根因还在**：灭火器预览「从来没加载出来过」，
+而且**没人知道**，因为报错只出现在没人看的 console 里。
+同类问题现在还活着一个：`studio-tomoco.exr` 根本不是 EXR 文件。
+所以这一轮做的不是「修那个模型」，而是**让这类沉默失败有地方报警**。
+
+### 完成内容
+
+**新模块 `server/contentHealth.js` + 路由 `GET /api/admin/content-health`。**
+它会把目录里每个 URL 在服务端**真的打开**，然后回答：
+
+1. **查的是被服务的东西，不是仓库里的东西。** express 服务的是 `dist/`，
+   所以只存在于 `public/`、没进构建的文件对访客就是 404。
+   优先在 `dist/` 里找，只在 `public/` 找到的会明确报「未构建」。
+2. **信文件头，不信扩展名。** `studio-tomoco.exr` 名字是 .exr、
+   代码按 EXR 加载、但它不是 —— 头几个字节是 UTF-16 文本。
+   扩展名是声明，文件头才是证据。
+3. **每条结论都说明访客会看到什么。**「图片缺失」是事实，
+   「项目卡片会渲染成一张破图」才是它为什么要紧。
+
+具体检查：图片/模型是否 404、是否是声称的格式、GLB 的
+`extensionsRequired`、**Draco 模型是否有本地解码器**（第十轮那个 bug 变成了断言）、
+模型是否过大、以及**语言缺口**。
+
+### 顺手修掉一个一直在误报的东西
+
+`pickLocalized()` 里，**无后缀的 `title`/`summary`/`workflow` 本身就是英文原文**，
+也是所有语言的兜底。而 `/admin` 的翻译状态标签一直把 `En` 当成和 `Zh`/`Ja` 一样的后缀，
+于是**每一个项目**都被标成「EN fallback」—— 这正是让人学会无视状态面板的那种噪音。
+已修：`En` 的完整度改为按无后缀字段判断。新检查器也只报 `Zh`/`Ja` 缺口，
+无后缀字段为空则是更严重的「内容缺失」。
+
+### 新增测试 `npm run test:content-health`
+
+对着一棵**故意做坏的** fixture 树跑：缺失的模型、名为 .glb 的 PNG、
+只存在于 `public/` 的图片、两边都存在时必须读 `dist/` 的那份、
+路径穿越、以及**删掉解码器后 Draco 模型必须被点名**。
+
+**做过变异测试**，确认它不是摆设：把 `En` 改回按后缀判断、
+关掉文件头嗅探、把 `public/` 排到 `dist/` 前面、禁用 Draco 断言 ——
+四种改法全部被测试抓到并失败。（前两轮的写法漏掉了后两种，是补测试补上的。）
+
+### 前端
+
+`/admin` → Catalogue → **Content Health**：先列**结论**（按严重度排序，
+`note` 默认折叠，因为 5 条「没有 3D 预览」会把 2 条真故障挤下去），
+再列每个项目的文件详情（可展开看真实路径、格式、字节数、从哪个目录服务、
+glTF 的网格/材质/贴图数与所需扩展）、以及不属于任何项目的共享资源。
+
+### 修改文件
+
+- `server/contentHealth.js`（新）
+- `server/index.js`：新增 `/api/admin/content-health` 路由
+- `scripts/verify-content-health.mjs`（新）+ `package.json` 加 `test:content-health`
+- `src/components/admin/AdminContentHealth.jsx`（新）
+- `src/components/admin/AdminIcon.jsx`：加 `ok` / `alert` 图标
+- `src/Admin.jsx`：加 Content Health 分区；修 `getTranslationState` 的 En 误报
+- `src/lib/api.js`：`getAdminContentHealth`
+- `src/index.css`：content health 样式段
+- `docs/openapi/api-v1.yaml`：补 `/admin/content-health`
+
+### 数据库变更
+
+**无。**
+
+### 线上真实结论（本地对真实目录跑的结果）
+
+- **0 broken / 1 degraded / 4 notes**
+- 唯一那条真警告：`studio-tomoco.exr` 不是 EXR（第十轮就记过，现在后台会自己说）
+- 灭火器已可验证正常：`glb · 3.7 MB · served from dist/`、
+  `requires EXT_texture_webp, KHR_draco_mesh_compression`，解码器在位
+- 4 条 note 都是「这个项目没有 3D 预览」，属实、不是问题
+
+### 待办
+
+1. **`studio-tomoco.exr` 仍然需要一张真的 HDRI**。这是美术资产决定，不是代码改动。
+   现在的区别是：不修的话，后台每次都会提醒你。
+2. 仪表盘**没有**接内容健康的信号 —— 那个检查要读文件，
+   而仪表盘是每次打开都拉的。故意让它按需触发。
 
 ## 2026-08-14（第十二轮）：/admin 整体重构 —— 仪表盘、分组侧边栏、System 面板
 

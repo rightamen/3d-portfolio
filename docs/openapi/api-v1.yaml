@@ -1591,6 +1591,47 @@ paths:
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
 
+  /admin/content-health:
+    get:
+      operationId: getAdminContentHealth
+      tags: [Admin (Web-only)]
+      summary: Asset and translation integrity for every project. Web-only.
+      x-cpp-sdk: false
+      description: |
+        Opens the files the catalogue points at and reports what is actually
+        there: existence, magic-byte format, GLB required extensions, whether
+        the vendored Draco decoder is served, and which locales fall back.
+        Resolves against the built dist/ directory because that is what is
+        served -- an asset present only in public/ is reported as unbuilt.
+      security:
+        - adminToken: []
+      responses:
+        "200":
+          description: OK.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ResponseEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          health:
+                            type: object
+                            description: |
+                              checkedAt/counts/projects/siteAssets. Each project
+                              carries image, model, glb, translations and an
+                              issues[] of {code, severity, message, hint} where
+                              severity is critical | warning | note. Projects
+                              are ordered worst-first.
+                              See server/contentHealth.js.
+        "401":
+          $ref: "#/components/responses/AdminAuthRequired"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
   /admin/visitors:
     get:
       operationId: listAdminVisitors

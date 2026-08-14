@@ -488,6 +488,11 @@ export const getAdminActions = (token, limit = 30) =>
     cache: 'no-store',
   })
 
+// Opens files on the server, so it is fetched on demand rather than with the
+// rest of the admin data.
+export const getAdminContentHealth = (token) =>
+  adminRequest('/api/admin/content-health', token, { cache: 'no-store' })
+
 export const getAdminSessions = (token) =>
   adminRequest('/api/admin/sessions', token, { cache: 'no-store' })
 

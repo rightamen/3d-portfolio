@@ -2821,7 +2821,7 @@ body {
 }
 
 .admin-chip-button {
-  @apply inline-flex min-h-8 items-center justify-center self-start rounded-full border border-white/12 bg-white/5 px-3 py-1 text-xs font-semibold text-neutral-300 transition hover:border-aqua/40 hover:text-white;
+  @apply inline-flex min-h-8 items-center justify-center justify-self-start self-start rounded-full border border-white/12 bg-white/5 px-3 py-1 text-xs font-semibold text-neutral-300 transition hover:border-aqua/40 hover:text-white;
 }
 
 .admin-empty-note {
@@ -3287,4 +3287,157 @@ body {
   .admin-hero-figure strong {
     @apply text-4xl;
   }
+}
+
+/* ===============================
+   Content health
+   ===============================
+
+   Status colour here is reserved and never the only channel: every finding
+   carries a word ("Broken" / "Degraded" / "Note") beside the colour, because
+   a red dot alone is unreadable to a chunk of the people who will use this. */
+
+.admin-panel-note {
+  @apply text-sm leading-relaxed text-neutral-400;
+}
+
+.admin-panel-note code {
+  @apply rounded bg-black/40 px-1 py-0.5 font-mono text-xs text-teal-200;
+}
+
+.admin-health-summary {
+  @apply flex flex-wrap items-center gap-3;
+}
+
+.admin-health-count {
+  @apply flex items-baseline gap-2 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2;
+}
+
+.admin-health-count strong {
+  @apply text-xl font-semibold leading-none text-white;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-health-count span {
+  @apply text-xs text-neutral-500;
+}
+
+.admin-health-critical {
+  @apply border-coral/35;
+  background: rgba(234, 72, 132, 0.08);
+}
+
+.admin-health-warning {
+  @apply border-sand/35;
+  background: rgba(214, 153, 92, 0.08);
+}
+
+.admin-findings {
+  @apply grid gap-2;
+}
+
+.admin-findings li {
+  @apply grid grid-cols-[auto_minmax(0,1fr)] items-start gap-3 rounded-lg border border-white/8 bg-white/[0.02] px-3 py-2.5 sm:grid-cols-[auto_minmax(0,1fr)_auto];
+}
+
+.admin-findings p {
+  @apply text-sm leading-snug text-neutral-300;
+}
+
+.admin-findings strong {
+  @apply font-semibold text-white;
+}
+
+.admin-findings small {
+  @apply mt-1 block text-xs leading-relaxed text-neutral-500;
+}
+
+/* The word, not just the colour. */
+.admin-finding-tag {
+  @apply mt-0.5 rounded-full px-2 py-0.5 text-[0.65rem] font-bold uppercase tracking-wider;
+}
+
+.admin-finding-critical {
+  @apply border-coral/30;
+  background: rgba(234, 72, 132, 0.07);
+}
+
+.admin-finding-critical .admin-finding-tag {
+  @apply bg-coral/20 text-coral;
+}
+
+.admin-finding-warning {
+  @apply border-sand/25;
+}
+
+.admin-finding-warning .admin-finding-tag {
+  @apply bg-sand/20 text-sand;
+}
+
+.admin-finding-note .admin-finding-tag {
+  @apply bg-white/10 text-neutral-400;
+}
+
+.admin-health-row {
+  box-shadow: none;
+}
+
+.admin-asset-detail {
+  @apply mt-3 grid gap-2 rounded-md border border-white/8 bg-black/25 p-3;
+}
+
+.admin-asset-line {
+  @apply grid gap-1 sm:grid-cols-[8rem_minmax(0,1fr)] sm:items-baseline sm:gap-3;
+}
+
+.admin-asset-line > span {
+  @apply mt-0 text-xs font-semibold uppercase tracking-[0.14em] text-neutral-600;
+}
+
+.admin-asset-line code {
+  @apply block break-all font-mono text-xs text-teal-200;
+}
+
+.admin-asset-line em {
+  @apply block not-italic text-xs text-neutral-500 sm:col-start-2;
+}
+
+.admin-asset-missing {
+  @apply text-coral;
+}
+
+.admin-posture-ok .admin-icon {
+  @apply text-mint;
+}
+
+.admin-posture-bad {
+  @apply border-coral/30;
+  background: rgba(234, 72, 132, 0.07);
+}
+
+.admin-posture-bad .admin-icon {
+  @apply text-coral;
+}
+
+.admin-posture-warn .admin-icon {
+  @apply text-sand;
+}
+
+/* Severity beats the category accent on the per-project chip: `.admin-row-title
+   span` colours tags with the project's own accent, which would render the
+   word "Broken" in the same aqua as "Prop". */
+.admin-row .admin-row-title span.admin-health-chip {
+  @apply border-white/12 bg-white/8 text-neutral-400;
+}
+
+.admin-row .admin-row-title span.admin-health-chip-critical {
+  @apply border-coral/40 bg-coral/15 text-coral;
+}
+
+.admin-row .admin-row-title span.admin-health-chip-warning {
+  @apply border-sand/40 bg-sand/15 text-sand;
+}
+
+.admin-row .admin-row-title span.admin-health-chip-ok {
+  @apply border-mint/35 bg-mint/12 text-mint;
 }

@@ -37,6 +37,7 @@ import {
 } from './lib/api'
 import AdminTotpEnrolment from './components/AdminTotpEnrolment'
 import AdminCommandPalette from './components/admin/AdminCommandPalette'
+import AdminContentHealth from './components/admin/AdminContentHealth'
 import AdminDashboard from './components/admin/AdminDashboard'
 import AdminIcon from './components/admin/AdminIcon'
 import AdminSystemPanel from './components/admin/AdminSystemPanel'
@@ -52,6 +53,7 @@ const tokenKey = 'mrright-admin-token'
 const sections = [
   { group: 'Overview', icon: 'dashboard', key: 'overview', label: 'Dashboard' },
   { group: 'Catalogue', icon: 'projects', key: 'projects', label: 'Projects' },
+  { group: 'Catalogue', icon: 'search', key: 'content-health', label: 'Content Health' },
   { group: 'Catalogue', icon: 'community', key: 'community', label: 'Community' },
   { group: 'Moderation', icon: 'comments', key: 'comments', label: 'Comments' },
   { group: 'Moderation', icon: 'downloads', key: 'downloads', label: 'Downloads' },
@@ -170,11 +172,19 @@ const searchInItem = (item, query) =>
     .includes(query.toLowerCase())
 
 const getTranslationState = (project, suffix) => {
-  const filledCount = coreTranslationFields.filter((field) =>
-    String(project?.[`${field}${suffix}`] || '').trim(),
-  ).length
+  // English is the unsuffixed field, not `titleEn`. pickLocalized() reads
+  // `title` for English and falls back to it for every other language, so a
+  // project with full English copy and no `titleEn` is complete -- it used to
+  // be reported as "EN fallback", which was every project ever written and
+  // taught everyone to ignore these chips.
+  const fields =
+    suffix === 'En'
+      ? coreTranslationFields
+      : coreTranslationFields.map((field) => `${field}${suffix}`)
 
-  if (filledCount === coreTranslationFields.length) return 'ready'
+  const filledCount = fields.filter((field) => String(project?.[field] || '').trim()).length
+
+  if (filledCount === fields.length) return 'ready'
   if (filledCount > 0) return 'partial'
   return 'fallback'
 }
@@ -1747,6 +1757,10 @@ const Admin = () => {
               projects={data.projects}
               systemLabel={loadedAt ? `data as of ${formatAge(loadedAt)}` : ''}
             />
+          )}
+
+          {activeSection === 'content-health' && (
+            <AdminContentHealth onNavigate={openSection} token={token} />
           )}
 
           {activeSection === 'system' && (

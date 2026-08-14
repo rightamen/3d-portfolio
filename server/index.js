@@ -8,6 +8,7 @@ import { mkdir, unlink, access, open } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createContactMessagesStore } from './contactMessagesStore.js'
+import { createContentHealthChecker } from './contentHealth.js'
 import { experience, profile, projects as staticProjects, skills } from './content.js'
 import { createDownloadRequestsStore } from './downloadRequestsStore.js'
 import {
@@ -38,6 +39,9 @@ const distDir = path.join(rootDir, 'dist')
 const distIndexPath = path.join(distDir, 'index.html')
 const uploadRoot = path.join(rootDir, 'public', 'uploads')
 const modelConverterScript = path.join(rootDir, 'scripts', 'convert-model-to-glb.py')
+// Stateless -- it holds only the two directories it searches, so it is built
+// once here rather than per request.
+const contentHealth = createContentHealthChecker({ rootDir })
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 // Opt-in, not derived from NODE_ENV. The deploy script's systemd unit only sets
 // EnvironmentFile, so NODE_ENV is usually undefined in production — keying the
@@ -3473,6 +3477,22 @@ app.get('/api/admin/download-requests', requireAdmin, async (_request, response)
 
 app.get('/api/admin/projects', requireAdmin, async (_request, response) => {
   sendData(response, { projects: await adminStore.listProjects(staticProjects) })
+})
+
+// Opens every file the catalogue points at and reports what is actually there.
+//
+// Deliberately not folded into /api/admin/overview: that one is a handful of
+// aggregate queries and is fetched on every dashboard load, while this does
+// filesystem work per project and is only worth paying for when someone asks.
+//
+// It reads the same project list the admin table shows -- database overrides
+// applied on top of the static catalogue -- because checking the source file
+// would happily bless a project whose live model URL was overridden to
+// something that does not exist.
+app.get('/api/admin/content-health', requireAdmin, async (_request, response) => {
+  const projects = await adminStore.listProjects(staticProjects)
+
+  sendData(response, { health: await contentHealth.run(projects) })
 })
 
 app.get('/api/admin/visitors', requireAdmin, async (request, response) => {

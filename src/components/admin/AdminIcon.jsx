@@ -3,7 +3,9 @@
 // platform's font, land at different optical weights next to each other, and
 // cannot take the active colour of the nav item they sit in.
 const glyphs = {
+  alert: { circles: [[12, 12, 9.2]], paths: ['M12 7.5v5.5', 'M12 16.3v.2'] },
   comments: { paths: ['M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z'] },
+  ok: { circles: [[12, 12, 9.2]], paths: ['m8 12.2 2.7 2.7L16.3 9.3'] },
   community: {
     circles: [[9, 8, 3.2]],
     paths: ['M2.5 20v-1.6A4.4 4.4 0 0 1 6.9 14h4.2a4.4 4.4 0 0 1 4.4 4.4V20', 'M16 4.2a3.6 3.6 0 0 1 0 7', 'M17.6 14h.6a4 4 0 0 1 4 4v2'],

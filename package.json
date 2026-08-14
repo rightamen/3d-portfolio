@@ -24,6 +24,7 @@
     "test:deploy-backup": "node scripts/verify-deploy-backup.mjs",
     "test:deploy-script": "node scripts/verify-deploy-script.mjs",
     "test:admin-totp": "node scripts/verify-admin-totp.mjs",
+    "test:content-health": "node scripts/verify-content-health.mjs",
     "admin:user": "node scripts/admin-user.mjs",
     "test:e2e:headed": "playwright test --headed",
     "test:e2e:report": "playwright show-report",
