@@ -11,9 +11,13 @@
 
 第十三轮：`/admin` 新增 **Content Health** 分区 + `GET /api/admin/content-health`。
 它把目录里每个 URL 在服务端真的打开，按**文件头**而不是扩展名判断格式，
-并且查的是 `dist/`（被服务的那份）而不是 `public/`。
+并且查的是**被服务的那份**：构建产物看 `dist/`，上传文件看 `public/uploads`。
 顺手修掉一个一直在误报「EN fallback」的翻译状态判断。
 新增 `npm run test:content-health`，且做过变异测试。
+
+⚠️ **这一轮的第一版上线后报了 7 条误报的 critical**，因为它对所有资源都要求
+在 `dist/` 里，而线上项目的图片和模型全是 `/uploads/...`（从 `public/uploads` 提供）。
+已在 `c54c787` 修掉并补了 fixture。**改这个检查器之前，先读那一节的教训。**
 详见下面「2026-08-14（第十三轮）」。
 
 第十二轮把 `/admin` 整个重做了：新增 `GET /api/admin/overview` 聚合接口、
@@ -23,25 +27,39 @@
 
 ⚠️ **`npm run deploy:vps` 的干跑开关只认字面量 `true`**：
 `VPS_DRY_RUN=1` 是**假值**，会真的部署。要干跑必须写 `VPS_DRY_RUN=true`。
-这一轮就是这么误触发的一次真实部署（结果无害：脚本本来就会备份 env、
+第十二轮就是这么误触发的一次真实部署（结果无害：脚本本来就会备份 env、
 备份应用、健康检查、admin session 检查、清理旧备份）。
 
-### 收工时的未完项（第十、十一轮合并，按优先级）
+### 收工时的未完项（截至第十三轮，按优先级重整）
 
-1. **用户自己在 /admin → Security 走完一次真实绑定**，确认扫码与切换成功。
-   成功路径需要 `right` 的账号密码，密码不进对话，所以这一步只能由用户完成。
-   出问题就直接关页面 —— 两步式设计保证原有绑定不受影响。
-2. **`git push`**：本地领先 `origin/main` 五个 commit
-   （`edf33da` 模型修复、`c6075dd` 第十轮记录、`9daf048` 绑定页、
-   `4caa339` + `918a29d` 第十一轮记录）。线上跑的代码目前只存在于本机和 VPS。
-3. **`public/assets/environments/studio-tomoco.exr` 不是 EXR 文件**（第十轮挖出）。
+1. **`studio-tomoco.exr` 不是 EXR 文件** —— 唯一一条线上还在报的问题。
    文件头是 UTF-16 文本 `resource_ver...`，`file(1)` 判定为 `data`，
    所以 Studio 环境光（IBL）从来没生效过，且每次打开模型预览都会在 console 留一条
    `Cannot read properties of undefined (reading 'image')`。
-   修它需要一张真的 HDRI/EXR，属于美术资产决定。
-4. 4K 基础色 + 法线在移动端显存占用不小；真有人反馈卡，重跑
+   修它需要一张真的 HDRI/EXR，**属于美术资产决定，不是代码改动**。
+   区别是：从第十三轮起，不修的话 `/admin → Content Health` 每次都会提醒。
+
+2. **用户自己在 `/admin → Security` 走完一次真实绑定**，确认扫码与切换成功。
+   成功路径需要 `right` 的账号密码，密码不进对话，所以这一步只能由用户完成。
+   出问题就直接关页面 —— 两步式设计保证原有绑定不受影响。（第十一轮起挂着，一直没做。）
+
+3. **社区上传的 GLB 没有任何校验**（第十三轮做 Content Health 时发现的缺口）。
+   `Content Health` 只查**项目目录**，不查 `community_uploads`。
+   而访客上传的文件同样可能是 Draco 压缩的、可能根本不是 GLB ——
+   第十轮那个 bug 的原话就是「任何 Draco 模型都会这样，**包括社区上传的**」。
+   把同一套检查接到上传流程或社区列表上，是这条线最自然的下一步。
+
+4. **模型「能加载」和「能渲染」仍然是两件事。**
+   Content Health 现在能确认文件可服务、是真 GLB、所需扩展有解码器，
+   但它**不渲染**。四个项目里只有灭火器被人眼确认真的画出来过。
+   验证渲染仍然要看顶点/三角面统计值是不是有数字（见下面那条教训）。
+
+5. 4K 基础色 + 法线在移动端显存占用不小；真有人反馈卡，重跑
    `scripts/optimize-model.mjs` 出 2K 版（2.12 MB）即可。
-5. 其它三个项目的模型预览只点开验证了第一个，其余未逐个确认。
+
+6. **仪表盘故意没接内容健康的信号** —— 那个检查要读文件，
+   而仪表盘是每次打开都拉的。想改成有 critical 时在侧边栏出角标的话，
+   需要给它加缓存，别直接在 overview 里同步跑。
 
 第十一轮：**在 `/admin` 里做了自助重新绑定认证器的页面，带真正的二维码。**
 起因是「我为什么从来没见过什么二维码」—— 查下来是这个项目里**根本就没有过二维码**：
@@ -177,7 +195,14 @@ CSP 这件事能做完，就是因为 playwright 回来了。
      `admin_user_actions`。要扩大覆盖面，得先给其他管理动作补审计写入。
    - 没有「改自己密码」的接口，只能用 CLI `reset-password`。
 2. ~~把密钥认证的部署路径固化进 `scripts/deploy-vps.mjs`~~ —— **2026-08-13 第八轮已完成并实测部署**。
-3. 拆 `Admin.jsx`（2492 行）与 `postgresStores.js`（3338 行）
+2b. **把资源检查接到社区上传上**（第十三轮发现的缺口，详见上面未完项第 3 条）。
+   检查器 `server/contentHealth.js` 是现成的，缺的是在上传流程里调用它 ——
+   最好在**接收时**就拒掉不是 GLB 的文件，而不是等它进了库再报。
+3. 拆 `Admin.jsx` 与 `postgresStores.js`。
+   ⚠️ 行数已经不是 2492/3338 了：第十三轮收工时
+   `Admin.jsx` **2875 行**、`postgresStores.js` **4065 行**。
+   第十二轮起 `/admin` 的新代码都放进 `src/components/admin/`（7 个文件），
+   拆分可以顺着这条线继续，把各 section 的 JSX 也搬出去。
 4. react-router（现在靠 `window.location.pathname` 判断，页面跳转全是整页刷新，3D 场景每次重建）
 5. 前端单元测试（目前只有 API 契约测试和 Playwright）
 6. SSR / 预渲染 SEO（社区帖子和公开主页搜索引擎抓不到）
@@ -203,7 +228,24 @@ CSP 这件事能做完，就是因为 playwright 回来了。
   想在本地跑真实构建验证前端行为时很有用，社区/后台会降级但页面照常渲染。
 - **`npm run deploy:vps` 现在在这台机器上能跑**（2026-08-13 第八轮起，默认走 SSH 密钥认证，
   默认主机 `147.79.20.232`）。想先看远端脚本而不连服务器：`VPS_DRY_RUN=true npm run deploy:vps`。
+  ⚠️ **只认字面量 `true`** —— `VPS_DRY_RUN=1` 是假值，会真的部署（第十二轮踩过）。
   完整说明见 `docs/OPERATIONS_DEPLOY.md`。
+- **本地可跑的检查一览**（不需要数据库、不需要联网）：
+
+  ```sh
+  npm run lint
+  npm run build
+  npm run test:openapi         # 规格文件与错误码
+  npm run test:content-health  # 资源完整性检查器（对着故意做坏的 fixture 树）
+  npm run test:admin-totp      # RFC 6238 向量 + 重放 + 恢复码
+  npm run test:deploy-backup   # 备份硬链接与保留策略
+  npm run test:deploy-script   # 远端脚本语法/引号/无密钥
+  ```
+
+- **想看后台真实长什么样，不用连线上**：起 `npm run dev`，用 Playwright 拦截
+  `**/api/admin/**` 喂假数据即可（第十二、十三轮就是这么核对布局和空状态的）。
+  从 scratchpad 目录跑脚本时，Node 的 ESM 解析找不到 `node_modules` ——
+  在那边建个软链指向仓库的 `node_modules` 就行。
 
 ## 第五轮收工时的快照（2026-08-11，已冻结，不要照着它动手）
 

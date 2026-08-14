@@ -351,6 +351,8 @@ Current:
 
 ```text
 GET    /api/admin/summary
+GET    /api/admin/overview
+GET    /api/admin/content-health
 GET    /api/admin/comments
 GET    /api/admin/likes
 GET    /api/admin/contact-messages
@@ -389,6 +391,8 @@ Target data keys:
 
 ```text
 summary
+overview
+health
 comments
 likes
 messages
