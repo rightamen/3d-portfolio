@@ -318,7 +318,9 @@ test('admin visitor management renders filters and lazy visitor detail', async (
 
   await page.goto('/admin', { waitUntil: 'domcontentloaded' })
   await expect(page).toHaveTitle(/mrright\.blog/i)
-  await page.getByRole('button', { name: 'Visitors', exact: true }).click()
+  // "Members" since the round-twelve admin rebuild renamed the nav item; the
+  // section heading it opens is still Visitor Management.
+  await page.getByRole('button', { name: 'Members', exact: true }).click()
 
   await expect(page.getByRole('heading', { name: 'Visitor Management' })).toBeVisible()
   await expect(page.getByPlaceholder('Search name, handle, or email')).toBeVisible()
@@ -415,7 +417,9 @@ test('admin visitor management renders an empty visitor state without blanking',
   })
 
   await page.goto('/admin', { waitUntil: 'domcontentloaded' })
-  await page.getByRole('button', { name: 'Visitors', exact: true }).click()
+  // "Members" since the round-twelve admin rebuild renamed the nav item; the
+  // section heading it opens is still Visitor Management.
+  await page.getByRole('button', { name: 'Members', exact: true }).click()
 
   await expect(page.getByRole('heading', { name: 'Visitor Management' })).toBeVisible()
   await expect(page.getByText('No visitors match these filters.')).toBeVisible()

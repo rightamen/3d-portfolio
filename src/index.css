@@ -281,8 +281,12 @@ html {
     radial-gradient(circle at 82% 0%, rgba(117, 226, 168, 0.11), transparent 24rem);
 }
 
+/* flex-wrap, because the row is the brand plus a back link plus the language
+   switch: below about 380px that does not fit, and without wrapping the last
+   language button was cut off by body{overflow-x:hidden} rather than moving to
+   a second line. Wrapping is a no-op at every width where it already fits. */
 .auth-nav {
-  @apply relative z-10 mx-auto flex max-w-6xl items-center justify-between gap-4;
+  @apply relative z-10 mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4;
 }
 
 .auth-card {
@@ -1893,12 +1897,16 @@ html {
 }
 
 /* Navigation Bar */
+/* These breakpoints track Navbar.jsx, where the desktop bar now appears at lg
+   rather than sm. The same <ul> serves both the bar and the mobile sheet, so
+   when it turned into a row at sm the sheet's links became one left-flush line
+   from 640px up instead of the stacked menu the sheet is designed around. */
 .nav-ul {
-  @apply flex flex-col items-center gap-4 sm:flex-row md:gap-6 relative z-20;
+  @apply flex flex-col items-center gap-4 lg:flex-row lg:gap-6 relative z-20;
 }
 
 .nav-li {
-  @apply text-neutral-400 hover:text-white max-sm:w-full max-sm:rounded-md py-2 max-sm:px-5;
+  @apply text-neutral-400 hover:text-white max-lg:w-full max-lg:rounded-md py-2 max-lg:px-5;
 }
 
 .nav-link {
@@ -2660,10 +2668,27 @@ body {
 .admin-sidebar {
   @apply fixed inset-y-0 left-0 z-40 flex w-64 -translate-x-full flex-col gap-5 overflow-y-auto border-r border-white/10 px-4 py-5 transition-transform duration-200 lg:sticky lg:top-0 lg:z-auto lg:h-screen lg:w-auto lg:translate-x-0;
   background: linear-gradient(180deg, rgba(11, 14, 30, 0.98), rgba(8, 11, 24, 0.98));
+  /* A drawer that is off-screen has to be out of reach as well. -translate-x-full
+     moves it visually but leaves every nav button clickable and in the tab
+     order, so on a phone the first Tab landed inside an invisible menu. The
+     visibility flip is delayed by the length of the slide, so closing still
+     animates instead of blinking out. */
+  visibility: hidden;
+  transition: transform 200ms, visibility 0s linear 200ms;
 }
 
 .admin-sidebar-open {
   @apply translate-x-0;
+  visibility: visible;
+  transition: transform 200ms, visibility 0s;
+}
+
+/* Docked, not a drawer: always reachable. */
+@media (min-width: 1024px) {
+  .admin-sidebar {
+    visibility: visible;
+    transition: transform 200ms;
+  }
 }
 
 .admin-nav-scrim {
@@ -2770,8 +2795,15 @@ body {
   @apply grid w-full max-w-6xl content-start gap-5 px-4 py-6 md:px-7;
 }
 
+/* items-center only once the header is a row (md and up). Below that the base
+   rule keeps it flex-col, where align-items:center centres every child
+   horizontally -- which is why the whole admin header sat centred on a phone
+   while every panel under it was left-aligned. The max-width:767px block above
+   already tried to correct this with items-stretch, but `.admin-console
+   .admin-header` out-specifies a bare `.admin-header`, so that fix never
+   applied. Scoping the breakpoint here is what actually lets it through. */
 .admin-console .admin-header {
-  @apply items-center gap-4 pb-4;
+  @apply gap-4 pb-4 md:items-center;
 }
 
 .admin-header-actions {

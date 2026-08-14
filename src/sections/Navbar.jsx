@@ -57,7 +57,7 @@ const Navbar = ({
   return (
     <div className="fixed inset-x-0 z-20 w-full border-b border-white/10 bg-[#050616]/70 backdrop-blur-lg">
       <div className="mx-auto c-space max-w-7xl">
-        <div className="flex items-center justify-between py-2 sm:py-0">
+        <div className="flex items-center justify-between py-2 lg:py-0">
           <a
             href="#home"
             className="text-xl font-bold text-neutral-300 transition-colors hover:text-white"
@@ -65,12 +65,19 @@ const Navbar = ({
             mrright.blog
           </a>
 
-          <div className="hidden items-center gap-5 sm:flex">
+          {/* lg, not sm. The full bar is the brand, six nav links, the language
+              switch and the account menu, and it needs about 960px. Revealing it
+              at sm (640px) meant that from 640px to ~950px -- every tablet and
+              small laptop -- the account menu was laid out past the right edge
+              and clipped away by body{overflow-x:hidden}, so signing in was
+              simply unreachable there. The mobile sheet below carries all three,
+              so raising the breakpoint gives those widths more, not less. */}
+          <div className="hidden items-center gap-5 lg:flex">
             <nav>
               <Navigation copy={copy} />
             </nav>
 
-            <div className="hidden sm:block">
+            <div className="hidden lg:block">
               <LanguageSwitch
                 language={language}
                 onLanguageChange={onLanguageChange}
@@ -92,7 +99,7 @@ const Navbar = ({
           <button
             type="button"
             onClick={() => setIsOpen((prev) => !prev)}
-            className="flex cursor-pointer text-neutral-400 hover:text-white focus:outline-none sm:hidden"
+            className="flex cursor-pointer text-neutral-400 hover:text-white focus:outline-none lg:hidden"
             aria-label={copy.toggleMenu}
             aria-expanded={isOpen}
             aria-controls="mobile-navigation"
@@ -109,7 +116,7 @@ const Navbar = ({
       {isOpen && (
         <Motion.div
           id="mobile-navigation"
-          className="block overflow-hidden text-center sm:hidden"
+          className="block overflow-hidden text-center lg:hidden"
           initial={{ opacity: 0, x: -10 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ duration: 0.3 }}

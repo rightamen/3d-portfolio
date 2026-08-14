@@ -345,6 +345,7 @@ CSP 这件事能做完，就是因为 playwright 回来了。
 - `src/components/admin/AdminContentHealth.jsx`
 - `scripts/verify-content-health.mjs`、`tests/api/contract.db.spec.js`
 - `docs/openapi/api-v1.yaml`
+- 屏幕适配：`src/index.css`、`src/sections/Navbar.jsx`、`tests/e2e/admin-visitors.spec.js`
 
 ### 验证结果
 
@@ -352,6 +353,7 @@ CSP 这件事能做完，就是因为 playwright 回来了。
 - `npm run test:content-health`：通过，新增 7 条断言
 - `npm run test:api`：37 通过 / 13 跳过
 - `npm run test:api:db`：**68 通过**（原 67 + 新增 1 条端到端）
+- `npm run test:e2e`（打线上）：**10 通过 / 4 跳过 / 0 失败**（修好那两条之后）
 - 后台面板用假数据在浏览器里渲染确认过四种状态：缺文件、格式不符、正常 zip、正常图片
 
 **变异测试**（新断言必须真的会咬，四处全部被抓到）：
@@ -363,10 +365,45 @@ CSP 这件事能做完，就是因为 playwright 回来了。
 | 上传问题不计入 counts | counts (14) disagree with issues (17) |
 | 路由不把 uploads 传给检查器 | 端到端：a stored upload was not checked at all |
 
+### 同轮追加：屏幕适配
+
+用户截图指出 `/admin` 在窄屏下没适配。先说清楚：**截图看到的是线上 `39ac799`，不含本轮改动**，
+所以不是这轮弄坏的；但查下去发现了四个真问题，一并修掉。
+
+**1. 后台顶栏在窄屏整块居中**（`index.css`）。
+`.admin-console .admin-header` 写了 `items-center`，而基类在窄屏是 `flex-col` ——
+列方向上 `items-center` 的含义是**把每个子元素水平居中**，于是顶栏居中、下面所有面板左对齐。
+更能说明问题的是：`@media (max-width: 767px)` 里早就有人写了 `.admin-header { items-stretch }`
+想修它，但 `.admin-console .admin-header` 特异性更高（0,2,0 > 0,1,0），**那条修复从来没生效过**。
+改成 `md:items-center` 后，窄屏回到 stretch。
+
+**2. 关闭的侧栏抽屉仍可点、仍在 Tab 顺序里**（`index.css`）。
+`-translate-x-full` 只是视觉移走，按钮照样能点。窄屏第一次按 Tab 会掉进看不见的菜单。
+改用 `visibility: hidden` + 延迟 200ms 的过渡，关闭动画不受影响。
+
+**3. 公开页头在 640–950px 之间是坏的**（`Navbar.jsx`，**这条最严重**）。
+桌面导航在 `sm`(640px) 就展开，但整条 header（品牌 + 6 链接 + 语言切换 + 账号菜单）
+要 ~960px 才放得下。**640px 到 ~950px 之间账号菜单被排到视口外，
+再被 `body{overflow-x:hidden}` 剪掉 —— 平板和小笔电上根本无法登录。**
+断点提到 `lg`(1024px)，和后台侧栏停靠断点一致。移动面板里本来就有导航、
+语言切换和账号菜单，所以这些宽度是**拿回**功能而不是失去。
+配套把 `.nav-ul` / `.nav-li` 的 `sm:` / `max-sm:` 一起提到 `lg:` / `max-lg:` ——
+同一个 `<ul>` 服务两种布局，不同步的话面板里的链接会从 640px 起挤成紧贴左边的一行。
+
+**4. `/community` 在 360px 裁切**（`index.css`）。`.auth-nav` 不换行，
+品牌 + 返回链接 + 语言切换放不下，`日` 按钮被切掉。加 `flex-wrap`。
+
+**顺带修好一个坏了三轮的测试**：`tests/e2e/admin-visitors.spec.js` 找名为 `Visitors`
+的导航按钮，但第十二轮重做 `/admin` 时已改名 `Members`。`npm run test:e2e` 默认打线上，
+所以这两条一直在失败、只是没人跑。
+
+适配验证方式：5 个页面 × 9 个宽度（320→1440）逐一量 `scrollWidth` 与逐元素越界，
+排除 `overflow-x:auto` 的横向滚动筛选条和 `100vw` 与滚动条差值这两类假阳性。
+修完 45 个组合里 0 个真问题。
+
 ### 待办
 
-1. **未部署。** 本轮只在本地完成。
-2. 本地跑 `test:api:db` 会往 `public/uploads/` 漏测试文件（现有 20 个 `pixel.png`），
+1. 本地跑 `test:api:db` 会往 `public/uploads/` 漏测试文件（现有 20 个 `pixel.png`），
    vite 再把它们拷进 `dist/`，部署时一路带到线上。目前无害
    —— 线上 `/uploads` 从持久化的 `public/uploads` 提供，`dist/uploads` 被遮蔽 ——
    但这是垃圾在往生产环境流。按安全规则第 3 条没有擅自删除。
