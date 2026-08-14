@@ -1,15 +1,20 @@
 # mrright.blog 项目进度记录
 
-## 下次从这里继续（截至 2026-08-14 第十二轮）
+## 下次从这里继续（截至 2026-08-14 第十二轮收工）
 
-**线上运行 `9daf048`（2026-08-13 16:20 UTC 部署，已逐项验证）。
-本地领先 `origin/main` 五个 commit —— 还没 push。
-第十二轮的 `/admin` 重构还在工作区里，未提交、未部署。**
+**线上运行 `b54fcce`（2026-08-14 03:29 UTC 部署，已逐项验证）。
+`origin/main` 已与本地同步 —— 积压的五个 commit 加这一轮，一次性 push 完了。**
 
 第十二轮把 `/admin` 整个重做了：新增 `GET /api/admin/overview` 聚合接口、
 分组侧边栏 + 待办角标 + ⌘K 命令面板、Dashboard 分区、System 分区。
-**无数据库变更**，build/lint/openapi 全通过，SQL 与 `getOverview()` 已对线上库实跑验证。
+**无数据库变更**（全是只读聚合查询），回滚只需回到
+`/opt/mrright-portfolio.backup-20260814-032910`。
 详见下面「2026-08-14（第十二轮）」。
+
+⚠️ **`npm run deploy:vps` 的干跑开关只认字面量 `true`**：
+`VPS_DRY_RUN=1` 是**假值**，会真的部署。要干跑必须写 `VPS_DRY_RUN=true`。
+这一轮就是这么误触发的一次真实部署（结果无害：脚本本来就会备份 env、
+备份应用、健康检查、admin session 检查、清理旧备份）。
 
 ### 收工时的未完项（第十、十一轮合并，按优先级）
 
@@ -231,7 +236,7 @@ CSP 这件事能做完，就是因为 playwright 回来了。
 ## 2026-08-14（第十二轮）：/admin 整体重构 —— 仪表盘、分组侧边栏、System 面板
 
 日期：2026-08-14
-commit：**尚未提交**（本地改动，未 push，未部署）
+commit：`b54fcce`（已 push 到 `origin/main`，已部署并线上验证）
 
 起因是一句「现在的管理员后台好简陋」，加一句「不要吝啬创造力，可以完全重构」。
 
@@ -307,13 +312,30 @@ Moderation / People / Operations），导航项带**待办角标**（只显示"�
   且该次运行把 `ensureSchema` 注释掉了，没有执行任何 DDL。
 - 本地 Playwright：/admin 全部十个分区逐个打开，**console 零报错**；
   已截图核对桌面版、移动版（430px）、命令面板、空数据态
-- VPS 部署：**未部署**
-- GitHub push：**未执行**
+- VPS 部署：**成功**（2026-08-14 03:29 UTC）
+- 备份路径：`/opt/mrright-portfolio.backup-20260814-032910`
+  （env 备份 `/etc/mrright-portfolio.env.backup-20260814-032910`）
+- 服务状态：active，磁盘 42%
+- GitHub push：**已执行**，`origin/main` 与本地同步（含积压的五个 commit）
+
+### 线上验证结果
+
+- `/api/health` 200 · `/` 200 · `/community` 200 · `/admin` 200 ·
+  `/login?mode=login` 200 · `/account` 200
+- `admin_summary` 200
+- **新接口**：`/api/admin/overview?days=7|30|90` 全部 200，
+  序列长度分别 7/30/90；未带凭证时 401
+- `/api/admin/sessions`、`/api/admin/actions`、`/api/admin/diagnostics` 全部 200
+- 线上数据库往返 9ms
+- 线上 Playwright：`/admin`、`/`、`/community`、`/account` 均无 console 报错、无 5xx
+- 用于验证的短时会话已 revoke
 
 ### 待办
 
-1. 部署（需要先备份 `/opt/mrright-portfolio`，按既有 checklist 逐项验证）
-2. 本地已领先 `origin/main` 五个 commit，加上这一轮还没提交
+1. **线上数据现在很少**（2 赞 / 2 评论 / 1 会员 / 0 上传），所以仪表盘大面积是空状态。
+   这是照着这个前提设计的，不是 bug。
+2. 第十、十一轮遗留的未完项仍然有效（认证器实绑、studio-tomoco.exr 不是 EXR 文件等），
+   见上面「收工时的未完项」。
 
 ## 2026-08-14（第十一轮）：自助换认证器 + 补上从来没有过的二维码
 
