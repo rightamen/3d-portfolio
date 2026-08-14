@@ -7,7 +7,14 @@
 回滚：`/opt/mrright-portfolio.backup-20260814-042611`。**
 
 **线上内容健康：0 critical / 1 warning / 0 note。**
-唯一那条是 `studio-tomoco.exr` 不是 EXR —— 需要一张真 HDRI，属美术资产决定。
+唯一那条是 `studio-tomoco.exr` 不是 EXR —— **第十四轮已在本地修掉，尚未部署**：
+用户给了真 HDRI，已转换并接上，部署后这条 warning 应该归零。
+
+第十四轮（本地完成，**未提交未部署**）：**Studio 环境光（IBL）第一次真正生效。**
+用户提供 `monochrome_studio_02`（1K 影棚 HDRI）。原文件 5.65 MB（32 位浮点 + 一条
+恒为 14.37 的无用 alpha），转成半浮点 + ZIP 后 **1.47 MB（-74%）**，
+经站点同款 `EXRLoader` 往返校验：最大相对误差 0.0488%，逐行朝向一致。
+详见下面「2026-08-14（第十四轮）」。
 
 第十三轮：`/admin` 新增 **Content Health** 分区 + `GET /api/admin/content-health`。
 它把目录里每个 URL 在服务端真的打开，按**文件头**而不是扩展名判断格式，
@@ -32,12 +39,8 @@
 
 ### 收工时的未完项（截至第十三轮，按优先级重整）
 
-1. **`studio-tomoco.exr` 不是 EXR 文件** —— 唯一一条线上还在报的问题。
-   文件头是 UTF-16 文本 `resource_ver...`，`file(1)` 判定为 `data`，
-   所以 Studio 环境光（IBL）从来没生效过，且每次打开模型预览都会在 console 留一条
-   `Cannot read properties of undefined (reading 'image')`。
-   修它需要一张真的 HDRI/EXR，**属于美术资产决定，不是代码改动**。
-   区别是：从第十三轮起，不修的话 `/admin → Content Health` 每次都会提醒。
+1. ~~**`studio-tomoco.exr` 不是 EXR 文件**~~ —— **第十四轮已解决并上线**。
+   用户给了真 HDRI，代码指向 `monochrome-studio-02-1k.exr`，旧文件已 `git rm`。
 
 2. **用户自己在 `/admin → Security` 走完一次真实绑定**，确认扫码与切换成功。
    成功路径需要 `right` 的账号密码，密码不进对话，所以这一步只能由用户完成。
@@ -284,6 +287,84 @@ CSP 这件事能做完，就是因为 playwright 回来了。
 - ~~演练遗留的临时库~~ —— 用户已确认，`mrright_restore_drill` 已 `dropdb`（2026-08-11）。
   删除后复查：`mrright_portfolio` 仍在、17 张表、`visitor_users=1`/`project_comments=2`、
   `/api/health` 200，生产库未受影响。
+
+## 2026-08-14（第十四轮）：真 HDRI 进场 —— IBL 第一次真的亮起来
+
+**日期**：2026-08-14
+**状态**：本地完成，**未 commit、未 push、未部署**。
+
+### 完成内容
+
+用户提供了一张真正的影棚 HDRI（`monochrome_studio_02`，1K，来自本机 `H:\HDRIs\`），
+把第十轮起就挂着的那条未完项关掉了。
+
+**1. 确认旧文件到底是什么。** `studio-tomoco.exr` 的前 4 字节不是 EXR magic
+（`76 2f 31 01`），而是 UTF-16 键值：`resource_version` / `resource_usage` /
+`relative_shelf_path` / `/environments/Studio previews`，后面跟一段 `RIFF....WEBP VP8`。
+**它是某个 DCC 工具（Substance 一类）的 shelf 资源缩略图，被改名成了 `.exr`。**
+`StudioEnvironment` 的 error 回调只做了 `generator.dispose()`，
+所以失败是**完全静默**的：`environment` 恒为 `null`，组件 `return null`，
+四个 `useEnvironment: true` 的档案一直只有 key/fill/rim 三盏点光源在照。
+
+**2. 转换，而不是直接丢进去。** 原文件 1024×512、PIZ 压缩、**4 条 FLOAT32 通道**，
+其中 alpha 恒为 `14.3716`（无意义的常量通道）—— 5.65 MB 里绝大部分是浪费。
+本机没有 oiiotool / imagemagick / OpenEXR / numpy，**也装不了**，
+所以转换是用 Node 直接写的：解码用站点同款 `EXRLoader`，编码手写，
+按 `EXRLoader` 的 `predictor` + `interleaveScalar` 做**精确逆运算**，
+输出半浮点 + ZIP、只保留 B/G/R 三通道。结果 **1.47 MB（-74%）**。
+
+**3. 验收标准定成往返比对**，不是"看着像"：新文件用同一个 `EXRLoader` 解回来，
+与原始浮点数据逐像素比 —— **最大相对误差 0.0488%**（纯半浮点量化）、平均 0.017%，
+y=0/128/256/384/511 各行均值与原文件完全一致（证明**没有上下颠倒** ——
+`EXRLoader` 在 `outLineOffset` 处会做 Y 翻转，编码时必须翻回去）。
+
+**4. 浏览器里做了 A/B。** 临时页面（用完即删）渲染 5 颗不同金属度/粗糙度的球，
+刻意**不加任何点光源**以隔离环境贡献：旧行为全黑，新 HDRI 下铬球能清楚照出
+左右两块柔光箱和中间的八角灯，金球有正确的金属反射。
+
+### 修改文件
+
+- `public/assets/environments/monochrome-studio-02-1k.exr`（新增，1.47 MB）
+- `src/components/ModelPreview.jsx`（`environmentUrl` 指向新文件）
+- `server/contentHealth.js`（检查目标改为新文件，路径提为局部常量，原本硬编码了两处；
+  顶部注释改为过去时）
+- `scripts/verify-content-health.mjs`（fixture 文件名跟着改，否则检查器找不到文件）
+- `public/assets/environments/studio-tomoco.exr`（**删除**）
+
+### 验证结果
+
+- `npm run build`：通过
+- `npm run lint`：通过（exit 0）
+- `npm run test:content-health`：通过
+- 新 EXR 已确认进入 `dist/assets/environments/`，本地服务返回 1537452 字节、`image/aces`
+- commit hash：**无（未提交）**
+- 部署：**未部署**，无备份路径
+
+### 用户拍板的三件事（同一轮内完成）
+
+1. **删掉 `public/assets/environments/studio-tomoco.exr`**（`git rm`，可从历史取回）。
+   `server/contentHealth.js` 顶部那条"信文件头不信扩展名"的注释改成了过去时 ——
+   规则的由来要留，但不能再指着一个已经不存在的文件说"它是"。
+2. **给 `StudioEnvironment` 的 error 回调加了一行 `console.error`**（带 URL 和原始 error）。
+   这是全文件唯一一处 `console.`，破例的理由写在紧挨着的注释里：
+   这次的 bug 藏了好几轮，就是因为这里当初什么都不说。
+3. **提交 + 部署**（见下面「部署」）。
+
+### 教训
+
+1. **本机 `curl localhost` 会走机场代理。** 环境变量里有
+   `http_proxy=http://172.29.176.1:7897`（`https_proxy` / 大写同名变量都有）。
+   这一轮起初测本地 `vite preview`，`/assets/.../新文件.exr` 返回 index.html、
+   `/api/health` 却返回真 JSON、响应头还带着 `report-uri /api/csp-report` ——
+   **因为请求根本没到本地，被代理转发到线上 mrright.blog 去了。**
+   `ss` 显示 4173 上只有 vite、没有任何 Express 进程，就是这个矛盾的线索。
+   **以后验证本地服务一律加 `curl --noproxy '*'`。**
+
+2. **信文件头，不信扩展名 —— 这条第十三轮记过一次，这一轮又验证一次。**
+   区别是这次连"它到底是什么"都查清楚了：是 shelf 缩略图，不是随便一段坏数据。
+
+3. **换二进制资源，验收要用往返比对，不能靠肉眼。** 肉眼看不出半浮点量化，
+   但**能看出上下颠倒** —— 而恰恰是朝向这种事，逐行均值比对一秒就能确认。
 
 ## 2026-08-14（第十三轮）：内容健康检查 —— 让沉默的资源损坏自己说话
 

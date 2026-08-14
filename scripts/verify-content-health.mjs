@@ -64,7 +64,7 @@ const dracoGlb = buildGlb({
 })
 
 writeFileSync(path.join(dist, 'assets', 'projects', 'good.png'), PNG)
-writeFileSync(path.join(dist, 'assets', 'environments', 'studio-tomoco.exr'), EXR)
+writeFileSync(path.join(dist, 'assets', 'environments', 'monochrome-studio-02-1k.exr'), EXR)
 writeFileSync(path.join(dist, 'models', 'good.glb'), plainGlb)
 writeFileSync(path.join(dist, 'models', 'draco.glb'), dracoGlb)
 // Named .glb, actually a PNG. The whole point of sniffing headers.

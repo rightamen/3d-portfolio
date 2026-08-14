@@ -19,9 +19,10 @@
 //      into a build is a 404 for every visitor. Resolving against `dist` is
 //      what makes that visible; resolving against `public` would report a
 //      green light on a broken site.
-//   2. Trust magic bytes, not extensions. `studio-tomoco.exr` is named .exr,
-//      is loaded as an EXR, and is not an EXR -- its first bytes are UTF-16
-//      text. An extension is a claim; the header is evidence.
+//   2. Trust magic bytes, not extensions. The environment map this check was
+//      written for, `studio-tomoco.exr`, was named .exr, was loaded as an EXR,
+//      and was not an EXR -- its first bytes were UTF-16 text from a DCC tool's
+//      shelf thumbnail. An extension is a claim; the header is evidence.
 //   3. Every finding names the consequence a visitor sees. "Missing image" is
 //      a fact; "the project card renders a broken image" is why it matters.
 
@@ -415,7 +416,8 @@ export const createContentHealthChecker = ({ rootDir }) => {
   // Files the site depends on that belong to no project. They are the easiest
   // thing in a codebase to break, because nothing imports them by name.
   const checkSiteAssets = async (draco) => {
-    const environment = await resolveAsset('/assets/environments/studio-tomoco.exr', assetRoots)
+    const environmentUrl = '/assets/environments/monochrome-studio-02-1k.exr'
+    const environment = await resolveAsset(environmentUrl, assetRoots)
     const assets = []
 
     assets.push({
@@ -439,7 +441,7 @@ export const createContentHealthChecker = ({ rootDir }) => {
             }
           : null,
       label: 'Studio environment map (IBL)',
-      url: '/assets/environments/studio-tomoco.exr',
+      url: environmentUrl,
     })
 
     assets.push({

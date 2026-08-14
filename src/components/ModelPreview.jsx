@@ -27,7 +27,7 @@ const modes = [
   { id: 'wireframe', labelKey: 'modeWireframe' },
 ]
 
-const environmentUrl = '/assets/environments/studio-tomoco.exr'
+const environmentUrl = '/assets/environments/monochrome-studio-02-1k.exr'
 
 const alphaModes = [
   { id: 'auto', labelKey: 'alphaAuto' },
@@ -529,7 +529,10 @@ const StudioEnvironment = () => {
         generator.dispose()
       },
       undefined,
-      () => {
+      (error) => {
+        // Silence here once hid a broken environment map for several rounds:
+        // the file was not an EXR at all, so IBL never ran and nothing said so.
+        console.error(`ModelPreview: failed to load environment map ${environmentUrl}`, error)
         generator.dispose()
       },
     )
