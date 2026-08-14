@@ -101,6 +101,11 @@ const AdminContentHealth = ({ onNavigate, token }) => {
   for (const asset of health?.siteAssets || []) {
     if (asset.issue) findings.push({ ...asset.issue, scope: asset.label, slug: null })
   }
+  for (const upload of health?.communityUploads || []) {
+    for (const issue of upload.issues) {
+      findings.push({ ...issue, scope: upload.title || upload.url, slug: null, uploads: true })
+    }
+  }
   findings.sort(
     (a, b) => severityOrder.indexOf(a.severity) - severityOrder.indexOf(b.severity),
   )
@@ -175,6 +180,14 @@ const AdminContentHealth = ({ onNavigate, token }) => {
                   >
                     Open project
                   </button>
+                ) : finding.uploads ? (
+                  <button
+                    className="admin-chip-button"
+                    onClick={() => onNavigate?.('community')}
+                    type="button"
+                  >
+                    Open community
+                  </button>
                 ) : null}
               </li>
             ))}
@@ -205,6 +218,14 @@ const AdminContentHealth = ({ onNavigate, token }) => {
                     type="button"
                   >
                     Open project
+                  </button>
+                ) : finding.uploads ? (
+                  <button
+                    className="admin-chip-button"
+                    onClick={() => onNavigate?.('community')}
+                    type="button"
+                  >
+                    Open community
                   </button>
                 ) : null}
               </li>
@@ -331,6 +352,56 @@ const AdminContentHealth = ({ onNavigate, token }) => {
             </li>
           ))}
         </ul>
+      </div>
+
+      <div className="admin-panel">
+        <div className="admin-panel-head">
+          <h2>Community uploads</h2>
+          <span>
+            {health?.communityUploads?.length
+              ? `${health.communityUploads.length} checked`
+              : 'none stored'}
+          </span>
+        </div>
+
+        <p className="admin-panel-note">
+          Member uploads are download links, not previews — nothing renders them, so the check asks
+          only whether the file still exists and still matches the extension it was stored under.
+          Approved rows count as critical because a visitor can click them; pending rows are a
+          warning, because a moderator is about to.
+        </p>
+
+        {health?.communityUploads?.length ? (
+          <ul className="admin-posture">
+            {health.communityUploads.map((upload) => (
+              <li
+                className={
+                  upload.issues.length
+                    ? `admin-posture-${upload.issues.some((issue) => issue.severity === 'critical') ? 'bad' : 'warn'}`
+                    : 'admin-posture-ok'
+                }
+                key={upload.id}
+              >
+                <AdminIcon name={upload.issues.length ? 'alert' : 'ok'} size={17} />
+                <div>
+                  <span>{upload.title || upload.url}</span>
+                  <small>
+                    {upload.status} · {upload.fileType} ·{' '}
+                    {upload.file?.exists ? `found ${upload.file.kind}` : 'file missing'}
+                    {upload.file?.bytes ? ` · ${formatBytes(upload.file.bytes)}` : ''}
+                  </small>
+                  {upload.issues.map((issue) => (
+                    <small key={issue.code}>{issue.message}</small>
+                  ))}
+                </div>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="admin-empty-note">
+            No approved or pending uploads to check.
+          </p>
+        )}
       </div>
     </section>
   )

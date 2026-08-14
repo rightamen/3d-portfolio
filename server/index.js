@@ -4,13 +4,14 @@ import rateLimit from 'express-rate-limit'
 import helmet from 'helmet'
 import multer from 'multer'
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
-import { mkdir, unlink, access, open } from 'node:fs/promises'
+import { mkdir, unlink, access } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createContactMessagesStore } from './contactMessagesStore.js'
 import { createContentHealthChecker } from './contentHealth.js'
 import { experience, profile, projects as staticProjects, skills } from './content.js'
 import { createDownloadRequestsStore } from './downloadRequestsStore.js'
+import { hasValidFileSignature } from './fileSignatures.js'
 import {
   isEmailDeliveryConfigured,
   sendDownloadDecisionEmail,
@@ -591,63 +592,6 @@ const createProfileImageUpload = ({ folder, limit }) =>
 
 const avatarUpload = createProfileImageUpload({ folder: 'avatars', limit: avatarUploadLimit })
 const bannerUpload = createProfileImageUpload({ folder: 'banners', limit: bannerUploadLimit })
-
-// Content-based validation. multer's fileFilter only ever saw the file name, so
-// any payload at all could be stored as "portrait.png" — the extension was a
-// claim by the uploader, never a fact about the bytes. Formats whose container
-// has no reliable magic number (.obj, ASCII .fbx, .gltf) are text and are
-// checked for a plausible opening token instead.
-const fileSignatures = new Map([
-  ['.jpg', [[0xff, 0xd8, 0xff]]],
-  ['.jpeg', [[0xff, 0xd8, 0xff]]],
-  ['.png', [[0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]]],
-  ['.gif', [[0x47, 0x49, 0x46, 0x38]]],
-  ['.glb', [[0x67, 0x6c, 0x54, 0x46]]],
-  ['.zip', [[0x50, 0x4b, 0x03, 0x04], [0x50, 0x4b, 0x05, 0x06], [0x50, 0x4b, 0x07, 0x08]]],
-])
-
-const startsWithSignature = (buffer, signature) =>
-  signature.every((byte, index) => buffer[index] === byte)
-
-const hasValidFileSignature = async (filePath, extension) => {
-  let handle
-  try {
-    handle = await open(filePath, 'r')
-    const buffer = Buffer.alloc(64)
-    const { bytesRead } = await handle.read(buffer, 0, 64, 0)
-    const head = buffer.subarray(0, bytesRead)
-
-    const signatures = fileSignatures.get(extension)
-    if (signatures) return signatures.some((signature) => startsWithSignature(head, signature))
-
-    // RIFF....WEBP — the format tag sits at offset 8, after the chunk size.
-    if (extension === '.webp') {
-      return head.subarray(0, 4).toString('latin1') === 'RIFF' &&
-        head.subarray(8, 12).toString('latin1') === 'WEBP'
-    }
-
-    // Binary FBX carries a fixed preamble; ASCII FBX is a text file that
-    // conventionally opens with a comment or a node declaration.
-    if (extension === '.fbx') {
-      const text = head.toString('latin1')
-      return text.startsWith('Kaydara FBX Binary') || /^[;\s]|^FBXHeaderExtension/.test(text)
-    }
-
-    // Text formats: reject anything with NUL bytes in the head, which is the
-    // cheap way to tell "this is not the text file you said it was".
-    if (extension === '.gltf' || extension === '.obj') {
-      if (head.includes(0x00)) return false
-      const text = head.toString('utf8').trimStart()
-      return extension === '.gltf' ? text.startsWith('{') : /^[#a-zA-Z]/.test(text)
-    }
-
-    return false
-  } catch {
-    return false
-  } finally {
-    await handle?.close()
-  }
-}
 
 // Rejects and removes an upload whose bytes do not match its extension.
 // Returns true when the caller should stop (the response has been sent).
@@ -3491,8 +3435,15 @@ app.get('/api/admin/projects', requireAdmin, async (_request, response) => {
 // something that does not exist.
 app.get('/api/admin/content-health', requireAdmin, async (_request, response) => {
   const projects = await adminStore.listProjects(staticProjects)
+  // Community uploads are checked from the same place, but they are optional:
+  // the store is absent when the database is not configured, and a missing
+  // method means an older deployment. Neither should take the whole report down.
+  const uploads =
+    typeof communityStore?.listUploadsForHealth === 'function'
+      ? await communityStore.listUploadsForHealth()
+      : []
 
-  sendData(response, { health: await contentHealth.run(projects) })
+  sendData(response, { health: await contentHealth.run(projects, uploads) })
 })
 
 app.get('/api/admin/visitors', requireAdmin, async (request, response) => {

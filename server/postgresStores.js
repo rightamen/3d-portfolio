@@ -1852,6 +1852,36 @@ export const createPostgresStores = async (databaseUrl) => {
       return result.rows.map((row) => toCommunityUpload(row))
     },
 
+    // Rows the content health checker opens on disk. Rejected uploads are
+    // excluded because their files are already unreachable by design, so a
+    // missing one is the system working; approved and pending are both worth
+    // checking, the first because visitors can reach it and the second because
+    // a moderator is about to decide on it.
+    listUploadsForHealth: async (limit = 200) => {
+      const result = await pool.query(
+        `
+          SELECT id, status, title, file_type, file_size, file_url, preview_url
+          FROM community_uploads
+          WHERE status IN ('approved', 'pending')
+          ORDER BY
+            CASE status WHEN 'approved' THEN 0 ELSE 1 END,
+            created_at DESC
+          LIMIT $1
+        `,
+        [limit],
+      )
+
+      return result.rows.map((row) => ({
+        fileSize: Number(row.file_size),
+        fileType: row.file_type,
+        fileUrl: row.file_url,
+        id: row.id,
+        previewUrl: row.preview_url,
+        status: row.status,
+        title: row.title,
+      }))
+    },
+
     // Reverse lookup used by the /uploads access gate: a file on disk only
     // reveals its moderation state through the row that points at it.
     getUploadByAssetUrl: async (assetUrl) => {

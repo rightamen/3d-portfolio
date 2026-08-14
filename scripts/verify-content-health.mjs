@@ -90,6 +90,26 @@ writeFileSync(path.join(publicDir, 'uploads', 'models', 'piece.glb'), plainGlb)
 // replaces dist/, so this one really is about to disappear.
 writeFileSync(path.join(dist, 'uploads', 'images', 'stale.png'), PNG)
 
+// Community upload fixtures. These rows are checked as files a member shared,
+// not as models the viewer opens -- see checkCommunityUploads.
+const ZIP = Buffer.from([0x50, 0x4b, 0x03, 0x04, 0, 0, 0, 0])
+const OBJ = Buffer.from('# blender exported obj\nv 0 0 0\n', 'utf8')
+writeFileSync(path.join(publicDir, 'uploads', 'models', 'shared.glb'), plainGlb)
+writeFileSync(path.join(publicDir, 'uploads', 'models', 'shared.zip'), ZIP)
+writeFileSync(path.join(publicDir, 'uploads', 'models', 'shared.obj'), OBJ)
+// Named .glb, actually a PNG -- a row stored before the upload route sniffed
+// signatures.
+writeFileSync(path.join(publicDir, 'uploads', 'models', 'fake.glb'), PNG)
+// A GLB that requires an extension the preview cannot decode. Nothing renders
+// a community upload, so this must NOT be a finding.
+const basisuGlb = buildGlb({
+  asset: { version: '2.0' },
+  extensionsRequired: ['KHR_texture_basisu'],
+  extensionsUsed: ['KHR_texture_basisu'],
+  meshes: [{}],
+})
+writeFileSync(path.join(publicDir, 'uploads', 'models', 'basisu.glb'), basisuGlb)
+
 writeFileSync(path.join(dist, 'draco', 'draco_wasm_wrapper.js'), Buffer.from('//'))
 writeFileSync(path.join(dist, 'draco', 'draco_decoder.wasm'), Buffer.from([0x00, 0x61, 0x73, 0x6d]))
 
@@ -132,8 +152,69 @@ const projects = [
   },
 ]
 
+// Community uploads, as the store hands them over. fileSize is what multer
+// recorded at write time, so it is the number a truncated file disagrees with.
+const uploads = [
+  {
+    fileSize: plainGlb.length,
+    fileType: 'model',
+    fileUrl: '/uploads/models/shared.glb',
+    id: 'u-glb',
+    status: 'approved',
+    title: 'Shared GLB',
+  },
+  {
+    fileSize: ZIP.length,
+    fileType: 'model',
+    fileUrl: '/uploads/models/shared.zip',
+    id: 'u-zip',
+    status: 'approved',
+    title: 'Shared ZIP',
+  },
+  {
+    fileSize: OBJ.length,
+    fileType: 'model',
+    fileUrl: '/uploads/models/shared.obj',
+    id: 'u-obj',
+    status: 'approved',
+    title: 'Shared OBJ',
+  },
+  {
+    fileSize: basisuGlb.length,
+    fileType: 'model',
+    fileUrl: '/uploads/models/basisu.glb',
+    id: 'u-basisu',
+    status: 'approved',
+    title: 'KTX2 GLB',
+  },
+  {
+    fileSize: PNG.length,
+    fileType: 'model',
+    fileUrl: '/uploads/models/fake.glb',
+    id: 'u-fake',
+    status: 'approved',
+    title: 'Not really a GLB',
+  },
+  {
+    fileSize: 999,
+    fileType: 'model',
+    fileUrl: '/uploads/models/gone.glb',
+    id: 'u-gone',
+    status: 'approved',
+    title: 'Deleted from disk',
+  },
+  {
+    fileSize: 999,
+    fileType: 'model',
+    fileUrl: '/uploads/models/gone-pending.glb',
+    id: 'u-gone-pending',
+    status: 'pending',
+    title: 'Deleted before review',
+  },
+]
+
 const checker = createContentHealthChecker({ rootDir: sandbox })
-const health = await checker.run(projects)
+const health = await checker.run(projects, uploads)
 const bySlug = new Map(health.projects.map((project) => [project.slug, project]))
 const codesFor = (slug) => (bySlug.get(slug)?.issues || []).map((issue) => issue.code)
 
@@ -205,13 +286,66 @@ const environment = health.siteAssets.find((asset) => asset.url.includes('enviro
 check(environment?.found === 'exr', `a real EXR was sniffed as "${environment?.found}"`)
 check(!environment?.issue, 'a valid environment map was reported as a problem')
 
-// 6. Severity accounting drives the badge, so it has to add up.
+// 6. Community uploads. These are download links, never previews, so the bar
+//    is "does the file exist and is it what it says" -- not "can the viewer
+//    render it".
+const byUpload = new Map(health.communityUploads.map((upload) => [upload.id, upload]))
+const uploadCodes = (id) => (byUpload.get(id)?.issues || []).map((issue) => issue.code)
+
+check(uploadCodes('u-glb').length === 0, `a healthy GLB upload reported ${uploadCodes('u-glb').join(', ')}`)
+// A .zip has no entry in the checker's own signature table, so this fixture is
+// what keeps "unknown kind" from being mistaken for a damaged file.
+check(uploadCodes('u-zip').length === 0, `a real .zip upload reported ${uploadCodes('u-zip').join(', ')}`)
+check(uploadCodes('u-obj').length === 0, `a text .obj upload reported ${uploadCodes('u-obj').join(', ')}`)
+// The premise correction: KHR_texture_basisu is undecodable by this site's
+// viewer, and that is irrelevant to a file nobody renders.
+check(
+  uploadCodes('u-basisu').length === 0,
+  `an unrenderable-but-intact upload reported ${uploadCodes('u-basisu').join(', ')}`,
+)
+check(
+  uploadCodes('u-fake').includes('upload-wrong-format'),
+  'a PNG stored as .glb was not reported',
+)
+check(
+  uploadCodes('u-gone').includes('upload-missing-file'),
+  'an approved upload with no file was not reported',
+)
+// Severity is the difference between "a visitor is hitting this now" and "a
+// moderator is about to".
+check(
+  byUpload.get('u-gone')?.issues.some((issue) => issue.severity === 'critical'),
+  'a missing approved upload was not critical',
+)
+check(
+  byUpload.get('u-gone-pending')?.issues.every((issue) => issue.severity === 'warning'),
+  'a missing pending upload was not a warning',
+)
+// Worst-first, same as projects.
+const firstCleanUpload = health.communityUploads.findIndex((upload) => upload.issues.length === 0)
+const lastBadUpload = health.communityUploads.reduce(
+  (last, upload, index) => (upload.issues.length ? index : last),
+  -1,
+)
+check(
+  firstCleanUpload === -1 || lastBadUpload < firstCleanUpload,
+  'a clean upload sorted above a broken one',
+)
+
+// 7. Severity accounting drives the badge, so it has to add up.
 const counted = health.projects.reduce((total, project) => total + project.issues.length, 0)
 const totals = health.counts.critical + health.counts.warning + health.counts.note
 const assetIssues = health.siteAssets.filter((asset) => asset.issue).length
-check(totals === counted + assetIssues, `counts (${totals}) disagree with issues (${counted + assetIssues})`)
+const uploadIssues = health.communityUploads.reduce(
+  (total, upload) => total + upload.issues.length,
+  0,
+)
+check(
+  totals === counted + assetIssues + uploadIssues,
+  `counts (${totals}) disagree with issues (${counted + assetIssues + uploadIssues})`,
+)
 
-// 7. Worst-first ordering: nothing clean may sort above something critical.
+// 8. Worst-first ordering: nothing clean may sort above something critical.
 const firstClean = health.projects.findIndex((project) => project.issues.length === 0)
 const lastCritical = health.projects.reduce(
   (last, project, index) =>
@@ -223,7 +357,7 @@ check(
   'a project with no issues sorted above one with a critical issue',
 )
 
-// 8. Path traversal must not resolve, whatever the catalogue says.
+// 9. Path traversal must not resolve, whatever the catalogue says.
 const escaped = await checker.run([{ ...complete, image: '/../../../etc/passwd', slug: 'escape' }])
 check(
   escaped.projects[0].issues.some((issue) => issue.code === 'image-missing-file'),

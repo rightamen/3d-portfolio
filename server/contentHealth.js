@@ -28,6 +28,7 @@
 
 import { open, stat } from 'node:fs/promises'
 import path from 'node:path'
+import { hasValidFileSignature } from './fileSignatures.js'
 
 // Enough bytes for every signature below plus the GLB header.
 const SNIFF_BYTES = 32
@@ -41,6 +42,9 @@ const SIGNATURES = [
   { bytes: [0x76, 0x2f, 0x31, 0x01], kind: 'exr' },
   { bytes: [0x23, 0x3f, 0x52, 0x41], kind: 'hdr' }, // "#?RA" of #?RADIANCE
   { bytes: [0x1f, 0x8b], kind: 'gzip' },
+  // Community members may share a .zip of source files, so "PK" has to be a
+  // named kind rather than falling through to "unknown" and reading as damage.
+  { bytes: [0x50, 0x4b], kind: 'zip' },
 ]
 
 const IMAGE_KINDS = new Set(['png', 'jpeg', 'gif', 'webp', 'svg'])
@@ -463,12 +467,90 @@ export const createContentHealthChecker = ({ rootDir }) => {
     return assets
   }
 
+  // Community uploads, which the project checks above never look at.
+  //
+  // The question here is deliberately narrower than the one asked of project
+  // models. Nothing renders a community upload: every surface that shows one
+  // -- the community list, the account page, a public profile, the admin
+  // moderation table -- renders an <a href> download link, and members may
+  // legitimately share .obj, .fbx or a .zip of source files. So "the viewer
+  // cannot decode this" is not a defect here, and a GLB that requires an
+  // extension the preview lacks is fine: no preview will ever open it.
+  //
+  // What does matter is that the row and the file agree. A row whose file is
+  // gone gives every visitor a 404 on a link the page still renders, and rows
+  // written before the upload route sniffed signatures were never checked
+  // against their own bytes at all.
+  const checkCommunityUploads = async (uploads) => {
+    const checked = await Promise.all(uploads.map(async (upload) => {
+      const file = await resolveAsset(upload.fileUrl, uploadRoots)
+      const extension = path.extname(upload.fileUrl || '').toLowerCase()
+      // Only approved uploads are publicly reachable; the /uploads gate serves
+      // anything else to its owner and admins alone, so a broken pending file
+      // is a moderation problem rather than a visitor-facing one.
+      const isPublic = upload.status === 'approved'
+      const issues = []
+
+      if (!file.exists) {
+        issues.push({
+          code: 'upload-missing-file',
+          hint: `Nothing resolves at ${upload.fileUrl}. The row outlived its file.`,
+          message: isPublic
+            ? 'The download link on this approved upload 404s.'
+            : 'The file behind this upload is gone, so approving it would publish a dead link.',
+          severity: isPublic ? 'critical' : 'warning',
+        })
+      } else {
+        const rootIssue = wrongRootIssue(file, upload.fileType === 'image' ? 'image' : 'model')
+        if (rootIssue) issues.push(rootIssue)
+
+        if (!(await hasValidFileSignature(file.absolute, extension))) {
+          issues.push({
+            code: 'upload-wrong-format',
+            hint: `The file header says "${file.kind}", which does not match ${extension || 'its extension'}.`,
+            message: 'The stored bytes do not match the extension this upload was saved under.',
+            severity: 'warning',
+          })
+        }
+
+        // Cheap truncation signal: the row records what multer wrote, so a
+        // later size is a file that changed underneath the database.
+        if (Number.isFinite(upload.fileSize) && upload.fileSize > 0 && file.bytes !== upload.fileSize) {
+          issues.push({
+            code: 'upload-size-drift',
+            hint: `The row says ${upload.fileSize} bytes; the file is ${file.bytes}.`,
+            message: 'The file on disk is not the size it was stored at.',
+            severity: 'warning',
+          })
+        }
+      }
+
+      return {
+        file,
+        fileType: upload.fileType,
+        id: upload.id,
+        issues,
+        isPublic,
+        status: upload.status,
+        title: upload.title,
+        url: upload.fileUrl,
+      }
+    }))
+
+    const rank = { critical: 0, warning: 1, note: 2 }
+    const worstOf = (item) =>
+      item.issues.reduce((worst, issue) => Math.min(worst, rank[issue.severity]), 3)
+
+    return checked.sort((a, b) => worstOf(a) - worstOf(b))
+  }
+
   return {
-    run: async (projects) => {
+    run: async (projects, uploads = []) => {
       const draco = await checkDracoDecoder()
-      const [checked, siteAssets] = await Promise.all([
+      const [checked, siteAssets, communityUploads] = await Promise.all([
         Promise.all(projects.map((project) => checkProject(project, { draco }))),
         checkSiteAssets(draco),
+        checkCommunityUploads(uploads),
       ])
 
       const counts = { critical: 0, note: 0, warning: 0 }
@@ -478,6 +560,9 @@ export const createContentHealthChecker = ({ rootDir }) => {
       for (const asset of siteAssets) {
         if (asset.issue) counts[asset.issue.severity] += 1
       }
+      for (const upload of communityUploads) {
+        for (const issue of upload.issues) counts[issue.severity] += 1
+      }
 
       // Worst-first, so the list opens on the thing a visitor is hitting now.
       const rank = { critical: 0, warning: 1, note: 2 }
@@ -486,6 +571,7 @@ export const createContentHealthChecker = ({ rootDir }) => {
 
       return {
         checkedAt: new Date().toISOString(),
+        communityUploads,
         counts,
         projects: checked.sort((a, b) => worstOf(a) - worstOf(b) || a.slug.localeCompare(b.slug)),
         siteAssets,

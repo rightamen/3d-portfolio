@@ -1,6 +1,9 @@
 import { expect, test } from '@playwright/test'
 import { spawn } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
+import { unlink } from 'node:fs/promises'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 // DB-backed contract suite (API_V1_FREEZE_PLAN.md §17). Locks the paths that
 // the DB-free baseline (contract.spec.js) cannot reach:
@@ -1176,6 +1179,49 @@ test.describe('upload content validation', () => {
     expect(response.status).toBe(201)
     expectContractShape(payload, { legacyKeys: ['upload'] })
     expect(payload.data.upload.fileType).toBe('image')
+  })
+})
+
+// The row and the file are two separate things, and only one of them is in the
+// database. Nothing rendered community uploads, so nothing ever noticed when
+// they diverged -- the content health checker never looked at them at all.
+test.describe('content health covers community uploads', () => {
+  test('an intact upload is clean and a vanished file is reported', async () => {
+    const png = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+      'base64',
+    )
+    const form = new FormData()
+    form.append('file', new Blob([png], { type: 'image/png' }), 'health-checked.png')
+    form.append('title', 'Health checked upload')
+    form.append('description', 'Present on disk when first checked.')
+
+    const created = await postForm('/api/community/uploads', form, visitorA.sessionToken)
+    expect(created.response.status).toBe(201)
+
+    const { fileUrl, id } = created.payload.data.upload
+
+    const healthy = await getJson('/api/admin/content-health', adminToken)
+    expect(healthy.response.status).toBe(200)
+
+    const listed = healthy.payload.data.health.communityUploads.find((item) => item.id === id)
+    expect(listed, 'a stored upload was not checked at all').toBeTruthy()
+    expect(listed.issues).toEqual([])
+    expect(listed.file.exists).toBe(true)
+
+    // Delete the file the row points at. This is the divergence that used to
+    // be invisible: the download link keeps rendering, and 404s when clicked.
+    const repoRoot = fileURLToPath(new URL('../../', import.meta.url))
+    await unlink(path.join(repoRoot, 'public', fileUrl.replace(/^\//, '')))
+
+    const broken = await getJson('/api/admin/content-health', adminToken)
+    const after = broken.payload.data.health.communityUploads.find((item) => item.id === id)
+    const missing = after.issues.find((issue) => issue.code === 'upload-missing-file')
+
+    expect(missing, 'a row whose file is gone was not reported').toBeTruthy()
+    // Pending, not approved: a moderator is about to decide on it, but no
+    // visitor can reach it yet, so this is not critical.
+    expect(missing.severity).toBe('warning')
   })
 })
 

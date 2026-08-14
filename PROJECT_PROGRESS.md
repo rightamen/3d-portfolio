@@ -1,6 +1,11 @@
 # mrright.blog 项目进度记录
 
-## 下次从这里继续（截至 2026-08-14 第十四轮收工）
+## 下次从这里继续（截至 2026-08-14 第十五轮收工）
+
+**第十五轮：社区上传进入 Content Health，本地完成、`39ac799` 之后**
+**尚未部署 —— 部署前先读第十五轮那一节。**
+它同时纠正了第十三轮记错的一个前提：社区上传从来不进预览器，全是下载链接。
+
 
 **线上运行 `39ac799`（2026-08-14 14:15 UTC 部署，已逐项验证）。
 `origin/main` 与本地同步。第十二、十三、十四轮都无数据库变更。
@@ -50,11 +55,10 @@
    成功路径需要 `right` 的账号密码，密码不进对话，所以这一步只能由用户完成。
    出问题就直接关页面 —— 两步式设计保证原有绑定不受影响。（第十一轮起挂着，一直没做。）
 
-3. **社区上传的 GLB 没有任何校验**（第十三轮做 Content Health 时发现的缺口）。
-   `Content Health` 只查**项目目录**，不查 `community_uploads`。
-   而访客上传的文件同样可能是 Draco 压缩的、可能根本不是 GLB ——
-   第十轮那个 bug 的原话就是「任何 Draco 模型都会这样，**包括社区上传的**」。
-   把同一套检查接到上传流程或社区列表上，是这条线最自然的下一步。
+3. ~~**社区上传的 GLB 没有任何校验**~~ —— **第十五轮已解决（本地，未部署）**，
+   同时纠正了这条的前提：社区上传从来不进预览器，四个使用点全是下载链接，
+   所以第十轮那个 Draco 失败模式对它们不适用；magic bytes 校验也早就有了。
+   真正缺的是「行还在、文件没了」，现在 Content Health 会查了。详见第十五轮。
 
 4. **模型「能加载」和「能渲染」仍然是两件事。**
    Content Health 现在能确认文件可服务、是真 GLB、所需扩展有解码器，
@@ -291,6 +295,81 @@ CSP 这件事能做完，就是因为 playwright 回来了。
 - ~~演练遗留的临时库~~ —— 用户已确认，`mrright_restore_drill` 已 `dropdb`（2026-08-11）。
   删除后复查：`mrright_portfolio` 仍在、17 张表、`visitor_users=1`/`project_comments=2`、
   `/api/health` 200，生产库未受影响。
+
+## 2026-08-14（第十五轮）：社区上传进入内容健康检查 —— 顺带纠正一个记错的前提
+
+**日期**：2026-08-14
+**状态**：本地完成，**未部署**（见文末）。
+
+### 先纠正前提
+
+第十三轮把这条写成未完项时的理由是：「访客上传的文件同样可能是 Draco 压缩的，
+第十轮那个 bug 的原话就是『任何 Draco 模型都会这样，**包括社区上传的**』」。
+
+**这个前提是错的。** 第十轮那个 bug 是**预览器**加载失败，而社区上传**从来不进预览器**：
+`CommunityPage.jsx:490`、`AccountPage.jsx:856`、`PublicProfilePage.jsx:157`、
+`Admin.jsx:2486` —— 四个使用点全部只渲染 `<a href>` 下载链接，图片才有缩略图。
+允许的扩展名里本来就有 `.obj` / `.fbx` / `.zip`，这就是「分享资源」的语义。
+
+所以「渲染不了就拒绝上传」是错的方向：一个 `KHR_texture_basisu` 的 GLB 下载下来
+在 Blender 里照样能开。**没有做上传时的新拒绝逻辑**，这是有意的，理由写进了代码注释。
+
+顺带确认：magic bytes 校验其实**早就有**（`fileSignatures` 里检查 `glTF`），
+文档里「没有任何校验」也不准确。真正缺的是下面这件事。
+
+### 真正的缺口
+
+**`community_uploads` 完全没被 Content Health 看过。** 数据库里有行、磁盘上文件没了，
+访客点下载就是 404，而在此之前没有任何东西会说这件事 —— 行和文件是两个东西，
+只有其中一个在数据库里。
+
+### 完成内容
+
+1. **把上传时的签名校验抽成 `server/fileSignatures.js`**，上传路由和健康检查
+   共用**同一份**实现。写了注释说明为什么必须共用：两份"等价"实现，
+   正是检查器开始祝福上传方会拒绝的文件的方式。
+2. **`checkCommunityUploads`**：查 approved + pending 的行（rejected 的文件本就不可达，
+   缺失是系统在正常工作）。三类问题 ——
+   - `upload-missing-file`：approved 记 critical（访客现在就能点到），pending 记 warning（轮到审核的人）
+   - `upload-wrong-format`：存进来的字节和扩展名不符（早于签名校验的老行）
+   - `upload-size-drift`：文件大小和入库时记录的不一致，廉价的截断信号
+3. **`listUploadsForHealth`**（`postgresStores.js`）、路由接线（store 缺失时降级为空数组）
+4. **`/admin → Content Health` 新增 Community uploads 面板**，问题同时进入顶部 Findings 列表，
+   带「Open community」跳转
+5. 给 sniffer 补了 `zip` 类型，否则 `.zip` 会落到 `unknown`，读起来像损坏
+
+### 修改文件
+
+- `server/fileSignatures.js`（新增，从 `index.js` 抽出）
+- `server/contentHealth.js`、`server/index.js`、`server/postgresStores.js`
+- `src/components/admin/AdminContentHealth.jsx`
+- `scripts/verify-content-health.mjs`、`tests/api/contract.db.spec.js`
+- `docs/openapi/api-v1.yaml`
+
+### 验证结果
+
+- `npm run build`、`npm run lint`（exit 0）、`npm run test:openapi`：通过
+- `npm run test:content-health`：通过，新增 7 条断言
+- `npm run test:api`：37 通过 / 13 跳过
+- `npm run test:api:db`：**68 通过**（原 67 + 新增 1 条端到端）
+- 后台面板用假数据在浏览器里渲染确认过四种状态：缺文件、格式不符、正常 zip、正常图片
+
+**变异测试**（新断言必须真的会咬，四处全部被抓到）：
+
+| 变异 | 被抓的断言 |
+|---|---|
+| approved 缺文件降级为 warning | a missing approved upload was not critical |
+| 跳过签名校验 | a PNG stored as .glb was not reported |
+| 上传问题不计入 counts | counts (14) disagree with issues (17) |
+| 路由不把 uploads 传给检查器 | 端到端：a stored upload was not checked at all |
+
+### 待办
+
+1. **未部署。** 本轮只在本地完成。
+2. 本地跑 `test:api:db` 会往 `public/uploads/` 漏测试文件（现有 20 个 `pixel.png`），
+   vite 再把它们拷进 `dist/`，部署时一路带到线上。目前无害
+   —— 线上 `/uploads` 从持久化的 `public/uploads` 提供，`dist/uploads` 被遮蔽 ——
+   但这是垃圾在往生产环境流。按安全规则第 3 条没有擅自删除。
 
 ## 2026-08-14（第十四轮）：真 HDRI 进场 —— IBL 第一次真的亮起来
 
