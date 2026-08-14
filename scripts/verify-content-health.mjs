@@ -31,6 +31,9 @@ for (const dir of [
   path.join(dist, 'draco'),
   path.join(publicDir, 'assets', 'projects'),
   path.join(publicDir, 'models'),
+  path.join(publicDir, 'uploads', 'images'),
+  path.join(publicDir, 'uploads', 'models'),
+  path.join(dist, 'uploads', 'images'),
 ]) {
   mkdirSync(dir, { recursive: true })
 }
@@ -77,6 +80,16 @@ writeFileSync(
   path.join(publicDir, 'assets', 'projects', 'both.png'),
   Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0]),
 )
+// Uploads. These are served from public/uploads, NOT from the build -- the
+// mount is registered before the dist static handler. Asserting "must be in
+// dist" for these reported seven criticals against a live site whose assets
+// all return 200, which is the exact failure mode a checker must not have.
+writeFileSync(path.join(publicDir, 'uploads', 'images', 'shot.png'), PNG)
+writeFileSync(path.join(publicDir, 'uploads', 'models', 'piece.glb'), plainGlb)
+// The mirror case: an upload that only exists inside a build. A redeploy
+// replaces dist/, so this one really is about to disappear.
+writeFileSync(path.join(dist, 'uploads', 'images', 'stale.png'), PNG)
+
 writeFileSync(path.join(dist, 'draco', 'draco_wasm_wrapper.js'), Buffer.from('//'))
 writeFileSync(path.join(dist, 'draco', 'draco_decoder.wasm'), Buffer.from([0x00, 0x61, 0x73, 0x6d]))
 
@@ -100,6 +113,13 @@ const projects = [
   { ...complete, image: '/assets/projects/gone.png', slug: 'image-404' },
   { ...complete, image: '/assets/projects/unbuilt.png', slug: 'image-unbuilt' },
   { ...complete, image: '/assets/projects/both.png', slug: 'image-both' },
+  {
+    ...complete,
+    image: '/uploads/images/shot.png',
+    modelUrl: '/uploads/models/piece.glb',
+    slug: 'uploaded',
+  },
+  { ...complete, image: '/uploads/images/stale.png', slug: 'upload-only-in-dist' },
   // English base copy missing entirely: not a translation gap, missing content.
   { ...complete, image: '/assets/projects/good.png', slug: 'no-copy', summary: '', title: '' },
   // No Zh/Ja. English is the unsuffixed field, so this is exactly two gaps.
@@ -142,6 +162,26 @@ check(both?.image.kind === 'png', `the public/ copy was read instead of dist/ (g
 check(
   !codesFor('image-both').some((code) => code.startsWith('image-')),
   `image-both reported ${codesFor('image-both').join(', ')}`,
+)
+
+// Uploads are served from public/uploads and must NOT be asked to be in dist.
+// This is the regression that shipped once: seven criticals on a healthy site.
+const uploaded = bySlug.get('uploaded')
+check(uploaded?.image.root === 'public', `an upload resolved to ${uploaded?.image.root}`)
+check(
+  !codesFor('uploaded').some((code) => code.endsWith('-not-built')),
+  `an upload was wrongly reported as unbuilt: ${codesFor('uploaded').join(', ')}`,
+)
+check(
+  codesFor('uploaded').every((code) => code === 'project-hidden'),
+  `a healthy uploaded project reported ${codesFor('uploaded').join(', ')}`,
+)
+
+// The mirror: an upload that exists only inside the build is genuinely wrong,
+// because the next deploy replaces dist/.
+check(
+  codesFor('upload-only-in-dist').includes('image-not-in-upload-store'),
+  'an upload present only in dist/ was not reported',
 )
 
 // 4. Locale accounting. English lives in the unsuffixed field.

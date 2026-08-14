@@ -218,7 +218,41 @@ export const createContentHealthChecker = ({ rootDir }) => {
     { dir: distDir, name: 'dist' },
   ]
 
-  const rootsFor = (url) => (url?.startsWith('/uploads/') ? uploadRoots : assetRoots)
+  const isUpload = (url) => Boolean(url?.startsWith('/uploads/'))
+  const rootsFor = (url) => (isUpload(url) ? uploadRoots : assetRoots)
+
+  // Where a URL is *supposed* to come from, which is not the same answer for
+  // every URL.
+  //
+  // `/uploads/*` is mounted straight from `public/uploads` and that mount is
+  // registered before the dist static handler, so public wins and public is
+  // correct. Everything else is a build artefact and has to be in dist.
+  //
+  // Getting this wrong is not academic: the first version asserted `dist` for
+  // everything and reported seven criticals against a production site whose
+  // assets all return 200, because every uploaded image and model lives --
+  // correctly -- in public/uploads. A checker that cries wolf is worse than no
+  // checker, so the expectation is derived per URL rather than assumed.
+  const expectedRootFor = (url) => (isUpload(url) ? 'public' : 'dist')
+
+  const wrongRootIssue = (asset, kind) => {
+    const expected = expectedRootFor(asset.url)
+    if (asset.root === expected) return null
+
+    return expected === 'dist'
+      ? {
+          code: `${kind}-not-built`,
+          hint: 'Run npm run build and redeploy; only dist/ is served for built assets.',
+          message: `The ${kind === 'image' ? 'preview image' : 'model'} exists in public/ but is not in the build, so visitors get a 404.`,
+          severity: 'critical',
+        }
+      : {
+          code: `${kind}-not-in-upload-store`,
+          hint: 'It was found in the build instead, which a redeploy will not preserve.',
+          message: `The uploaded ${kind === 'image' ? 'image' : 'model'} is missing from public/uploads, which is where uploads are served from.`,
+          severity: 'critical',
+        }
+  }
 
   const checkDracoDecoder = async () => {
     // Both halves are needed: the wrapper is the JS entry point and the wasm is
@@ -264,14 +298,9 @@ export const createContentHealthChecker = ({ rootDir }) => {
         severity: 'critical',
       })
     } else {
-      if (image.root !== 'dist') {
-        issues.push({
-          code: 'image-not-built',
-          hint: 'Run npm run build and redeploy; only dist/ is served.',
-          message: 'The preview image exists in public/ but is not in the build, so visitors get a 404.',
-          severity: 'critical',
-        })
-      }
+      const rootIssue = wrongRootIssue(image, 'image')
+      if (rootIssue) issues.push(rootIssue)
+
       if (!IMAGE_KINDS.has(image.kind)) {
         issues.push({
           code: 'image-wrong-format',
@@ -299,14 +328,8 @@ export const createContentHealthChecker = ({ rootDir }) => {
         severity: 'critical',
       })
     } else {
-      if (model.root !== 'dist') {
-        issues.push({
-          code: 'model-not-built',
-          hint: 'Run npm run build and redeploy; only dist/ is served.',
-          message: 'The model exists in public/ but is not in the build, so visitors get a 404.',
-          severity: 'critical',
-        })
-      }
+      const rootIssue = wrongRootIssue(model, 'model')
+      if (rootIssue) issues.push(rootIssue)
 
       if (model.kind !== 'glb') {
         issues.push({
