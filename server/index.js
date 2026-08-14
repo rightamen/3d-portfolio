@@ -3366,6 +3366,51 @@ app.get('/api/admin/summary', requireAdmin, async (_request, response) => {
   sendData(response, { summary: await adminStore.getSummary() })
 })
 
+// The dashboard's single data source. Everything it draws comes from here, so
+// the view has one loading state and one failure mode instead of eleven.
+//
+// The `system` block is measured here rather than read out of the database:
+// process uptime and the round-trip to Postgres are properties of the running
+// process, and they are exactly the two numbers that say "the page is stale
+// because the service restarted" or "the page is slow because the database
+// is". Nothing in it is a secret -- no connection string, no token, no
+// environment values, only whether the pieces are configured at all.
+app.get('/api/admin/overview', requireAdmin, async (request, response) => {
+  if (typeof adminStore?.getOverview !== 'function') {
+    return sendError(
+      response,
+      API_ERROR_CODES.SERVICE_UNAVAILABLE,
+      'Admin data store is not configured.',
+      503,
+    )
+  }
+
+  const days = Number(request.query?.days) || 30
+  const startedAt = Date.now()
+  const overview = await adminStore.getOverview({ days })
+  const memory = process.memoryUsage()
+
+  return sendData(response, {
+    overview: {
+      ...overview,
+      system: {
+        // Round trip for the whole aggregate, not a synthetic ping: it is the
+        // number that degrades first when the database is in trouble.
+        databaseLatencyMs: Date.now() - startedAt,
+        // Aggregate CSP violation count since the last restart. A number that
+        // climbs is a policy that is blocking something real.
+        cspReports: [...cspReportCounts.values()].reduce((sum, count) => sum + count, 0),
+        emailConfigured: isEmailDeliveryConfigured(),
+        nodeVersion: process.version,
+        rssBytes: memory.rss,
+        heapUsedBytes: memory.heapUsed,
+        startedAt: new Date(Date.now() - Math.round(process.uptime() * 1000)).toISOString(),
+        uptimeSeconds: Math.round(process.uptime()),
+      },
+    },
+  })
+})
+
 // Reports what the app actually resolved for the caller's address, so an
 // operator can confirm the trust-proxy hop count matches the real chain. A
 // wrong count silently collapses every IP rate limit into one global bucket

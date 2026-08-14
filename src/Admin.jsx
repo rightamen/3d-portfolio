@@ -20,6 +20,7 @@ import {
   getAdminDownloadRequests,
   getAdminLikes,
   getAdminMe,
+  getAdminOverview,
   getAdminProjects,
   getAdminSummary,
   getAdminVisitor,
@@ -35,19 +36,52 @@ import {
   uploadAdminAsset,
 } from './lib/api'
 import AdminTotpEnrolment from './components/AdminTotpEnrolment'
+import AdminCommandPalette from './components/admin/AdminCommandPalette'
+import AdminDashboard from './components/admin/AdminDashboard'
+import AdminIcon from './components/admin/AdminIcon'
+import AdminSystemPanel from './components/admin/AdminSystemPanel'
+import { formatAge } from './components/admin/charts'
 import { assetCategoryProfiles, getAssetCategoryProfile } from './lib/assetCategories'
 
 const tokenKey = 'mrright-admin-token'
+
+// The nav is grouped rather than a flat pill row. Eight equal pills gave no
+// clue that "Likes" is a read-only curiosity and "Downloads" is a queue with
+// people waiting on it; the grouping says what each section is for before it
+// is opened.
 const sections = [
-  { key: 'projects', label: 'Projects' },
-  { key: 'comments', label: 'Comments' },
-  { key: 'likes', label: 'Likes' },
-  { key: 'visitors', label: 'Visitors' },
-  { key: 'community', label: 'Community' },
-  { key: 'downloads', label: 'Downloads' },
-  { key: 'messages', label: 'Messages' },
-  { key: 'security', label: 'Security' },
+  { group: 'Overview', icon: 'dashboard', key: 'overview', label: 'Dashboard' },
+  { group: 'Catalogue', icon: 'projects', key: 'projects', label: 'Projects' },
+  { group: 'Catalogue', icon: 'community', key: 'community', label: 'Community' },
+  { group: 'Moderation', icon: 'comments', key: 'comments', label: 'Comments' },
+  { group: 'Moderation', icon: 'downloads', key: 'downloads', label: 'Downloads' },
+  { group: 'Moderation', icon: 'messages', key: 'messages', label: 'Messages' },
+  { group: 'People', icon: 'visitors', key: 'visitors', label: 'Members' },
+  { group: 'People', icon: 'likes', key: 'likes', label: 'Likes' },
+  { group: 'Operations', icon: 'security', key: 'security', label: 'Security' },
+  { group: 'Operations', icon: 'system', key: 'system', label: 'System' },
 ]
+
+const sectionGroups = sections.reduce((groups, section) => {
+  const bucket = groups.find((item) => item.name === section.group)
+  if (bucket) bucket.items.push(section)
+  else groups.push({ items: [section], name: section.group })
+
+  return groups
+}, [])
+
+// The search box only appears where it can actually filter rows. Leaving it
+// above the dashboard and the enrolment form invited people to type into a
+// field that does nothing.
+const searchableSections = new Set([
+  'projects',
+  'comments',
+  'likes',
+  'visitors',
+  'community',
+  'downloads',
+  'messages',
+])
 
 const localizedEditorLanguages = [
   { label: '中文', suffix: 'Zh' },
@@ -757,8 +791,17 @@ const Admin = () => {
     visitorPagination: { page: 1, pages: 1, total: 0 },
     summary: null,
   })
+  // The dashboard aggregate. Kept beside `data` rather than inside it because
+  // it reloads on its own whenever the window changes, and folding it in would
+  // mean re-fetching ten lists to redraw one chart.
+  const [overview, setOverview] = useState(null)
+  const [overviewDays, setOverviewDays] = useState(30)
+  const [overviewLoading, setOverviewLoading] = useState(false)
+  const [loadedAt, setLoadedAt] = useState(null)
+  const [paletteOpen, setPaletteOpen] = useState(false)
+  const [navOpen, setNavOpen] = useState(false)
   const [editingProject, setEditingProject] = useState(null)
-  const [activeSection, setActiveSection] = useState('projects')
+  const [activeSection, setActiveSection] = useState('overview')
   const [editorScrollKey, setEditorScrollKey] = useState(0)
   const [projectStatus, setProjectStatus] = useState('idle')
   const [searchQuery, setSearchQuery] = useState('')
@@ -808,6 +851,7 @@ const Admin = () => {
         requestsPayload,
         projectsPayload,
         visitorsPayload,
+        overviewPayload,
       ] =
         await Promise.all([
           getAdminSummary(activeToken),
@@ -820,6 +864,10 @@ const Admin = () => {
           getAdminDownloadRequests(activeToken),
           getAdminProjects(activeToken),
           getAdminVisitors(activeToken, visitorFilters),
+          // Soft-fails on purpose. A server that predates this route, or a
+          // single slow aggregate, should cost the operator the dashboard --
+          // not the rows they came here to moderate.
+          getAdminOverview(activeToken, overviewDays).catch(() => ({ overview: null })),
         ])
 
       setData({
@@ -835,6 +883,8 @@ const Admin = () => {
         visitorPagination: visitorsPayload.pagination || { page: 1, pages: 1, total: 0 },
         summary: summaryPayload.summary || {},
       })
+      setOverview(overviewPayload?.overview || null)
+      setLoadedAt(new Date().toISOString())
       setStatus('ready')
       return true
     } catch (error) {
@@ -858,6 +908,39 @@ const Admin = () => {
       return false
     }
   }
+
+  // Changing the window refetches only the aggregate. The previous render is
+  // kept on screen at reduced opacity while it lands, so switching 30 -> 90
+  // days never collapses the layout into a skeleton and back.
+  const changeRange = async (days) => {
+    if (days === overviewDays || !token) return
+
+    setOverviewDays(days)
+    setOverviewLoading(true)
+    try {
+      const payload = await getAdminOverview(token, days)
+      setOverview(payload?.overview || null)
+      setLoadedAt(new Date().toISOString())
+    } catch {
+      setActionMessage('Could not load that window. The figures shown are from the previous one.')
+    } finally {
+      setOverviewLoading(false)
+    }
+  }
+
+  // Cmd/Ctrl+K anywhere in the shell. Guarded against firing while someone is
+  // typing a project summary, where the browser's own shortcuts win.
+  useEffect(() => {
+    const onKeyDown = (event) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault()
+        setPaletteOpen((current) => !current)
+      }
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
 
   // Restore a stored admin token on mount so a page reload does not drop the
   // operator back to the login form. An invalid stored token is cleared by
@@ -1504,86 +1587,173 @@ const Admin = () => {
     )
   }
 
+  const openSection = (key) => {
+    setActiveSection(key)
+    setEditingProject(null)
+    setNavOpen(false)
+  }
+
+  // Badges carry work, not inventory. "Comments 412" told an operator nothing;
+  // "Comments 3" next to three held for moderation is the whole reason to look.
+  const queueCounts = overview?.queues || {}
+  const navBadges = {
+    comments: queueCounts.pendingComments || 0,
+    community: queueCounts.pendingUploads || 0,
+    downloads: queueCounts.pendingRequests || 0,
+    messages: queueCounts.recentMessages || 0,
+    security: overview?.catalogue?.adminsWithoutTotp || 0,
+    visitors: queueCounts.unverifiedMembers || 0,
+  }
+
+  const paletteCommands = [
+    ...sections.map((section) => ({
+      group: section.group,
+      hint: `${section.group}${navBadges[section.key] ? ` · ${navBadges[section.key]} waiting` : ''}`,
+      key: `go-${section.key}`,
+      label: `Go to ${section.label}`,
+      run: () => openSection(section.key),
+    })),
+    {
+      hint: 'Opens the project editor with a blank slug',
+      key: 'new-project',
+      label: 'New project',
+      run: () => {
+        openSection('projects')
+        startCreatingProject()
+      },
+    },
+    {
+      hint: 'Refetch every list and the dashboard aggregate',
+      key: 'refresh',
+      label: 'Refresh all data',
+      run: () => loadAdminData(token),
+    },
+    {
+      hint: 'Revokes this session server-side',
+      key: 'sign-out',
+      label: 'Sign out',
+      run: logout,
+    },
+  ]
+
   return (
-    <main className="admin-shell">
-      <header className="admin-header">
-        <div>
-          <p className="section-kicker mb-1">Admin</p>
-          <h1 className="text-3xl font-semibold text-white">Portfolio Operations</h1>
-          {/* Whose session this is. Saying "shared token" out loud matters:
-              actions taken on it cannot be attributed to anyone in the audit
-              trail, and that should be visible while working, not discovered
-              later. */}
-          <p className="text-sm text-neutral-400">
+    <div className="admin-console">
+      <aside className={navOpen ? 'admin-sidebar admin-sidebar-open' : 'admin-sidebar'}>
+        <div className="admin-brand">
+          <span className="admin-brand-mark">MR</span>
+          <div>
+            <strong>Portfolio Operations</strong>
+            <small>mrright.blog</small>
+          </div>
+        </div>
+
+        <nav className="admin-nav">
+          {sectionGroups.map((group) => (
+            <div className="admin-nav-group" key={group.name}>
+              <p>{group.name}</p>
+              {group.items.map((section) => (
+                <button
+                  aria-current={activeSection === section.key ? 'page' : undefined}
+                  className={
+                    activeSection === section.key ? 'admin-nav-item admin-nav-active' : 'admin-nav-item'
+                  }
+                  key={section.key}
+                  onClick={() => openSection(section.key)}
+                  type="button"
+                >
+                  <AdminIcon name={section.icon} />
+                  <span>{section.label}</span>
+                  {navBadges[section.key] ? (
+                    <>
+                      <em className="admin-nav-badge">{navBadges[section.key]}</em>
+                      {/* Without this the button announces as "Community 2",
+                          which is a number with no unit. */}
+                      <span className="sr-only">waiting</span>
+                    </>
+                  ) : null}
+                </button>
+              ))}
+            </div>
+          ))}
+        </nav>
+
+        <button className="admin-palette-hint" onClick={() => setPaletteOpen(true)} type="button">
+          <AdminIcon name="search" />
+          <span>Jump to…</span>
+          <kbd>⌘K</kbd>
+        </button>
+
+        {/* Whose session this is. Saying "shared token" out loud matters:
+            actions taken on it cannot be attributed to anyone in the audit
+            trail, and that should be visible while working, not discovered
+            later. */}
+        <div className={identity?.username ? 'admin-identity' : 'admin-identity admin-identity-shared'}>
+          <strong>{identity?.username || 'Shared admin token'}</strong>
+          <small>
             {identity?.username
-              ? `Signed in as ${identity.username}`
-              : 'Signed in with the shared admin token (actions are not attributed)'}
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-3">
-          <button type="button" className="secondary-action" onClick={() => loadAdminData(token)}>
-            Refresh
-          </button>
-          <button type="button" className="secondary-action" onClick={logout}>
-            Sign Out
+              ? 'Named account — actions are attributed to you'
+              : 'Actions taken now are recorded with no actor'}
+          </small>
+          <button className="admin-chip-button" onClick={logout} type="button">
+            Sign out
           </button>
         </div>
-      </header>
+      </aside>
 
-      {status === 'loading' && <p className="text-neutral-400">Loading admin data...</p>}
-      {status === 'error' && (
-        <p className="text-coral">Could not load admin data. Check the token.</p>
-      )}
-      {actionMessage && <p className="text-coral">{actionMessage}</p>}
+      <main className="admin-main">
+        <header className="admin-header">
+          <div>
+            <button
+              aria-label="Toggle navigation"
+              className="admin-nav-toggle"
+              onClick={() => setNavOpen((current) => !current)}
+              type="button"
+            >
+              <span />
+              <span />
+              <span />
+            </button>
+            <p className="section-kicker mb-1">
+              {sections.find((section) => section.key === activeSection)?.group || 'Admin'}
+            </p>
+            <h1 className="text-3xl font-semibold text-white">
+              {sections.find((section) => section.key === activeSection)?.label || 'Admin'}
+            </h1>
+          </div>
+          <div className="admin-header-actions">
+            {loadedAt ? <span className="admin-header-stamp">Updated {formatAge(loadedAt)}</span> : null}
+            <button type="button" className="secondary-action" onClick={() => loadAdminData(token)}>
+              Refresh
+            </button>
+          </div>
+        </header>
 
-      {status === 'ready' && (
+        {status === 'loading' && <p className="text-neutral-400">Loading admin data...</p>}
+        {status === 'error' && (
+          <p className="text-coral">Could not load admin data. Check the token.</p>
+        )}
+        {actionMessage && <p className="text-coral">{actionMessage}</p>}
+
+        {status === 'ready' && (
         <>
-          <section className="admin-metrics">
-            {[
-              ['projects', 'Projects', data.projects.length],
-              ['comments', 'Comments', data.summary.comments],
-              ['likes', 'Likes', data.summary.likes],
-              ['visitors', 'Visitors', data.summary.visitors || data.visitors.length],
-              [
-                'community',
-                'Community',
-                (data.summary.community_posts || data.communityPosts.length) +
-                  (data.summary.pending_community_uploads || 0),
-              ],
-              ['downloads', 'Downloads', data.summary.download_requests],
-              ['messages', 'Messages', data.summary.contact_messages],
-            ].map(([key, label, value]) => (
-              <button
-                key={key}
-                type="button"
-                className={`admin-metric ${activeSection === key ? 'admin-metric-active' : ''}`}
-                onClick={() => {
-                  setActiveSection(key)
-                  setEditingProject(null)
-                }}
-              >
-                <span>{label}</span>
-                <strong>{value}</strong>
-              </button>
-            ))}
-          </section>
+          {activeSection === 'overview' && (
+            <AdminDashboard
+              days={overviewDays}
+              identity={identity}
+              loading={overviewLoading}
+              onNavigate={openSection}
+              onRangeChange={changeRange}
+              overview={overview}
+              projects={data.projects}
+              systemLabel={loadedAt ? `data as of ${formatAge(loadedAt)}` : ''}
+            />
+          )}
 
-          <nav className="admin-tabs">
-            {sections.map((section) => (
-              <button
-                key={section.key}
-                type="button"
-                className={activeSection === section.key ? 'admin-tab-active' : 'admin-tab'}
-                onClick={() => {
-                  setActiveSection(section.key)
-                  setEditingProject(null)
-                }}
-              >
-                {section.label}
-              </button>
-            ))}
-          </nav>
+          {activeSection === 'system' && (
+            <AdminSystemPanel system={overview?.system || {}} token={token} />
+          )}
 
+          {searchableSections.has(activeSection) && (
           <div className="admin-search">
             <input
               className="field-input field-input-focus"
@@ -1614,6 +1784,7 @@ const Admin = () => {
               </button>
             )}
           </div>
+          )}
 
           {activeSection === 'projects' && (
           <section className="admin-section">
@@ -2668,8 +2839,22 @@ const Admin = () => {
             <AdminTotpEnrolment signedInUsername={identity?.username} token={token} />
           )}
         </>
-      )}
-    </main>
+        )}
+      </main>
+
+      {navOpen ? (
+        <button
+          aria-label="Close navigation"
+          className="admin-nav-scrim"
+          onClick={() => setNavOpen(false)}
+          type="button"
+        />
+      ) : null}
+
+      {paletteOpen ? (
+        <AdminCommandPalette commands={paletteCommands} onClose={() => setPaletteOpen(false)} />
+      ) : null}
+    </div>
   )
 }
 

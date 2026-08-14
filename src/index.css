@@ -2626,3 +2626,665 @@ body {
       linear-gradient(90deg, rgba(5, 7, 22, 0.68), rgba(5, 7, 22, 0));
   }
 }
+
+/* ===============================
+   Admin console
+   ===============================
+
+   The console used to be one column: a row of counter buttons, a row of
+   pills, then whatever section was open. That layout had no way to say
+   "three uploads are waiting" without being opened, and no room for the one
+   thing an operations page is for -- a view of the site's state. It is now a
+   fixed sidebar plus a content column, and the sidebar carries the queue
+   depths so the work is visible before anything is clicked.
+
+   .admin-shell is deliberately left alone: /account and /u/:handle borrow it,
+   and their layouts are single-column on purpose. */
+
+.admin-console {
+  @apply grid min-h-screen w-full;
+  grid-template-columns: minmax(0, 1fr);
+  background:
+    radial-gradient(1200px 600px at 12% -10%, rgba(51, 194, 204, 0.06), transparent 70%),
+    radial-gradient(900px 500px at 100% 0%, rgba(122, 103, 219, 0.07), transparent 65%);
+}
+
+@media (min-width: 1024px) {
+  .admin-console {
+    grid-template-columns: 15.5rem minmax(0, 1fr);
+  }
+}
+
+/* --- Sidebar --- */
+
+.admin-sidebar {
+  @apply fixed inset-y-0 left-0 z-40 flex w-64 -translate-x-full flex-col gap-5 overflow-y-auto border-r border-white/10 px-4 py-5 transition-transform duration-200 lg:sticky lg:top-0 lg:z-auto lg:h-screen lg:w-auto lg:translate-x-0;
+  background: linear-gradient(180deg, rgba(11, 14, 30, 0.98), rgba(8, 11, 24, 0.98));
+}
+
+.admin-sidebar-open {
+  @apply translate-x-0;
+}
+
+.admin-nav-scrim {
+  @apply fixed inset-0 z-30 bg-black/60 lg:hidden;
+}
+
+.admin-brand {
+  @apply flex items-center gap-3 border-b border-white/10 pb-4;
+}
+
+.admin-brand-mark {
+  @apply grid h-9 w-9 place-items-center rounded-md text-xs font-bold tracking-wider text-[#04131a];
+  background: linear-gradient(135deg, #33c2cc, #57db96);
+}
+
+.admin-brand strong {
+  @apply block text-sm font-semibold text-white;
+}
+
+.admin-brand small {
+  @apply block text-xs text-neutral-500;
+}
+
+.admin-nav {
+  @apply grid flex-1 content-start gap-5;
+}
+
+.admin-nav-group {
+  @apply grid gap-1;
+}
+
+.admin-nav-group p {
+  @apply px-2 pb-1 text-[0.65rem] font-semibold uppercase tracking-[0.18em] text-neutral-600;
+}
+
+.admin-nav-item {
+  @apply flex min-h-9 w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-sm font-medium text-neutral-400 transition;
+}
+
+.admin-nav-item:hover {
+  @apply bg-white/5 text-white;
+}
+
+.admin-nav-item span {
+  @apply flex-1 truncate;
+}
+
+.admin-nav-active {
+  @apply bg-aqua/12 text-white;
+  box-shadow: inset 2px 0 0 #33c2cc;
+}
+
+.admin-nav-item .admin-icon {
+  @apply shrink-0 opacity-70;
+}
+
+.admin-nav-active .admin-icon {
+  @apply opacity-100;
+  color: #33c2cc;
+}
+
+/* A badge is a count of work, so it is only ever drawn when there is some. */
+.admin-nav-badge {
+  @apply not-italic rounded-full bg-coral/20 px-1.5 py-0.5 text-[0.65rem] font-bold text-coral;
+}
+
+.admin-palette-hint {
+  @apply flex items-center gap-2 rounded-md border border-white/10 bg-white/[0.03] px-2.5 py-2 text-xs text-neutral-500 transition hover:border-aqua/30 hover:text-neutral-300;
+}
+
+.admin-palette-hint span {
+  @apply flex-1 text-left;
+}
+
+.admin-palette-hint kbd {
+  @apply rounded border border-white/15 bg-black/40 px-1.5 py-0.5 font-mono text-[0.65rem] text-neutral-400;
+}
+
+.admin-identity {
+  @apply grid gap-1.5 rounded-md border border-white/10 bg-white/[0.03] p-3;
+}
+
+.admin-identity strong {
+  @apply text-sm text-white;
+}
+
+.admin-identity small {
+  @apply text-xs leading-snug text-neutral-500;
+}
+
+/* An unattributed session is the one thing in this panel worth an alarm
+   colour: every action taken on it lands in the audit trail with no actor. */
+.admin-identity-shared {
+  @apply border-sand/35 bg-sand/8;
+}
+
+.admin-identity-shared small {
+  @apply text-sand;
+}
+
+/* --- Main column --- */
+
+.admin-main {
+  @apply grid w-full max-w-6xl content-start gap-5 px-4 py-6 md:px-7;
+}
+
+.admin-console .admin-header {
+  @apply items-center gap-4 pb-4;
+}
+
+.admin-header-actions {
+  @apply flex flex-wrap items-center gap-3;
+}
+
+.admin-header-stamp {
+  @apply text-xs text-neutral-500;
+}
+
+.admin-nav-toggle {
+  @apply mb-2 grid gap-1 rounded-md border border-white/10 p-2 lg:hidden;
+}
+
+.admin-nav-toggle span {
+  @apply block h-px w-5 bg-neutral-300;
+}
+
+/* --- Panels, the shared container for everything on the dashboard --- */
+
+/* content-start matters: side-by-side panels are stretched to equal height by
+   the grid, and without it the shorter panel's rows stretch to fill, opening
+   a lake of empty space between a heading and the list under it. */
+.admin-panel {
+  @apply grid content-start gap-4 rounded-xl border border-white/10 p-4 md:p-5;
+  background: rgba(16, 19, 33, 0.82);
+}
+
+.admin-panel-head {
+  @apply flex flex-wrap items-baseline justify-between gap-3;
+}
+
+.admin-panel-head h2 {
+  @apply text-base font-semibold text-white;
+}
+
+.admin-panel-head span {
+  @apply rounded-full border border-white/10 px-2.5 py-0.5 text-xs text-neutral-500;
+}
+
+.admin-panel-foot {
+  @apply border-t border-white/8 pt-3 text-xs leading-relaxed text-neutral-500;
+}
+
+.admin-split {
+  @apply grid gap-4 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)];
+}
+
+.admin-chip-button {
+  @apply inline-flex min-h-8 items-center justify-center self-start rounded-full border border-white/12 bg-white/5 px-3 py-1 text-xs font-semibold text-neutral-300 transition hover:border-aqua/40 hover:text-white;
+}
+
+.admin-empty-note {
+  @apply rounded-lg border border-dashed border-white/12 px-4 py-6 text-sm leading-relaxed text-neutral-500;
+}
+
+.admin-empty-good {
+  @apply border-mint/25 text-mint/80;
+}
+
+/* --- Dashboard --- */
+
+.admin-dashboard {
+  @apply grid gap-4 transition-opacity duration-200;
+}
+
+/* Refetch keeps the frame: the previous render stays, dimmed, so switching
+   the window never collapses the page into a skeleton and back. */
+.admin-dashboard.is-refreshing {
+  @apply pointer-events-none opacity-60;
+}
+
+.admin-range-row {
+  @apply flex flex-wrap items-center gap-3;
+}
+
+.admin-range-label {
+  @apply text-xs font-semibold uppercase tracking-[0.16em] text-neutral-600;
+}
+
+.admin-range-group {
+  @apply inline-flex rounded-full border border-white/10 bg-white/[0.03] p-0.5;
+}
+
+.admin-range,
+.admin-range-active {
+  @apply inline-flex min-h-8 items-center rounded-full px-3.5 py-1 text-xs font-semibold transition;
+}
+
+.admin-range {
+  @apply text-neutral-400 hover:text-white;
+}
+
+.admin-range-active {
+  @apply bg-aqua text-[#031014];
+}
+
+.admin-range-meta {
+  @apply ml-auto text-xs text-neutral-600;
+}
+
+.admin-hero {
+  @apply grid gap-5 rounded-xl border border-white/10 p-5 md:grid-cols-[minmax(0,1fr)_auto] md:items-center;
+  background:
+    linear-gradient(135deg, rgba(51, 194, 204, 0.1), transparent 55%),
+    rgba(16, 19, 33, 0.88);
+}
+
+/* The hero figure. Proportional digits on purpose -- tabular-nums gives every
+   digit the width of a zero, which reads loose at display size. */
+.admin-hero-figure strong {
+  @apply block text-5xl font-semibold leading-none text-white;
+  font-variant-numeric: proportional-nums;
+}
+
+.admin-hero-figure .admin-stat-label {
+  @apply mb-2 block;
+}
+
+.admin-hero-figure .admin-delta {
+  @apply mt-2;
+}
+
+.admin-hero-facts {
+  @apply grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-4 md:grid-cols-2;
+}
+
+.admin-hero-facts dt {
+  @apply text-[0.65rem] uppercase tracking-[0.16em] text-neutral-600;
+}
+
+.admin-hero-facts dd {
+  @apply mt-0.5 text-sm font-semibold text-neutral-200;
+}
+
+/* --- Stat tiles --- */
+
+.admin-stat-grid {
+  @apply grid gap-3 sm:grid-cols-2 xl:grid-cols-3;
+}
+
+.admin-stat {
+  @apply grid gap-2 rounded-xl border border-white/10 p-4 text-left transition duration-200;
+  background: rgba(16, 19, 33, 0.82);
+}
+
+.admin-stat:hover {
+  @apply -translate-y-0.5 border-aqua/30;
+}
+
+.admin-stat-label {
+  @apply text-[0.65rem] font-semibold uppercase tracking-[0.16em] text-neutral-500;
+}
+
+.admin-stat-body {
+  @apply flex items-end justify-between gap-3;
+}
+
+.admin-stat-value {
+  @apply text-3xl font-semibold leading-none text-white;
+  font-variant-numeric: proportional-nums;
+}
+
+.admin-sparkline {
+  @apply shrink-0;
+}
+
+/* The delta names its baseline in words. A bare "+12%" is a number nobody
+   can check. */
+.admin-delta {
+  @apply text-xs font-medium text-neutral-500;
+}
+
+.admin-delta-up {
+  @apply text-mint;
+}
+
+.admin-delta-down {
+  @apply text-sand;
+}
+
+.admin-delta-new {
+  @apply text-aqua;
+}
+
+/* --- Work queues --- */
+
+.admin-queue-grid {
+  @apply grid gap-3 sm:grid-cols-2 xl:grid-cols-4;
+}
+
+.admin-queue-card {
+  @apply grid content-start gap-2 rounded-lg border border-white/10 bg-white/[0.03] p-4;
+}
+
+.admin-queue-open {
+  @apply border-coral/30;
+  background: rgba(234, 72, 132, 0.07);
+}
+
+.admin-queue-card div {
+  @apply flex items-baseline gap-2;
+}
+
+.admin-queue-card strong {
+  @apply text-2xl font-semibold leading-none text-white;
+}
+
+.admin-queue-card span {
+  @apply text-sm text-neutral-300;
+}
+
+.admin-queue-card p {
+  @apply text-xs leading-relaxed text-neutral-500;
+}
+
+/* --- Charts --- */
+
+.admin-chart {
+  @apply grid gap-4;
+}
+
+.admin-chart-head {
+  @apply flex flex-wrap items-start justify-between gap-3;
+}
+
+.admin-chart-head h3 {
+  @apply text-base font-semibold text-white;
+}
+
+/* Legend is always present for two or more series. Rect keys, because the
+   marks they stand for are filled columns. */
+.admin-chart-legend {
+  @apply mt-2 flex flex-wrap gap-x-4 gap-y-1;
+}
+
+.admin-chart-legend span {
+  @apply inline-flex items-center gap-1.5 text-xs text-neutral-400;
+}
+
+.admin-chart-legend i {
+  @apply block h-2.5 w-2.5 rounded-sm;
+}
+
+.admin-chart-plot {
+  @apply relative w-full;
+}
+
+.admin-chart-plot svg {
+  @apply block w-full;
+}
+
+/* Axis text wears a text token, never a series colour. */
+.admin-chart-tick {
+  fill: rgba(154, 164, 191, 0.75);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-chart-empty {
+  fill: rgba(154, 164, 191, 0.7);
+  font-size: 12px;
+}
+
+.admin-chart-tooltip {
+  @apply pointer-events-none absolute top-2 grid -translate-x-1/2 gap-1 rounded-lg border border-white/12 px-3 py-2 text-xs shadow-lg;
+  background: rgba(8, 11, 24, 0.96);
+}
+
+.admin-chart-tooltip strong {
+  @apply text-xs font-semibold text-neutral-300;
+}
+
+/* Values lead, labels follow: the reader already knows the series and came
+   for the number. */
+.admin-chart-tooltip span {
+  @apply flex items-center gap-1.5 text-neutral-500;
+}
+
+.admin-chart-tooltip i {
+  @apply block h-0.5 w-3 rounded-full;
+}
+
+.admin-chart-tooltip b {
+  @apply font-semibold text-white;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-chart-tooltip-total {
+  @apply mt-0.5 gap-1.5 border-t border-white/10 pt-1;
+}
+
+.admin-chart-table-wrap {
+  @apply max-h-80 overflow-auto rounded-lg border border-white/10;
+}
+
+.admin-chart-table {
+  @apply w-full border-collapse text-xs;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-chart-table th,
+.admin-chart-table td {
+  @apply border-b border-white/8 px-3 py-1.5 text-right;
+}
+
+.admin-chart-table thead th {
+  @apply sticky top-0 bg-[#0b0e1e] text-neutral-400;
+}
+
+.admin-chart-table tbody th {
+  @apply text-left font-normal text-neutral-400;
+}
+
+.admin-chart-table td {
+  @apply text-neutral-200;
+}
+
+/* --- Bar list --- */
+
+.admin-bar-list {
+  @apply grid gap-3;
+}
+
+.admin-bar-list-head {
+  @apply flex items-baseline justify-between gap-3;
+}
+
+.admin-bar-list-head span {
+  @apply truncate text-sm text-neutral-200;
+}
+
+.admin-bar-list-head strong {
+  @apply shrink-0 text-sm font-semibold text-white;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-bar-track {
+  @apply mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-white/6;
+}
+
+.admin-bar-fill {
+  @apply h-full rounded-full;
+  background: #33c2cc;
+}
+
+.admin-bar-list small {
+  @apply mt-1 block text-xs text-neutral-600;
+}
+
+/* --- Meters --- */
+
+.admin-meter-group {
+  @apply grid gap-4 border-t border-white/8 pt-4;
+}
+
+.admin-meter-head {
+  @apply flex items-baseline justify-between gap-3;
+}
+
+.admin-meter-head span {
+  @apply text-sm text-neutral-300;
+}
+
+.admin-meter-head strong {
+  @apply text-sm font-semibold text-white;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-meter-head em {
+  @apply ml-1 not-italic font-normal text-neutral-600;
+}
+
+/* The unfilled track is a lighter step of the fill's own ramp, so the state
+   reads across the whole bar rather than only its filled part. */
+.admin-meter-track {
+  @apply mt-1.5 h-2 w-full overflow-hidden rounded-full;
+  background: rgba(51, 194, 204, 0.14);
+}
+
+.admin-meter-fill {
+  @apply h-full rounded-full transition-all duration-500;
+  background: #33c2cc;
+}
+
+.admin-meter small {
+  @apply mt-1.5 block text-xs text-neutral-600;
+}
+
+/* --- Timeline --- */
+
+.admin-timeline {
+  @apply grid content-start gap-0;
+}
+
+.admin-timeline li {
+  @apply grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-3 border-b border-white/6 py-2.5 last:border-0;
+}
+
+.admin-timeline-icon {
+  @apply grid h-6 w-6 shrink-0 place-items-center rounded-full bg-white/6 text-neutral-400;
+}
+
+.admin-timeline p {
+  @apply text-sm leading-snug text-neutral-300;
+}
+
+.admin-timeline strong {
+  @apply font-semibold text-white;
+}
+
+.admin-timeline em {
+  @apply not-italic text-aqua;
+}
+
+.admin-timeline small {
+  @apply mt-0.5 block text-xs text-neutral-600;
+}
+
+.admin-timeline-age {
+  @apply shrink-0 text-xs text-neutral-600;
+}
+
+/* --- Posture list --- */
+
+.admin-posture {
+  @apply grid gap-2;
+}
+
+.admin-posture li {
+  @apply grid grid-cols-[auto_minmax(0,1fr)] items-start gap-3 rounded-lg border border-white/8 bg-white/[0.02] px-3 py-2.5;
+}
+
+.admin-posture strong {
+  @apply text-xl font-semibold leading-none text-white;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-posture span {
+  @apply block text-sm text-neutral-300;
+}
+
+.admin-posture small {
+  @apply mt-0.5 block text-xs leading-relaxed text-neutral-600;
+}
+
+/* Status colours are reserved and always ship with the label beside them --
+   the wording says what is wrong, the colour only says how much to care. */
+.admin-posture-warn {
+  @apply border-sand/30;
+  background: rgba(214, 153, 92, 0.08);
+}
+
+.admin-posture-warn strong {
+  @apply text-sand;
+}
+
+/* --- Fact grid (system panel) --- */
+
+.admin-fact-grid {
+  @apply grid gap-x-6 gap-y-3 sm:grid-cols-2 xl:grid-cols-4;
+}
+
+.admin-fact-grid dt {
+  @apply text-[0.65rem] uppercase tracking-[0.16em] text-neutral-600;
+}
+
+.admin-fact-grid dd {
+  @apply mt-0.5 text-sm font-semibold text-neutral-200;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Command palette --- */
+
+.admin-palette-backdrop {
+  @apply fixed inset-0 z-50 flex items-start justify-center bg-black/70 px-4 pt-24 backdrop-blur-sm;
+}
+
+.admin-palette {
+  @apply grid w-full max-w-lg gap-0 overflow-hidden rounded-xl border border-white/12 shadow-2xl;
+  background: rgba(11, 14, 30, 0.98);
+}
+
+.admin-palette-input {
+  @apply w-full border-0 border-b border-white/10 bg-transparent px-4 py-3.5 text-sm text-white outline-none placeholder:text-neutral-600;
+}
+
+.admin-palette-list {
+  @apply max-h-80 overflow-y-auto p-1.5;
+}
+
+.admin-palette-item {
+  @apply flex w-full items-baseline gap-3 rounded-md px-3 py-2 text-left text-sm text-neutral-300;
+}
+
+.admin-palette-item small {
+  @apply ml-auto shrink-0 text-xs text-neutral-600;
+}
+
+.admin-palette-active {
+  @apply bg-aqua/15 text-white;
+}
+
+.admin-palette-foot {
+  @apply border-t border-white/10 px-4 py-2 text-xs text-neutral-600;
+}
+
+@media (max-width: 640px) {
+  .admin-main {
+    @apply px-3 py-4;
+  }
+
+  .admin-hero-figure strong {
+    @apply text-4xl;
+  }
+}

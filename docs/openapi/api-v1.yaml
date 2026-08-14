@@ -1549,6 +1549,48 @@ paths:
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
 
+  /admin/overview:
+    get:
+      operationId: getAdminOverview
+      tags: [Admin (Web-only)]
+      summary: Dashboard aggregate - counts, trends, queues, activity. Web-only.
+      x-cpp-sdk: false
+      security:
+        - adminToken: []
+      parameters:
+        - name: days
+          in: query
+          required: false
+          description: Window length in days, clamped to 1-365. Defaults to 30.
+          schema: { type: integer, minimum: 1, maximum: 365, default: 30 }
+      responses:
+        "200":
+          description: OK.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ResponseEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          overview:
+                            type: object
+                            description: |
+                              range/metrics/series/queues/topProjects/activity/
+                              catalogue/system. metrics maps each counter to
+                              {total,current,prior} where current and prior are
+                              equal-length windows. series is one row per UTC
+                              day. system reports process and database health
+                              only - it carries no configuration values.
+                              See server/postgresStores.js getOverview.
+        "401":
+          $ref: "#/components/responses/AdminAuthRequired"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
   /admin/visitors:
     get:
       operationId: listAdminVisitors

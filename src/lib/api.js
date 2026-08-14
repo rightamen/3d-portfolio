@@ -476,6 +476,24 @@ export const getPublicUserActivity = (handle) => request(`/api/users/${handle}/a
 
 export const getAdminSummary = (token) => adminRequest('/api/admin/summary', token)
 
+// Everything the dashboard draws, in one request. no-store because a cached
+// dashboard is a dashboard that lies about the queue depth.
+export const getAdminOverview = (token, days = 30) =>
+  adminRequest(`/api/admin/overview?days=${encodeURIComponent(days)}`, token, {
+    cache: 'no-store',
+  })
+
+export const getAdminActions = (token, limit = 30) =>
+  adminRequest(`/api/admin/actions?limit=${encodeURIComponent(limit)}`, token, {
+    cache: 'no-store',
+  })
+
+export const getAdminSessions = (token) =>
+  adminRequest('/api/admin/sessions', token, { cache: 'no-store' })
+
+export const getAdminDiagnostics = (token) =>
+  adminRequest('/api/admin/diagnostics', token, { cache: 'no-store' })
+
 export const getAdminComments = (token) => adminRequest('/api/admin/comments', token)
 
 export const getAdminLikes = (token) => adminRequest('/api/admin/likes', token)

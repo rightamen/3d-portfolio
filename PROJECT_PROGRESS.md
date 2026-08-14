@@ -1,9 +1,15 @@
 # mrright.blog 项目进度记录
 
-## 下次从这里继续（截至 2026-08-14 第十一轮收工）
+## 下次从这里继续（截至 2026-08-14 第十二轮）
 
 **线上运行 `9daf048`（2026-08-13 16:20 UTC 部署，已逐项验证）。
-本地领先 `origin/main` 五个 commit —— 还没 push。**
+本地领先 `origin/main` 五个 commit —— 还没 push。
+第十二轮的 `/admin` 重构还在工作区里，未提交、未部署。**
+
+第十二轮把 `/admin` 整个重做了：新增 `GET /api/admin/overview` 聚合接口、
+分组侧边栏 + 待办角标 + ⌘K 命令面板、Dashboard 分区、System 分区。
+**无数据库变更**，build/lint/openapi 全通过，SQL 与 `getOverview()` 已对线上库实跑验证。
+详见下面「2026-08-14（第十二轮）」。
 
 ### 收工时的未完项（第十、十一轮合并，按优先级）
 
@@ -221,6 +227,93 @@ CSP 这件事能做完，就是因为 playwright 回来了。
 - ~~演练遗留的临时库~~ —— 用户已确认，`mrright_restore_drill` 已 `dropdb`（2026-08-11）。
   删除后复查：`mrright_portfolio` 仍在、17 张表、`visitor_users=1`/`project_comments=2`、
   `/api/health` 200，生产库未受影响。
+
+## 2026-08-14（第十二轮）：/admin 整体重构 —— 仪表盘、分组侧边栏、System 面板
+
+日期：2026-08-14
+commit：**尚未提交**（本地改动，未 push，未部署）
+
+起因是一句「现在的管理员后台好简陋」，加一句「不要吝啬创造力，可以完全重构」。
+
+### 完成内容
+
+**1. 新接口 `GET /api/admin/overview?days=7|30|90`** —— 仪表盘的唯一数据源。
+一次请求返回：各项计数 + 本窗口/上一等长窗口的对比、按天的时间序列、
+待办队列（含最老一条的等待时长）、项目互动排行、合并活动流、
+站点常量（存储、已验证会员、管理员二次验证状态）、以及运行时状态。
+
+**为什么是一个接口而不是十一个**：仪表盘是一个视图，要么加载出来要么没有。
+十一个并行请求在 100ms 链路上就是「仪表盘」和「进度条」的区别。
+`days` 在服务端夹到 1–365，异常值只会让查询慢，不会让答案错。
+
+**2. `/admin` 外壳重构**：横排药丸 → **分组侧边栏**（Overview / Catalogue /
+Moderation / People / Operations），导航项带**待办角标**（只显示"要干的活"，
+不显示库存数：以前"Comments 412"什么也没说明，现在"Comments 3"旁边就是三条待审）。
+新增 **⌘K/Ctrl+K 命令面板**（跳转 + 新建项目 + 刷新 + 登出），
+移动端抽屉 + 遮罩，搜索框只在能过滤的分区出现。
+
+**3. 新增 Dashboard 分区**：主数字（窗口内全部事件 + 同比）、运行时状态条、
+"Needs you"待办卡片（全清时是一句明确的"没有任何事等你"）、
+6 个带迷你走势图和同比的指标卡、**每日互动堆叠柱状图**（悬停提示 + 表格视图切换）、
+项目互动排行、活动时间线、站点与安全态势（含 meter）。
+
+**4. 新增 System 分区**：进程运行时（uptime、Node、内存、数据库往返、CSP 上报数、
+邮件是否配置）、**请求链诊断**（解析出的客户端 IP / XFF / 信任跳数 —— 正好对应
+备忘里那条"真实客户端 IP 拿不到"）、在线管理员会话、审计流水。
+这些以前只能 SSH 上去看，所以平时没人看。
+
+### 图表配色是算出来的，不是挑出来的
+
+三条序列色 `#00a3ad` / `#c01762` / `#8b7af0` 是把品牌色（aqua/coral/lavender）
+在 OKLCH 里重新取阶，跑校验脚本直到六项全过（深色面板 `#101321`）：
+亮度带、彩度下限、**色盲分离度（最差相邻对 ΔE 12.9，目标 8）**、
+常视觉下限、对比度全部 ≥3:1。**品牌原色本身过不了亮度带**，所以不能直接用
+`--color-aqua`。改这三个值必须重跑校验。
+
+坐标轴刻度按"步长取整"而不是"上限取整"：后者会给出 12.5 和 37.5 这种刻度，
+而这里每个序列都是件数，半条评论不存在。空窗口时刻度也被限制为整数。
+
+### 修改文件
+
+- `server/postgresStores.js`：新增 `adminStore.getOverview()`
+- `server/index.js`：新增 `/api/admin/overview` 路由（含 `system` 块）
+- `src/lib/api.js`：`getAdminOverview` / `getAdminActions` / `getAdminSessions` / `getAdminDiagnostics`
+- `src/Admin.jsx`：外壳重构、分组导航、角标、命令面板、range 切换
+- `src/components/admin/AdminDashboard.jsx`（新）
+- `src/components/admin/AdminSystemPanel.jsx`（新）
+- `src/components/admin/AdminCommandPalette.jsx`（新）
+- `src/components/admin/AdminIcon.jsx`（新，内联 SVG 图标，不用 emoji）
+- `src/components/admin/Charts.jsx`（新，Sparkline / StackedColumns / BarList / Meter）
+- `src/components/admin/charts.js`（新，配色与几何辅助）
+- `src/index.css`：新增 admin console 样式段
+- `docs/openapi/api-v1.yaml`：补 `/admin/overview`
+
+**没有动 `.admin-shell`**：`/account` 和 `/u/:handle` 也在用它，控制台改用
+新的 `.admin-console`。
+
+### 数据库变更
+
+**无。** 没有新表、没有新列、没有 DDL。全部是只读聚合查询。
+
+### 验证结果
+
+- `npm run build`：通过
+- `npm run lint`：通过
+- `npm run test:openapi`：通过（203 个 $ref、36 个错误码）
+- 全部 SQL 已对**线上库**逐条实跑通过（只读 SELECT）
+- `getOverview()` 真实代码已在 VPS 上对线上库跑通（7/30/90 天，
+  序列长度分别为 7/30/90）。运行在 `/root/overview-check` 临时目录，
+  `node_modules` 用软链引用，**临时目录已删除，`/opt` 未被触碰**，
+  且该次运行把 `ensureSchema` 注释掉了，没有执行任何 DDL。
+- 本地 Playwright：/admin 全部十个分区逐个打开，**console 零报错**；
+  已截图核对桌面版、移动版（430px）、命令面板、空数据态
+- VPS 部署：**未部署**
+- GitHub push：**未执行**
+
+### 待办
+
+1. 部署（需要先备份 `/opt/mrright-portfolio`，按既有 checklist 逐项验证）
+2. 本地已领先 `origin/main` 五个 commit，加上这一轮还没提交
 
 ## 2026-08-14（第十一轮）：自助换认证器 + 补上从来没有过的二维码
 

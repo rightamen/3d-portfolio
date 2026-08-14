@@ -2320,6 +2320,277 @@ export const createPostgresStores = async (databaseUrl) => {
       return result.rows[0]
     },
 
+    // Everything the dashboard needs, in one round trip. getSummary answers
+    // "how many are there"; this answers "what is happening" -- the same
+    // counters plus their movement against the previous window of equal
+    // length, a daily series to plot, the queues that need a human, and the
+    // few numbers that say whether the box itself is healthy.
+    //
+    // Deliberately one endpoint rather than a dozen: the dashboard is a single
+    // view that either loads or does not, and eleven parallel requests over a
+    // 100ms link is the difference between a dashboard and a progress bar.
+    getOverview: async ({ days = 30 } = {}) => {
+      // Clamped, not trusted: `days` reaches the SQL as an interval and as a
+      // generate_series bound, so an absurd value is a slow query, not a
+      // wrong answer.
+      const span = Math.min(365, Math.max(1, Math.trunc(Number(days) || 30)))
+
+      const [totals, series, queues, projects, feed, health] = await Promise.all([
+        // Every counter, its movement this window, and the same window before
+        // it -- one pass per table instead of three round trips per metric.
+        pool.query(
+          `
+          WITH bounds AS (
+            SELECT now() - make_interval(days => $1::int) AS window_start,
+                   now() - make_interval(days => $1::int * 2) AS prior_start
+          ),
+          events AS (
+            SELECT 'comments' AS metric, created_at FROM project_comments
+            UNION ALL SELECT 'likes', created_at FROM project_likes
+            UNION ALL SELECT 'downloadRequests', created_at FROM download_requests
+            UNION ALL SELECT 'downloads', created_at FROM download_events
+            UNION ALL SELECT 'members', created_at FROM visitor_users
+            UNION ALL SELECT 'communityPosts', created_at FROM community_posts
+            UNION ALL SELECT 'communityComments', created_at FROM community_comments
+            UNION ALL SELECT 'communityUploads', created_at FROM community_uploads
+            UNION ALL SELECT 'messages', created_at FROM contact_messages
+          )
+          SELECT
+            events.metric,
+            count(*)::int AS total,
+            count(*) FILTER (WHERE events.created_at >= bounds.window_start)::int AS current,
+            count(*) FILTER (
+              WHERE events.created_at >= bounds.prior_start
+                AND events.created_at < bounds.window_start
+            )::int AS prior
+          FROM events, bounds
+          GROUP BY events.metric
+        `,
+          [span],
+        ),
+
+        // One row per calendar day in the window, zeros included. Days with no
+        // activity have to be in the result or the chart draws a flat line
+        // through a gap and quietly invents traffic that never happened.
+        pool.query(
+          `
+          WITH days AS (
+            SELECT generate_series(
+              ((now() AT TIME ZONE 'UTC')::date - ($1::int - 1))::timestamp,
+              ((now() AT TIME ZONE 'UTC')::date)::timestamp,
+              interval '1 day'
+            )::date AS day
+          ),
+          events AS (
+            SELECT 'comments' AS metric, (created_at AT TIME ZONE 'UTC')::date AS day
+              FROM project_comments
+            UNION ALL SELECT 'likes', (created_at AT TIME ZONE 'UTC')::date FROM project_likes
+            UNION ALL SELECT 'downloads', (created_at AT TIME ZONE 'UTC')::date FROM download_events
+            UNION ALL SELECT 'members', (created_at AT TIME ZONE 'UTC')::date FROM visitor_users
+            UNION ALL SELECT 'community', (created_at AT TIME ZONE 'UTC')::date
+              FROM community_uploads
+            UNION ALL SELECT 'community', (created_at AT TIME ZONE 'UTC')::date
+              FROM community_posts
+            UNION ALL SELECT 'messages', (created_at AT TIME ZONE 'UTC')::date
+              FROM contact_messages
+          )
+          SELECT
+            days.day,
+            count(*) FILTER (WHERE events.metric = 'comments')::int AS comments,
+            count(*) FILTER (WHERE events.metric = 'likes')::int AS likes,
+            count(*) FILTER (WHERE events.metric = 'downloads')::int AS downloads,
+            count(*) FILTER (WHERE events.metric = 'members')::int AS members,
+            count(*) FILTER (WHERE events.metric = 'community')::int AS community,
+            count(*) FILTER (WHERE events.metric = 'messages')::int AS messages
+          FROM days
+          LEFT JOIN events ON events.day = days.day
+          GROUP BY days.day
+          ORDER BY days.day
+        `,
+          [span],
+        ),
+
+        // The work queues. Each carries the age of its oldest item, because
+        // "3 pending" and "3 pending, oldest 11 days" are different problems.
+        pool.query(`
+          SELECT
+            (SELECT count(*)::int FROM project_comments WHERE status = 'pending') AS pending_comments,
+            (SELECT min(created_at) FROM project_comments WHERE status = 'pending') AS oldest_comment,
+            (SELECT count(*)::int FROM project_comments WHERE status = 'spam') AS spam_comments,
+            (SELECT count(*)::int FROM community_uploads WHERE status = 'pending') AS pending_uploads,
+            (SELECT min(created_at) FROM community_uploads WHERE status = 'pending') AS oldest_upload,
+            (SELECT count(*)::int FROM download_requests WHERE status = 'pending') AS pending_requests,
+            (SELECT min(created_at) FROM download_requests WHERE status = 'pending') AS oldest_request,
+            (SELECT count(*)::int FROM contact_messages
+              WHERE created_at >= now() - interval '7 days') AS recent_messages,
+            (SELECT min(created_at) FROM contact_messages
+              WHERE created_at >= now() - interval '7 days') AS oldest_message,
+            (SELECT count(*)::int FROM visitor_users WHERE email_verified_at IS NULL) AS unverified_members,
+            (SELECT count(*)::int FROM visitor_users WHERE profile_admin_disabled) AS disabled_profiles
+        `),
+
+        // Engagement per project. A download event is a completed transfer, not
+        // a request, so this ranks what people actually took away.
+        pool.query(`
+          SELECT
+            slug,
+            sum(likes)::int AS likes,
+            sum(comments)::int AS comments,
+            sum(downloads)::int AS downloads
+          FROM (
+            SELECT project_slug AS slug, 1 AS likes, 0 AS comments, 0 AS downloads
+              FROM project_likes
+            UNION ALL SELECT project_slug, 0, 1, 0 FROM project_comments WHERE status <> 'spam'
+            UNION ALL SELECT project_slug, 0, 0, 1 FROM download_events
+          ) engagement
+          GROUP BY slug
+          ORDER BY sum(likes) + sum(comments) + sum(downloads) DESC, slug
+          LIMIT 8
+        `),
+
+        // A merged timeline. Each source is capped before the union so one
+        // chatty table cannot crowd the others out of the final window.
+        pool.query(`
+          SELECT * FROM (
+            (SELECT 'comment' AS kind, project_comments.id, project_comments.created_at,
+                    project_comments.project_slug AS context,
+                    coalesce(visitor_users.display_name, project_comments.author) AS actor,
+                    project_comments.message AS detail,
+                    project_comments.status
+               FROM project_comments
+               LEFT JOIN visitor_users ON visitor_users.id = project_comments.user_id
+              ORDER BY project_comments.created_at DESC LIMIT 12)
+            UNION ALL
+            (SELECT 'upload', community_uploads.id, community_uploads.created_at,
+                    coalesce(community_uploads.asset_category, 'asset'),
+                    coalesce(visitor_users.display_name, 'Someone'),
+                    community_uploads.title, community_uploads.status
+               FROM community_uploads
+               LEFT JOIN visitor_users ON visitor_users.id = community_uploads.user_id
+              ORDER BY community_uploads.created_at DESC LIMIT 12)
+            UNION ALL
+            (SELECT 'post', community_posts.id, community_posts.created_at,
+                    community_posts.topic,
+                    coalesce(visitor_users.display_name, 'Someone'),
+                    community_posts.title, 'published'
+               FROM community_posts
+               LEFT JOIN visitor_users ON visitor_users.id = community_posts.user_id
+              ORDER BY community_posts.created_at DESC LIMIT 12)
+            UNION ALL
+            (SELECT 'member', id, created_at, coalesce(access_level, 'member'), display_name,
+                    CASE WHEN email_verified_at IS NULL THEN 'awaiting verification'
+                         ELSE 'verified' END,
+                    'joined'
+               FROM visitor_users ORDER BY created_at DESC LIMIT 12)
+            UNION ALL
+            (SELECT 'request', id, created_at, project_slug, name, purpose, status
+               FROM download_requests ORDER BY created_at DESC LIMIT 12)
+            UNION ALL
+            (SELECT 'message', id, created_at, 'contact', name, message, 'received'
+               FROM contact_messages ORDER BY created_at DESC LIMIT 12)
+            UNION ALL
+            (SELECT 'download', download_events.id, download_events.created_at,
+                    download_events.project_slug,
+                    coalesce(visitor_users.display_name, download_events.actor),
+                    'downloaded the source archive', 'completed'
+               FROM download_events
+               LEFT JOIN visitor_users ON visitor_users.id = download_events.user_id
+              ORDER BY download_events.created_at DESC LIMIT 12)
+          ) timeline
+          ORDER BY created_at DESC
+          LIMIT 20
+        `),
+
+        // Standing figures that are not events: catalogue size, storage, and
+        // how much of the member base is real (verified) and awake (recent).
+        pool.query(`
+          SELECT
+            (SELECT coalesce(sum(file_size), 0)::bigint FROM community_uploads) AS upload_bytes,
+            (SELECT coalesce(sum(file_size), 0)::bigint FROM community_uploads
+              WHERE status = 'approved') AS approved_bytes,
+            (SELECT count(*)::int FROM custom_projects) AS custom_projects,
+            (SELECT count(*)::int FROM project_overrides WHERE is_public = false) AS hidden_projects,
+            (SELECT count(*)::int FROM visitor_users WHERE email_verified_at IS NOT NULL)
+              AS verified_members,
+            (SELECT count(*)::int FROM visitor_users
+              WHERE last_login_at >= now() - interval '30 days') AS active_members,
+            (SELECT count(*)::int FROM visitor_users WHERE profile_public IS NOT false)
+              AS public_profiles,
+            (SELECT count(*)::int FROM admin_sessions WHERE expires_at > now())
+              AS active_admin_sessions,
+            (SELECT count(*)::int FROM admin_users WHERE disabled_at IS NULL) AS admin_accounts,
+            (SELECT count(*)::int FROM admin_users
+              WHERE disabled_at IS NULL AND totp_confirmed_at IS NULL) AS admins_without_totp,
+            (SELECT max(created_at) FROM admin_user_actions) AS last_admin_action
+        `),
+      ])
+
+      const metrics = {}
+      for (const row of totals.rows) {
+        metrics[row.metric] = { current: row.current, prior: row.prior, total: row.total }
+      }
+
+      const iso = (value) => (value ? value.toISOString() : null)
+      const queue = queues.rows[0] || {}
+      const standing = health.rows[0] || {}
+
+      return {
+        activity: feed.rows.map((row) => ({
+          actor: row.actor || '',
+          context: row.context || '',
+          createdAt: row.created_at.toISOString(),
+          detail: row.detail || '',
+          id: `${row.kind}-${row.id}`,
+          kind: row.kind,
+          status: row.status || '',
+        })),
+        catalogue: {
+          adminAccounts: standing.admin_accounts ?? 0,
+          adminsWithoutTotp: standing.admins_without_totp ?? 0,
+          activeAdminSessions: standing.active_admin_sessions ?? 0,
+          activeMembers: standing.active_members ?? 0,
+          approvedBytes: Number(standing.approved_bytes ?? 0),
+          customProjects: standing.custom_projects ?? 0,
+          hiddenProjects: standing.hidden_projects ?? 0,
+          lastAdminAction: iso(standing.last_admin_action),
+          publicProfiles: standing.public_profiles ?? 0,
+          uploadBytes: Number(standing.upload_bytes ?? 0),
+          verifiedMembers: standing.verified_members ?? 0,
+        },
+        metrics,
+        queues: {
+          disabledProfiles: queue.disabled_profiles ?? 0,
+          oldestComment: iso(queue.oldest_comment),
+          oldestMessage: iso(queue.oldest_message),
+          oldestRequest: iso(queue.oldest_request),
+          oldestUpload: iso(queue.oldest_upload),
+          pendingComments: queue.pending_comments ?? 0,
+          pendingRequests: queue.pending_requests ?? 0,
+          pendingUploads: queue.pending_uploads ?? 0,
+          recentMessages: queue.recent_messages ?? 0,
+          spamComments: queue.spam_comments ?? 0,
+          unverifiedMembers: queue.unverified_members ?? 0,
+        },
+        range: { days: span },
+        series: series.rows.map((row) => ({
+          comments: row.comments,
+          community: row.community,
+          day: row.day instanceof Date ? row.day.toISOString().slice(0, 10) : String(row.day),
+          downloads: row.downloads,
+          likes: row.likes,
+          members: row.members,
+          messages: row.messages,
+        })),
+        topProjects: projects.rows.map((row) => ({
+          comments: row.comments,
+          downloads: row.downloads,
+          likes: row.likes,
+          slug: row.slug,
+          total: row.likes + row.comments + row.downloads,
+        })),
+      }
+    },
+
     // `status` filters the moderation queue; omitting it lists everything, so
     // the existing admin comments view keeps working unchanged.
     listComments: async ({ status = '' } = {}) => {
