@@ -1753,8 +1753,13 @@ html {
     grid-template-columns: 1fr;
   }
 
+  /* The min-height exists to stop the second column collapsing while nobody is
+     selected. Once the layout is stacked there is no column to hold open, and
+     it becomes 360px of empty panel under the list -- most of a phone screen
+     spent on the words "Select a visitor to inspect the account". */
   .visitor-detail-panel {
     position: static;
+    min-height: 0;
   }
 }
 
@@ -2941,8 +2946,12 @@ body {
 
 /* --- Stat tiles --- */
 
+/* Two up even on a phone, three from md. These tiles hold a word and a number,
+   so one per row turned six of them into a column of mostly empty space: at
+   440px each tile was 406px wide with a single "0" in it, and the old
+   sm-and-up pair still left 361px tiles at 800px. */
 .admin-stat-grid {
-  @apply grid gap-3 sm:grid-cols-2 xl:grid-cols-3;
+  @apply grid grid-cols-2 gap-3 md:grid-cols-3;
 }
 
 .admin-stat {
@@ -2958,8 +2967,12 @@ body {
   @apply text-[0.65rem] font-semibold uppercase tracking-[0.16em] text-neutral-500;
 }
 
+/* Number and trend line sit side by side once there is room for both. In a
+   half-width tile there is not: they stack, and the sparkline spans the tile
+   instead of hugging the right edge with a gulf of empty space beside the
+   figure. */
 .admin-stat-body {
-  @apply flex items-end justify-between gap-3;
+  @apply flex flex-col items-stretch gap-2 sm:flex-row sm:items-end sm:justify-between sm:gap-3;
 }
 
 .admin-stat-value {
@@ -2967,8 +2980,11 @@ body {
   font-variant-numeric: proportional-nums;
 }
 
+/* The svg carries width=120 as an attribute and draws with
+   preserveAspectRatio="none", so it is already a stretch-to-fit shape: giving
+   it the tile's width below sm costs nothing and reads as deliberate. */
 .admin-sparkline {
-  @apply shrink-0;
+  @apply w-full sm:w-[7.5rem] sm:shrink-0;
 }
 
 /* The delta names its baseline in words. A bare "+12%" is a number nobody

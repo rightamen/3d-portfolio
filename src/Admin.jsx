@@ -953,13 +953,42 @@ const Admin = () => {
   }, [])
 
   // Restore a stored admin token on mount so a page reload does not drop the
-  // operator back to the login form. An invalid stored token is cleared by
-  // loadAdminData's 401 handling.
+  // operator back to the login form.
+  //
+  // The stored session is checked with one request before the dashboard fans
+  // out into eleven. It used to go straight to loadAdminData, so an expired
+  // session -- the normal state after ADMIN_SESSION_HOURS -- greeted the
+  // operator with eleven red 401s in the console and eleven pointless requests
+  // on the wire, when one already answers the only question being asked: is
+  // this session still good? getAdminMe is the cheapest authenticated route
+  // there is, and its answer is needed on the success path anyway.
   useEffect(() => {
     if (!token) return
-    loadAdminData(token).then((ok) => {
-      if (ok) loadIdentity(token)
-    })
+
+    const restore = async () => {
+      setStatus('loading')
+
+      try {
+        const payload = await getAdminMe(token)
+        setIdentity(payload?.admin || null)
+      } catch (error) {
+        // Only a rejected session sends us back to the login form. A network
+        // blip or a server without the route must not throw away a session
+        // that may well still be valid, so anything else falls through to the
+        // full load and is judged on those responses.
+        if (error?.status === 401) {
+          window.localStorage.removeItem(tokenKey)
+          setToken('')
+          setStatus('locked')
+          setAuthMessage('That admin session has expired. Sign in again to continue.')
+          return
+        }
+      }
+
+      await loadAdminData(token)
+    }
+
+    restore()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
