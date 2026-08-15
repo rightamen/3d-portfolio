@@ -1,24 +1,37 @@
 # mrright.blog 项目进度记录
 
-## 下次从这里继续（截至 2026-08-14 第十五轮收工）
+## 下次从这里继续（截至 2026-08-15 第十六轮收工）
 
-**线上运行 `854d138`（2026-08-14 16:28 UTC 部署，已逐项验证）。
-`origin/main` 与本地同步。第十二至十五轮都无数据库变更。
-回滚到第十五轮之前：`/opt/mrright-portfolio.backup-20260814-162519`。**
+**线上运行 `54bc670`（2026-08-15 03:16 UTC 部署，已逐项验证）。
+`origin/main` 与本地同步。第十二至十六轮都无数据库变更。
+回滚到第十六轮之前：`/opt/mrright-portfolio.backup-20260815-031633`。**
 
 **线上内容健康：0 critical / 0 warning / 0 note。**
 
 ⚠️ **VPS 只保留最新 3 个应用备份**，脚本每次部署自动清理旧的。
-所以下面各轮里写的历史回滚路径**大多已经不存在了**。截至第十五轮收工，
+所以下面各轮里写的历史回滚路径**大多已经不存在了**。截至第十六轮收工，
 `/opt` 上实际存在的是：
 
 ```text
+/opt/mrright-portfolio.backup-20260815-031633   第十六轮之前 ← 要回滚就用这个
 /opt/mrright-portfolio.backup-20260814-162845   第十五轮部署（第二次，同样代码）
-/opt/mrright-portfolio.backup-20260814-162519   第十五轮之前 ← 要回滚就用这个
-/opt/mrright-portfolio.backup-20260814-141513   第十四轮之前
+/opt/mrright-portfolio.backup-20260814-162519   第十五轮之前
 ```
 
 要回滚先 `ls -dt /opt/mrright-portfolio.backup-*` 确认实际有什么，别照抄旧记录。
+
+第十六轮只做一件事：**堵住「本地测试文件搭着构建上生产」这条路**（原未完项第 3 条）。
+运行时代码零改动，改的是构建打包和测试。
+
+⚠️ 这一轮把之前那句「目前无害」证伪了一半：泄漏是**真的发生过**的 ——
+第十五轮那份线上发布里，`/opt/mrright-portfolio.backup-20260814-162845/dist/uploads`
+实际含 **20 个测试文件**（19 个 `pixel.png`）。它们确实从未被服务过（`/uploads`
+的 express 挂载读的是持久目录，且注册在 dist 静态处理器之前），但那是**遮蔽规则**，
+不是保证。现在线上 `dist/uploads` 已不存在，`find /opt/mrright-portfolio -name '*-pixel.png'` = 0。
+
+⚠️ **以后改 `vite.config.js` 的插件列表，别顺手删掉 `dropUploadsFromBuild`** ——
+删了它，`npm run deploy:vps` 会在打包前直接报错拦下（`scripts/lib/release-contents.mjs`），
+不会静默地把 uploads 又装进发布包。
 
 第十五轮做了两件事：**社区上传进入 Content Health**（并纠正了第十三轮记错的前提 ——
 社区上传从来不进预览器，四个使用点全是下载链接），以及**屏幕适配**。
@@ -68,8 +81,8 @@
 
 ### 收工时的未完项（截至第十五轮，按优先级重整）
 
-第十四、十五轮关掉了原来的第 1、3 条（假 EXR、社区上传无校验），不再列出，
-各自的经过写在对应轮次那一节。现在还开着的是：
+第十四、十五轮关掉了假 EXR 和社区上传无校验，第十六轮关掉了「测试文件漏进生产构建」，
+不再列出，各自的经过写在对应轮次那一节。现在还开着的是：
 
 1. **用户自己在 `/admin → Security` 走完一次真实绑定**，确认扫码与切换成功。
    成功路径需要 `right` 的账号密码，密码不进对话，所以这一步只能由用户完成。
@@ -82,27 +95,19 @@
    （第十四轮又确认了一次：顶点 9,295 / 三角面 12,649）。
    验证渲染仍然要看这些统计值是不是有数字，不能只看页面能开。
 
-3. **本地测试会把文件漏进生产构建。** `npm run test:api:db` 每跑一次就在
-   `public/uploads/images/` 留下一个 `pixel.png`（现存 20 个），
-   vite 把 `public/` 整个拷进 `dist/`，`deploy:vps` 再把 `dist` 打包上传。
-   **目前无害** —— 线上 `/uploads` 从持久化的 `public/uploads` 提供，
-   `dist/uploads` 被遮蔽，永远不会被服务 —— 但这是测试垃圾在往生产环境流。
-   两个方向：测试结束时清理自己写的文件，或给 vite 配置排除 `public/uploads`。
-   按安全规则第 3 条（不删上传文件）没有擅自清理，等用户拍板。
-
-4. **社区上传的检查目前无数据可验。** 第十五轮把 `community_uploads` 接进了
+3. **社区上传的检查目前无数据可验。** 第十五轮把 `community_uploads` 接进了
    Content Health，但线上 approved/pending 都是 0，所以 `communityUploads: 0 checked`。
    **等真有人上传后，要回去看一眼它报的东西对不对** —— 现在只有 fixture 和
    一条端到端测试证明它工作。
 
-5. 4K 基础色 + 法线在移动端显存占用不小；真有人反馈卡，重跑
+4. 4K 基础色 + 法线在移动端显存占用不小；真有人反馈卡，重跑
    `scripts/optimize-model.mjs` 出 2K 版（2.12 MB）即可。
 
-6. **仪表盘故意没接内容健康的信号** —— 那个检查要读文件，
+5. **仪表盘故意没接内容健康的信号** —— 那个检查要读文件，
    而仪表盘是每次打开都拉的。想改成有 critical 时在侧边栏出角标的话，
    需要给它加缓存，别直接在 overview 里同步跑。
 
-7. `H:\HDRIs\` 里还有三张 4K HDRI（photostudio / citrus orchard / qwantani dusk）。
+6. `H:\HDRIs\` 里还有三张 4K HDRI（photostudio / citrus orchard / qwantani dusk）。
    想做「按项目切换环境光」时可以复用第十四轮那套转换流程，**先降到 2K 再转**。
 
 第十一轮：**在 `/admin` 里做了自助重新绑定认证器的页面，带真正的二维码。**
@@ -277,8 +282,11 @@ CSP 这件事能做完，就是因为 playwright 回来了。
   —— 但 vite preview 没有 API，依赖接口的用例会失败，这是预期的。
   ⚠️ **部署重启后立刻跑 e2e 会有偶发失败**（服务冷启动），等一会儿再跑。
 - **`npm run test:api:db` 在这台机器上能跑**：它自己 `initdb` 一个临时 Postgres 集群、
-  跑完销毁，不碰任何现有数据库。第十五轮实测 68 通过。
-  ⚠️ 它每跑一次会在 `public/uploads/images/` 留一个 `pixel.png`（见未完项第 3 条）。
+  跑完销毁，不碰任何现有数据库。第十六轮实测 68 通过。
+  ~~⚠️ 它每跑一次会在 `public/uploads/images/` 留一个 `pixel.png`~~ ——
+  **第十六轮起会自己清理**：跑之前先快照 `public/uploads`，`afterAll` 里只删这一轮新增的文件
+  （删之前还要确认路径在 `public/uploads` 之内），跑完那个目录的文件数不变。
+  日志里会打印 `[contract.db] removed N test upload(s)`。
 - **但 playwright MCP 的浏览器能访问 `http://127.0.0.1:<port>`**（第七轮实测）。
   它是独立进程，不受上面那个沙箱限制 —— 所以「本地起服务 + 浏览器验证」这条路是通的，
   不用拿线上冒险。
@@ -347,6 +355,80 @@ CSP 这件事能做完，就是因为 playwright 回来了。
 - ~~演练遗留的临时库~~ —— 用户已确认，`mrright_restore_drill` 已 `dropdb`（2026-08-11）。
   删除后复查：`mrright_portfolio` 仍在、17 张表、`visitor_users=1`/`project_comments=2`、
   `/api/health` 200，生产库未受影响。
+
+## 2026-08-15（第十六轮）：测试文件不再搭着构建上生产
+
+**日期**：2026-08-15
+**状态**：**已部署并逐项验证**。运行时代码零改动。
+
+### 起因
+
+原未完项第 3 条。`npm run test:api:db` 跑的是真实上传接口，服务端因此往
+`public/uploads/images/` 写真文件，没人负责收拾 —— 攒到了 20 个（19 个 `pixel.png` +
+1 个 `health-checked.png`）。vite 把 `public/` 整个拷进 `dist/`，`deploy:vps` 打包的正是
+`dist server scripts package*.json`，所以这些文件**每次部署都上了服务器**。
+
+之前记的是「目前无害」。**只对了一半**：确实从没被服务过，但泄漏是真发生了 ——
+第十五轮那份线上发布的备份里，`dist/uploads` 实打实有 20 个测试文件（19 个 `pixel.png`）。
+「不会被服务」靠的是 `/uploads` 的 express 挂载注册在 dist 静态处理器之前这条**遮蔽规则**，
+不是任何保证；哪天挂载顺序变了，本地测试垃圾就直接可被公网访问。
+
+### 三处一起堵
+
+| 位置 | 做法 |
+| --- | --- |
+| `tests/api/contract.db.spec.js` | `beforeAll` 快照 `public/uploads` 整棵树，`afterAll`（在服务进程退出之后）只删这一轮新增的文件；预先存在的文件一个不碰，路径不在 `public/uploads` 之内的一律跳过 |
+| `vite.config.js` | 新增 `dropUploadsFromBuild` 插件，`closeBundle` 的 post 序删掉 `dist/uploads`（它本来就不可达） |
+| `scripts/deploy-vps.mjs` / `scripts/package-vps-release.mjs` | 打包前调 `assertNoUploadsInBuild()`，`dist/uploads` 还在就直接报错停下 —— 挡的是陈旧的 `dist`，或者用没有那个插件的配置构建出来的产物 |
+
+新文件 `scripts/lib/release-contents.mjs` 同时收了那份重复写在两个打包脚本里的
+`archiveItems` 清单（`dist server scripts package.json package-lock.json`）。
+
+**清理选择说明**：测试删的是**自己这一轮写出来的**文件，且删之前二次确认路径在
+`public/uploads` 之内 —— 不会碰到任何真实上传。已存在的那 20 个是**用户明确同意后**才删的
+（安全规则第 3 条），它们全部匹配 `*-pixel.png` / `*-health-checked.png` 且都 < 2K，
+不在 git 里（`public/uploads` 已 gitignore），线上那份持久目录**没动**（仍 31 个文件）。
+
+### 验证
+
+- `npm run build`：通过，构建后 `dist/uploads` 不存在
+- `npm run lint`：通过
+- `npm run test:api:db`：**68 通过**；跑完 `public/uploads` 文件数不变，日志有
+  `[contract.db] removed 1 test upload(s)`（另一个被那条内容健康用例自己删掉了）
+- `npm run test:api`：37 通过 / 13 跳过
+- `npm run test:content-health`、`test:openapi`、`test:deploy-script`、`test:deploy-backup`：全通过
+- **变异测试**：手工在 `dist/uploads/images/` 放一个文件，`assertNoUploadsInBuild()`
+  如期报错；删掉后恢复通过 —— 证明那道拦截不是摆设
+
+### 部署
+
+- commit：`54bc670`
+- `origin/main`：已推送
+- 备份（回滚点）：`/opt/mrright-portfolio.backup-20260815-031633`
+- 部署时间：2026-08-15 03:16 UTC，健康检查 1 次通过，admin session 检查通过，
+  旧备份按保留策略清掉 1 个（`...-20260814-141513`）
+- env 检查：`ADMIN_TOKEN` `[set]`、`DATABASE_URL` `[set]`（未取值）
+- 数据库变更：无
+
+### 线上验证
+
+- `/api/health` 200、`/` 200、`/community` 200、`/admin` 200、`/login?mode=login` 200、`/account` 200
+- `admin_summary` 200（换会话调用，用完立即吊销）
+- Content Health：**0 critical / 0 warning / 0 note**
+- `/api/account/profile`、`/downloads`、`/comments`：未登录 401，正常
+- `/api/users/not-exist-test-handle` 404、`/api/community/uploads` 200
+- **资源仍然照常提供**（这轮的关键回归点）：
+  `/uploads/images/...sc-jitan.png` 200 / 2.75 MB、`/uploads/models/...sc-jitan.glb` 200 / 930 KB、
+  `/uploads/images/...meihuoqi-render.png` 200 / 8.89 MB、
+  `/models/fire-extinguisher-4k...glb` 200 / 3.88 MB（这个来自 dist，一并确认没误伤）
+- 线上 `dist/uploads`：已不存在；`find /opt/mrright-portfolio -name '*-pixel.png'` = **0**
+- 线上持久上传目录：`public/uploads` 仍 31 个文件，未受影响
+- `npm run test:e2e`（打线上）：10 通过 / 4 跳过（跳过的是需要管理员令牌与访客凭证的用例）
+
+### 教训
+
+**「被遮蔽所以无害」不是安全边界。** 一条依赖注册顺序的隐性规则，
+在记录里被写成了「永远不会被服务」。真正的答案是：**根本别让它进包**。
 
 ## 2026-08-14（第十五轮）：社区上传进入内容健康检查 —— 顺带纠正一个记错的前提
 
