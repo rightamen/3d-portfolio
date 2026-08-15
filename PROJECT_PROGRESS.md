@@ -1,24 +1,38 @@
 # mrright.blog 项目进度记录
 
-## 下次从这里继续（截至 2026-08-15 第十六轮收工）
+## 下次从这里继续（截至 2026-08-15 第十七轮收工）
 
-**线上运行 `54bc670`（2026-08-15 03:16 UTC 部署，已逐项验证）。
-`origin/main` 与本地同步。第十二至十六轮都无数据库变更。
-回滚到第十六轮之前：`/opt/mrright-portfolio.backup-20260815-031633`。**
+**线上运行 `ba8e81a`（2026-08-15 03:47 UTC 部署，已逐项验证）。
+`origin/main` 与本地同步。第十二至十七轮都无数据库变更。
+回滚到第十七轮之前：`/opt/mrright-portfolio.backup-20260815-034745`。**
 
 **线上内容健康：0 critical / 0 warning / 0 note。**
 
 ⚠️ **VPS 只保留最新 3 个应用备份**，脚本每次部署自动清理旧的。
-所以下面各轮里写的历史回滚路径**大多已经不存在了**。截至第十六轮收工，
+所以下面各轮里写的历史回滚路径**大多已经不存在了**。截至第十七轮收工，
 `/opt` 上实际存在的是：
 
 ```text
-/opt/mrright-portfolio.backup-20260815-031633   第十六轮之前 ← 要回滚就用这个
-/opt/mrright-portfolio.backup-20260814-162845   第十五轮部署（第二次，同样代码）
-/opt/mrright-portfolio.backup-20260814-162519   第十五轮之前
+/opt/mrright-portfolio.backup-20260815-034745   第十七轮之前 ← 要回滚就用这个
+/opt/mrright-portfolio.backup-20260815-031633   第十六轮之前
+/opt/mrright-portfolio.backup-20260814-162845   第十五轮部署
 ```
 
 要回滚先 `ls -dt /opt/mrright-portfolio.backup-*` 确认实际有什么，别照抄旧记录。
+
+第十七轮修的是 `/admin` 本身的窄屏排版，和一串吓人的 401。
+
+⚠️ **「没有横向溢出」不等于「能看」。** 第十五轮量过同一个页面、没测到溢出，
+于是去修了公开页头 —— 溢出是**选错的指标**。这轮量的是密度：`.admin-stat-grid`
+在 640px 以下是单列，六块只装一个词和一个数字的卡片各占 406px 宽，
+中间一大片空白。现在**手机两列、`md` 起三列**。
+
+⚠️ **控制台里那 11 条红色 401 是「会话过期」的正常样子，不是故障。**
+恢复已存会话时会先用**一个** `getAdminMe` 探活，401 就直接回登录页并说
+「That admin session has expired」，不再让 11 个请求各自撞一次墙。
+
+⚠️ **本机现在可以真的把 `/admin` 跑起来看**（第一次做到），做法见下面「环境事实」，
+不用再拿线上冒险，也不用有 `right` 的密码。
 
 第十六轮只做一件事：**堵住「本地测试文件搭着构建上生产」这条路**（原未完项第 3 条）。
 运行时代码零改动，改的是构建打包和测试。
@@ -79,35 +93,31 @@
 第十二轮就是这么误触发的一次真实部署（结果无害：脚本本来就会备份 env、
 备份应用、健康检查、admin session 检查、清理旧备份）。
 
-### 收工时的未完项（截至第十五轮，按优先级重整）
+### 收工时的未完项（截至第十七轮，按优先级重整）
 
 第十四、十五轮关掉了假 EXR 和社区上传无校验，第十六轮关掉了「测试文件漏进生产构建」，
-不再列出，各自的经过写在对应轮次那一节。现在还开着的是：
+**第十七轮用户答复「已经绑定过认证器了」，那条从第十一轮挂到现在的也关掉了**。
+各自的经过写在对应轮次那一节。现在还开着的是：
 
-1. **用户自己在 `/admin → Security` 走完一次真实绑定**，确认扫码与切换成功。
-   成功路径需要 `right` 的账号密码，密码不进对话，所以这一步只能由用户完成。
-   出问题就直接关页面 —— 两步式设计保证原有绑定不受影响。
-   （第十一轮起挂着，四轮没动，**是目前唯一只有用户能做的事**。）
-
-2. **模型「能加载」和「能渲染」仍然是两件事。**
+1. **模型「能加载」和「能渲染」仍然是两件事。**
    Content Health 现在能确认文件可服务、是真 GLB、所需扩展有解码器，
    但它**不渲染**。四个项目里只有灭火器被人眼确认真的画出来过
    （第十四轮又确认了一次：顶点 9,295 / 三角面 12,649）。
    验证渲染仍然要看这些统计值是不是有数字，不能只看页面能开。
 
-3. **社区上传的检查目前无数据可验。** 第十五轮把 `community_uploads` 接进了
+2. **社区上传的检查目前无数据可验。** 第十五轮把 `community_uploads` 接进了
    Content Health，但线上 approved/pending 都是 0，所以 `communityUploads: 0 checked`。
    **等真有人上传后，要回去看一眼它报的东西对不对** —— 现在只有 fixture 和
    一条端到端测试证明它工作。
 
-4. 4K 基础色 + 法线在移动端显存占用不小；真有人反馈卡，重跑
+3. 4K 基础色 + 法线在移动端显存占用不小；真有人反馈卡，重跑
    `scripts/optimize-model.mjs` 出 2K 版（2.12 MB）即可。
 
-5. **仪表盘故意没接内容健康的信号** —— 那个检查要读文件，
+4. **仪表盘故意没接内容健康的信号** —— 那个检查要读文件，
    而仪表盘是每次打开都拉的。想改成有 critical 时在侧边栏出角标的话，
    需要给它加缓存，别直接在 overview 里同步跑。
 
-6. `H:\HDRIs\` 里还有三张 4K HDRI（photostudio / citrus orchard / qwantani dusk）。
+5. `H:\HDRIs\` 里还有三张 4K HDRI（photostudio / citrus orchard / qwantani dusk）。
    想做「按项目切换环境光」时可以复用第十四轮那套转换流程，**先降到 2K 再转**。
 
 第十一轮：**在 `/admin` 里做了自助重新绑定认证器的页面，带真正的二维码。**
@@ -292,6 +302,25 @@ CSP 这件事能做完，就是因为 playwright 回来了。
 - **但 playwright MCP 的浏览器能访问 `http://127.0.0.1:<port>`**（第七轮实测）。
   它是独立进程，不受上面那个沙箱限制 —— 所以「本地起服务 + 浏览器验证」这条路是通的，
   不用拿线上冒险。
+- **本机可以把带数据库的 `/admin` 完整跑起来**（第十七轮第一次做到，
+  以后要改后台 UI 就不必再对着线上或凭空改）。本机 `systemd` 里有 Postgres 16 在跑，
+  但 `postgres` 角色走 TCP 要密码，所以**新建一个本地专用角色和空库**（别动现有角色的密码）：
+
+  ```sh
+  su postgres -c "psql -c \"CREATE ROLE mrright_local LOGIN PASSWORD '<自己生成>'\" \
+                       -c 'CREATE DATABASE mrright_local_dev' \
+                       -c 'GRANT ALL ON DATABASE mrright_local_dev TO mrright_local'"
+  su postgres -c "psql -d mrright_local_dev -c 'GRANT ALL ON SCHEMA public TO mrright_local'"
+  # 服务端启动时会自己在这个空库里建表
+  DATABASE_URL='postgres://mrright_local:<密码>@127.0.0.1:5432/mrright_local_dev' \
+    PORT=4199 ADMIN_TOKEN=local-demo-not-a-secret node server/index.js
+  ```
+
+  它服务的是 `dist/`，所以**改完前端要重新 `npm run build` 才看得到**。
+  进后台不需要 `right` 的密码：用那个假的本地 `ADMIN_TOKEN` 换一个会话塞进
+  `localStorage['mrright-admin-token']` 即可（`/api/admin/session`）。
+  ⚠️ 这个库是**本机 scratch**，与 VPS 上的 `mrright_portfolio` 毫无关系；
+  用完可以留着，下次直接起。
 - **服务端不设 `DATABASE_URL` 也能起**（`server/index.js:108` 是三元回落到内存 store），
   想在本地跑真实构建验证前端行为时很有用，社区/后台会降级但页面照常渲染。
 - **`npm run deploy:vps` 现在在这台机器上能跑**（2026-08-13 第八轮起，默认走 SSH 密钥认证，
@@ -357,6 +386,84 @@ CSP 这件事能做完，就是因为 playwright 回来了。
 - ~~演练遗留的临时库~~ —— 用户已确认，`mrright_restore_drill` 已 `dropdb`（2026-08-11）。
   删除后复查：`mrright_portfolio` 仍在、17 张表、`visitor_users=1`/`project_comments=2`、
   `/api/health` 200，生产库未受影响。
+
+## 2026-08-15（第十七轮）：`/admin` 的窄屏排版，以及那 11 条 401
+
+**日期**：2026-08-15
+**状态**：**已部署并逐项验证**。无数据库变更。
+
+### 起因
+
+用户带着一张截图：开着 devtools 的 `https://mrright.blog/admin`，
+内容区约 440px 宽，控制台里 11 条红色 401。原话是「UI 你没有修好，布局太难看了，
+还有一个报错」。
+
+⚠️ **这是同一个抱怨的第二次。** 第十五轮收到的是「你忘了做屏幕适配」（也是对着 `/admin`），
+当时量了溢出、发现 `/admin` 在任何宽度都不溢出，于是修了公开页头 ——
+**溢出是选错的指标**。这轮量密度，问题立刻出来了。
+
+### 一、布局：不是溢出，是密度
+
+`.admin-stat-grid` 之前是 `gap-3 sm:grid-cols-2 xl:grid-cols-3`，
+即 **640px 以下单列**。六块统计卡（MEMBERS / COMMENTS / LIKES / DOWNLOADS /
+COMMUNITY / MESSAGES）每块只装一个词和一个数字，却各占 406px 宽，
+数字在最左、迷你趋势线贴最右，中间空一大片；六块叠起来就是一根望不到头的长柱。
+`sm:grid-cols-2` 那一档也不够：**800px 时仍是两列 361px 的空卡**。
+
+改成：
+
+| 改动 | 内容 |
+| --- | --- |
+| `.admin-stat-grid` | `grid-cols-2 md:grid-cols-3` —— 手机也两列，768 起三列 |
+| `.admin-stat-body` | 低于 `sm` 时数字与趋势线**改为上下堆叠**，趋势线占满卡片宽 |
+| `.admin-sparkline` | 低于 `sm` 时 `w-full`（它本来就是 `preserveAspectRatio="none"`，拉宽无代价） |
+| `.visitor-detail-panel` | 1100px 以下补 `min-height: 0` —— 布局已经堆叠，那 360px 只是「Select a visitor to inspect the account」下面的一大块空板 |
+
+**十个宽度实测**（320 / 375 / 440 / 540 / 640 / 768 / 800 / 1024 / 1280 / 1440）：
+无一处横向溢出；768 以下两列、768 起三列；440px 页面高度 2927 → 2630（-297px）。
+桌面（1280/1440）渲染与改前一致。
+
+### 二、那 11 条 401：会话过期的正常样子
+
+恢复已存会话时直接调 `loadAdminData`，它一次并发 11 个管理端请求。
+会话一旦过期（`ADMIN_SESSION_HOURS` 默认 12 小时，属于常态），
+**11 个请求各撞一次墙，控制台就刷出 11 条红字**，而界面其实已经正确回到了登录页。
+截图里那一片就是这个。
+
+改成先用 **一个** `GET /api/admin/me` 探活：401 就清 token、回登录页，
+提示语从「Enter the ADMIN_TOKEN again」换成
+「That admin session has expired. Sign in again to continue.」
+（那句旧文案还停在 `ADMIN_TOKEN` 时代，现在的登录方式是账号 + 密码 + 6 位码）。
+非 401 的失败（网络抖动、老服务端没有这条路由）**不丢会话**，继续走完整加载，
+由那些响应来判断。成功路径的请求数不变（本来也要调 `me` 拿身份）。
+
+### 验证
+
+- 本地起了一个真实实例（见「环境事实」）：
+  - 失效会话：`/api/admin/me` **1 个 401**，界面显示新提示语 —— 改前是 11 个
+  - 有效会话：`me` 200，随后 11 个管理端请求全部 200，仪表盘照常
+- 十宽度测量表见上
+- 逐个分区在 440px 下扫过（Dashboard / Projects / Content Health / Community /
+  Comments / Downloads / Messages / Members / Likes / Security / System）：**零溢出**
+- `npm run build`、`npm run lint`、`npm run test:api`（37 通过 / 13 跳过）：全通过
+- 线上 CSS 实测含新规则（`repeat(2,...)` + 媒体查询里的 `repeat(3,...)`、`min-height:0`）
+- 线上失效会话复测：**1 个 401 + 新提示语**
+
+### 部署
+
+- commit：`ba8e81a`
+- 备份（回滚点）：`/opt/mrright-portfolio.backup-20260815-034745`
+- 部署时间：2026-08-15 03:47 UTC，健康检查通过，admin session 检查通过
+- env 检查：`ADMIN_TOKEN` `[set]`、`DATABASE_URL` `[set]`（未取值）
+- 线上验证：六路由全 200、`admin_summary` 200、`admin_me` 200、
+  Content Health 0/0/0、`dist/uploads` 仍不存在、`npm run test:e2e` 10 通过 / 4 跳过
+
+### 教训
+
+**上一轮量错了指标。** 「在所有宽度都不溢出」被当成了「适配没问题」的证明，
+可它只排除了一种失败方式。用户看到的是**要滚十屏才看得完六个零**。
+以后做适配验收，除了溢出，至少还要看：**同一块内容在窄屏下的高度**、
+**列数**、**单元格里内容占卡片宽度的比例**。
 
 ## 2026-08-15（第十六轮）：测试文件不再搭着构建上生产
 
