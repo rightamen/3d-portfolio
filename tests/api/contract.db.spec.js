@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { spawn } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
-import { unlink } from 'node:fs/promises'
+import { readdir, unlink } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -45,6 +45,54 @@ let serverProcess
 let visitorA // verified + logged in: { id, email, sessionToken }
 let visitorB // registered but unverified: { id, email }
 let seededPostId
+let uploadsBeforeRun = new Set()
+
+const repoRoot = fileURLToPath(new URL('../../', import.meta.url))
+const uploadRoot = path.join(repoRoot, 'public', 'uploads')
+
+// The database this suite runs against is disposable; the files are not. Every
+// upload test posts through the real endpoint, so the server writes a real file
+// into public/uploads and nobody owned it afterwards — 20 stray one-pixel PNGs
+// had piled up there, and vite copies public/ wholesale into dist/, which is
+// what deploy:vps ships. Snapshot the tree first and remove exactly what this
+// run added: never a pre-existing file, never anything outside public/uploads.
+const listUploadFiles = async (dir = uploadRoot) => {
+  const found = new Set()
+  let entries
+
+  try {
+    entries = await readdir(dir, { withFileTypes: true })
+  } catch {
+    return found // the tree is created on first upload; absent is fine
+  }
+
+  for (const entry of entries) {
+    const absolute = path.join(dir, entry.name)
+    if (entry.isDirectory()) {
+      for (const nested of await listUploadFiles(absolute)) found.add(nested)
+    } else if (entry.isFile()) {
+      found.add(absolute)
+    }
+  }
+
+  return found
+}
+
+const removeUploadsAddedByRun = async () => {
+  const removed = []
+
+  for (const absolute of await listUploadFiles()) {
+    if (uploadsBeforeRun.has(absolute)) continue
+    // Belt and braces: the walk starts at uploadRoot, so this can only fail if
+    // something above changed, and deleting outside it must never happen.
+    if (!absolute.startsWith(`${uploadRoot}${path.sep}`)) continue
+
+    await unlink(absolute)
+    removed.push(path.relative(repoRoot, absolute))
+  }
+
+  if (removed.length) console.log(`[contract.db] removed ${removed.length} test upload(s)`)
+}
 
 const waitForHealth = async () => {
   const deadline = Date.now() + 30_000
@@ -166,6 +214,7 @@ const registerVisitor = async (displayName, email) => {
 
 test.beforeAll(async () => {
   assertDisposableDatabaseUrl(databaseUrl)
+  uploadsBeforeRun = await listUploadFiles()
 
   serverProcess = spawn(process.execPath, ['server/index.js'], {
     cwd: process.cwd(),
@@ -245,9 +294,13 @@ test.beforeAll(async () => {
 })
 
 test.afterAll(async () => {
-  if (!serverProcess) return
-  serverProcess.kill('SIGTERM')
-  await new Promise((resolve) => serverProcess.once('exit', resolve))
+  if (serverProcess) {
+    serverProcess.kill('SIGTERM')
+    await new Promise((resolve) => serverProcess.once('exit', resolve))
+  }
+
+  // After the server is down, so nothing is mid-write.
+  await removeUploadsAddedByRun()
 })
 
 test.describe('db-backed admin 200 contract', () => {
@@ -1211,7 +1264,6 @@ test.describe('content health covers community uploads', () => {
 
     // Delete the file the row points at. This is the divergence that used to
     // be invisible: the download link keeps rendering, and 404s when clicked.
-    const repoRoot = fileURLToPath(new URL('../../', import.meta.url))
     await unlink(path.join(repoRoot, 'public', fileUrl.replace(/^\//, '')))
 
     const broken = await getJson('/api/admin/content-health', adminToken)

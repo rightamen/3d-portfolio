@@ -14,11 +14,12 @@ import {
   PRUNE_FUNCTION,
   WAIT_FOR_HEALTH,
 } from './lib/deploy-backup-script.mjs'
+import { archiveItems, assertNoUploadsInBuild } from './lib/release-contents.mjs'
 
 const execFileAsync = promisify(execFile)
 const archivePath = path.resolve('.deploy-tools', 'mrright-portfolio-release.tar.gz')
-const archiveItems = ['dist', 'server', 'scripts', 'package.json', 'package-lock.json']
 
+await assertNoUploadsInBuild(process.cwd())
 await mkdir(path.dirname(archivePath), { recursive: true })
 await rm(archivePath, { force: true })
 await execFileAsync('tar', ['-czf', archivePath, ...archiveItems])

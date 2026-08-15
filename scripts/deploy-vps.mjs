@@ -4,6 +4,7 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 
 import { buildRemoteScript, shellQuote } from './lib/deploy-remote-script.mjs'
+import { archiveItems, assertNoUploadsInBuild } from './lib/release-contents.mjs'
 import { createTransport } from './lib/ssh-transport.mjs'
 
 const execFileAsync = promisify(execFile)
@@ -72,17 +73,10 @@ if (dryRun) {
   process.exit(0)
 }
 
+await assertNoUploadsInBuild(process.cwd())
 await mkdir(path.dirname(archivePath), { recursive: true })
 await rm(archivePath, { force: true })
-await execFileAsync('tar', [
-  '-czf',
-  archivePath,
-  'dist',
-  'server',
-  'scripts',
-  'package.json',
-  'package-lock.json',
-])
+await execFileAsync('tar', ['-czf', archivePath, ...archiveItems])
 const archive = await stat(archivePath)
 console.log(`Packaged ${archivePath} (${(archive.size / 1024 / 1024).toFixed(2)} MB)`)
 
