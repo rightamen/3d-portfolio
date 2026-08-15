@@ -267,9 +267,11 @@ CSP 这件事能做完，就是因为 playwright 回来了。
 
 - **不装 MCP 也能干 VPS 的活。** `mrright-ops` 本质就是 `ssh -o BatchMode=yes root@147.79.20.232`，
   本机 SSH 密钥可直连，Bash 里直接用即可。
-- **本机 `grep` 是个 shell function**（Claude Code 装的，转发到 claude 二进制），而那个
-  native 二进制没装好，所以直接跑 `grep` 会报 "claude native binary not installed"。
-  用 `/usr/bin/grep` 或 `command grep` 绕过。
+- **本机 `grep` 和 `find` 都是 shell function**（Claude Code 装的，转发到 claude 二进制），
+  而那个 native 二进制没装好，所以直接跑会报 "claude native binary not installed"。
+  用 `command grep` / `command find`（或 `/usr/bin/...`）绕过。
+  ⚠️ 它**不是报错就完事** —— 管道里那一段会静默地变成空输出，
+  `command find ... | wc -l` 写成 `find ... | wc -l` 就会得到 0，看着像「干净」。
 - **本机有 `http_proxy=http://172.29.176.1:7897`**（WSL 指向 Windows 宿主，
   `https_proxy` 和大写同名变量都有），curl 默认遵守它，**连 localhost 也走代理**。
   ⚠️ 第十四轮实测的后果比「502」严重得多：**请求被转发到了线上 mrright.blog 并返回真实响应** ——
