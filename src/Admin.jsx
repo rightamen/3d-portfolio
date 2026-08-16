@@ -27,6 +27,7 @@ import {
   getAdminVisitorContent,
   getAdminVisitors,
   moderateAdminVisitorProfile,
+  updateAdminCommentStatus,
   updateAdminDownloadRequest,
   updateAdminCommunityUpload,
   updateAdminProject,
@@ -170,6 +171,12 @@ const searchInItem = (item, query) =>
   JSON.stringify(item)
     .toLowerCase()
     .includes(query.toLowerCase())
+
+// Published is the only state a visitor can see. Everything else -- pending
+// (author's email is unverified) and spam (caught by the heuristic) -- is
+// waiting for someone to say yes or no.
+const needsCommentReview = (comment) =>
+  Boolean(comment?.status) && comment.status !== 'published'
 
 const getTranslationState = (project, suffix) => {
   // English is the unsuffixed field, not `titleEn`. pickLocalized() reads
@@ -1134,6 +1141,22 @@ const Admin = () => {
     }
   }
 
+  // The server has published / pending / spam and has had all three for as long
+  // as comments have existed: an unverified account's comment lands in pending,
+  // and the spam heuristic files its verdicts under spam. Neither is visible on
+  // the site. Until now this page could only delete them, so the dashboard's
+  // "N comments awaiting moderation" pointed at a list with no way to let any
+  // of them through -- a false positive was effectively a silent deletion.
+  const updateCommentStatus = async (id, nextStatus) => {
+    setActionMessage('')
+    try {
+      await updateAdminCommentStatus(token, id, nextStatus)
+      await loadAdminData(token)
+    } catch (error) {
+      setActionMessage(error.message || 'Could not update this comment.')
+    }
+  }
+
   const updateVisitorAccess = async (id, accessLevel) => {
     setVisitorActionStatus('working')
     try {
@@ -1490,9 +1513,16 @@ const Admin = () => {
     (project) =>
       searchInItem(project, searchQuery) && matchesTranslationFilter(project, translationFilter),
   )
-  const visibleComments = data.comments.filter((comment) =>
-    searchInItem(comment, searchQuery),
-  )
+  // Anything not published is waiting on a decision, so it goes first. The
+  // dashboard's "N comments awaiting moderation" links straight here, and the
+  // three that need a look were scattered through everything ever posted.
+  const visibleComments = data.comments
+    .filter((comment) => searchInItem(comment, searchQuery))
+    .sort(
+      (left, right) =>
+        Number(needsCommentReview(right)) - Number(needsCommentReview(left)),
+    )
+  const pendingCommentCount = visibleComments.filter(needsCommentReview).length
   const visibleCommunityUploads = data.communityUploads.filter((upload) =>
     searchInItem(upload, searchQuery),
   )
@@ -2605,13 +2635,24 @@ const Admin = () => {
           <section className="admin-section">
             <div className="admin-section-header">
               <h2>Comments</h2>
-              <span>{visibleComments.length}</span>
+              <span>
+                {pendingCommentCount
+                  ? `${pendingCommentCount} waiting · ${visibleComments.length}`
+                  : visibleComments.length}
+              </span>
             </div>
             <div className="admin-table">
               {visibleComments.map((comment) => (
                 <article key={comment.id} className="admin-row">
                   <div>
-                    <strong>{comment.author}</strong>
+                    <div className="admin-row-title">
+                      <strong>{comment.author}</strong>
+                      {needsCommentReview(comment) && (
+                        <span className={`admin-state-chip admin-state-${comment.status}`}>
+                          {comment.status === 'spam' ? 'Spam' : 'Awaiting review'}
+                        </span>
+                      )}
+                    </div>
                     <span>{comment.projectSlug}</span>
                     <p>{comment.message}</p>
                     {comment.user && (
@@ -2622,6 +2663,24 @@ const Admin = () => {
                     <small>{formatDate(comment.createdAt)}</small>
                   </div>
                   <div className="admin-actions">
+                    {comment.status !== 'published' && (
+                      <button
+                        type="button"
+                        className="secondary-action"
+                        onClick={() => updateCommentStatus(comment.id, 'published')}
+                      >
+                        Publish
+                      </button>
+                    )}
+                    {comment.status !== 'spam' && (
+                      <button
+                        type="button"
+                        className="secondary-action"
+                        onClick={() => updateCommentStatus(comment.id, 'spam')}
+                      >
+                        Mark Spam
+                      </button>
+                    )}
                     <button
                       type="button"
                       className="danger-action"

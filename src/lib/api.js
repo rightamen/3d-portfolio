@@ -636,6 +636,13 @@ export const uploadAdminAsset = (token, file, onProgress) => {
   })
 }
 
+export const updateAdminCommentStatus = (token, id, status) =>
+  adminRequest(`/api/admin/comments/${id}`, token, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status }),
+  })
+
 export const deleteAdminComment = (token, id) =>
   adminRequest(`/api/admin/comments/${id}`, token, {
     method: 'DELETE',
