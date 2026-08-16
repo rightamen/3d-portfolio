@@ -1,24 +1,69 @@
 # mrright.blog 项目进度记录
 
-## 下次从这里继续（截至 2026-08-15 第十七轮收工）
+## 下次从这里继续（截至 2026-08-16 第十八轮收工）
 
-**线上运行 `ba8e81a`（2026-08-15 03:47 UTC 部署，已逐项验证）。
-`origin/main` 与本地同步。第十二至十七轮都无数据库变更。
-回滚到第十七轮之前：`/opt/mrright-portfolio.backup-20260815-034745`。**
+**线上运行 `2536931`（2026-08-16 04:56 UTC 部署，已逐项验证）。
+`origin/main` 与本地同步。第十二至十八轮都无数据库变更。
+回滚到第十八轮之前：`/opt/mrright-portfolio.backup-20260816-045603`。**
 
-**线上内容健康：0 critical / 0 warning / 0 note。**
+**线上内容健康：第十七轮测得 0 critical / 0 warning / 0 note，
+第十八轮没有重测**（那个接口要管理员会话，本机没有 `right` 的密码），
+本轮也没有动检查器或任何资源文件。
 
 ⚠️ **VPS 只保留最新 3 个应用备份**，脚本每次部署自动清理旧的。
-所以下面各轮里写的历史回滚路径**大多已经不存在了**。截至第十七轮收工，
+所以下面各轮里写的历史回滚路径**大多已经不存在了**。截至第十八轮收工，
 `/opt` 上实际存在的是：
 
 ```text
-/opt/mrright-portfolio.backup-20260815-034745   第十七轮之前 ← 要回滚就用这个
+/opt/mrright-portfolio.backup-20260816-045603   第十八轮之前 ← 要回滚就用这个
+/opt/mrright-portfolio.backup-20260815-034745   第十七轮之前
 /opt/mrright-portfolio.backup-20260815-031633   第十六轮之前
-/opt/mrright-portfolio.backup-20260814-162845   第十五轮部署
 ```
 
 要回滚先 `ls -dt /opt/mrright-portfolio.backup-*` 确认实际有什么，别照抄旧记录。
+
+第十八轮是**把后台十一个分区在 440px 下逐个走了一遍**（原「下一轮建议」第 3b 条），
+顺手结清了「待你决策」里那条角标对齐。详见下面「2026-08-16（第十八轮）」。
+
+⚠️ **最丑的那块不是没写样式，是样式被自己压掉了。**
+`.admin-row span { display:block }` 权重 (0,1,1) 压过 `.visitor-row-status` (0,1,0)，
+所以 Members 那条 `flex-direction:row` 整条规则是**死的** ——
+两个状态胶囊各撑满 382px、各占 40px 一行，六个人光说「verified / public」
+就吃掉约 500px。**以后在 `.admin-row` 里面写布局，选择器前面必须带 `.admin-row`**，
+否则会被那条 base 规则吃掉（`.admin-row-title span` 早就为此写过一次）。
+
+⚠️ **公开主页有个存在已久的遮挡 bug，本轮一并修了**：
+`.public-profile-head` 用负 margin 抬进横幅里，而横幅是 `position:relative`
+（要放 glow），身份区是静态流内容 —— 定位元素画在上面，**头像顶部和
+名字的第一行被横幅盖住**。名字一换行就中招，440px 下大多数全名都会换行。
+线上目前没有任何用户设过 handle，所以**这个修复只在本机验证过**，
+等真有人有公开主页时回去看一眼。
+
+⚠️ **评论审核之前是个死胡同**（不是排版问题，是本轮顺带发现的真 bug）：
+服务端一直有 published / pending / spam，未验证邮箱的评论进 pending、
+垃圾判定进 spam，两者在站上都不可见；`PATCH /api/admin/comments/:id`
+一直能放行、还有契约测试 —— **但前端没有任何调用方**，
+Comments 列表既不显示状态、也只有 Delete。于是仪表盘催你「N 条待审」、
+侧栏挂角标、按钮把你送过去，然后就没有然后了。误判只能删，
+对作者而言和不处理是一个结果。现在**列表显示状态、待办排在最前、
+Publish / Mark Spam 就在 Delete 旁边**。
+
+⚠️ **`tests/e2e/admin-visitors.spec.js` 那两条一直是红的，原因是断言写错了**：
+泄漏检查用 `/password/i` 匹配**键名**，而访客序列化里永远带
+`passwordChangedAt`（一个时间戳）。也就是说它对着**任何**在跑的部署都会红，
+只是因为没人本地跑、默认又打线上，所以没人发现。已改成只放行这两个键名。
+
+**第十八轮收工时的状态（2026-08-16 05:0x UTC）：**
+
+- 工作树干净，`origin/main` 与本地同 `2536931`（文档提交见下）
+- 线上 `dist/uploads` 仍为 0 个文件
+- 本机 scratch 实例（端口 4199）**已停**；库 `mrright_local_dev`
+  和角色 `mrright_local` 留着，**里面现在有一套种子数据**
+  （6 个访客 / 8 条项目评论含待审与垃圾 / 5 个帖子 / 3 个社区上传 /
+  4 条留言 / 5 条下载申请 / 点赞和下载事件），下次做后台 UI 直接起来就有东西看
+- ⚠️ `mrright_local` 的口令**每次重置一个新的**（只在本机 scratch 库上），
+  下次要用就照「环境事实」里那条 `ALTER ROLE` 再生成一个，别去找旧的
+- 「待你决策」清单**已清空**
 
 第十七轮修的是 `/admin` 本身的窄屏排版，和一串吓人的 401。
 
@@ -103,11 +148,11 @@
 第十二轮就是这么误触发的一次真实部署（结果无害：脚本本来就会备份 env、
 备份应用、健康检查、admin session 检查、清理旧备份）。
 
-### 收工时的未完项（截至第十七轮，按优先级重整）
+### 收工时的未完项（截至第十八轮）
 
 第十四、十五轮关掉了假 EXR 和社区上传无校验，第十六轮关掉了「测试文件漏进生产构建」，
-**第十七轮用户答复「已经绑定过认证器了」，那条从第十一轮挂到现在的也关掉了**。
-各自的经过写在对应轮次那一节。现在还开着的是：
+第十七轮关掉了认证器绑定。**第十八轮没有关掉下面任何一条**（它做的是后台窄屏
+和评论审核，都不在这张单子上），但**新增了一条第 6 条**。现在开着的是：
 
 1. **模型「能加载」和「能渲染」仍然是两件事。**
    Content Health 现在能确认文件可服务、是真 GLB、所需扩展有解码器，
@@ -129,6 +174,11 @@
 
 5. `H:\HDRIs\` 里还有三张 4K HDRI（photostudio / citrus orchard / qwantani dusk）。
    想做「按项目切换环境光」时可以复用第十四轮那套转换流程，**先降到 2K 再转**。
+
+6. **公开主页那个遮挡修复只在本机验过**（第十八轮）。
+   线上没有任何用户设过 handle，`/u/<handle>` 拿不到真实页面，
+   所以「名字换行不再被横幅盖住」目前只有本机种子数据作证。
+   等第一个用户设了 handle，去 440px 下看一眼那个页头。
 
 第十一轮：**在 `/admin` 里做了自助重新绑定认证器的页面，带真正的二维码。**
 起因是「我为什么从来没见过什么二维码」—— 查下来是这个项目里**根本就没有过二维码**：
@@ -227,12 +277,14 @@ CSP 这件事能做完，就是因为 playwright 回来了。
 
 ### 待你决策的（我没有权限或不该替你决定）
 
-**一条，很小：`/admin` 面板标题右边那个计数角标（`.admin-panel-head` 里的 `<span>`）
-在窄屏下位置发飘** —— 标题与说明文字换行后，它被 `justify-between` 顶到右上角，
-和标题不在一条基线上（第十七轮在 Members 分区 440px 下看到）。
-没有顺手改，是因为 `.admin-panel-head` 是**全站后台共用**的容器，
-每个分区都在用它，改对齐会波及所有分区，得整体看过一遍才动。
-说一声就做，或者下次做后台 UI 时一并处理。
+**目前是空的。**
+
+- ~~计数角标在窄屏下位置发飘~~ —— **2026-08-16 第十八轮做掉了。**
+  实际肇事的类是 `.admin-section-header`（不是记录里写的 `.admin-panel-head`），
+  它用的是 `items-center`，于是角标被垂直居中到「标题 + 说明文字」整块的中间，
+  跟谁都不齐。改成 `items-baseline` —— flex item 的基线取自它的第一行，
+  所以标题后面还有几行都不影响。当时之所以挂起是因为这个容器全站后台共用，
+  第十八轮正好整体走了一遍 440px 和 1280px，改前改后都看过。
 
 下面是历史上已结清的四项，保留作为记录。
 
@@ -280,15 +332,20 @@ CSP 这件事能做完，就是因为 playwright 回来了。
    允许的扩展名本来就含 `.obj` / `.fbx` / `.zip` —— 所以「渲染不了就拒收」会拒掉能用的文件。
    实际做的是查「行还在、文件没了」。详见第十五轮那一节。
 3. 拆 `Admin.jsx` 与 `postgresStores.js`。
-   ⚠️ 行数已经不是 2492/3338 了：第十七轮收工时
-   `Admin.jsx` **2904 行**、`postgresStores.js` **4095 行**。
+   ⚠️ 行数已经不是 2492/3338 了：第十八轮收工时
+   `Admin.jsx` **2963 行**、`postgresStores.js` **4095 行**。
    第十二轮起 `/admin` 的新代码都放进 `src/components/admin/`（7 个文件），
    拆分可以顺着这条线继续，把各 section 的 JSX 也搬出去。
-   **现在拆比以前安全**：本机能跑起真实 `/admin` 了（见「环境事实」），
-   拆完可以逐个分区点一遍再提交。
-3b. **后台窄屏排版整体再走一遍。** 第十七轮只修了仪表盘密度、
-   Members 那块空面板，和统计卡的堆叠方式；其余分区只验证了「不溢出」，
-   没有逐个从密度角度看过。做这件事时顺手把上面「待你决策」里那个角标对齐一起处理。
+   **现在拆比以前安全**：本机能跑起真实 `/admin`、库里还有一套种子数据
+   （见「环境事实」），拆完可以逐个分区点一遍再提交。
+3b. ~~**后台窄屏排版整体再走一遍**~~ —— **2026-08-16 第十八轮做完了**，
+   十一个分区在 440px 下逐个看过，详见下面那一节。
+   剩下**没做**的两处小的，都属于「知道但故意没动」：
+   - Downloads 里已经是 approved 的行仍然显示 Approve 按钮（点了是空操作），
+     Community 的上传行同理。要改就是按当前状态禁用对应按钮。
+   - `.visitor-stat-line` 那条规则也是死的（`.admin-row span` 的 text-xs
+     和颜色压过它）。没修是因为它现在的样子跟旁边几行元信息是一致的，
+     「修好」反而会让它比邻居更大更亮。哪天统一改后台字号时再一起处理。
 4. react-router（现在靠 `window.location.pathname` 判断，页面跳转全是整页刷新，3D 场景每次重建）
 5. 前端单元测试（目前只有 API 契约测试和 Playwright）
 6. SSR / 预渲染 SEO（社区帖子和公开主页搜索引擎抓不到）
@@ -343,8 +400,24 @@ CSP 这件事能做完，就是因为 playwright 回来了。
   它服务的是 `dist/`，所以**改完前端要重新 `npm run build` 才看得到**。
   进后台不需要 `right` 的密码：用那个假的本地 `ADMIN_TOKEN` 换一个会话塞进
   `localStorage['mrright-admin-token']` 即可（`/api/admin/session`）。
+  ⚠️ 换会话要**把 token 放在 `Authorization: Bearer` 头里**，
+  放 body 里会被当成没带、直接 401。
   ⚠️ 这个库是**本机 scratch**，与 VPS 上的 `mrright_portfolio` 毫无关系；
   用完可以留着，下次直接起。
+  - **角色的口令没有记在任何地方**（每轮临时生成、只用于这个 scratch 库）。
+    下次要用就直接重设一个：
+    `su postgres -c "psql -q -c \"ALTER ROLE mrright_local PASSWORD '<新生成的>'\""`
+  - **库里现在有一套种子数据**（第十八轮塞的，专门用来看后台密度）：
+    6 个访客（含一个未验证 + 被管理员停用公开资料的）、8 条项目评论
+    （4 published / 3 pending / 1 spam）、5 个社区帖子 + 6 条社区评论、
+    3 个社区上传（approved / pending / rejected，文件都不存在，
+    所以 Content Health 会如实报 broken 和 degraded —— 那是对的，不是 bug）、
+    4 条留言、5 条下载申请、点赞和下载事件若干。
+    名字里故意混了长德语姓、西班牙语双姓、中文和单字名，用来撑换行。
+  - 想造一个能登录的访客：`POST /api/auth/register`，
+    然后直接在库里 `UPDATE visitor_users SET email_verified_at=now()`
+    （本机没有 SMTP，验证码发不出来），再 `POST /api/auth/login`
+    拿 token 塞进 `localStorage['mrright-visitor-token']`。
 - **服务端不设 `DATABASE_URL` 也能起**（`server/index.js:108` 是三元回落到内存 store），
   想在本地跑真实构建验证前端行为时很有用，社区/后台会降级但页面照常渲染。
 - **`npm run deploy:vps` 现在在这台机器上能跑**（2026-08-13 第八轮起，默认走 SSH 密钥认证，
@@ -410,6 +483,124 @@ CSP 这件事能做完，就是因为 playwright 回来了。
 - ~~演练遗留的临时库~~ —— 用户已确认，`mrright_restore_drill` 已 `dropdb`（2026-08-11）。
   删除后复查：`mrright_portfolio` 仍在、17 张表、`visitor_users=1`/`project_comments=2`、
   `/api/health` 200，生产库未受影响。
+
+## 2026-08-16（第十八轮）：后台十一个分区逐个走 440px，外加一个死胡同的审核流程
+
+**日期**：2026-08-16
+**状态**：**已部署并逐项验证**。无数据库变更。
+
+### 起因
+
+第十七轮留下的建议第 3b 条：仪表盘的密度修了，其余分区只验过「不溢出」，
+没有从密度角度逐个看。这轮把十一个分区（Dashboard / Projects / Content Health /
+Community / Comments / Downloads / Messages / Members / Likes / Security / System）
+在 440px 下逐个看过，改前改后都截了图。
+
+### 方法：先造数据，再看
+
+**空库看不出密度问题** —— 第十七轮那个 scratch 库是空的，
+所有列表都是空面板。这轮先往库里塞了一套种子数据（内容见「环境事实」），
+名字故意混了长德语姓、西班牙语双姓、中文和单字名，用来撑换行。
+真实的行长出来以后，问题一眼就能看见。
+
+### 改了什么
+
+1. **Members：状态胶囊各占一整行**（最丑的一处）。
+   `.admin-row span { display:block }` 权重 (0,1,1) 压过 `.visitor-row-status` (0,1,0)，
+   所以那条 `display:flex` + 窄屏 `flex-direction:row` 的规则**整条是死的**：
+   两个胶囊各撑满 382px、各高 40px，六个人光说「verified / public」吃掉约 500px。
+   规则前面补上 `.admin-row` 让它赢回来，胶囊按「行内状态标」重新定尺寸
+   （`min-h-10 px-4` 是给 Downloads 那排审批按钮设计的，不是给它的）。
+   **整页高度 2499px → 2084px。**
+   ⚠️ **这是本轮最该记住的一条：在 `.admin-row` 里写布局，选择器必须带 `.admin-row`。**
+   `.admin-row-title span` 早就为同一个原因写过一次，只是没人把这条经验写下来。
+
+2. **Members 的四个筛选下拉**在 ≤640px 是一列，加上搜索框和按钮 = 六行界面
+   挡在数据前面。改成**两两一排**，搜索框和 Search 按钮保持整行。
+
+3. **Content Health 的 findings**：`grid-cols-[auto_minmax(0,1fr)]` 里那个 `auto` 轨道
+   和下一行的「Open community」按钮共用，所以严重度标签那一列被按钮撑到 128px，
+   **正文只剩 382px 里的 230px**，旁边一大片空白。手机改单列，`sm` 起恢复三列。
+
+4. **System 的 Runtime / Request chain**：八对「标签 + 值」一对一行，
+   值是「8m」「24 ms」这种。改成**手机两列**（16 行 → 8 行）。
+
+5. **`.account-stat-grid` 同样的毛病** —— 四张只装一个数字的卡片排成一列，
+   出现在 `/account` 和每个公开主页上。改成手机两列。
+
+6. **角标对齐**（原「待你决策」那条）：`.admin-section-header` 用 `items-center`，
+   于是计数角标被垂直居中到「标题 + 说明文字」整块的中间。改 `items-baseline`。
+   这个容器 `/admin`、`/account`、`/u/<handle>` 都在用，所以 440px 和 1280px
+   两个宽度都过了一遍。
+
+7. **公开主页的遮挡 bug**（不是密度问题，是撞见的）：
+   `.public-profile-head` 用负 margin 抬进横幅，横幅是 `position:relative`（放 glow），
+   身份区是静态流内容 —— **定位元素画在上面**，头像顶部和名字第一行被盖住。
+   440px 下大多数全名都会换行，也就是大多数人的名字第一行是看不见的。
+   加 `relative z-10`。⚠️ **线上无人设过 handle，此项只在本机验过**（见未完项第 6 条）。
+
+8. **评论审核之前是死胡同**（真 bug，不是排版）：
+   服务端一直有 published / pending / spam，`PATCH /api/admin/comments/:id`
+   一直能放行、契约测试第 63 条就在测它 —— 但 `src/lib/api.js` 里**没有对应的调用方**，
+   Comments 列表既不显示状态、也只有 Delete。仪表盘催「N 条待审」、侧栏挂角标、
+   按钮把人送过去，然后没有然后了。**垃圾判定误伤只能删，对作者而言等于没处理。**
+   现在：列表显示状态标、待办排最前、Publish / Mark Spam 在 Delete 旁边。
+   本机实测：把一条 pending 放行后，它出现在 `GET /api/projects/:slug/interactions` 里。
+
+9. **修了两条一直红着的 e2e**：泄漏检查用 `/password/i` 匹配键名，
+   而访客序列化永远带 `passwordChangedAt`（时间戳）。它对**任何**在跑的部署都会红，
+   只是没人本地跑、默认又打线上，所以没被发现。
+
+### 修改文件
+
+- `src/index.css`（1–7）
+- `src/Admin.jsx`、`src/lib/api.js`（8）
+- `tests/e2e/admin-visitors.spec.js`（9）
+
+### commit
+
+- `3981b8f` ui: a narrow screen was paying a whole row for a single word
+- `ceec805` admin: pending and spam comments could be deleted, never approved
+- `2536931` tests: passwordChangedAt is a timestamp, not a leaked credential
+
+### 验证结果
+
+- `npm run build`：通过
+- `npm run lint`：通过
+- `git diff --check`：通过
+- `npm run test:openapi`：通过
+- `npm run test:content-health`：通过
+- `npm run test:api:db`：**68 通过**（跑完 `public/uploads` 文件数不变）
+- 本机 e2e（`E2E_BASE_URL=http://127.0.0.1:4199`）：**12 通过 / 2 跳过**
+  （修之前是 10 通过 / 2 失败 / 2 跳过）
+- GitHub push：成功（`origin/main` = `2536931`）
+- VPS 部署：成功，服务重启成功，健康检查一次通过
+- 部署脚本自带的 admin summary 检查：通过（短会话，用完即撤）
+- 线上 `/` `/community` `/admin` `/login?mode=login` `/account` `/api/health`：均 200
+- 线上 `/api/account/profile` `/downloads` `/comments`：未登录 401，正常
+- 线上 `/api/users/not-exist-test-handle`：404，正常
+- 线上 production-smoke：**6 通过 / 1 跳过**
+- 线上 CSS 已带新规则（`.admin-row .visitor-row-status` / `admin-state-spam` /
+  `public-profile-head{...position:relative}` 都在 `/assets/index-B18RXnEH.css` 里）
+- 线上 `dist/assets/Admin-BiTslGWC.js` 含 `Mark Spam`，即新后台确实上了线
+- 线上 `dist/uploads`：0 个文件（第十六轮那道闸仍然有效）
+- 服务日志近 10 分钟：0 条 error
+
+**备份路径**：`/opt/mrright-portfolio.backup-20260816-045603`
+（env 备份 `/etc/mrright-portfolio.env.backup-20260816-045603`；
+脚本按保留策略清掉了 `...-20260814-162845`）
+
+### 这一轮学到的
+
+- **空数据看不出密度问题。** 第十七轮在空库上看过同样这些分区，
+  只发现了「Members 是块空面板」；数据一填进去，真正难看的地方立刻显形。
+  以后要评审后台 UI，**先造数据**。
+- **「样式没生效」不一定是没写，可能是被自己的 base 规则压掉了。**
+  本轮有三条这样的死规则（`.visitor-row-main`、`.visitor-row-status`、
+  还有没修的 `.visitor-stat-line`），都是同一个 `.admin-row span` 造成的。
+  改这一片 CSS 之前，先想一下选择器权重。
+- **顺着一个 UI 问题往下看，能撞见功能问题。** 评论审核那条死胡同，
+  是因为看 Comments 分区排版时发现「三条待审在列表里根本认不出来」才挖出来的。
 
 ## 2026-08-15（第十七轮）：`/admin` 的窄屏排版，以及那 11 条 401
 
