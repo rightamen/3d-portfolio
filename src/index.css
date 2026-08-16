@@ -378,8 +378,11 @@ html {
   @apply text-sm leading-relaxed text-neutral-400;
 }
 
+/* Two up on a phone, for the reason the admin stat tiles are: a label and a
+   single-digit count do not need 406px, and four of them in a column is four
+   screens' worth of scrolling past mostly empty cards. */
 .account-stat-grid {
-  @apply grid gap-3 sm:grid-cols-2 lg:grid-cols-3;
+  @apply grid grid-cols-2 gap-3 lg:grid-cols-3;
 }
 
 .account-profile-card {
@@ -506,8 +509,13 @@ html {
     linear-gradient(90deg, rgba(0, 0, 0, 0.24), transparent);
 }
 
+/* relative is load-bearing, not decoration. The negative margin lifts this row
+   into the banner, and the banner is positioned (it holds the glow overlay), so
+   a static row paints underneath it: the top of the avatar and -- once a
+   display name wraps to two lines, which most full names do at 440px -- the
+   whole first line of the name disappeared behind it. */
 .public-profile-head {
-  @apply flex flex-wrap items-end gap-5 px-5 pb-6 md:px-8;
+  @apply relative z-10 flex flex-wrap items-end gap-5 px-5 pb-6 md:px-8;
   margin-top: -2.5rem;
 }
 
@@ -1476,8 +1484,13 @@ html {
   @apply grid gap-3;
 }
 
+/* items-baseline, not items-center: several of these headers put a heading and
+   a line of explanation in the left block, and centring hung the count badge
+   halfway down that block, level with nothing. A flex item's baseline is its
+   first line, so the badge now sits on the heading's baseline no matter how
+   many lines follow it. */
 .admin-section-header {
-  @apply flex items-center justify-between border-b border-white/10 pb-2;
+  @apply flex items-baseline justify-between gap-3 border-b border-white/10 pb-2;
 }
 
 .admin-section-header h2 {
@@ -1625,12 +1638,27 @@ html {
   object-fit: cover;
 }
 
-.visitor-row-main,
-.visitor-row-status {
+/* Both selectors are written with `.admin-row` in front of them on purpose.
+   The plain `.visitor-row-main` / `.visitor-row-status` versions lost to
+   `.admin-row span` (a class plus an element beats a class), so the whole
+   declaration below was dead: the status column rendered as display:block and
+   its two pills came out as full-width bars stacked one per line, 40px tall
+   each to hold the single word "verified". Adding the ancestor restores what
+   this rule always meant to say without loosening the base rule underneath. */
+.admin-row .visitor-row-main,
+.admin-row .visitor-row-status {
   display: flex;
   min-width: 0;
   flex-direction: column;
   gap: 5px;
+}
+
+/* Same story: the children are spans, so they inherit the mt-1 from
+   `.admin-row span`. In a flex column that margin stacks on top of the gap and
+   the rows drift apart. The gap is the spacing here. */
+.admin-row .visitor-row-main > *,
+.admin-row .visitor-row-status > * {
+  margin-top: 0;
 }
 
 .visitor-row-main > span {
@@ -1642,8 +1670,15 @@ html {
   font-size: 0.78rem;
 }
 
-.visitor-row-status {
+.admin-row .visitor-row-status {
   align-items: flex-end;
+}
+
+/* A row-level state chip, not a call to action: min-h-10 and px-4 are sized for
+   the approve/reject bar in Downloads, and six accounts' worth of them turned
+   the member list into mostly padding. */
+.admin-row .visitor-row-status .status-pill {
+  @apply inline-flex min-h-0 px-2.5 py-1 text-[0.65rem];
 }
 
 .visitor-detail-panel {
@@ -1764,17 +1799,27 @@ html {
 }
 
 @media (max-width: 640px) {
+  /* The four selects pair up; the free-text field and the Search button keep
+     the full width because they are the two ends of the sentence. One column
+     for all six spent five rows of a phone screen on filters nobody had asked
+     for yet, before a single account appeared. */
   .visitor-filter-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .visitor-filter-grid > :first-child,
+  .visitor-filter-grid > :last-child {
+    grid-column: 1 / -1;
   }
 
   .visitor-row {
     grid-template-columns: 42px minmax(0, 1fr);
   }
 
-  .visitor-row-status {
+  .admin-row .visitor-row-status {
     grid-column: 1 / -1;
     flex-direction: row;
+    flex-wrap: wrap;
     align-items: center;
   }
 }
@@ -3279,8 +3324,11 @@ body {
 
 /* --- Fact grid (system panel) --- */
 
+/* Two up on a phone, same reasoning as the stat tiles: these pairs hold a label
+   and something like "8m" or "24 ms", and one per row spent a whole 440px line
+   on each of them -- sixteen lines to say eight things. */
 .admin-fact-grid {
-  @apply grid gap-x-6 gap-y-3 sm:grid-cols-2 xl:grid-cols-4;
+  @apply grid grid-cols-2 gap-x-6 gap-y-3 xl:grid-cols-4;
 }
 
 .admin-fact-grid dt {
@@ -3384,8 +3432,13 @@ body {
   @apply grid gap-2;
 }
 
+/* One column on a phone. The two-column version put the severity tag in an
+   `auto` track -- and that track is shared with the "Open community" button on
+   the row below it, so the tag column was as wide as the button (128px) and the
+   finding text, the part you actually read, was squeezed into 230px of a 382px
+   row with a blank column beside it. */
 .admin-findings li {
-  @apply grid grid-cols-[auto_minmax(0,1fr)] items-start gap-3 rounded-lg border border-white/8 bg-white/[0.02] px-3 py-2.5 sm:grid-cols-[auto_minmax(0,1fr)_auto];
+  @apply grid grid-cols-1 items-start gap-2 rounded-lg border border-white/8 bg-white/[0.02] px-3 py-2.5 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:gap-3;
 }
 
 .admin-findings p {
@@ -3400,9 +3453,11 @@ body {
   @apply mt-1 block text-xs leading-relaxed text-neutral-500;
 }
 
-/* The word, not just the colour. */
+/* The word, not just the colour. justify-self-start keeps it a chip once the
+   row is a single column -- a stretched grid item would paint the severity
+   colour across the full width and read as a banner. */
 .admin-finding-tag {
-  @apply mt-0.5 rounded-full px-2 py-0.5 text-[0.65rem] font-bold uppercase tracking-wider;
+  @apply mt-0.5 justify-self-start rounded-full px-2 py-0.5 text-[0.65rem] font-bold uppercase tracking-wider;
 }
 
 .admin-finding-critical {
@@ -3469,6 +3524,22 @@ body {
 
 .admin-posture-warn .admin-icon {
   @apply text-sand;
+}
+
+/* Moderation state, written the same way as the health chips below it and for
+   the same reason: the plain `.admin-row-title span` rule paints every chip in
+   the project's category accent, which would render "Spam" in a friendly
+   aqua. */
+.admin-row .admin-row-title span.admin-state-chip {
+  @apply border-white/12 bg-white/8 text-neutral-300;
+}
+
+.admin-row .admin-row-title span.admin-state-pending {
+  @apply border-sand/40 bg-sand/15 text-sand;
+}
+
+.admin-row .admin-row-title span.admin-state-spam {
+  @apply border-coral/40 bg-coral/15 text-coral;
 }
 
 /* Severity beats the category accent on the per-project chip: `.admin-row-title
