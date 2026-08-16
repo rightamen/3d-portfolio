@@ -94,6 +94,14 @@ const visitor = {
 
 const emptyCollection = (key) => ({ [key]: [] })
 
+// `passwordChangedAt` is a timestamp, not a credential: the admin visitor
+// payload has carried it since named admin accounts landed, and matching it on
+// the substring "password" made these two tests fail against every deployment
+// that serves the field -- which is all of them, since the serializer always
+// emits the key. Naming the exceptions keeps the rule strict for everything
+// else, including any future `passwordHash`.
+const allowedTimestampKeys = new Set(['passwordChangedAt', 'password_changed_at'])
+
 const expectNoSensitiveFields = (value) => {
   const stack = [value]
   const sensitiveKeyPattern =
@@ -104,7 +112,9 @@ const expectNoSensitiveFields = (value) => {
     if (!current || typeof current !== 'object') continue
 
     for (const [key, item] of Object.entries(current)) {
-      expect(key, `Sensitive response field leaked: ${key}`).not.toMatch(sensitiveKeyPattern)
+      if (!allowedTimestampKeys.has(key)) {
+        expect(key, `Sensitive response field leaked: ${key}`).not.toMatch(sensitiveKeyPattern)
+      }
       if (item && typeof item === 'object') stack.push(item)
     }
   }
