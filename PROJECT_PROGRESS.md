@@ -1,14 +1,18 @@
 # mrright.blog 项目进度记录
 
-## 下次从这里继续（截至 2026-08-16 第十八轮收工）
+## 下次从这里继续（截至 2026-08-17 第十九轮收工）
 
-**线上运行 `2536931`（2026-08-16 04:56 UTC 部署，已逐项验证）。
-`origin/main` = `8322236`，比线上多的那一个提交**只有这份文档**，
-不需要为它再部署一次。第十二至十八轮都无数据库变更。
-回滚到第十八轮之前：`/opt/mrright-portfolio.backup-20260816-045603`。**
+**⚠️ 线上仍然运行 `2536931`（2026-08-16 部署）。第十九轮的四个 commit
+还在本机，没有 push，也没有部署。** `origin/main` = `bf42557`，
+本地 `main` 比它多 5 个（4 个代码 + 这份文档）。
+第十二至十九轮都无数据库变更。
+回滚到第十八轮之前：`/opt/mrright-portfolio.backup-20260816-045603`。
+
+**第十九轮全是重构**，运行时行为只有一处变化：Members 详情在窄屏下
+不再把整页撑宽（一行 CSS）。也就是说**部署它风险很低，但也不紧急**。
 
 **线上内容健康：第十七轮测得 0 critical / 0 warning / 0 note，
-第十八轮没有重测**（那个接口要管理员会话，本机没有 `right` 的密码），
+第十八、十九轮都没有重测**（那个接口要管理员会话，本机没有 `right` 的密码），
 本轮也没有动检查器或任何资源文件。
 
 ⚠️ **VPS 只保留最新 3 个应用备份**，脚本每次部署自动清理旧的。
@@ -22,6 +26,45 @@
 ```
 
 要回滚先 `ls -dt /opt/mrright-portfolio.backup-*` 确认实际有什么，别照抄旧记录。
+
+第十九轮做掉了「下一轮建议」的第 3 条：**拆 `Admin.jsx`（2963 → 1301）
+与 `postgresStores.js`（4095 → 40）**。详见下面「2026-08-17（第十九轮）」。
+
+⚠️ **窄屏收成单列时写 `minmax(0, 1fr)`，不要写 `1fr`。**
+`1fr` 是 `minmax(auto, 1fr)`，轨道不肯低于内容的 min-content ——
+`.visitor-management-layout` 就是这么在 440px 下被六个详情标签页（并排 646px）
+顶到 684px 的，整页横向滚动，而标签条上那句 `overflow-x: auto` 从没机会生效。
+**第十八轮专门走过 440px 却没发现，因为那一轮没点开过成员详情。**
+
+⚠️ **拆 store 之后，跨 store 依赖只剩一条**：`adminStore` 收一个 `projectStore`
+（overview 要数目录）。三个 store 会调用自己，都保留了具名绑定。
+**以后新增 store 间调用，从 `postgresStores.js` 的工厂参数里传，
+别在一个 store 文件里 import 另一个 store。**
+
+⚠️ **`npm run verify:visitor-studio` 是红的，而且不是本轮弄红的。**
+它要求 `AccountPage.jsx` 里出现 `accountStudioUploadNow`，而那个 i18n key
+页面里根本没有引用。拆分前后都红（已用 `git stash` 对照确认）。
+详见第十九轮那节的「撞见但没修」。
+
+⚠️ **`scripts/verify-visitor-studio.mjs` 全文是 CRLF**，往里加任何一行
+`git diff --check` 都会报 trailing whitespace。不是新问题，别当回归修。
+
+**第十九轮收工时的状态（2026-08-17，当天工作到此为止）：**
+
+- 工作树干净，本地 `main` 领先 `origin/main` 5 个提交，**尚未 push**
+- 本机 `npm run dev`（5173）用完已停；**本轮没有起过带数据库的实例**
+- ⚠️ **本轮没能重设 `mrright_local` 的口令**（`ALTER ROLE` 那条命令被
+  权限策略挡下了），所以那个 scratch 库这轮**一次也没用上**。
+  前端验证改走了另一条路：Playwright 拦 `**/api/admin/**` 喂 fixture 打 `npm run dev`，
+  十一个分区 × 两个宽度全走一遍。**这条路不需要数据库，也不需要动任何角色口令**，
+  下次做后台 UI 可以优先考虑它。
+- 库 `mrright_local_dev` 和第十八轮那套种子数据都还在，只是口令没人知道
+- 「待你决策」清单**仍然是空的**
+- 线上 `dist/uploads` 状态未复查（本轮没碰构建打包，第十六轮那道闸未动）
+
+**下次开工第一件事**：读这一节，然后决定要不要把第十九轮 push + 部署。
+之后看「下一轮我建议先做的」—— 第 3 条已经划掉，现在排最前的是
+**第 4 条 react-router**。
 
 第十八轮是**把后台十一个分区在 440px 下逐个走了一遍**（原「下一轮建议」第 3b 条），
 顺手结清了「待你决策」里那条角标对齐。详见下面「2026-08-16（第十八轮）」。
@@ -67,12 +110,6 @@ Publish / Mark Spam 就在 Delete 旁边**。
 - ⚠️ 种子数据里那三个社区上传**文件是不存在的**，所以本机 Content Health
   会报 1 broken / 1 degraded。**那是对的**，别当成回归去修。
 - 「待你决策」清单**已清空**
-
-**下次开工第一件事**：读这一节，然后看「下一轮我建议先做的」。
-那张单子上现在排最前的是**第 3 条：拆 `Admin.jsx`（2963 行）与
-`postgresStores.js`（4095 行）**；3b 已经在本轮做完。
-拆分现在比以前安全 —— 本机能起真实 `/admin`、库里有数据，
-可以拆一个分区点一个分区。
 
 第十七轮修的是 `/admin` 本身的窄屏排版，和一串吓人的 401。
 
@@ -340,13 +377,12 @@ CSP 这件事能做完，就是因为 playwright 回来了。
    (b) 社区上传**从来不进预览器**，四个使用点全是 `<a href>` 下载链接，
    允许的扩展名本来就含 `.obj` / `.fbx` / `.zip` —— 所以「渲染不了就拒收」会拒掉能用的文件。
    实际做的是查「行还在、文件没了」。详见第十五轮那一节。
-3. 拆 `Admin.jsx` 与 `postgresStores.js`。
-   ⚠️ 行数已经不是 2492/3338 了：第十八轮收工时
-   `Admin.jsx` **2963 行**、`postgresStores.js` **4095 行**。
-   第十二轮起 `/admin` 的新代码都放进 `src/components/admin/`（7 个文件），
-   拆分可以顺着这条线继续，把各 section 的 JSX 也搬出去。
-   **现在拆比以前安全**：本机能跑起真实 `/admin`、库里还有一套种子数据
-   （见「环境事实」），拆完可以逐个分区点一遍再提交。
+3. ~~拆 `Admin.jsx` 与 `postgresStores.js`~~ —— **2026-08-17 第十九轮做完了**。
+   `Admin.jsx` 2963 → 1301，`postgresStores.js` 4095 → 40，
+   新代码在 `src/lib/admin/`、`src/components/admin/`、`server/postgres/`。
+   现在最大的文件是 `server/postgres/adminStore.js`（1770 行）。
+   **它还可以再拆**（summary / moderation / members / audit 四块），
+   但已经不再和别的东西挤在一个文件里，所以不急。
 3b. ~~**后台窄屏排版整体再走一遍**~~ —— **2026-08-16 第十八轮做完了**，
    十一个分区在 440px 下逐个看过，详见下面那一节。
    剩下**没做**的两处小的，都属于「知道但故意没动」：
@@ -416,6 +452,9 @@ CSP 这件事能做完，就是因为 playwright 回来了。
   - **角色的口令没有记在任何地方**（每轮临时生成、只用于这个 scratch 库）。
     下次要用就直接重设一个：
     `su postgres -c "psql -q -c \"ALTER ROLE mrright_local PASSWORD '<新生成的>'\""`
+    ⚠️ **第十九轮这条命令被权限策略挡下了**（改角色口令属于要人点头的动作）。
+    真被挡住时不用僵在那里：**看后台 UI 有不需要数据库的那条路**
+    （下面「想看后台真实长什么样」那条），只有要验真实 SQL 时才非起库不可。
   - **库里现在有一套种子数据**（第十八轮塞的，专门用来看后台密度）：
     6 个访客（含一个未验证 + 被管理员停用公开资料的）、8 条项目评论
     （4 published / 3 pending / 1 spam）、5 个社区帖子 + 6 条社区评论、
@@ -492,6 +531,151 @@ CSP 这件事能做完，就是因为 playwright 回来了。
 - ~~演练遗留的临时库~~ —— 用户已确认，`mrright_restore_drill` 已 `dropdb`（2026-08-11）。
   删除后复查：`mrright_portfolio` 仍在、17 张表、`visitor_users=1`/`project_comments=2`、
   `/api/health` 200，生产库未受影响。
+
+## 2026-08-17（第十九轮）：拆 `Admin.jsx` 与 `postgresStores.js`
+
+**日期**：2026-08-17
+**状态**：**本机已全部验证，尚未 push、尚未部署**。无数据库变更，无运行时行为变更。
+
+### 起因
+
+「下一轮我建议先做的」排在最前的第 3 条。第十八轮收工时
+`Admin.jsx` 2963 行、`postgresStores.js` 4095 行，两个文件加起来
+7058 行，占了这个项目里最常改的两处。
+
+### 一、`Admin.jsx`：2963 → 1301 行
+
+分两步，两个 commit，每步单独过 build + lint。
+
+**第一步（`0a14edc`）：组件上面那 733 行根本不是组件的事。**
+`const Admin` 出现在第 782 行 —— 在它前面是预设常量、格式化函数，
+以及一整套浏览器内 FBX/OBJ → GLB 转换器。这些代码不读任何 React 状态，
+写在那里只是因为当初就写在那里。原样搬进 `src/lib/admin/`：
+
+- `format.js` —— 日期、文件大小、slug、`searchInItem`、`needsCommentReview`
+- `sections.js` —— 分组导航、可搜索分区集合、Members 的两组常量
+- `projectEditor.js` —— 语言矩阵、各种预设、空表单、翻译状态判断
+- `modelConversion.js` —— 转换器（three.js 仍是动态 import，不进主包）
+
+**第二步（`20b2283`）：render 里是十一个 `activeSection === '...' &&` 串起来的 1080 行。**
+想看 Members 的列表，要先滚过整个项目编辑器。十一个分区里已有五个在自己的文件里
+（第十二轮起的约定），这轮把剩下六个加编辑器也搬出去：
+
+- `AdminProjectsSection` / `AdminProjectEditor`（489 行，最大的一块）
+- `AdminDownloadsSection` / `AdminCommunitySection` / `AdminCommentsSection`
+- `AdminLikesSection` / `AdminMembersSection` / `AdminMessagesSection`
+
+**每个子组件只收数据和回调，不持有状态。**删除动作仍然走外壳里的 `deleteItem()`，
+所以「确认对话框 + 成功后重新拉数据」还是一处；子组件也就**永远看不到 session token**。
+
+### 二、`postgresStores.js`：4095 → 40 行
+
+拆进 `server/postgres/`：
+
+- `mappers.js`（324 行）—— 行 → API 形状的映射。**这些才是真正的契约**：
+  同一行 `visitor_users` 对公开页、对本人、对管理员是三个不同的对象，
+  差别就锁在这里（`includeEmail` 只有 adminStore 的调用点会传）。
+- `schema.js`（419 行）—— 全部 `CREATE TABLE` / `ADD COLUMN IF NOT EXISTS`
+- 七个 store 各一个文件：`adminStore.js`（1770）、`authStore.js`（662）、
+  `communityStore.js`（534）、`interactionsStore.js`（202）、
+  `downloadRequestsStore.js`（146）、`projectStore.js`（48）、
+  `contactMessagesStore.js`（23）
+
+每个 store 变成 `create<Name>Store({ pool })` 工厂。
+**跨 store 依赖只有一处**：`adminStore` 的 overview 要数目录，
+所以它额外收一个 `projectStore`。三个 store 会调用自己
+（`projectStore.listProjects`、`authStore.getAccountProfile`、`adminStore.getVisitor`），
+这些保留了具名绑定（`const xStore = {...}; return xStore`），调用点一个字没改。
+
+`postgresStores.js` 现在只剩：开池、跑 schema、把七个接起来。
+**没有任何调用点变化** —— 外面只有 `server/index.js` 和一个迁移脚本
+`import { createPostgresStores }`。
+
+### 三、顺手修的一个真 bug：手机上点开一个成员，整个后台被撑到 684px
+
+第十八轮走 440px 时**没有点开过成员详情**，所以没看见。
+
+`.visitor-management-layout` 在 ≤1100px 收成一列，写的是 `1fr` ——
+也就是 `minmax(auto, 1fr)`，**轨道不肯低于内容的 min-content**。
+六个详情标签页并排是 646px，于是选中一个成员就把 `.admin-main` 顶到 684px，
+440px 的视口整页横向滚动，而 `.visitor-detail-tabs` 上那句
+`overflow-x: auto`（本来就是为它准备的）**从来没机会生效**。
+
+改成 `minmax(0, 1fr)`。**实测 440px 下文档横向溢出 256px → 0**，
+标签条自己滚动，页面不动。（`c8207d9`）
+
+⚠️ **以后在窄屏收成单列时，写 `minmax(0, 1fr)`，别写 `1fr`。**
+`1fr` 保护的是内容不被压扁，代价是它会把整个祖先链一起撑宽。
+
+### 修改文件
+
+新增：
+
+- `src/lib/admin/format.js`、`sections.js`、`projectEditor.js`、`modelConversion.js`
+- `src/components/admin/AdminProjectsSection.jsx`、`AdminProjectEditor.jsx`、
+  `AdminDownloadsSection.jsx`、`AdminCommunitySection.jsx`、`AdminCommentsSection.jsx`、
+  `AdminLikesSection.jsx`、`AdminMembersSection.jsx`、`AdminMessagesSection.jsx`
+- `server/postgres/mappers.js`、`schema.js`、`adminStore.js`、`authStore.js`、
+  `communityStore.js`、`contactMessagesStore.js`、`downloadRequestsStore.js`、
+  `interactionsStore.js`、`projectStore.js`
+
+修改：
+
+- `src/Admin.jsx`（2963 → 1301）
+- `server/postgresStores.js`（4095 → 40）
+- `src/index.css`（那条 `minmax(0, 1fr)`）
+- `scripts/verify-visitor-studio.mjs`（四个社区方法的标记改指 `communityStore.js`）
+
+### commit
+
+- `0a14edc` admin: the 780 lines above the component were never about the component
+- `20b2283` admin: eleven sections were one component with eleven if-statements
+- `c8207d9` ui: selecting a member on a phone stretched the console to 684px
+- `d4ca731` server: seven stores and a 415-line schema shared one 4,095-line file
+
+### 验证结果
+
+- `npm run lint`：通过
+- `npm run build`：通过
+- `npm run test:api:db`：**68 通过**（自建临时 Postgres 集群，跑完销毁；
+  这是拆 store 最有力的一道验证 —— 七个 store 全部被真实跑过一遍）
+- `npm run test:openapi`：通过
+- `npm run test:content-health`：通过
+- `npm run test:admin-totp`：通过
+- `npm run test:deploy-backup`：通过
+- `npm run test:deploy-script`：通过
+- `git diff --check`：除 `scripts/verify-visitor-studio.mjs` 外全部通过（原因见下）
+- **前端逐分区验证**：用 Playwright 拦 `**/api/admin/**` 喂 fixture，
+  在 `npm run dev` 上把**十一个分区在 1280px 和 440px 各走一遍**，
+  其中项目编辑器打开、成员详情打开并切到 Comments 标签页。
+  **0 条 console error，0 条 pageerror，两个宽度下横向溢出全为 0。**
+  截图在 `scratchpad/shots/`（会话结束即失效，不入库）
+- GitHub push：**未执行**
+- VPS 部署：**未执行**
+
+### 这一轮撞见但没修的两件事
+
+1. **`npm run verify:visitor-studio` 是红的，而且和本轮无关。**
+   它要求 `src/pages/AccountPage.jsx` 里出现 `accountStudioUploadNow`，
+   但那个 key 只在 `src/lib/i18n.js` 里有三份翻译，**页面里没有任何引用**。
+   拆分前后都红（已 `git stash` 对照确认）。要么是脚本的期望过期了，
+   要么是「上传资源」那个按钮在某一轮被拿掉了 —— **两种可能后果完全不同，
+   所以没有盲改**。下次谁碰 `/account` 的 Studio 分区，顺便定一下性。
+2. **`scripts/verify-visitor-studio.mjs` 整个文件是 CRLF**（67 行全是）。
+   所以往里加任何一行，`git diff --check` 都会报 trailing whitespace。
+   本轮那一行沿用了文件自己的换行约定，没有为一行改动去动全文件 67 行。
+
+### 这一轮学到的
+
+- **拆文件之前先想清楚「谁需要谁」，比想「怎么分组」更省事。**
+  七个 store 里只有一条跨 store 依赖（adminStore → projectStore），
+  发现这一点之后，整个 server 侧的拆分就是机械操作了。
+- **有一套能跑的测试，纯搬运才敢做。** `test:api:db` 那 68 条覆盖了七个 store
+  的真实 SQL 路径；没有它，把 4095 行切成九个文件只能靠肉眼。
+  前端那边没有等价的东西，所以另外写了一个喂 fixture 的 Playwright 脚本来补。
+- **「第十八轮走过 440px」不等于「440px 都看过」。** 那一轮没点开成员详情，
+  于是这个 256px 的横向溢出躲过了一整轮专门的窄屏排查。
+  以后走窄屏，**每个能展开的东西都要展开一次**。
 
 ## 2026-08-16（第十八轮）：后台十一个分区逐个走 440px，外加一个死胡同的审核流程
 
