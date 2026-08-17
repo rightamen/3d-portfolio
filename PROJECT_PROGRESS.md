@@ -2,33 +2,37 @@
 
 ## 下次从这里继续（截至 2026-08-17 第十九轮收工）
 
-**⚠️ 线上仍然运行 `2536931`（2026-08-16 部署）。第十九轮的四个 commit
-还在本机，没有 push，也没有部署。** `origin/main` = `bf42557`，
-本地 `main` 比它多 5 个（4 个代码 + 这份文档）。
+**线上运行 `d7924da`（2026-08-17 15:05 UTC 部署，已逐项验证）。
+`origin/main` = `d7924da`，与本地、与线上三者一致。**
 第十二至十九轮都无数据库变更。
-回滚到第十八轮之前：`/opt/mrright-portfolio.backup-20260816-045603`。
+回滚到第十九轮之前：`/opt/mrright-portfolio.backup-20260817-150516`。
 
-**第十九轮全是重构**，运行时行为只有一处变化：Members 详情在窄屏下
-不再把整页撑宽（一行 CSS）。也就是说**部署它风险很低，但也不紧急**。
-
-**线上内容健康：第十七轮测得 0 critical / 0 warning / 0 note，
-第十八、十九轮都没有重测**（那个接口要管理员会话，本机没有 `right` 的密码），
-本轮也没有动检查器或任何资源文件。
+**线上内容健康：0 critical / 0 warning / 0 note**（2026-08-17 15:10 UTC 实测，
+补上了第十八轮欠的那次重测）。
 
 ⚠️ **VPS 只保留最新 3 个应用备份**，脚本每次部署自动清理旧的。
-所以下面各轮里写的历史回滚路径**大多已经不存在了**。截至第十八轮收工，
+所以下面各轮里写的历史回滚路径**大多已经不存在了**。截至第十九轮收工，
 `/opt` 上实际存在的是：
 
 ```text
-/opt/mrright-portfolio.backup-20260816-045603   第十八轮之前 ← 要回滚就用这个
+/opt/mrright-portfolio.backup-20260817-150516   第十九轮之前 ← 要回滚就用这个
+/opt/mrright-portfolio.backup-20260816-045603   第十八轮之前
 /opt/mrright-portfolio.backup-20260815-034745   第十七轮之前
-/opt/mrright-portfolio.backup-20260815-031633   第十六轮之前
 ```
 
 要回滚先 `ls -dt /opt/mrright-portfolio.backup-*` 确认实际有什么，别照抄旧记录。
 
 第十九轮做掉了「下一轮建议」的第 3 条：**拆 `Admin.jsx`（2963 → 1301）
-与 `postgresStores.js`（4095 → 40）**。详见下面「2026-08-17（第十九轮）」。
+与 `postgresStores.js`（4095 → 40）**。全是重构，运行时行为只有一处变化：
+Members 详情在窄屏下不再把整页撑宽（一行 CSS）。
+详见下面「2026-08-17（第十九轮）」。
+
+⚠️ **`ADMIN_TOKEN` 不能直接打管理接口，只能用来换会话。**
+`curl -H "Authorization: Bearer $ADMIN_TOKEN" .../api/admin/summary` 会 401 ——
+本轮照 `mr-deploy` 提示词里那条命令做，被这个假红灯骗了一次。
+正确的顺序：`POST /api/admin/session`（token 放头里，**不能放 body**）→
+用返回的 session token 打管理接口 → `DELETE /api/admin/session`。
+**`mr-deploy` 那份提示词里的第五步第 3 条是过期的写法。**
 
 ⚠️ **窄屏收成单列时写 `minmax(0, 1fr)`，不要写 `1fr`。**
 `1fr` 是 `minmax(auto, 1fr)`，轨道不肯低于内容的 min-content ——
@@ -49,9 +53,9 @@
 ⚠️ **`scripts/verify-visitor-studio.mjs` 全文是 CRLF**，往里加任何一行
 `git diff --check` 都会报 trailing whitespace。不是新问题，别当回归修。
 
-**第十九轮收工时的状态（2026-08-17，当天工作到此为止）：**
+**第十九轮收工时的状态（2026-08-17 15:1x UTC，当天工作到此为止）：**
 
-- 工作树干净，本地 `main` 领先 `origin/main` 5 个提交，**尚未 push**
+- 工作树干净；本地、`origin/main`、线上三者同为 `d7924da`（这份文档的收尾提交除外）
 - 本机 `npm run dev`（5173）用完已停；**本轮没有起过带数据库的实例**
 - ⚠️ **本轮没能重设 `mrright_local` 的口令**（`ALTER ROLE` 那条命令被
   权限策略挡下了），所以那个 scratch 库这轮**一次也没用上**。
@@ -60,11 +64,10 @@
   下次做后台 UI 可以优先考虑它。
 - 库 `mrright_local_dev` 和第十八轮那套种子数据都还在，只是口令没人知道
 - 「待你决策」清单**仍然是空的**
-- 线上 `dist/uploads` 状态未复查（本轮没碰构建打包，第十六轮那道闸未动）
+- 线上 `dist/uploads` **不存在**（部署后已复查，第十六轮那道闸仍然有效）
 
-**下次开工第一件事**：读这一节，然后决定要不要把第十九轮 push + 部署。
-之后看「下一轮我建议先做的」—— 第 3 条已经划掉，现在排最前的是
-**第 4 条 react-router**。
+**下次开工第一件事**：读这一节，然后看「下一轮我建议先做的」——
+第 3 条已经划掉，现在排最前的是**第 4 条 react-router**。
 
 第十八轮是**把后台十一个分区在 440px 下逐个走了一遍**（原「下一轮建议」第 3b 条），
 顺手结清了「待你决策」里那条角标对齐。详见下面「2026-08-16（第十八轮）」。
@@ -535,7 +538,8 @@ CSP 这件事能做完，就是因为 playwright 回来了。
 ## 2026-08-17（第十九轮）：拆 `Admin.jsx` 与 `postgresStores.js`
 
 **日期**：2026-08-17
-**状态**：**本机已全部验证，尚未 push、尚未部署**。无数据库变更，无运行时行为变更。
+**状态**：**已部署并逐项验证**。无数据库变更；运行时行为只有一处变化
+（Members 详情在窄屏下不再撑宽整页）。
 
 ### 起因
 
@@ -650,8 +654,47 @@ CSP 这件事能做完，就是因为 playwright 回来了。
   其中项目编辑器打开、成员详情打开并切到 Comments 标签页。
   **0 条 console error，0 条 pageerror，两个宽度下横向溢出全为 0。**
   截图在 `scratchpad/shots/`（会话结束即失效，不入库）
-- GitHub push：**未执行**
-- VPS 部署：**未执行**
+- GitHub push：成功（`origin/main` = `d7924da`）
+- VPS 部署：成功（`npm run deploy:vps`，密钥认证），服务重启成功
+- 部署前 VPS 检查：node v22.22.2 / npm 10.9.7 / `nginx -t` 通过 / 服务 active /
+  `ADMIN_TOKEN=[set]`、`DATABASE_URL=[set]`（未输出 value）/ `/opt` 剩余 8.2G
+- 健康检查：**一次通过**
+- 部署脚本自带的 admin summary 检查：通过（短会话，用完即撤）
+- 备份清理：按保留策略删掉 `...-20260815-031633`，保留最新 3 份
+- 线上 `/` `/community` `/admin` `/login?mode=login` `/account` `/api/health`：均 200
+- 线上 admin（另换一个短会话独立复验，用完撤销）：
+  `/api/admin/summary` 200、`/api/admin/overview?days=30` 200、`DELETE /api/admin/session` 200
+- **线上内容健康：0 critical / 0 warning / 0 note**（`checkedAt` 2026-08-17T15:10:46Z）
+  —— 第十八轮欠的那次重测，这轮补上了
+- 线上 `/api/account/profile` `/downloads` `/comments`：未登录 401，正常
+- 线上 `/api/users/not-exist-test-handle`：404，正常
+- 线上 production-smoke：**6 通过 / 1 跳过**
+- 线上 CSS 确实带上了那条修复：
+  `index-2QBUCxlp.css` 里有 `visitor-management-layout{grid-template-columns:minmax(0,1fr)}`
+- 线上 `Admin-BYeAsRMs.js` 含 `Mark Spam` / `Visitor Management` / `Download Requests` /
+  `Translation Coverage`，即拆分后的十一个分区确实都上了线
+- 线上 `/opt/mrright-portfolio/server/postgres/` 九个文件都在，
+  `postgresStores.js` 40 行
+- 线上 `dist/uploads`：不存在（第十六轮那道闸仍然有效）
+- 服务日志近 15 分钟：0 条 error
+
+**备份路径**：`/opt/mrright-portfolio.backup-20260817-150516`
+（env 备份 `/etc/mrright-portfolio.env.backup-20260817-150516`）
+
+部署后 `/opt` 上实际存在的备份：
+
+```text
+/opt/mrright-portfolio.backup-20260817-150516   第十九轮之前 ← 要回滚就用这个
+/opt/mrright-portfolio.backup-20260816-045603   第十八轮之前
+/opt/mrright-portfolio.backup-20260815-034745   第十七轮之前
+```
+
+⚠️ **用 `ADMIN_TOKEN` 直接打 `/api/admin/summary` 会 401** —— 本轮踩过一次，
+以为是回归，其实是**静态 token 只能用来换会话**：
+先 `POST /api/admin/session`（token 放 `Authorization: Bearer` 头），
+拿到 session token 再打管理接口，用完 `DELETE /api/admin/session`。
+`mr-deploy` 那份提示词里写的那条 `curl -H "Authorization: Bearer $ADMIN_TOKEN" .../summary`
+**是过期的写法**，照抄会得到一个假的红灯。
 
 ### 这一轮撞见但没修的两件事
 
