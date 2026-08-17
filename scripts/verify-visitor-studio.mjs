@@ -30,7 +30,7 @@ const requiredMarkers = [
     ],
   },
   {
-    file: 'server/postgresStores.js',
+    file: 'server/postgres/communityStore.js',
     markers: ['listUserUploads', 'listUserPosts', 'deleteUserUpload', 'deleteUserPost'],
   },
   {
