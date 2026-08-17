@@ -38,16 +38,22 @@ import {
 } from './lib/api'
 import AdminTotpEnrolment from './components/AdminTotpEnrolment'
 import AdminCommandPalette from './components/admin/AdminCommandPalette'
+import AdminCommentsSection from './components/admin/AdminCommentsSection'
+import AdminCommunitySection from './components/admin/AdminCommunitySection'
 import AdminContentHealth from './components/admin/AdminContentHealth'
 import AdminDashboard from './components/admin/AdminDashboard'
+import AdminDownloadsSection from './components/admin/AdminDownloadsSection'
 import AdminIcon from './components/admin/AdminIcon'
+import AdminLikesSection from './components/admin/AdminLikesSection'
+import AdminMembersSection from './components/admin/AdminMembersSection'
+import AdminMessagesSection from './components/admin/AdminMessagesSection'
+import AdminProjectEditor from './components/admin/AdminProjectEditor'
+import AdminProjectsSection from './components/admin/AdminProjectsSection'
 import AdminSystemPanel from './components/admin/AdminSystemPanel'
 import { formatAge } from './components/admin/charts'
-import { getAssetCategoryProfile } from './lib/assetCategories'
 import {
   appendKeyword,
   createSlug,
-  formatDate,
   formatFileSize,
   getExtension,
   listToText,
@@ -58,28 +64,15 @@ import {
 } from './lib/admin/format'
 import { convertModelInBrowser, findPrimaryModelFile } from './lib/admin/modelConversion'
 import {
-  assetCategoryPresets,
   downloadPolicyPresets,
   emptyProjectForm,
   emptyUploadStatus,
-  formatPresets,
-  getTranslationStates,
   localizedEditorFields,
-  localizedEditorLanguages,
   matchesTranslationFilter,
-  modelSizePresets,
   projectPresets,
-  stackKeywordPresets,
   translationFilters,
-  viewerFeaturePresets,
 } from './lib/admin/projectEditor'
-import {
-  searchableSections,
-  sectionGroups,
-  sections,
-  visitorAccessPresets,
-  visitorDetailTabs,
-} from './lib/admin/sections'
+import { searchableSections, sectionGroups, sections } from './lib/admin/sections'
 
 const tokenKey = 'mrright-admin-token'
 
@@ -1164,1081 +1157,122 @@ const Admin = () => {
           )}
 
           {activeSection === 'projects' && (
-          <section className="admin-section">
-            <div className="admin-section-header">
-              <h2>Projects</h2>
-              <div className="flex items-center gap-3">
-              <span>{visibleProjects.length}</span>
-                <button
-                  type="button"
-                  className="secondary-action"
-                  onClick={startCreatingProject}
-                >
-                  New Project
-                </button>
-              </div>
-            </div>
-            <div className="admin-table">
-              {visibleProjects.map((project) => {
-                const translationStates = getTranslationStates(project)
-
-                return (
-                <article
-                  key={project.slug}
-                  className="admin-row"
-                  style={{ '--category-accent': getAssetCategoryProfile(project).accent }}
-                >
-                  <div>
-                    <div className="admin-row-title">
-                      <strong>{project.title}</strong>
-                      <span>{getAssetCategoryProfile(project).label}</span>
-                    </div>
-                    <span>
-                      {project.slug} · {project.year} ·{' '}
-                      {project.isPublic === false ? 'hidden' : 'public'}
-                    </span>
-                    <p>{project.summary}</p>
-                    <small>{project.stack?.join(', ')}</small>
-                    <div className="translation-status-row">
-                      {translationStates.map((item) => (
-                        <span key={item.suffix} className={`translation-status-${item.state}`}>
-                          {item.suffix.replace('Zh', 'ZH').replace('En', 'EN').replace('Ja', 'JA')}
-                          <strong>{item.state}</strong>
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="admin-actions">
-                    <span
-                      className={`status-pill ${
-                        project.isPublic === false ? 'status-rejected' : 'status-approved'
-                      }`}
-                    >
-                      {project.isPublic === false ? 'hidden' : 'public'}
-                    </span>
-                    <button
-                      type="button"
-                      className="secondary-action"
-                      onClick={() => startEditingProject(project)}
-                    >
-                      Edit
-                    </button>
-                    <button
-                      type="button"
-                      className="danger-action"
-                      onClick={() =>
-                        deleteItem('project', () => deleteAdminProject(token, project.slug))
-                      }
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </article>
-                )
-              })}
-              {visibleProjects.length === 0 && (
-                <p className="text-sm text-neutral-500">No projects match this search.</p>
-              )}
-            </div>
-          </section>
+            <AdminProjectsSection
+              onCreate={startCreatingProject}
+              onDelete={(project) =>
+                deleteItem('project', () => deleteAdminProject(token, project.slug))
+              }
+              onEdit={startEditingProject}
+              projects={visibleProjects}
+            />
           )}
 
           {activeSection === 'projects' && editingProject && (
-            <section className="admin-section" ref={editorRef}>
-              <div className="admin-section-header">
-                <h2>{editingProject.isNew ? 'New Project' : 'Edit Project'}</h2>
-                <span>{editingProject.slug}</span>
-              </div>
-              <form className="admin-editor" onSubmit={saveProject}>
-                <div className="translation-editor-summary">
-                  <strong>Translation Coverage</strong>
-                  <div className="translation-status-row">
-                    {getTranslationStates(editingProject).map((item) => (
-                      <span key={item.suffix} className={`translation-status-${item.state}`}>
-                        {item.suffix.replace('Zh', 'ZH').replace('En', 'EN').replace('Ja', 'JA')}
-                        <strong>{item.state}</strong>
-                      </span>
-                    ))}
-                  </div>
-                </div>
-                <label className="field-label">
-                  Project Type Preset
-                  <select
-                    className="field-input field-input-focus"
-                    defaultValue=""
-                    onChange={(event) => {
-                      applyProjectPreset(event.target.value)
-                      event.target.value = ''
-                    }}
-                  >
-                    <option value="" disabled>
-                      Apply a project type...
-                    </option>
-                    {projectPresets.map((preset) => (
-                      <option key={preset.key} value={preset.key}>
-                        {preset.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="field-label">
-                  Asset Category
-                  <select
-                    className="field-input field-input-focus"
-                    value={getAssetCategoryProfile(editingProject).value}
-                    onChange={(event) =>
-                      setEditingProject((current) => ({
-                        ...current,
-                        assetCategory: event.target.value,
-                      }))
-                    }
-                  >
-                    {assetCategoryPresets.map((category) => (
-                      <option key={category.value} value={category.value}>
-                        {category.label}
-                      </option>
-                    ))}
-                  </select>
-                  <span
-                    className="asset-editor-note"
-                    style={{
-                      '--category-accent': getAssetCategoryProfile({
-                        assetCategory: editingProject.assetCategory,
-                      }).accent,
-                    }}
-                  >
-                    <strong>
-                      {
-                        getAssetCategoryProfile({
-                          assetCategory: editingProject.assetCategory,
-                        }).label
-                      }
-                    </strong>
-                    <span>
-                      {
-                        getAssetCategoryProfile({
-                          assetCategory: editingProject.assetCategory,
-                        }).description
-                      }
-                    </span>
-                  </span>
-                </label>
-                <label className="field-label">
-                  Slug
-                  <input
-                    className="field-input field-input-focus"
-                    value={editingProject.slug}
-                    disabled={!editingProject.isNew}
-                    placeholder="new-project-slug"
-                    onChange={(event) =>
-                      setEditingProject((current) => ({
-                        ...current,
-                        slug: event.target.value.toLowerCase(),
-                      }))
-                    }
-                    required
-                  />
-                </label>
-                <label className="field-label">
-                  Title
-                  <input
-                    className="field-input field-input-focus"
-                    value={editingProject.title}
-                    onChange={(event) =>
-                      setEditingProject((current) => ({
-                        ...current,
-                        title: event.target.value,
-                      }))
-                    }
-                    required
-                  />
-                </label>
-                <label className="field-label">
-                  Summary
-                  <textarea
-                    className="field-input field-input-focus min-h-24 resize-none"
-                    value={editingProject.summary}
-                    onChange={(event) =>
-                      setEditingProject((current) => ({
-                        ...current,
-                        summary: event.target.value,
-                      }))
-                    }
-                    required
-                  />
-                </label>
-                <label className="field-label">
-                  Workflow
-                  <textarea
-                    className="field-input field-input-focus min-h-28 resize-none"
-                    value={editingProject.workflow || ''}
-                    onChange={(event) =>
-                      setEditingProject((current) => ({
-                        ...current,
-                        workflow: event.target.value,
-                      }))
-                    }
-                  />
-                </label>
-                <details className="translation-panel">
-                  <summary>
-                    <span>
-                      Language Versions
-                      <small>Optional copy for Chinese, English, and Japanese visitors</small>
-                    </span>
-                  </summary>
-                  <div className="translation-grid">
-                    {localizedEditorLanguages.map((language) => (
-                      <section key={language.suffix} className="translation-card">
-                        <div className="translation-card-header">
-                          <strong>{language.label}</strong>
-                          <button
-                            type="button"
-                            className="secondary-action"
-                            onClick={() => copyBaseCopyToLanguage(language.suffix)}
-                          >
-                            Copy Base
-                          </button>
-                        </div>
-                        {localizedEditorFields.map((field) => {
-                          const fieldName = `${field.key}${language.suffix}`
-                          const Input = field.multiline ? 'textarea' : 'input'
-
-                          return (
-                            <label key={fieldName} className="field-label">
-                              {field.label}
-                              <Input
-                                className={`field-input field-input-focus ${
-                                  field.multiline ? 'min-h-24 resize-none' : ''
-                                }`}
-                                value={editingProject[fieldName] || ''}
-                                onChange={(event) =>
-                                  setEditingProject((current) => ({
-                                    ...current,
-                                    [fieldName]: event.target.value,
-                                  }))
-                                }
-                              />
-                            </label>
-                          )
-                        })}
-                      </section>
-                    ))}
-                  </div>
-                </details>
-                <div className="grid gap-3 md:grid-cols-2">
-                  <label className="field-label">
-                    Year
-                    <input
-                      className="field-input field-input-focus"
-                      value={editingProject.year}
-                      onChange={(event) =>
-                        setEditingProject((current) => ({
-                          ...current,
-                          year: event.target.value,
-                        }))
-                      }
-                      required
-                    />
-                  </label>
-                  <label className="field-label">
-                    Format
-                    <select
-                      className="field-input field-input-focus"
-                      value=""
-                      onChange={(event) =>
-                        setEditingProject((current) => ({
-                          ...current,
-                          format: event.target.value,
-                        }))
-                      }
-                    >
-                      <option value="" disabled>
-                        Choose a format preset...
-                      </option>
-                      {formatPresets.map((format) => (
-                        <option key={format} value={format}>
-                          {format}
-                        </option>
-                      ))}
-                    </select>
-                    <input
-                      className="field-input field-input-focus"
-                      value={editingProject.format || ''}
-                      onChange={(event) =>
-                        setEditingProject((current) => ({
-                          ...current,
-                          format: event.target.value,
-                        }))
-                      }
-                    />
-                  </label>
-                  <label className="field-label">
-                    Image URL
-                    <input
-                      className="field-input field-input-focus"
-                      value={editingProject.image}
-                      onChange={(event) =>
-                        setEditingProject((current) => ({
-                          ...current,
-                          image: event.target.value,
-                        }))
-                      }
-                      required
-                    />
-                  </label>
-                  <label className="field-label">
-                    Upload Image
-                    <span
-                      className={`asset-upload-control ${
-                        uploadStatus.image.phase === 'done' ? 'asset-upload-control-done' : ''
-                      }`}
-                    >
-                      {uploadStatus.image.phase === 'uploading' && 'Uploading image...'}
-                      {uploadStatus.image.phase === 'done' && uploadStatus.image.message}
-                      {uploadStatus.image.phase === 'error' && uploadStatus.image.message}
-                      {uploadStatus.image.phase === 'idle' && 'Choose image file'}
-                      <input
-                        type="file"
-                        accept=".jpg,.jpeg,.png,.webp,.gif"
-                        onChange={(event) => selectAsset(event, 'image')}
-                      />
-                    </span>
-                    {uploadStatus.image.phase !== 'idle' && (
-                      <span className="asset-upload-progress">
-                        <span style={{ width: `${uploadStatus.image.progress}%` }} />
-                      </span>
-                    )}
-                  </label>
-                  <label className="field-label">
-                    Model URL
-                    <input
-                      className="field-input field-input-focus"
-                      value={editingProject.modelUrl || ''}
-                      onChange={(event) =>
-                        setEditingProject((current) => ({
-                          ...current,
-                          modelUrl: event.target.value,
-                        }))
-                      }
-                    />
-                  </label>
-                  <label className="field-label">
-                    Upload Model
-                    <span
-                      className={`asset-upload-control ${
-                        uploadStatus.modelUrl.phase === 'done' ? 'asset-upload-control-done' : ''
-                      }`}
-                    >
-                      {uploadStatus.modelUrl.phase === 'uploading' && 'Uploading model...'}
-                      {uploadStatus.modelUrl.phase === 'processing' && uploadStatus.modelUrl.message}
-                      {uploadStatus.modelUrl.phase === 'done' && uploadStatus.modelUrl.message}
-                      {uploadStatus.modelUrl.phase === 'error' && uploadStatus.modelUrl.message}
-                      {uploadStatus.modelUrl.phase === 'idle' && 'Choose model and texture files'}
-                      <input
-                        type="file"
-                        accept=".glb,.gltf,.fbx,.obj,.mtl,.jpg,.jpeg,.png,.webp"
-                        multiple
-                        onChange={(event) => selectAsset(event, 'modelUrl')}
-                      />
-                    </span>
-                    {uploadStatus.modelUrl.phase !== 'idle' && (
-                      <span className="asset-upload-progress">
-                        <span style={{ width: `${uploadStatus.modelUrl.progress}%` }} />
-                      </span>
-                    )}
-                    <span className="field-hint">
-                      Select OBJ, MTL, and web textures together. PSD/TGA references can use a selected
-                      PNG/JPG/WebP replacement.
-                    </span>
-                  </label>
-                  <label className="field-label">
-                    Model Size
-                    <select
-                      className="field-input field-input-focus"
-                      value=""
-                      onChange={(event) =>
-                        setEditingProject((current) => ({
-                          ...current,
-                          modelSize: event.target.value,
-                        }))
-                      }
-                    >
-                      <option value="" disabled>
-                        Choose a size preset...
-                      </option>
-                      {modelSizePresets.map((size) => (
-                        <option key={size} value={size}>
-                          {size}
-                        </option>
-                      ))}
-                    </select>
-                    <input
-                      className="field-input field-input-focus"
-                      value={editingProject.modelSize || ''}
-                      onChange={(event) =>
-                        setEditingProject((current) => ({
-                          ...current,
-                          modelSize: event.target.value,
-                        }))
-                      }
-                    />
-                  </label>
-                  <label className="field-label">
-                    Download Policy
-                    <select
-                      className="field-input field-input-focus"
-                      value={editingProject.downloadPolicy || ''}
-                      onChange={(event) =>
-                        setEditingProject((current) => ({
-                          ...current,
-                          downloadPolicy: event.target.value,
-                        }))
-                      }
-                    >
-                      {downloadPolicyPresets.map((policy) => (
-                        <option key={policy.value} value={policy.value}>
-                          {policy.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
-                <label className="field-label">
-                  Stack
-                  <select
-                    className="field-input field-input-focus"
-                    value=""
-                    onChange={(event) => {
-                      addStackKeyword(event.target.value)
-                      event.target.value = ''
-                    }}
-                  >
-                    <option value="" disabled>
-                      Add a keyword...
-                    </option>
-                    {stackKeywordPresets.map((keyword) => (
-                      <option key={keyword} value={keyword}>
-                        {keyword}
-                      </option>
-                    ))}
-                  </select>
-                  <input
-                    className="field-input field-input-focus"
-                    value={editingProject.stackText}
-                    onChange={(event) =>
-                      setEditingProject((current) => ({
-                        ...current,
-                        stackText: event.target.value,
-                      }))
-                    }
-                  />
-                </label>
-                <label className="field-label">
-                  Viewer Features
-                  <select
-                    className="field-input field-input-focus"
-                    value=""
-                    onChange={(event) => {
-                      addViewerFeature(event.target.value)
-                      event.target.value = ''
-                    }}
-                  >
-                    <option value="" disabled>
-                      Add a viewer feature...
-                    </option>
-                    {viewerFeaturePresets.map((feature) => (
-                      <option key={feature} value={feature}>
-                        {feature}
-                      </option>
-                    ))}
-                  </select>
-                  <input
-                    className="field-input field-input-focus"
-                    value={editingProject.viewerFeaturesText}
-                    onChange={(event) =>
-                      setEditingProject((current) => ({
-                        ...current,
-                        viewerFeaturesText: event.target.value,
-                      }))
-                    }
-                  />
-                </label>
-                <label className="admin-toggle">
-                  <input
-                    type="checkbox"
-                    checked={editingProject.isPublic !== false}
-                    onChange={(event) =>
-                      setEditingProject((current) => ({
-                        ...current,
-                        isPublic: event.target.checked,
-                      }))
-                    }
-                  />
-                  Public project
-                </label>
-                <div className="flex flex-wrap gap-3">
-                  <button
-                    type="submit"
-                    className="primary-action"
-                    disabled={projectStatus === 'saving'}
-                  >
-                    {projectStatus === 'saving' ? 'Saving...' : 'Save Project'}
-                  </button>
-                  <button
-                    type="button"
-                    className="secondary-action"
-                    onClick={() => setEditingProject(null)}
-                  >
-                    Cancel
-                  </button>
-                </div>
-                {projectStatus === 'error' && (
-                  <p className="text-sm text-coral">Could not save this project.</p>
-                )}
-              </form>
-            </section>
+            <AdminProjectEditor
+              editorRef={editorRef}
+              onAddStackKeyword={addStackKeyword}
+              onAddViewerFeature={addViewerFeature}
+              onApplyPreset={applyProjectPreset}
+              onCancel={() => setEditingProject(null)}
+              onChange={setEditingProject}
+              onCopyBaseCopy={copyBaseCopyToLanguage}
+              onSelectAsset={selectAsset}
+              onSubmit={saveProject}
+              project={editingProject}
+              status={projectStatus}
+              uploadStatus={uploadStatus}
+            />
           )}
 
           {activeSection === 'downloads' && (
-          <section className="admin-section">
-            <div className="admin-section-header">
-              <h2>Download Requests</h2>
-              <span>{visibleRequests.length}</span>
-            </div>
-            <div className="admin-table">
-              {visibleRequests.map((request) => (
-                <article key={request.id} className="admin-row">
-                  <div>
-                    <strong>{request.name}</strong>
-                    <span>{request.email}</span>
-                    <p>{request.purpose}</p>
-                    <small>
-                      {request.projectTitle} · {formatDate(request.createdAt)}
-                    </small>
-                    <small>
-                      {request.user
-                        ? `${request.user.displayName} · ${request.user.email} · ${request.user.accessLevel}`
-                        : 'Guest request'}{' '}
-                      · submitted as {request.visitorAccessLevel || 'guest'}
-                    </small>
-                  </div>
-                  <div className="admin-actions">
-                    <span className={`status-pill status-${request.status}`}>
-                      {request.status}
-                    </span>
-                    <button
-                      type="button"
-                      className="secondary-action"
-                      onClick={() => updateRequestStatus(request.id, 'approved')}
-                    >
-                      Approve
-                    </button>
-                    <button
-                      type="button"
-                      className="secondary-action"
-                      onClick={() => updateRequestStatus(request.id, 'rejected')}
-                    >
-                      Reject
-                    </button>
-                    <button
-                      type="button"
-                      className="danger-action"
-                      onClick={() =>
-                        deleteItem('download request', () =>
-                          deleteAdminDownloadRequest(token, request.id),
-                        )
-                      }
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </article>
-              ))}
-              {visibleRequests.length === 0 && (
-                <p className="text-sm text-neutral-500">
-                  No download requests match this search.
-                </p>
-              )}
-            </div>
-          </section>
+            <AdminDownloadsSection
+              onDelete={(request) =>
+                deleteItem('download request', () =>
+                  deleteAdminDownloadRequest(token, request.id),
+                )
+              }
+              onUpdateStatus={updateRequestStatus}
+              requests={visibleRequests}
+            />
           )}
 
           {activeSection === 'community' && (
-          <section className="admin-section">
-            <div className="admin-section-header">
-              <h2>Community</h2>
-              <span>
-                {visibleCommunityPosts.length} posts · {visibleCommunityUploads.length} uploads
-              </span>
-            </div>
-            <div className="admin-table">
-              <div className="admin-subsection-title">
-                <strong>Discussion Posts</strong>
-                <span>{visibleCommunityPosts.length}</span>
-              </div>
-              {visibleCommunityPosts.map((post) => (
-                <article key={post.id} className="admin-row">
-                  <div>
-                    <div className="admin-row-title">
-                      <strong>{post.title}</strong>
-                      <span>{post.topic}</span>
-                    </div>
-                    <p>{post.message}</p>
-                    <small>
-                      {post.user
-                        ? `${post.user.displayName} · ${post.user.email} · ${post.user.accessLevel}`
-                        : 'Unknown visitor'}
-                    </small>
-                    <small>Posted {formatDate(post.createdAt)}</small>
-                  </div>
-                  <div className="admin-actions">
-                    <button
-                      type="button"
-                      className="danger-action"
-                      onClick={() =>
-                        deleteItem('community post', () =>
-                          deleteAdminCommunityPost(token, post.id),
-                        )
-                      }
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </article>
-              ))}
-              {visibleCommunityPosts.length === 0 && (
-                <p className="text-sm text-neutral-500">
-                  No community posts match this search.
-                </p>
-              )}
-
-              <div className="admin-subsection-title">
-                <strong>Resource Uploads</strong>
-                <span>{visibleCommunityUploads.length}</span>
-              </div>
-              {visibleCommunityUploads.map((upload) => {
-                const category = getAssetCategoryProfile(
-                  { assetCategory: upload.assetCategory },
-                  'en',
+            <AdminCommunitySection
+              comments={visibleCommunityComments}
+              onDeleteComment={(comment) =>
+                deleteItem('community comment', () =>
+                  deleteAdminCommunityComment(token, comment.id),
                 )
-
-                return (
-                  <article
-                    key={upload.id}
-                    className="admin-row"
-                    style={{ '--category-accent': category.accent }}
-                  >
-                    <div>
-                      <div className="admin-row-title">
-                        <strong>{upload.title}</strong>
-                        <span>{category.label}</span>
-                      </div>
-                      <span>
-                        {upload.fileName} · {upload.fileType} · {formatFileSize(upload.fileSize)}
-                      </span>
-                      <p>{upload.description}</p>
-                      <small>
-                        {upload.user
-                          ? `${upload.user.displayName} · ${upload.user.email} · ${upload.user.accessLevel}`
-                          : 'Unknown visitor'}
-                      </small>
-                      <small>
-                        Submitted {formatDate(upload.createdAt)} · updated {formatDate(upload.updatedAt)}
-                      </small>
-                      <a href={upload.fileUrl} target="_blank" rel="noreferrer">
-                        {upload.fileUrl}
-                      </a>
-                    </div>
-                    <div className="admin-actions">
-                      <span className={`status-pill status-${upload.status}`}>
-                        {upload.status}
-                      </span>
-                      <button
-                        type="button"
-                        className="secondary-action"
-                        onClick={() => updateCommunityUploadStatus(upload.id, 'approved')}
-                      >
-                        Approve
-                      </button>
-                      <button
-                        type="button"
-                        className="secondary-action"
-                        onClick={() => updateCommunityUploadStatus(upload.id, 'rejected')}
-                      >
-                        Reject
-                      </button>
-                      <button
-                        type="button"
-                        className="danger-action"
-                        onClick={() =>
-                          deleteItem('community upload', () =>
-                            deleteAdminCommunityUpload(token, upload.id),
-                          )
-                        }
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </article>
+              }
+              onDeletePost={(post) =>
+                deleteItem('community post', () => deleteAdminCommunityPost(token, post.id))
+              }
+              onDeleteUpload={(upload) =>
+                deleteItem('community upload', () =>
+                  deleteAdminCommunityUpload(token, upload.id),
                 )
-              })}
-              {visibleCommunityUploads.length === 0 && (
-                <p className="text-sm text-neutral-500">
-                  No community uploads match this search.
-                </p>
-              )}
-
-              <div className="admin-subsection-title">
-                <strong>Post Comments</strong>
-                <span>{visibleCommunityComments.length}</span>
-              </div>
-              {visibleCommunityComments.map((comment) => (
-                <article key={comment.id} className="admin-row">
-                  <div>
-                    <div className="admin-row-title">
-                      <strong>{comment.author}</strong>
-                      <span>{comment.parentId ? 'reply' : 'comment'}</span>
-                    </div>
-                    <p>{comment.message}</p>
-                    <small>
-                      On: {comment.postTitle || comment.postId} · {comment.likeCount} likes
-                    </small>
-                    <small>
-                      {comment.user
-                        ? `${comment.user.displayName} · ${comment.user.email} · ${comment.user.accessLevel}`
-                        : 'Unknown visitor'}
-                    </small>
-                    <small>Posted {formatDate(comment.createdAt)}</small>
-                  </div>
-                  <div className="admin-actions">
-                    <button
-                      type="button"
-                      className="danger-action"
-                      onClick={() =>
-                        deleteItem('community comment', () =>
-                          deleteAdminCommunityComment(token, comment.id),
-                        )
-                      }
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </article>
-              ))}
-              {visibleCommunityComments.length === 0 && (
-                <p className="text-sm text-neutral-500">
-                  No community comments match this search.
-                </p>
-              )}
-            </div>
-          </section>
+              }
+              onUpdateUploadStatus={updateCommunityUploadStatus}
+              posts={visibleCommunityPosts}
+              uploads={visibleCommunityUploads}
+            />
           )}
 
           {activeSection === 'comments' && (
-          <section className="admin-section">
-            <div className="admin-section-header">
-              <h2>Comments</h2>
-              <span>
-                {pendingCommentCount
-                  ? `${pendingCommentCount} waiting · ${visibleComments.length}`
-                  : visibleComments.length}
-              </span>
-            </div>
-            <div className="admin-table">
-              {visibleComments.map((comment) => (
-                <article key={comment.id} className="admin-row">
-                  <div>
-                    <div className="admin-row-title">
-                      <strong>{comment.author}</strong>
-                      {needsCommentReview(comment) && (
-                        <span className={`admin-state-chip admin-state-${comment.status}`}>
-                          {comment.status === 'spam' ? 'Spam' : 'Awaiting review'}
-                        </span>
-                      )}
-                    </div>
-                    <span>{comment.projectSlug}</span>
-                    <p>{comment.message}</p>
-                    {comment.user && (
-                      <small>
-                        {comment.user.displayName} · {comment.user.email} · {comment.user.accessLevel}
-                      </small>
-                    )}
-                    <small>{formatDate(comment.createdAt)}</small>
-                  </div>
-                  <div className="admin-actions">
-                    {comment.status !== 'published' && (
-                      <button
-                        type="button"
-                        className="secondary-action"
-                        onClick={() => updateCommentStatus(comment.id, 'published')}
-                      >
-                        Publish
-                      </button>
-                    )}
-                    {comment.status !== 'spam' && (
-                      <button
-                        type="button"
-                        className="secondary-action"
-                        onClick={() => updateCommentStatus(comment.id, 'spam')}
-                      >
-                        Mark Spam
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      className="danger-action"
-                      onClick={() =>
-                        deleteItem('comment', () => deleteAdminComment(token, comment.id))
-                      }
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </article>
-              ))}
-              {visibleComments.length === 0 && (
-                <p className="text-sm text-neutral-500">No comments match this search.</p>
-              )}
-            </div>
-          </section>
+            <AdminCommentsSection
+              comments={visibleComments}
+              onDelete={(comment) =>
+                deleteItem('comment', () => deleteAdminComment(token, comment.id))
+              }
+              onUpdateStatus={updateCommentStatus}
+              pendingCount={pendingCommentCount}
+            />
           )}
 
-          {activeSection === 'likes' && (
-          <section className="admin-section">
-            <div className="admin-section-header">
-              <h2>Likes</h2>
-              <span>{visibleLikes.length}</span>
-            </div>
-            <div className="admin-table">
-              {visibleLikes.map((like) => (
-                <article
-                  key={`${like.projectSlug}-${like.visitorId}`}
-                  className="admin-row"
-                >
-                  <div>
-                    <strong>{like.projectSlug}</strong>
-                    <span>{like.visitorId}</span>
-                    <p>
-                      {like.user
-                        ? `${like.user.displayName} (${like.user.email}) liked this project.`
-                        : 'Guest visitor liked this project.'}
-                    </p>
-                    {like.user && <small>Access level: {like.user.accessLevel}</small>}
-                    <small>{formatDate(like.createdAt)}</small>
-                  </div>
-                </article>
-              ))}
-              {visibleLikes.length === 0 && (
-                <p className="text-sm text-neutral-500">No likes match this search.</p>
-              )}
-            </div>
-          </section>
-          )}
+          {activeSection === 'likes' && <AdminLikesSection likes={visibleLikes} />}
 
           {activeSection === 'visitors' && (
-          <section className="admin-section admin-visitors-section">
-            <div className="admin-section-header">
-              <div>
-                <h2>Visitor Management</h2>
-                <small>Search accounts, inspect activity, and moderate public profiles.</small>
-              </div>
-              <span>{data.visitorPagination.total || 0}</span>
-            </div>
-
-            <div className="visitor-filter-grid">
-              <input
-                className="field-input"
-                placeholder="Search name, handle, or email"
-                value={visitorFilters.query}
-                onChange={(event) =>
-                  setVisitorFilters((current) => ({ ...current, query: event.target.value }))
-                }
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') {
-                    updateVisitorFilters({ page: 1, query: event.currentTarget.value })
-                  }
-                }}
-              />
-              <select className="field-input" value={visitorFilters.verified} onChange={(event) => updateVisitorFilters({ page: 1, verified: event.target.value })}>
-                <option value="">All verification states</option>
-                <option value="true">Verified email</option>
-                <option value="false">Unverified email</option>
-              </select>
-              <select className="field-input" value={visitorFilters.profileStatus} onChange={(event) => updateVisitorFilters({ page: 1, profileStatus: event.target.value })}>
-                <option value="">All profile states</option>
-                <option value="public">Public</option>
-                <option value="private">Private</option>
-                <option value="disabled">Admin disabled</option>
-              </select>
-              <select className="field-input" value={visitorFilters.accessLevel} onChange={(event) => updateVisitorFilters({ page: 1, accessLevel: event.target.value })}>
-                <option value="">All access levels</option>
-                {visitorAccessPresets.map((level) => <option key={level.value} value={level.value}>{level.label}</option>)}
-              </select>
-              <select className="field-input" value={visitorFilters.sort} onChange={(event) => updateVisitorFilters({ page: 1, sort: event.target.value })}>
-                <option value="createdAt">Newest accounts</option>
-                <option value="lastLoginAt">Recent login</option>
-                <option value="updatedAt">Recently updated</option>
-                <option value="displayName">Display name</option>
-              </select>
-              <button type="button" className="secondary-action" onClick={() => updateVisitorFilters({ page: 1 })}>Search</button>
-            </div>
-
-            <div className="visitor-management-layout">
-            <div className="admin-table visitor-list">
-              {visibleVisitors.map((visitor) => (
-                <button key={visitor.id} type="button" className={`admin-row visitor-row ${selectedVisitor?.id === visitor.id ? 'visitor-row-active' : ''}`} onClick={() => openVisitorDetail(visitor)}>
-                  <span className="visitor-avatar">
-                    {visitor.avatarUrl ? (
-                      <img
-                        src={visitor.avatarUrl}
-                        alt={`${visitor.displayName} avatar`}
-                        decoding="async"
-                        loading="lazy"
-                      />
-                    ) : visitor.displayName?.slice(0, 1)}
-                  </span>
-                  <span className="visitor-row-main">
-                    <strong>{visitor.displayName}</strong>
-                    <span>{visitor.handle ? `@${visitor.handle}` : 'No handle'} · {visitor.email}</span>
-                    <small>Joined {formatDate(visitor.createdAt)} · Last login {visitor.lastLoginAt ? formatDate(visitor.lastLoginAt) : 'Never'}</small>
-                    <span className="visitor-stat-line">{visitor.stats?.commentCount || 0} comments · {visitor.stats?.postCount || 0} posts · {visitor.stats?.uploadCount || 0} resources · {visitor.stats?.downloadRequestCount || 0} downloads</span>
-                  </span>
-                  <span className="visitor-row-status">
-                    <span className={`status-pill ${visitor.emailVerified ? 'status-approved' : 'status-pending'}`}>{visitor.emailVerified ? 'verified' : 'unverified'}</span>
-                    <span className={`status-pill ${visitor.profileAdminDisabled ? 'status-rejected' : visitor.profilePublic ? 'status-approved' : 'status-pending'}`}>{visitor.profileAdminDisabled ? 'disabled' : visitor.profilePublic ? 'public' : 'private'}</span>
-                  </span>
-                </button>
-              ))}
-              {visibleVisitors.length === 0 && (
-                <p className="text-sm text-neutral-500">No visitors match these filters.</p>
-              )}
-              <div className="visitor-pagination">
-                <button type="button" className="secondary-action" disabled={!data.visitorPagination.hasPrevious} onClick={() => updateVisitorFilters({ page: visitorFilters.page - 1 })}>Previous</button>
-                <span>Page {data.visitorPagination.page || 1} of {data.visitorPagination.pages || 1}</span>
-                <button type="button" className="secondary-action" disabled={!data.visitorPagination.hasNext} onClick={() => updateVisitorFilters({ page: visitorFilters.page + 1 })}>Next</button>
-              </div>
-            </div>
-
-            <aside className="visitor-detail-panel">
-              {!selectedVisitor && <p className="text-sm text-neutral-500">Select a visitor to inspect the account.</p>}
-              {selectedVisitor && (
-                <>
-                  <div className="visitor-detail-head">
-                    <div>
-                      <p className="section-kicker">Visitor Detail</p>
-                      <h3>{selectedVisitor.displayName}</h3>
-                      <span>{selectedVisitor.handle ? `@${selectedVisitor.handle}` : selectedVisitor.email}</span>
-                    </div>
-                    <button type="button" className="icon-action" aria-label="Close visitor detail" onClick={() => setSelectedVisitor(null)}>×</button>
-                  </div>
-                  <nav className="visitor-detail-tabs">
-                    {visitorDetailTabs.map((tab) => (
-                      <button type="button" key={tab.key} className={visitorDetailTab === tab.key ? 'admin-tab-active' : 'admin-tab'} onClick={() => loadVisitorTab(tab.key)}>{tab.label}</button>
-                    ))}
-                  </nav>
-                  {visitorDetailStatus === 'loading' && <p>Loading visitor details...</p>}
-                  {visitorDetailStatus === 'error' && <p className="text-coral">Could not load visitor details.</p>}
-                  {visitorDetailStatus === 'ready' && visitorDetailTab === 'overview' && (
-                    <div className="visitor-overview">
-                      <dl>
-                        <div><dt>Email</dt><dd>{selectedVisitor.email}</dd></div>
-                        <div><dt>Email status</dt><dd>{selectedVisitor.emailVerified ? 'Verified' : 'Unverified'}</dd></div>
-                        <div><dt>Registered</dt><dd>{formatDate(selectedVisitor.createdAt)}</dd></div>
-                        <div><dt>Last login</dt><dd>{selectedVisitor.lastLoginAt ? formatDate(selectedVisitor.lastLoginAt) : 'Never'}</dd></div>
-                        <div><dt>Public profile</dt><dd>{selectedVisitor.profileAdminDisabled ? 'Admin disabled' : selectedVisitor.profilePublic ? 'Public' : 'Private'}</dd></div>
-                        <div><dt>Contacts</dt><dd>{selectedVisitor.contactsPublic ? 'Public' : 'Private'}</dd></div>
-                      </dl>
-                      {selectedVisitor.bio && <p className="visitor-bio">{selectedVisitor.bio}</p>}
-                      <select className="field-input visitor-access-select" value={selectedVisitor.accessLevel} onChange={async (event) => {
-                        await updateVisitorAccess(selectedVisitor.id, event.target.value)
-                        await refreshSelectedVisitor()
-                      }}>
-                        {visitorAccessPresets.map((level) => <option key={level.value} value={level.value}>{level.label}</option>)}
-                      </select>
-                      <div className="visitor-moderation-actions">
-                        <button type="button" className="secondary-action" onClick={() => confirmVisitorModeration({ action: 'visibility', label: selectedVisitor.profileAdminDisabled ? 'restore public profile' : 'disable public profile' })}>{selectedVisitor.profileAdminDisabled ? 'Restore Public Profile' : 'Disable Public Profile'}</button>
-                        {[['avatar', 'Clear Avatar'], ['banner', 'Clear Banner'], ['bio', 'Clear Bio'], ['contacts', 'Clear Contacts']].map(([field, label]) => (
-                          <button key={field} type="button" className="secondary-action" onClick={() => confirmVisitorModeration({ action: 'moderate', fields: [field], label })}>{label}</button>
-                        ))}
-                        <button type="button" className="secondary-action" onClick={async () => {
-                          await updateVisitorVerification(selectedVisitor.id, !selectedVisitor.emailVerified)
-                          await refreshSelectedVisitor()
-                        }}>{selectedVisitor.emailVerified ? 'Mark Unverified' : 'Verify Email'}</button>
-                        <button type="button" className="danger-action" onClick={() => deleteItem('visitor account', async () => {
-                          await deleteVisitor(selectedVisitor.id)
-                          setSelectedVisitor(null)
-                        })}>Delete Account</button>
-                      </div>
-                      {visitorActionStatus && <small>{visitorActionStatus === 'done' ? 'Moderation action saved.' : visitorActionStatus}</small>}
-                    </div>
-                  )}
-                  {visitorDetailTab !== 'overview' && (
-                    <div className="visitor-content-list">
-                      {visitorContent[visitorDetailTab]?.loading && <p>Loading...</p>}
-                      {visitorContent[visitorDetailTab]?.error && <p className="text-coral">{visitorContent[visitorDetailTab].error}</p>}
-                      {(visitorContent[visitorDetailTab]?.items || []).map((item) => (
-                        <article key={item.id} className="visitor-content-item">
-                          <strong>{item.title || item.action || item.projectTitle || item.contextTitle || item.source || item.status}</strong>
-                          <p>{item.message || item.description || item.purpose || (item.fields || []).join(', ')}</p>
-                          {item.reason && <span>Reason: {item.reason}</span>}
-                          <small>{item.createdAt ? formatDate(item.createdAt) : ''}</small>
-                        </article>
-                      ))}
-                      {visitorContent[visitorDetailTab] && !visitorContent[visitorDetailTab].loading && visitorContent[visitorDetailTab].items?.length === 0 && <p className="text-sm text-neutral-500">No records in this section.</p>}
-                      {visitorContent[visitorDetailTab]?.pagination && (
-                        <div className="visitor-pagination">
-                          <button type="button" className="secondary-action" disabled={!visitorContent[visitorDetailTab].pagination.hasPrevious} onClick={() => loadVisitorTab(visitorDetailTab, visitorContent[visitorDetailTab].pagination.page - 1)}>Previous</button>
-                          <span>Page {visitorContent[visitorDetailTab].pagination.page} of {visitorContent[visitorDetailTab].pagination.pages}</span>
-                          <button type="button" className="secondary-action" disabled={!visitorContent[visitorDetailTab].pagination.hasNext} onClick={() => loadVisitorTab(visitorDetailTab, visitorContent[visitorDetailTab].pagination.page + 1)}>Next</button>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </>
-              )}
-            </aside>
-            </div>
-          </section>
+            <AdminMembersSection
+              actionStatus={visitorActionStatus}
+              content={visitorContent}
+              detailStatus={visitorDetailStatus}
+              detailTab={visitorDetailTab}
+              filters={visitorFilters}
+              onApplyFilters={updateVisitorFilters}
+              onChangeAccess={async (accessLevel) => {
+                await updateVisitorAccess(selectedVisitor.id, accessLevel)
+                await refreshSelectedVisitor()
+              }}
+              onCloseDetail={() => setSelectedVisitor(null)}
+              onDelete={() =>
+                deleteItem('visitor account', async () => {
+                  await deleteVisitor(selectedVisitor.id)
+                  setSelectedVisitor(null)
+                })
+              }
+              onFiltersChange={setVisitorFilters}
+              onModerate={confirmVisitorModeration}
+              onSelect={openVisitorDetail}
+              onSelectTab={loadVisitorTab}
+              onToggleVerification={async () => {
+                await updateVisitorVerification(selectedVisitor.id, !selectedVisitor.emailVerified)
+                await refreshSelectedVisitor()
+              }}
+              pagination={data.visitorPagination}
+              selected={selectedVisitor}
+              visitors={visibleVisitors}
+            />
           )}
 
           {activeSection === 'messages' && (
-          <section className="admin-section">
-            <div className="admin-section-header">
-              <h2>Contact Messages</h2>
-              <span>{visibleMessages.length}</span>
-            </div>
-            <div className="admin-table">
-              {visibleMessages.map((message) => (
-                <article key={message.id} className="admin-row">
-                  <div>
-                    <strong>{message.name}</strong>
-                    <span>{message.email}</span>
-                    <p>{message.message}</p>
-                    <small>{formatDate(message.createdAt)}</small>
-                  </div>
-                  <div className="admin-actions">
-                    <button
-                      type="button"
-                      className="danger-action"
-                      onClick={() =>
-                        deleteItem('contact message', () =>
-                          deleteAdminContactMessage(token, message.id),
-                        )
-                      }
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </article>
-              ))}
-              {visibleMessages.length === 0 && (
-                <p className="text-sm text-neutral-500">
-                  No contact messages match this search.
-                </p>
-              )}
-            </div>
-          </section>
+            <AdminMessagesSection
+              messages={visibleMessages}
+              onDelete={(message) =>
+                deleteItem('contact message', () =>
+                  deleteAdminContactMessage(token, message.id),
+                )
+              }
+            />
           )}
 
           {activeSection === 'security' && (
