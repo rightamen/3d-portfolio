@@ -1784,8 +1784,13 @@ html {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  /* minmax(0, 1fr), not 1fr. A bare `1fr` track refuses to go below its item's
+     min-content, and the six detail tabs measure 646px side by side -- so
+     selecting a member on a phone stretched the whole console to 684px and
+     scrolled the page sideways instead of scrolling the tab strip, which is
+     what `overflow-x: auto` on .visitor-detail-tabs was there to do. */
   .visitor-management-layout {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   /* The min-height exists to stop the second column collapsing while nobody is
