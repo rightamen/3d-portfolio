@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import AdminIcon from './AdminIcon'
 import { getAdminContentHealth } from '../../lib/api'
-import { formatAge, formatBytes, formatNumber } from './charts'
+import { useAdminI18n } from '../../lib/admin/i18nAdmin'
+import { stagger } from '../../lib/admin/motion'
 
 // Findings first, inventory second.
 //
@@ -11,20 +12,36 @@ import { formatAge, formatBytes, formatNumber } from './charts'
 // visitor experiences and what to do about it. The per-project detail is
 // underneath for when someone wants to confirm a file really is there.
 
-const severityCopy = {
-  critical: { label: 'Broken', tone: 'critical' },
-  note: { label: 'Note', tone: 'note' },
-  warning: { label: 'Degraded', tone: 'warning' },
-}
-
 const severityOrder = ['critical', 'warning', 'note']
 
+const severityLabelKey = {
+  critical: 'health.critical',
+  note: 'health.noteLabel',
+  warning: 'health.warning',
+}
+
+// A finding's own words, in the reading language when there is a translation
+// for its code and in the server's English when there is not. The severity
+// step exists for `upload-missing-file`, which says two different things at
+// two different severities.
+const findingText = (t, finding, field) => {
+  const bySeverity = t(`finding.${finding.code}.${finding.severity}.${field}`)
+  if (!bySeverity.startsWith('finding.')) return bySeverity
+
+  const byCode = t(`finding.${finding.code}.${field}`)
+  if (!byCode.startsWith('finding.')) return byCode
+
+  return finding[field] || ''
+}
+
 const AssetLine = ({ asset, label }) => {
+  const { fmt, t } = useAdminI18n()
+
   if (!asset) {
     return (
       <div className="admin-asset-line">
         <span>{label}</span>
-        <em>none attached</em>
+        <em>{t('health.noneAttached')}</em>
       </div>
     )
   }
@@ -35,16 +52,21 @@ const AssetLine = ({ asset, label }) => {
       <code>{asset.url}</code>
       {asset.exists ? (
         <em>
-          {asset.kind} · {formatBytes(asset.bytes)} · served from {asset.root}/
+          {t('health.servedFrom', {
+            kind: asset.kind,
+            root: asset.root,
+            size: fmt.formatBytes(asset.bytes),
+          })}
         </em>
       ) : (
-        <em className="admin-asset-missing">not found</em>
+        <em className="admin-asset-missing">{t('health.notFound')}</em>
       )}
     </div>
   )
 }
 
 const AdminContentHealth = ({ onNavigate, token }) => {
+  const { fmt, t } = useAdminI18n()
   const [health, setHealth] = useState(null)
   const [status, setStatus] = useState('loading')
   const [nonce, setNonce] = useState(0)
@@ -106,129 +128,97 @@ const AdminContentHealth = ({ onNavigate, token }) => {
       findings.push({ ...issue, scope: upload.title || upload.url, slug: null, uploads: true })
     }
   }
-  findings.sort(
-    (a, b) => severityOrder.indexOf(a.severity) - severityOrder.indexOf(b.severity),
-  )
+  findings.sort((a, b) => severityOrder.indexOf(a.severity) - severityOrder.indexOf(b.severity))
 
   const counts = health?.counts || { critical: 0, note: 0, warning: 0 }
   const actionable = findings.filter((finding) => finding.severity !== 'note')
   const notes = findings.filter((finding) => finding.severity === 'note')
 
+  const FindingRow = ({ finding, index }) => (
+    <li
+      className={`admin-finding-${finding.severity} admin-animate-in`}
+      style={stagger(index)}
+    >
+      <span className="admin-finding-tag">{t(severityLabelKey[finding.severity])}</span>
+      <div>
+        <p>
+          <strong>{finding.scope}</strong> — {findingText(t, finding, 'message')}
+        </p>
+        <small>{findingText(t, finding, 'hint')}</small>
+      </div>
+      {finding.slug ? (
+        <button className="admin-chip-button" onClick={() => onNavigate?.('projects')} type="button">
+          {t('health.openProject')}
+        </button>
+      ) : finding.uploads ? (
+        <button
+          className="admin-chip-button"
+          onClick={() => onNavigate?.('community')}
+          type="button"
+        >
+          {t('health.openCommunity')}
+        </button>
+      ) : null}
+    </li>
+  )
+
   return (
     <section className="admin-dashboard">
-      <div className="admin-panel">
+      <div className="admin-panel admin-animate-in">
         <div className="admin-panel-head">
-          <h2>What the site actually serves</h2>
+          <h2>{t('health.title')}</h2>
           <span>
             {status === 'loading'
-              ? 'checking…'
+              ? t('health.checking')
               : health?.checkedAt
-                ? `checked ${formatAge(health.checkedAt)}`
-                : '—'}
+                ? t('health.checked', { age: fmt.formatAge(health.checkedAt) })
+                : t('common.dash')}
           </span>
         </div>
 
-        <p className="admin-panel-note">
-          Every URL in the catalogue is opened on the server and identified by its file header, not
-          its extension. Files are looked for in the built <code>dist/</code> directory, because
-          that is the one visitors are served — anything found only in <code>public/</code> is
-          reported as unbuilt.
-        </p>
+        <p className="admin-panel-note">{t('health.note')}</p>
 
         <div className="admin-health-summary">
           {severityOrder.map((severity) => (
             <div className={`admin-health-count admin-health-${severity}`} key={severity}>
-              <strong>{formatNumber(counts[severity] || 0)}</strong>
-              <span>{severityCopy[severity].label.toLowerCase()}</span>
+              <strong>{fmt.formatNumber(counts[severity] || 0)}</strong>
+              <span>{t(severityLabelKey[severity])}</span>
             </div>
           ))}
           <button className="admin-chip-button" onClick={recheck} type="button">
-            Re-check
+            {t('health.recheck')}
           </button>
         </div>
       </div>
 
-      {status === 'error' ? (
-        <p className="admin-empty-note">
-          The check could not be run. It reads files on the server, so this usually means the
-          service is mid-restart.
-        </p>
-      ) : null}
+      {status === 'error' ? <p className="admin-empty-note">{t('health.error')}</p> : null}
 
-      <div className="admin-panel">
+      <div className="admin-panel admin-animate-in">
         <div className="admin-panel-head">
-          <h2>Findings</h2>
-          <span>{actionable.length ? `${actionable.length} actionable` : 'nothing broken'}</span>
+          <h2>{t('health.findings')}</h2>
+          <span>
+            {actionable.length
+              ? t('health.actionable', { count: fmt.formatNumber(actionable.length) })
+              : t('health.nothingBroken')}
+          </span>
         </div>
 
         {actionable.length ? (
           <ul className="admin-findings">
             {actionable.map((finding, index) => (
-              <li className={`admin-finding-${finding.severity}`} key={`${finding.code}-${index}`}>
-                <span className="admin-finding-tag">{severityCopy[finding.severity].label}</span>
-                <div>
-                  <p>
-                    <strong>{finding.scope}</strong> — {finding.message}
-                  </p>
-                  <small>{finding.hint}</small>
-                </div>
-                {finding.slug ? (
-                  <button
-                    className="admin-chip-button"
-                    onClick={() => onNavigate?.('projects')}
-                    type="button"
-                  >
-                    Open project
-                  </button>
-                ) : finding.uploads ? (
-                  <button
-                    className="admin-chip-button"
-                    onClick={() => onNavigate?.('community')}
-                    type="button"
-                  >
-                    Open community
-                  </button>
-                ) : null}
-              </li>
+              <FindingRow finding={finding} index={index} key={`${finding.code}-${index}`} />
             ))}
           </ul>
         ) : (
           <p className="admin-empty-note admin-empty-good">
-            {status === 'loading'
-              ? 'Opening every referenced file…'
-              : 'Every referenced image and model resolves, is the format it claims to be, and has the decoder it needs.'}
+            {status === 'loading' ? t('health.openingFiles') : t('health.allGood')}
           </p>
         )}
 
         {showNotes && notes.length ? (
           <ul className="admin-findings">
             {notes.map((finding, index) => (
-              <li className="admin-finding-note" key={`${finding.code}-${index}`}>
-                <span className="admin-finding-tag">{severityCopy.note.label}</span>
-                <div>
-                  <p>
-                    <strong>{finding.scope}</strong> — {finding.message}
-                  </p>
-                  <small>{finding.hint}</small>
-                </div>
-                {finding.slug ? (
-                  <button
-                    className="admin-chip-button"
-                    onClick={() => onNavigate?.('projects')}
-                    type="button"
-                  >
-                    Open project
-                  </button>
-                ) : finding.uploads ? (
-                  <button
-                    className="admin-chip-button"
-                    onClick={() => onNavigate?.('community')}
-                    type="button"
-                  >
-                    Open community
-                  </button>
-                ) : null}
-              </li>
+              <FindingRow finding={finding} index={index} key={`${finding.code}-${index}`} />
             ))}
           </ul>
         ) : null}
@@ -244,27 +234,31 @@ const AdminContentHealth = ({ onNavigate, token }) => {
             type="button"
           >
             {showNotes
-              ? `Hide ${notes.length} note${notes.length === 1 ? '' : 's'}`
-              : `Show ${notes.length} note${notes.length === 1 ? '' : 's'}`}
+              ? t('health.hideNotes', { count: notes.length })
+              : t('health.showNotes', { count: notes.length })}
           </button>
         ) : null}
       </div>
 
-      <div className="admin-panel">
+      <div className="admin-panel admin-animate-in">
         <div className="admin-panel-head">
-          <h2>Per project</h2>
-          <span>{health?.projects?.length || 0}</span>
+          <h2>{t('health.perProject')}</h2>
+          <span>{fmt.formatNumber(health?.projects?.length || 0)}</span>
         </div>
 
         <div className="admin-table">
-          {(health?.projects || []).map((project) => {
+          {(health?.projects || []).map((project, index) => {
             const worst = severityOrder.find((severity) =>
               project.issues.some((issue) => issue.severity === severity),
             )
             const isOpen = expanded.has(project.slug)
 
             return (
-              <article className="admin-row admin-health-row" key={project.slug}>
+              <article
+                className="admin-row admin-health-row admin-animate-in"
+                key={project.slug}
+                style={stagger(index)}
+              >
                 <div>
                   <div className="admin-row-title">
                     <strong>{project.title || project.slug}</strong>
@@ -272,41 +266,50 @@ const AdminContentHealth = ({ onNavigate, token }) => {
                         default, which paints the word "Broken" the same
                         friendly aqua as every other tag. Severity overrides it. */}
                     <span className={`admin-health-chip admin-health-chip-${worst || 'ok'}`}>
-                      {worst ? severityCopy[worst].label : 'OK'}
+                      {worst ? t(severityLabelKey[worst]) : t('health.ok')}
                     </span>
                   </div>
                   <span>
-                    {project.slug} · {project.isPublic ? 'public' : 'hidden'} ·{' '}
+                    {project.slug} · {t(`status.${project.isPublic ? 'public' : 'hidden'}`)} ·{' '}
                     {project.issues.length
-                      ? `${project.issues.length} finding${project.issues.length === 1 ? '' : 's'}`
-                      : 'no findings'}
+                      ? t('health.findingsCount', { count: project.issues.length })
+                      : t('health.noFindings')}
                   </span>
 
                   {isOpen ? (
-                    <div className="admin-asset-detail">
-                      <AssetLine asset={project.image} label="Preview image" />
-                      <AssetLine asset={project.model} label="3D model" />
+                    <div className="admin-asset-detail admin-animate-in">
+                      <AssetLine asset={project.image} label={t('health.previewImage')} />
+                      <AssetLine asset={project.model} label={t('health.model3d')} />
                       {project.glb ? (
                         <div className="admin-asset-line">
-                          <span>glTF</span>
+                          <span>{t('health.gltf')}</span>
                           <em>
-                            v{project.glb.version} · {project.glb.meshes} mesh
-                            {project.glb.meshes === 1 ? '' : 'es'} · {project.glb.materials} material
-                            {project.glb.materials === 1 ? '' : 's'} · {project.glb.images} texture
-                            {project.glb.images === 1 ? '' : 's'}
+                            {t('health.glbSummary', {
+                              images: project.glb.images,
+                              materials: project.glb.materials,
+                              meshes: project.glb.meshes,
+                              version: project.glb.version,
+                            })}
                             {project.glb.extensionsRequired?.length
-                              ? ` · requires ${project.glb.extensionsRequired.join(', ')}`
+                              ? t('health.glbRequires', {
+                                  extensions: project.glb.extensionsRequired.join(', '),
+                                })
                               : ''}
                           </em>
                         </div>
                       ) : null}
                       <div className="admin-asset-line">
-                        <span>Localised</span>
+                        <span>{t('health.localised')}</span>
                         <em>
                           {project.translations.complete
-                            ? 'Chinese and Japanese copy present'
+                            ? t('health.translationsComplete')
                             : Object.entries(project.translations.missing)
-                                .map(([suffix, fields]) => `${suffix} missing ${fields.join('/')}`)
+                                .map(([suffix, fields]) =>
+                                  t('health.missingFields', {
+                                    fields: fields.join('/'),
+                                    suffix,
+                                  }),
+                                )
                                 .join(' · ')}
                         </em>
                       </div>
@@ -320,7 +323,7 @@ const AdminContentHealth = ({ onNavigate, token }) => {
                     onClick={() => toggle(project.slug)}
                     type="button"
                   >
-                    {isOpen ? 'Hide files' : 'Show files'}
+                    {isOpen ? t('health.hideFiles') : t('health.showFiles')}
                   </button>
                 </div>
               </article>
@@ -329,78 +332,83 @@ const AdminContentHealth = ({ onNavigate, token }) => {
         </div>
       </div>
 
-      <div className="admin-panel">
+      <div className="admin-panel admin-animate-in">
         <div className="admin-panel-head">
-          <h2>Shared assets</h2>
-          <span>belong to no project</span>
+          <h2>{t('health.sharedAssets')}</h2>
+          <span>{t('health.sharedAssetsMeta')}</span>
         </div>
         <ul className="admin-posture">
-          {(health?.siteAssets || []).map((asset) => (
+          {(health?.siteAssets || []).map((asset, index) => (
             <li
-              className={asset.issue ? `admin-posture-${asset.issue.severity === 'critical' ? 'bad' : 'warn'}` : 'admin-posture-ok'}
+              className={`admin-animate-in ${
+                asset.issue
+                  ? `admin-posture-${asset.issue.severity === 'critical' ? 'bad' : 'warn'}`
+                  : 'admin-posture-ok'
+              }`}
               key={asset.url}
+              style={stagger(index)}
             >
               <AdminIcon name={asset.issue ? 'alert' : 'ok'} size={17} />
               <div>
                 <span>{asset.label}</span>
                 <small>
-                  expected {asset.expected} · found {asset.found}
-                  {asset.bytes ? ` · ${formatBytes(asset.bytes)}` : ''}
+                  {t('health.expectedFound', { expected: asset.expected, found: asset.found })}
+                  {asset.bytes ? ` · ${fmt.formatBytes(asset.bytes)}` : ''}
                 </small>
-                {asset.issue ? <small>{asset.issue.message}</small> : null}
+                {asset.issue ? <small>{findingText(t, asset.issue, 'message')}</small> : null}
               </div>
             </li>
           ))}
         </ul>
       </div>
 
-      <div className="admin-panel">
+      <div className="admin-panel admin-animate-in">
         <div className="admin-panel-head">
-          <h2>Community uploads</h2>
+          <h2>{t('health.communityUploads')}</h2>
           <span>
             {health?.communityUploads?.length
-              ? `${health.communityUploads.length} checked`
-              : 'none stored'}
+              ? t('health.uploadsChecked', { count: health.communityUploads.length })
+              : t('health.noneStored')}
           </span>
         </div>
 
-        <p className="admin-panel-note">
-          Member uploads are download links, not previews — nothing renders them, so the check asks
-          only whether the file still exists and still matches the extension it was stored under.
-          Approved rows count as critical because a visitor can click them; pending rows are a
-          warning, because a moderator is about to.
-        </p>
+        <p className="admin-panel-note">{t('health.uploadsNote')}</p>
 
         {health?.communityUploads?.length ? (
           <ul className="admin-posture">
-            {health.communityUploads.map((upload) => (
+            {health.communityUploads.map((upload, index) => (
               <li
-                className={
+                className={`admin-animate-in ${
                   upload.issues.length
-                    ? `admin-posture-${upload.issues.some((issue) => issue.severity === 'critical') ? 'bad' : 'warn'}`
+                    ? `admin-posture-${
+                        upload.issues.some((issue) => issue.severity === 'critical')
+                          ? 'bad'
+                          : 'warn'
+                      }`
                     : 'admin-posture-ok'
-                }
+                }`}
                 key={upload.id}
+                style={stagger(index)}
               >
                 <AdminIcon name={upload.issues.length ? 'alert' : 'ok'} size={17} />
                 <div>
                   <span>{upload.title || upload.url}</span>
                   <small>
-                    {upload.status} · {upload.fileType} ·{' '}
-                    {upload.file?.exists ? `found ${upload.file.kind}` : 'file missing'}
-                    {upload.file?.bytes ? ` · ${formatBytes(upload.file.bytes)}` : ''}
+                    {t(`status.${upload.status}`)} · {upload.fileType} ·{' '}
+                    {upload.file?.exists
+                      ? t('health.fileFound', { kind: upload.file.kind })
+                      : t('health.fileMissing')}
+                    {upload.file?.bytes ? ` · ${fmt.formatBytes(upload.file.bytes)}` : ''}
                   </small>
                   {upload.issues.map((issue) => (
-                    <small key={issue.code}>{issue.message}</small>
+                    <small key={issue.code}>{findingText(t, issue, 'message')}</small>
                   ))}
                 </div>
               </li>
             ))}
           </ul>
         ) : (
-          <p className="admin-empty-note">
-            No approved or pending uploads to check.
-          </p>
+          <p className="admin-empty-note">{t('health.noUploads')}</p>
         )}
       </div>
     </section>

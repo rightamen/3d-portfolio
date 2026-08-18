@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useAdminI18n } from '../../lib/admin/i18nAdmin'
 
 // Keyboard navigation for an admin that now has ten places to be. Opening a
 // section used to be "find the pill in the row"; with a grouped sidebar the
 // row is gone, and a palette is the honest replacement rather than a
 // decoration -- it is also the only way to reach a section without a mouse.
 const AdminCommandPalette = ({ commands = [], onClose }) => {
+  const { t } = useAdminI18n()
   const [query, setQuery] = useState('')
   const [cursor, setCursor] = useState(0)
   const inputRef = useRef(null)
@@ -64,7 +66,7 @@ const AdminCommandPalette = ({ commands = [], onClose }) => {
   return (
     <div className="admin-palette-backdrop" onMouseDown={onClose} role="presentation">
       <div
-        aria-label="Admin command palette"
+        aria-label={t('palette.label')}
         aria-modal="true"
         className="admin-palette"
         onKeyDown={handleKeyDown}
@@ -77,13 +79,13 @@ const AdminCommandPalette = ({ commands = [], onClose }) => {
             setQuery(event.target.value)
             setCursor(0)
           }}
-          placeholder="Jump to a section or run an action…"
+          placeholder={t('palette.placeholder')}
           ref={inputRef}
           value={query}
         />
         <ul className="admin-palette-list">
           {matches.map((command, index) => (
-            <li key={command.key}>
+            <li className="admin-animate-in" key={command.key} style={{ '--stagger-index': index }}>
               <button
                 className={
                   index === activeIndex ? 'admin-palette-item admin-palette-active' : 'admin-palette-item'
@@ -99,11 +101,11 @@ const AdminCommandPalette = ({ commands = [], onClose }) => {
           ))}
           {matches.length === 0 ? (
             <li>
-              <p className="admin-empty-note">Nothing matches “{query}”.</p>
+              <p className="admin-empty-note">{t('palette.empty', { query })}</p>
             </li>
           ) : null}
         </ul>
-        <p className="admin-palette-foot">↑↓ to move · Enter to run · Esc to close</p>
+        <p className="admin-palette-foot">{t('palette.foot')}</p>
       </div>
     </div>
   )

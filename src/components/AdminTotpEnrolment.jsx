@@ -1,6 +1,7 @@
 import { useState } from 'react'
 
 import { confirmAdminTotpEnrolment, startAdminTotpEnrolment } from '../lib/api'
+import { useAdminI18n } from '../lib/admin/i18nAdmin'
 
 // Moving an authenticator to a new phone, from the browser.
 //
@@ -13,14 +14,8 @@ import { confirmAdminTotpEnrolment, startAdminTotpEnrolment } from '../lib/api'
 // The two steps mirror the API. Nothing is replaced until a code generated from
 // the new QR comes back, so a mis-scan costs a retry rather than the account.
 
-const formatExpiry = (isoString) => {
-  const expiresAt = new Date(isoString)
-  return Number.isNaN(expiresAt.valueOf())
-    ? null
-    : expiresAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-}
-
 const AdminTotpEnrolment = ({ signedInUsername, token }) => {
+  const { fmt, t } = useAdminI18n()
   const [username, setUsername] = useState(signedInUsername || '')
   const [password, setPassword] = useState('')
   const [totp, setTotp] = useState('')
@@ -46,7 +41,7 @@ const AdminTotpEnrolment = ({ signedInUsername, token }) => {
     try {
       const payload = await startAdminTotpEnrolment(token, { password, username })
       const next = payload?.enrolment
-      if (!next?.otpauthUrl) throw new Error('The server did not return an enrolment.')
+      if (!next?.otpauthUrl) throw new Error(t('totp.noEnrolment'))
 
       setEnrolment(next)
       setRecoveryCodes(null)
@@ -65,7 +60,7 @@ const AdminTotpEnrolment = ({ signedInUsername, token }) => {
         }),
       )
     } catch (error) {
-      setMessage(error?.message || 'Could not start the enrolment.')
+      setMessage(error?.message || t('totp.startError'))
     } finally {
       setBusy(false)
     }
@@ -86,7 +81,7 @@ const AdminTotpEnrolment = ({ signedInUsername, token }) => {
       setPassword('')
       setTotp('')
     } catch (error) {
-      setMessage(error?.message || 'Could not confirm the code.')
+      setMessage(error?.message || t('totp.confirmError'))
     } finally {
       setBusy(false)
     }
@@ -94,26 +89,20 @@ const AdminTotpEnrolment = ({ signedInUsername, token }) => {
 
   if (recoveryCodes) {
     return (
-      <section className="admin-section">
+      <section className="admin-section admin-animate-in">
         <div className="admin-section-header">
-          <h2>Authenticator Updated</h2>
+          <h2>{t('totp.updatedTitle')}</h2>
         </div>
         <div className="admin-totp-panel">
-          <p className="text-sm text-neutral-300">
-            The new authenticator is live and the old one no longer works. These recovery codes
-            replace any previous set — each one signs in once, and they are shown only now.
-          </p>
+          <p className="text-sm text-neutral-300">{t('totp.updatedBody')}</p>
           <ul className="admin-totp-codes">
             {recoveryCodes.map((code) => (
               <li key={code}>{code}</li>
             ))}
           </ul>
-          <p className="text-sm text-neutral-400">
-            Store them somewhere that is not the phone you just enrolled. They are the way back in
-            when that phone is gone.
-          </p>
-          <button type="button" className="secondary-action" onClick={reset}>
-            Done
+          <p className="text-sm text-neutral-400">{t('totp.storeNote')}</p>
+          <button className="secondary-action" onClick={reset} type="button">
+            {t('totp.done')}
           </button>
         </div>
       </section>
@@ -121,23 +110,19 @@ const AdminTotpEnrolment = ({ signedInUsername, token }) => {
   }
 
   return (
-    <section className="admin-section">
+    <section className="admin-section admin-animate-in">
       <div className="admin-section-header">
-        <h2>Authenticator</h2>
+        <h2>{t('totp.title')}</h2>
       </div>
 
       <div className="admin-totp-panel">
         {!enrolment ? (
           <form className="admin-totp-form" onSubmit={start}>
-            <p className="text-sm text-neutral-300">
-              Enrol a new authenticator app — after a new phone, a wipe, or a lost device. The
-              current one keeps working until you finish, so an interrupted enrolment changes
-              nothing.
-            </p>
+            <p className="text-sm text-neutral-300">{t('totp.intro')}</p>
             <input
               autoComplete="username"
               className="field-input field-input-focus"
-              placeholder="Admin username"
+              placeholder={t('totp.username')}
               type="text"
               value={username}
               onChange={(event) => setUsername(event.target.value)}
@@ -146,38 +131,32 @@ const AdminTotpEnrolment = ({ signedInUsername, token }) => {
             <input
               autoComplete="current-password"
               className="field-input field-input-focus"
-              placeholder="Account password"
+              placeholder={t('totp.password')}
               type="password"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               required
             />
-            <p className="text-xs text-neutral-500">
-              The password is required even though you are already signed in: a session opened with
-              the shared token belongs to nobody in particular, and one of those must not be able to
-              move a named account&rsquo;s second factor.
-            </p>
+            <p className="text-xs text-neutral-500">{t('totp.passwordNote')}</p>
             <button type="submit" className="primary-action" disabled={busy}>
-              {busy ? 'Working...' : 'Show QR code'}
+              {busy ? t('totp.working') : t('totp.showQr')}
             </button>
           </form>
         ) : (
           <form className="admin-totp-form" onSubmit={confirm}>
-            <p className="text-sm text-neutral-300">
-              Scan this with your authenticator app, then enter the six digits it shows.
-            </p>
+            <p className="text-sm text-neutral-300">{t('totp.scanIntro')}</p>
             {qrDataUrl ? (
-              <img className="admin-totp-qr" src={qrDataUrl} alt="Authenticator QR code" />
+              <img alt={t('totp.qrAlt')} className="admin-totp-qr" src={qrDataUrl} />
             ) : (
-              <p className="text-sm text-neutral-400">Rendering the QR code...</p>
+              <p className="text-sm text-neutral-400">{t('totp.renderingQr')}</p>
             )}
             <div className="admin-totp-secret">
-              <span>Or enter this key by hand</span>
+              <span>{t('totp.manualKey')}</span>
               <code>{enrolment.totpSecret}</code>
             </div>
-            {formatExpiry(enrolment.expiresAt) && (
+            {fmt.formatTime(enrolment.expiresAt) && (
               <p className="text-xs text-neutral-500">
-                This code expires at {formatExpiry(enrolment.expiresAt)}. After that, start again.
+                {t('totp.expiresAt', { time: fmt.formatTime(enrolment.expiresAt) })}
               </p>
             )}
             <input
@@ -185,7 +164,7 @@ const AdminTotpEnrolment = ({ signedInUsername, token }) => {
               className="field-input field-input-focus"
               inputMode="numeric"
               maxLength={6}
-              placeholder="6-digit code"
+              placeholder={t('auth.code')}
               type="text"
               value={totp}
               onChange={(event) => setTotp(event.target.value)}
@@ -193,10 +172,10 @@ const AdminTotpEnrolment = ({ signedInUsername, token }) => {
             />
             <div className="flex flex-wrap gap-3">
               <button type="submit" className="primary-action" disabled={busy}>
-                {busy ? 'Checking...' : 'Confirm and switch'}
+                {busy ? t('totp.checking') : t('totp.confirm')}
               </button>
-              <button type="button" className="secondary-action" onClick={reset} disabled={busy}>
-                Cancel
+              <button className="secondary-action" disabled={busy} onClick={reset} type="button">
+                {t('common.cancel')}
               </button>
             </div>
           </form>

@@ -1,62 +1,33 @@
 import { useMemo } from 'react'
+import AdminGalaxy from './AdminGalaxy'
 import AdminIcon from './AdminIcon'
 import { BarList, Meter, Sparkline, StackedColumns } from './Charts'
-import {
-  compactNumber,
-  formatAge,
-  formatBytes,
-  formatDuration,
-  formatNumber,
-  percentChange,
-  seriesMeta,
-} from './charts'
+import { percentChange, seriesMeta } from './charts'
+import { useAdminI18n } from '../../lib/admin/i18nAdmin'
+import { stagger, useCountUp, usePrefersReducedMotion } from '../../lib/admin/motion'
 
 const rangePresets = [
-  { days: 7, label: '7 days' },
-  { days: 30, label: '30 days' },
-  { days: 90, label: '90 days' },
+  { days: 7, labelKey: 'dash.range7' },
+  { days: 30, labelKey: 'dash.range30' },
+  { days: 90, labelKey: 'dash.range90' },
 ]
 
 // Every tile names the section it belongs to, so a number that looks wrong is
 // one click away from the rows behind it. A dashboard you cannot drill out of
 // is a poster.
 const tiles = [
-  {
-    key: 'members',
-    label: 'Members',
-    section: 'visitors',
-    metrics: ['members'],
-    seriesKey: 'members',
-  },
-  {
-    key: 'comments',
-    label: 'Comments',
-    section: 'comments',
-    metrics: ['comments'],
-    seriesKey: 'comments',
-  },
-  { key: 'likes', label: 'Likes', section: 'likes', metrics: ['likes'], seriesKey: 'likes' },
-  {
-    key: 'downloads',
-    label: 'Downloads',
-    section: 'downloads',
-    metrics: ['downloads'],
-    seriesKey: 'downloads',
-  },
+  { key: 'members', labelKey: 'tile.members', metrics: ['members'], section: 'visitors', seriesKey: 'members' },
+  { key: 'comments', labelKey: 'tile.comments', metrics: ['comments'], section: 'comments', seriesKey: 'comments' },
+  { key: 'likes', labelKey: 'tile.likes', metrics: ['likes'], section: 'likes', seriesKey: 'likes' },
+  { key: 'downloads', labelKey: 'tile.downloads', metrics: ['downloads'], section: 'downloads', seriesKey: 'downloads' },
   {
     key: 'community',
-    label: 'Community',
-    section: 'community',
+    labelKey: 'tile.community',
     metrics: ['communityPosts', 'communityUploads', 'communityComments'],
+    section: 'community',
     seriesKey: 'community',
   },
-  {
-    key: 'messages',
-    label: 'Messages',
-    section: 'messages',
-    metrics: ['messages'],
-    seriesKey: 'messages',
-  },
+  { key: 'messages', labelKey: 'tile.messages', metrics: ['messages'], section: 'messages', seriesKey: 'messages' },
 ]
 
 // The same icon set the nav uses, not emoji. Emoji here would be at the mercy
@@ -64,13 +35,13 @@ const tiles = [
 // a bare server-rendered screenshot they came out as empty boxes -- and they
 // cannot inherit the row's colour.
 const activityCopy = {
-  comment: { icon: 'comments', verb: 'commented on' },
-  download: { icon: 'downloads', verb: 'took' },
-  member: { icon: 'visitors', verb: 'joined as' },
-  message: { icon: 'messages', verb: 'sent a message via' },
-  post: { icon: 'community', verb: 'posted in' },
-  request: { icon: 'downloads', verb: 'requested access to' },
-  upload: { icon: 'projects', verb: 'uploaded to' },
+  comment: { icon: 'comments', verbKey: 'activity.comment' },
+  download: { icon: 'downloads', verbKey: 'activity.download' },
+  member: { icon: 'visitors', verbKey: 'activity.member' },
+  message: { icon: 'messages', verbKey: 'activity.message' },
+  post: { icon: 'community', verbKey: 'activity.post' },
+  request: { icon: 'downloads', verbKey: 'activity.request' },
+  upload: { icon: 'projects', verbKey: 'activity.upload' },
 }
 
 const truncate = (value, limit = 90) => {
@@ -79,42 +50,54 @@ const truncate = (value, limit = 90) => {
   return text.length > limit ? `${text.slice(0, limit - 1)}…` : text
 }
 
-const StatTile = ({ label, onOpen, points, prior, value }) => {
+const signed = (change) => `${change > 0 ? '+' : ''}${change}`
+
+const StatTile = ({ index, label, onOpen, points, prior, value }) => {
+  const { fmt, t } = useAdminI18n()
+  const reducedMotion = usePrefersReducedMotion()
+  // The number counts up to itself on mount and on every window change. It is
+  // the one piece of motion here that carries meaning rather than polish: a
+  // tile that snaps from 40 to 900 loses the fact that it moved at all.
+  const shown = useCountUp(value, { enabled: !reducedMotion })
   const change = percentChange(value, prior)
   const direction = change === null ? 'new' : change > 0 ? 'up' : change < 0 ? 'down' : 'flat'
 
   return (
-    <button className="admin-stat" onClick={onOpen} type="button">
+    <button className="admin-stat admin-animate-in" onClick={onOpen} style={stagger(index)} type="button">
       <span className="admin-stat-label">{label}</span>
       <div className="admin-stat-body">
-        <strong className="admin-stat-value">{compactNumber(value)}</strong>
+        <strong className="admin-stat-value">{fmt.compactNumber(shown)}</strong>
         <Sparkline points={points} />
       </div>
       {/* The delta names its baseline. "+12%" against an unnamed period is a
           number nobody can check. */}
       <span className={`admin-delta admin-delta-${direction}`}>
         {direction === 'new'
-          ? 'first activity in this window'
+          ? t('dash.tileNew')
           : direction === 'flat'
-            ? `no change vs previous period`
-            : `${change > 0 ? '+' : ''}${change}% vs previous period`}
+            ? t('dash.tileFlat')
+            : t('dash.tileDelta', { change: signed(change) })}
       </span>
     </button>
   )
 }
 
-const QueueCard = ({ actionLabel, count, label, note, onOpen, tone = 'idle' }) => (
-  <article className={`admin-queue-card admin-queue-${tone}`}>
-    <div>
-      <strong>{formatNumber(count)}</strong>
-      <span>{label}</span>
-    </div>
-    <p>{note}</p>
-    <button className="admin-chip-button" onClick={onOpen} type="button">
-      {actionLabel}
-    </button>
-  </article>
-)
+const QueueCard = ({ actionLabel, count, index, label, note, onOpen, tone = 'idle' }) => {
+  const { fmt } = useAdminI18n()
+
+  return (
+    <article className={`admin-queue-card admin-queue-${tone} admin-animate-in`} style={stagger(index)}>
+      <div>
+        <strong>{fmt.formatNumber(count)}</strong>
+        <span>{label}</span>
+      </div>
+      <p>{note}</p>
+      <button className="admin-chip-button" onClick={onOpen} type="button">
+        {actionLabel}
+      </button>
+    </article>
+  )
+}
 
 const AdminDashboard = ({
   days = 30,
@@ -126,6 +109,9 @@ const AdminDashboard = ({
   projects = [],
   systemLabel,
 }) => {
+  const { fmt, t } = useAdminI18n()
+  const reducedMotion = usePrefersReducedMotion()
+
   const metrics = overview?.metrics || {}
   const queues = overview?.queues || {}
   const catalogue = overview?.catalogue || {}
@@ -147,46 +133,47 @@ const AdminDashboard = ({
   const activityNow = Object.values(metrics).reduce((total, item) => total + (item.current || 0), 0)
   const activityPrior = Object.values(metrics).reduce((total, item) => total + (item.prior || 0), 0)
   const activityChange = percentChange(activityNow, activityPrior)
+  const activityShown = useCountUp(activityNow, { duration: 1100, enabled: !reducedMotion })
 
   const queueItems = [
     {
-      actionLabel: 'Moderate comments',
+      actionLabel: t('queue.comments.action'),
       count: queues.pendingComments || 0,
       key: 'comments',
-      label: 'comments awaiting moderation',
+      label: t('queue.comments.label'),
       note: queues.oldestComment
-        ? `Oldest waiting since ${formatAge(queues.oldestComment)}.`
-        : 'Nothing held back.',
+        ? t('queue.comments.oldest', { age: fmt.formatAge(queues.oldestComment) })
+        : t('queue.comments.clear'),
       section: 'comments',
     },
     {
-      actionLabel: 'Review uploads',
+      actionLabel: t('queue.uploads.action'),
       count: queues.pendingUploads || 0,
       key: 'uploads',
-      label: 'community uploads pending review',
+      label: t('queue.uploads.label'),
       note: queues.oldestUpload
-        ? `Oldest waiting since ${formatAge(queues.oldestUpload)}.`
-        : 'The upload queue is clear.',
+        ? t('queue.uploads.oldest', { age: fmt.formatAge(queues.oldestUpload) })
+        : t('queue.uploads.clear'),
       section: 'community',
     },
     {
-      actionLabel: 'Open requests',
+      actionLabel: t('queue.requests.action'),
       count: queues.pendingRequests || 0,
       key: 'requests',
-      label: 'download requests undecided',
+      label: t('queue.requests.label'),
       note: queues.oldestRequest
-        ? `Oldest waiting since ${formatAge(queues.oldestRequest)}.`
-        : 'Every request has an answer.',
+        ? t('queue.requests.oldest', { age: fmt.formatAge(queues.oldestRequest) })
+        : t('queue.requests.clear'),
       section: 'downloads',
     },
     {
-      actionLabel: 'Open messages',
+      actionLabel: t('queue.messages.action'),
       count: queues.recentMessages || 0,
       key: 'messages',
-      label: 'contact messages this week',
+      label: t('queue.messages.label'),
       note: queues.oldestMessage
-        ? `Oldest arrived ${formatAge(queues.oldestMessage)}.`
-        : 'No new messages in the last seven days.',
+        ? t('queue.messages.oldest', { age: fmt.formatAge(queues.oldestMessage) })
+        : t('queue.messages.clear'),
       section: 'messages',
     },
   ]
@@ -194,11 +181,92 @@ const AdminDashboard = ({
   const openQueues = queueItems.filter((item) => item.count > 0)
 
   const topProjects = (overview?.topProjects || []).map((project) => ({
-    detail: `${formatNumber(project.likes)} likes · ${formatNumber(project.comments)} comments · ${formatNumber(project.downloads)} downloads`,
+    detail: t('dash.topDetail', {
+      comments: fmt.formatNumber(project.comments),
+      downloads: fmt.formatNumber(project.downloads),
+      likes: fmt.formatNumber(project.likes),
+    }),
     id: project.slug,
     label: projectTitles.get(project.slug) || project.slug,
     value: project.total,
   }))
+
+  // The 3D map's nodes. Deliberately more than the six stat tiles: the
+  // constellation is the whole console seen at once, including the two
+  // sections -- Security and System -- that have no tile because they are not
+  // counted in events.
+  const galaxyNodes = [
+    {
+      key: 'visitors',
+      label: t('section.visitors'),
+      pending: queues.unverifiedMembers || 0,
+      section: 'visitors',
+      value: sumMetric(['members'], 'current'),
+    },
+    {
+      key: 'comments',
+      label: t('section.comments'),
+      pending: queues.pendingComments || 0,
+      section: 'comments',
+      value: sumMetric(['comments'], 'current'),
+    },
+    {
+      key: 'likes',
+      label: t('section.likes'),
+      pending: 0,
+      section: 'likes',
+      value: sumMetric(['likes'], 'current'),
+    },
+    {
+      key: 'downloads',
+      label: t('section.downloads'),
+      pending: queues.pendingRequests || 0,
+      section: 'downloads',
+      value: sumMetric(['downloads'], 'current'),
+    },
+    {
+      key: 'community',
+      label: t('section.community'),
+      pending: queues.pendingUploads || 0,
+      section: 'community',
+      value: sumMetric(['communityPosts', 'communityUploads', 'communityComments'], 'current'),
+    },
+    {
+      key: 'messages',
+      label: t('section.messages'),
+      pending: queues.recentMessages || 0,
+      section: 'messages',
+      value: sumMetric(['messages'], 'current'),
+    },
+    {
+      key: 'projects',
+      label: t('section.projects'),
+      pending: 0,
+      section: 'projects',
+      value: projects.length,
+    },
+    {
+      key: 'content-health',
+      label: t('section.content-health'),
+      pending: 0,
+      section: 'content-health',
+      value: catalogue.customProjects || 0,
+    },
+    {
+      key: 'security',
+      label: t('section.security'),
+      pending: catalogue.adminsWithoutTotp || 0,
+      section: 'security',
+      value: catalogue.adminAccounts || 0,
+    },
+    {
+      key: 'system',
+      label: t('section.system'),
+      pending: 0,
+      section: 'system',
+      value: catalogue.activeAdminSessions || 0,
+    },
+  ]
 
   // Standing facts about the install. These do not move day to day, which is
   // exactly why they belong on a dashboard: nobody goes looking for them, and
@@ -206,41 +274,41 @@ const AdminDashboard = ({
   const posture = [
     {
       key: 'totp',
-      label: 'Admin accounts without an authenticator',
-      value: catalogue.adminsWithoutTotp || 0,
-      tone: catalogue.adminsWithoutTotp ? 'warn' : 'ok',
+      label: t('posture.totp.label'),
       note: catalogue.adminsWithoutTotp
-        ? 'Enrol them in Security before the shared token is needed again.'
-        : `All ${formatNumber(catalogue.adminAccounts || 0)} named admins carry a second factor.`,
+        ? t('posture.totp.warn')
+        : t('posture.totp.ok', { count: fmt.formatNumber(catalogue.adminAccounts || 0) }),
+      tone: catalogue.adminsWithoutTotp ? 'warn' : 'ok',
+      value: catalogue.adminsWithoutTotp || 0,
     },
     {
       key: 'sessions',
-      label: 'Live admin sessions',
-      value: catalogue.activeAdminSessions || 0,
-      tone: 'ok',
+      label: t('posture.sessions.label'),
       note: identity?.username
-        ? `Signed in as ${identity.username}; sessions expire on their own.`
-        : 'Signed in on the shared token — these actions are not attributed.',
+        ? t('posture.sessions.named', { name: identity.username })
+        : t('posture.sessions.shared'),
+      tone: 'ok',
+      value: catalogue.activeAdminSessions || 0,
     },
     {
       key: 'unverified',
-      label: 'Members with an unverified email',
-      value: queues.unverifiedMembers || 0,
-      tone: queues.unverifiedMembers ? 'warn' : 'ok',
+      label: t('posture.unverified.label'),
       note: queues.unverifiedMembers
-        ? 'They cannot receive decision mail until they confirm.'
-        : 'Every member address is confirmed.',
+        ? t('posture.unverified.warn')
+        : t('posture.unverified.ok'),
+      tone: queues.unverifiedMembers ? 'warn' : 'ok',
+      value: queues.unverifiedMembers || 0,
     },
     {
       key: 'disabled',
-      label: 'Profiles disabled by an admin',
-      value: queues.disabledProfiles || 0,
+      label: t('posture.disabled.label'),
+      note: queues.disabledProfiles ? t('posture.disabled.warn') : t('posture.disabled.ok'),
       tone: queues.disabledProfiles ? 'warn' : 'ok',
-      note: queues.disabledProfiles
-        ? 'Hidden from /u/ pages until re-enabled.'
-        : 'No profile is under moderation.',
+      value: queues.disabledProfiles || 0,
     },
   ]
+
+  const translatedSeries = seriesMeta.map((item) => ({ ...item, label: t(item.labelKey) }))
 
   return (
     <section className={`admin-dashboard ${loading ? 'is-refreshing' : ''}`}>
@@ -248,8 +316,8 @@ const AdminDashboard = ({
           re-fetches the whole view, so the tiles and the chart can never
           disagree about which window they describe. */}
       <div className="admin-range-row">
-        <span className="admin-range-label">Window</span>
-        <div className="admin-range-group" role="group" aria-label="Dashboard time range">
+        <span className="admin-range-label">{t('dash.window')}</span>
+        <div aria-label={t('dash.rangeGroup')} className="admin-range-group" role="group">
           {rangePresets.map((preset) => (
             <button
               aria-pressed={days === preset.days}
@@ -258,17 +326,17 @@ const AdminDashboard = ({
               onClick={() => onRangeChange?.(preset.days)}
               type="button"
             >
-              {preset.label}
+              {t(preset.labelKey)}
             </button>
           ))}
         </div>
         {systemLabel ? <span className="admin-range-meta">{systemLabel}</span> : null}
       </div>
 
-      <div className="admin-hero">
+      <div className="admin-hero admin-animate-in">
         <div className="admin-hero-figure">
-          <span className="admin-stat-label">Tracked events, last {days} days</span>
-          <strong>{formatNumber(activityNow)}</strong>
+          <span className="admin-stat-label">{t('dash.trackedEvents', { days })}</span>
+          <strong>{fmt.formatNumber(activityShown)}</strong>
           <span
             className={`admin-delta admin-delta-${
               activityChange === null
@@ -281,41 +349,57 @@ const AdminDashboard = ({
             }`}
           >
             {activityChange === null
-              ? 'no comparable activity before this window'
-              : `${activityChange > 0 ? '+' : ''}${activityChange}% vs the previous ${days} days`}
+              ? t('dash.deltaNew')
+              : t('dash.deltaVs', { change: signed(activityChange), days })}
           </span>
         </div>
         <dl className="admin-hero-facts">
           <div>
-            <dt>Uptime</dt>
-            <dd>{formatDuration(system.uptimeSeconds)}</dd>
+            <dt>{t('dash.uptime')}</dt>
+            <dd>{fmt.formatDuration(system.uptimeSeconds)}</dd>
           </div>
           <div>
-            <dt>Database</dt>
-            <dd>{Number.isFinite(system.databaseLatencyMs) ? `${system.databaseLatencyMs} ms` : '—'}</dd>
+            <dt>{t('dash.database')}</dt>
+            <dd>
+              {Number.isFinite(system.databaseLatencyMs)
+                ? `${system.databaseLatencyMs} ms`
+                : t('common.dash')}
+            </dd>
           </div>
           <div>
-            <dt>Email</dt>
-            <dd>{system.emailConfigured ? 'configured' : 'not configured'}</dd>
+            <dt>{t('dash.email')}</dt>
+            <dd>{system.emailConfigured ? t('dash.emailConfigured') : t('dash.emailMissing')}</dd>
           </div>
           <div>
-            <dt>CSP reports</dt>
-            <dd>{formatNumber(system.cspReports || 0)}</dd>
+            <dt>{t('dash.csp')}</dt>
+            <dd>{fmt.formatNumber(system.cspReports || 0)}</dd>
           </div>
         </dl>
       </div>
 
-      <div className="admin-panel">
+      <AdminGalaxy
+        days={days}
+        nodes={galaxyNodes}
+        onNavigate={onNavigate}
+        total={activityNow}
+      />
+
+      <div className="admin-panel admin-animate-in">
         <div className="admin-panel-head">
-          <h2>Needs you</h2>
-          <span>{openQueues.length ? `${openQueues.length} open` : 'all clear'}</span>
+          <h2>{t('dash.needsYou')}</h2>
+          <span>
+            {openQueues.length
+              ? t('dash.openCount', { count: openQueues.length })
+              : t('dash.allClear')}
+          </span>
         </div>
         {openQueues.length ? (
           <div className="admin-queue-grid">
-            {openQueues.map((item) => (
+            {openQueues.map((item, index) => (
               <QueueCard
                 actionLabel={item.actionLabel}
                 count={item.count}
+                index={index}
                 key={item.key}
                 label={item.label}
                 note={item.note}
@@ -325,18 +409,16 @@ const AdminDashboard = ({
             ))}
           </div>
         ) : (
-          <p className="admin-empty-note admin-empty-good">
-            Nothing is waiting on you. No comments held for moderation, no uploads pending review,
-            no undecided download requests, and no contact messages in the last seven days.
-          </p>
+          <p className="admin-empty-note admin-empty-good">{t('dash.queueEmpty')}</p>
         )}
       </div>
 
       <div className="admin-stat-grid">
-        {tiles.map((tile) => (
+        {tiles.map((tile, index) => (
           <StatTile
+            index={index}
             key={tile.key}
-            label={tile.label}
+            label={t(tile.labelKey)}
             onOpen={() => onNavigate?.(tile.section)}
             points={series.map((row) => row[tile.seriesKey] || 0)}
             prior={sumMetric(tile.metrics, 'prior')}
@@ -346,68 +428,76 @@ const AdminDashboard = ({
       </div>
 
       <div className="admin-split">
-        <div className="admin-panel">
+        <div className="admin-panel admin-animate-in">
           <StackedColumns
             data={series}
-            emptyLabel={`No engagement recorded in the last ${days} days.`}
-            series={seriesMeta}
-            title={`Daily engagement, last ${days} days`}
+            emptyLabel={t('chart.dailyEmpty', { days })}
+            series={translatedSeries}
+            title={t('chart.daily', { days })}
           />
         </div>
-        <div className="admin-panel">
+        <div className="admin-panel admin-animate-in">
           <div className="admin-panel-head">
-            <h2>Most engaging projects</h2>
-            <span>all time</span>
+            <h2>{t('dash.topProjects')}</h2>
+            <span>{t('dash.allTime')}</span>
           </div>
-          <BarList
-            emptyLabel="No likes, comments, or downloads recorded against a project yet."
-            items={topProjects}
-          />
+          <BarList emptyLabel={t('dash.topEmpty')} items={topProjects} />
         </div>
       </div>
 
       <div className="admin-split">
-        <div className="admin-panel">
+        <div className="admin-panel admin-animate-in">
           <div className="admin-panel-head">
-            <h2>Recent activity</h2>
-            <span>{overview?.activity?.length || 0} events</span>
+            <h2>{t('dash.recentActivity')}</h2>
+            <span>{t('dash.eventsCount', { count: overview?.activity?.length || 0 })}</span>
           </div>
           {overview?.activity?.length ? (
             <ol className="admin-timeline">
-              {overview.activity.map((event) => {
-                const copy = activityCopy[event.kind] || { icon: 'dashboard', verb: 'touched' }
+              {overview.activity.map((event, index) => {
+                const copy = activityCopy[event.kind] || {
+                  icon: 'dashboard',
+                  verbKey: 'activity.touched',
+                }
 
                 return (
-                  <li key={event.id}>
+                  <li className="admin-animate-in" key={event.id} style={stagger(index)}>
                     <span className="admin-timeline-icon">
                       <AdminIcon name={copy.icon} size={14} />
                     </span>
                     <div>
                       <p>
-                        <strong>{event.actor || 'Someone'}</strong> {copy.verb}{' '}
-                        <em>{projectTitles.get(event.context) || event.context || 'the site'}</em>
+                        <strong>{event.actor || t('activity.someone')}</strong> {t(copy.verbKey)}{' '}
+                        <em>
+                          {projectTitles.get(event.context) ||
+                            event.context ||
+                            t('activity.theSite')}
+                        </em>
                       </p>
                       {event.detail ? <small>{truncate(event.detail)}</small> : null}
                     </div>
-                    <span className="admin-timeline-age">{formatAge(event.createdAt)}</span>
+                    <span className="admin-timeline-age">{fmt.formatAge(event.createdAt)}</span>
                   </li>
                 )
               })}
             </ol>
           ) : (
-            <p className="admin-empty-note">Nothing has happened on the site yet.</p>
+            <p className="admin-empty-note">{t('dash.activityEmpty')}</p>
           )}
         </div>
 
-        <div className="admin-panel">
+        <div className="admin-panel admin-animate-in">
           <div className="admin-panel-head">
-            <h2>Site &amp; security posture</h2>
-            <span>standing</span>
+            <h2>{t('dash.posture')}</h2>
+            <span>{t('dash.standing')}</span>
           </div>
           <ul className="admin-posture">
-            {posture.map((item) => (
-              <li className={`admin-posture-${item.tone}`} key={item.key}>
-                <strong>{formatNumber(item.value)}</strong>
+            {posture.map((item, index) => (
+              <li
+                className={`admin-posture-${item.tone} admin-animate-in`}
+                key={item.key}
+                style={stagger(index)}
+              >
+                <strong>{fmt.formatNumber(item.value)}</strong>
                 <div>
                   <span>{item.label}</span>
                   <small>{item.note}</small>
@@ -418,16 +508,19 @@ const AdminDashboard = ({
 
           <div className="admin-meter-group">
             <Meter
-              label="Members with a verified email"
-              note={`${formatNumber(catalogue.activeMembers || 0)} signed in within the last 30 days.`}
+              label={t('meter.verified.label')}
+              note={t('meter.verified.note', {
+                count: fmt.formatNumber(catalogue.activeMembers || 0),
+              })}
               total={metrics.members?.total || 0}
               value={catalogue.verifiedMembers || 0}
             />
             <Meter
-              label="Community uploads approved"
-              note={`${formatBytes(catalogue.uploadBytes || 0)} stored, ${formatBytes(
-                catalogue.approvedBytes || 0,
-              )} of it published.`}
+              label={t('meter.uploads.label')}
+              note={t('meter.uploads.note', {
+                approved: fmt.formatBytes(catalogue.approvedBytes || 0),
+                total: fmt.formatBytes(catalogue.uploadBytes || 0),
+              })}
               total={metrics.communityUploads?.total || 0}
               value={Math.max(
                 0,
@@ -435,18 +528,22 @@ const AdminDashboard = ({
               )}
             />
             <Meter
-              label="Projects visible on the site"
-              note={`${formatNumber(catalogue.customProjects || 0)} created here, ${formatNumber(
-                catalogue.hiddenProjects || 0,
-              )} hidden from the public list.`}
+              label={t('meter.projects.label')}
+              note={t('meter.projects.note', {
+                custom: fmt.formatNumber(catalogue.customProjects || 0),
+                hidden: fmt.formatNumber(catalogue.hiddenProjects || 0),
+              })}
               total={projects.length}
               value={projects.filter((project) => project.isPublic !== false).length}
             />
           </div>
 
           <p className="admin-panel-foot">
-            Node {system.nodeVersion || '—'} · {formatBytes(system.rssBytes || 0)} resident ·
-            started {system.startedAt ? formatAge(system.startedAt) : '—'}
+            {t('dash.foot', {
+              age: system.startedAt ? fmt.formatAge(system.startedAt) : t('common.dash'),
+              node: system.nodeVersion || t('common.dash'),
+              rss: fmt.formatBytes(system.rssBytes || 0),
+            })}
           </p>
         </div>
       </div>

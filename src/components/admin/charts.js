@@ -25,10 +25,11 @@ export const chartPalette = {
   surface: '#101321',
 }
 
+// Colours are fixed; the names are looked up per language by the caller.
 export const seriesMeta = [
-  { key: 'comments', label: 'Comments', color: chartPalette.categorical[0] },
-  { key: 'likes', label: 'Likes', color: chartPalette.categorical[1] },
-  { key: 'downloads', label: 'Downloads', color: chartPalette.categorical[2] },
+  { color: chartPalette.categorical[0], key: 'comments', labelKey: 'series.comments' },
+  { color: chartPalette.categorical[1], key: 'likes', labelKey: 'series.likes' },
+  { color: chartPalette.categorical[2], key: 'downloads', labelKey: 'series.downloads' },
 ]
 
 // Axis ticks land on round numbers, never on the raw maximum: "1,000" is a
@@ -59,93 +60,11 @@ export const niceScale = (max, count = 4, { minStep = 1 } = {}) => {
   return { step, ticks, top: step * count }
 }
 
-// Big numbers are read, not audited: 12.9K beats 12,914 in a stat tile. Exact
-// values stay reachable in the tooltip and the table view.
-export const compactNumber = (value) => {
-  const number = Number(value) || 0
-  if (Math.abs(number) < 1000) return String(number)
-  if (Math.abs(number) < 1_000_000) {
-    return `${(number / 1000).toFixed(number % 1000 === 0 ? 0 : 1)}K`
-  }
-
-  return `${(number / 1_000_000).toFixed(1)}M`
-}
-
-export const formatNumber = (value) => new Intl.NumberFormat('en-US').format(Number(value) || 0)
-
-export const formatBytes = (value) => {
-  const bytes = Number(value) || 0
-  if (bytes < 1024) return `${bytes} B`
-
-  const units = ['KB', 'MB', 'GB', 'TB']
-  let size = bytes / 1024
-  let unit = 0
-  while (size >= 1024 && unit < units.length - 1) {
-    size /= 1024
-    unit += 1
-  }
-
-  return `${size.toFixed(size >= 100 || unit === 0 ? 0 : 1)} ${units[unit]}`
-}
-
-export const formatDuration = (seconds) => {
-  const total = Math.max(0, Math.round(Number(seconds) || 0))
-  const days = Math.floor(total / 86400)
-  const hours = Math.floor((total % 86400) / 3600)
-  const minutes = Math.floor((total % 3600) / 60)
-
-  if (days) return `${days}d ${hours}h`
-  if (hours) return `${hours}h ${minutes}m`
-  if (minutes) return `${minutes}m`
-
-  return `${total}s`
-}
-
-// "11 days" is the number that turns a queue depth into a priority, so ages are
-// spelled out rather than left as timestamps.
-export const formatAge = (value) => {
-  if (!value) return ''
-
-  const then = new Date(value).getTime()
-  if (Number.isNaN(then)) return ''
-
-  const seconds = Math.max(0, Math.round((Date.now() - then) / 1000))
-  if (seconds < 60) return 'just now'
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`
-  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`
-  if (seconds < 86400 * 30) return `${Math.floor(seconds / 86400)}d ago`
-
-  return `${Math.floor(seconds / (86400 * 30))}mo ago`
-}
-
-// The mirror of formatAge for timestamps that have not happened yet. Session
-// expiry ran through formatAge and came out as "expires just now", because
-// that helper clamps negatives away -- correct for ages, a lie for deadlines.
-export const formatCountdown = (value) => {
-  if (!value) return ''
-
-  const then = new Date(value).getTime()
-  if (Number.isNaN(then)) return ''
-
-  const seconds = Math.round((then - Date.now()) / 1000)
-  if (seconds <= 0) return 'expired'
-  if (seconds < 60) return 'in under a minute'
-  if (seconds < 3600) return `in ${Math.floor(seconds / 60)}m`
-  if (seconds < 86400) return `in ${Math.floor(seconds / 3600)}h`
-
-  return `in ${Math.floor(seconds / 86400)}d`
-}
-
-export const formatDay = (day) => {
-  const date = new Date(`${day}T00:00:00Z`)
-  if (Number.isNaN(date.getTime())) return day
-
-  return new Intl.DateTimeFormat('en-US', {
-    day: 'numeric',
-    month: 'short',
-    timeZone: 'UTC',
-  }).format(date)
-}
+// Number, byte, date and duration formatting moved to createAdminFormatters()
+// in lib/admin/i18nAdmin.js when the console learned to speak three languages:
+// every one of the helpers that used to live here hard-coded en-US and English
+// unit words ("11 days ago"), which is exactly the kind of string that has to
+// change with the interface language.
 
 // A rectangle with only its top two corners rounded: the 4px data-end of a
 // column, square where it meets the baseline.

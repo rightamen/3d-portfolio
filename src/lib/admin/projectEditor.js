@@ -10,21 +10,21 @@ export const localizedEditorLanguages = [
 ]
 
 export const localizedEditorFields = [
-  { key: 'title', label: 'Title' },
-  { key: 'summary', label: 'Summary', multiline: true },
-  { key: 'workflow', label: 'Workflow', multiline: true },
-  { key: 'format', label: 'Format' },
-  { key: 'modelSize', label: 'Model Size' },
-  { key: 'downloadPolicy', label: 'Download Policy' },
+  { key: 'title', labelKey: 'field.title' },
+  { key: 'summary', labelKey: 'field.summary', multiline: true },
+  { key: 'workflow', labelKey: 'field.workflow', multiline: true },
+  { key: 'format', labelKey: 'field.format' },
+  { key: 'modelSize', labelKey: 'field.modelSize' },
+  { key: 'downloadPolicy', labelKey: 'field.downloadPolicy' },
 ]
 
 export const coreTranslationFields = ['title', 'summary', 'workflow']
 
 export const translationFilters = [
-  { label: 'All translation states', value: 'all' },
-  { label: 'Missing English', value: 'missing-En' },
-  { label: 'Missing Japanese', value: 'missing-Ja' },
-  { label: 'Missing Any Region', value: 'missing-any' },
+  { labelKey: 'filter.all', value: 'all' },
+  { labelKey: 'filter.missingEn', value: 'missing-En' },
+  { labelKey: 'filter.missingJa', value: 'missing-Ja' },
+  { labelKey: 'filter.missingAny', value: 'missing-any' },
 ]
 
 export const getTranslationState = (project, suffix) => {
@@ -67,20 +67,23 @@ export const matchesTranslationFilter = (project, filter) => {
 }
 
 export const downloadPolicyPresets = [
-  { label: 'Open Download', value: 'Open download' },
-  { label: 'Member Download', value: 'Member download' },
-  { label: 'Approved Download', value: 'Approved download' },
+  { labelKey: 'policy.open', value: 'Open download' },
+  { labelKey: 'policy.member', value: 'Member download' },
+  { labelKey: 'policy.approved', value: 'Approved download' },
 ]
 
+// The category names are already translated in assetCategories.js -- the same
+// table the public site reads -- so the editor carries the whole `labels` map
+// rather than a second English copy that would drift from it.
 export const assetCategoryPresets = assetCategoryProfiles.map((category) => ({
   label: category.label,
+  labels: category.labels,
   value: category.value,
 }))
 
 export const projectPresets = [
   {
     key: 'game-prop',
-    label: 'Next-Gen Prop',
     values: {
       assetCategory: 'next-gen-prop',
       downloadPolicy: downloadPolicyPresets[2].value,
@@ -95,7 +98,6 @@ export const projectPresets = [
   },
   {
     key: 'environment',
-    label: 'Next-Gen Scene',
     values: {
       assetCategory: 'next-gen-scene',
       downloadPolicy: downloadPolicyPresets[1].value,
@@ -110,7 +112,6 @@ export const projectPresets = [
   },
   {
     key: 'character',
-    label: 'Next-Gen Character',
     values: {
       assetCategory: 'next-gen-character',
       downloadPolicy: downloadPolicyPresets[2].value,
@@ -125,7 +126,6 @@ export const projectPresets = [
   },
   {
     key: 'hand-painted-character',
-    label: 'Hand-Painted Character',
     values: {
       assetCategory: 'hand-painted-character',
       downloadPolicy: downloadPolicyPresets[1].value,
@@ -140,7 +140,6 @@ export const projectPresets = [
   },
   {
     key: 'hand-painted-scene',
-    label: 'Hand-Painted Scene',
     values: {
       assetCategory: 'hand-painted-scene',
       downloadPolicy: downloadPolicyPresets[1].value,
@@ -156,7 +155,6 @@ export const projectPresets = [
   },
   {
     key: 'case-study',
-    label: 'Case Study',
     values: {
       assetCategory: 'generic',
       downloadPolicy: downloadPolicyPresets[0].value,

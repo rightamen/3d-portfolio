@@ -1,24 +1,11 @@
-// Display helpers shared by the admin sections. These were inline in Admin.jsx
-// until it grew past 2,900 lines; nothing here touches React state, so it can
-// be read, tested, and reused on its own.
+// Text and file-name helpers shared by the admin sections. These were inline
+// in Admin.jsx until it grew past 2,900 lines; nothing here touches React
+// state or the display language, so it can be read, tested, and reused on its
+// own.
 
-export const formatDate = (value) => {
-  if (!value) return ''
-
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return ''
-
-  return new Intl.DateTimeFormat('en-US', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(date)
-}
-
-export const formatFileSize = (size) => {
-  if (!Number.isFinite(size) || size <= 0) return ''
-  if (size < 1024 * 1024) return `${Math.max(1, Math.round(size / 1024))} KB`
-  return `${(size / 1024 / 1024).toFixed(size > 20 * 1024 * 1024 ? 0 : 1)} MB`
-}
+// Dates, sizes, ages and counts now come from createAdminFormatters() in
+// lib/admin/i18nAdmin.js, which knows which of the three locales the console
+// is speaking. The copies that used to live here were hard-wired to en-US.
 
 export const listToText = (value) => (Array.isArray(value) ? value.join(', ') : '')
 

@@ -1,13 +1,15 @@
 import { useEffect, useState } from 'react'
 import AdminIcon from './AdminIcon'
 import { getAdminActions, getAdminDiagnostics, getAdminSessions } from '../../lib/api'
-import { formatAge, formatBytes, formatCountdown, formatDuration, formatNumber } from './charts'
+import { useAdminI18n } from '../../lib/admin/i18nAdmin'
+import { stagger } from '../../lib/admin/motion'
 
 // Operational truth about the running service, in one place. Until now every
 // one of these answers lived somewhere the browser could not reach -- an SSH
 // session, a journal, a curl with a hand-minted session -- which meant nobody
 // looked at them between incidents.
 const AdminSystemPanel = ({ system = {}, token }) => {
+  const { fmt, t } = useAdminI18n()
   const [state, setState] = useState({ actions: [], diagnostics: null, sessions: [] })
   const [status, setStatus] = useState('loading')
 
@@ -44,149 +46,153 @@ const AdminSystemPanel = ({ system = {}, token }) => {
   }, [token])
 
   const runtime = [
-    { key: 'uptime', label: 'Process uptime', value: formatDuration(system.uptimeSeconds) },
+    { key: 'uptime', label: t('system.uptime'), value: fmt.formatDuration(system.uptimeSeconds) },
     {
       key: 'started',
-      label: 'Last restart',
-      value: system.startedAt ? formatAge(system.startedAt) : '—',
+      label: t('system.lastRestart'),
+      value: system.startedAt ? fmt.formatAge(system.startedAt) : t('common.dash'),
     },
-    { key: 'node', label: 'Node', value: system.nodeVersion || '—' },
+    { key: 'node', label: t('system.node'), value: system.nodeVersion || t('common.dash') },
     {
       key: 'latency',
-      label: 'Database round trip',
-      value: Number.isFinite(system.databaseLatencyMs) ? `${system.databaseLatencyMs} ms` : '—',
+      label: t('system.dbRtt'),
+      value: Number.isFinite(system.databaseLatencyMs)
+        ? `${system.databaseLatencyMs} ms`
+        : t('common.dash'),
     },
-    { key: 'rss', label: 'Resident memory', value: formatBytes(system.rssBytes || 0) },
-    { key: 'heap', label: 'Heap in use', value: formatBytes(system.heapUsedBytes || 0) },
+    { key: 'rss', label: t('system.rss'), value: fmt.formatBytes(system.rssBytes || 0) },
+    { key: 'heap', label: t('system.heap'), value: fmt.formatBytes(system.heapUsedBytes || 0) },
     {
       key: 'email',
-      label: 'Outbound email',
-      value: system.emailConfigured ? 'configured' : 'not configured',
+      label: t('system.emailOut'),
+      value: system.emailConfigured ? t('dash.emailConfigured') : t('dash.emailMissing'),
     },
     {
       key: 'csp',
-      label: 'CSP reports since restart',
-      value: formatNumber(system.cspReports || 0),
+      label: t('system.cspSince'),
+      value: fmt.formatNumber(system.cspReports || 0),
     },
   ]
 
   return (
     <section className="admin-dashboard">
-      <div className="admin-panel">
+      <div className="admin-panel admin-animate-in">
         <div className="admin-panel-head">
-          <h2>Runtime</h2>
-          <span>this process</span>
+          <h2>{t('system.runtime')}</h2>
+          <span>{t('system.thisProcess')}</span>
         </div>
         <dl className="admin-fact-grid">
-          {runtime.map((item) => (
-            <div key={item.key}>
+          {runtime.map((item, index) => (
+            <div className="admin-animate-in" key={item.key} style={stagger(index)}>
               <dt>{item.label}</dt>
               <dd>{item.value}</dd>
             </div>
           ))}
         </dl>
-        <p className="admin-panel-foot">
-          Uptime resets on every deploy, so a low number right after a release is expected. A
-          database round trip that climbs while uptime stays put is the interesting case.
-        </p>
+        <p className="admin-panel-foot">{t('system.runtimeNote')}</p>
       </div>
 
       {state.diagnostics ? (
-        <div className="admin-panel">
+        <div className="admin-panel admin-animate-in">
           <div className="admin-panel-head">
-            <h2>Request chain</h2>
-            <span>as this box sees it</span>
+            <h2>{t('system.requestChain')}</h2>
+            <span>{t('system.asSeen')}</span>
           </div>
           <dl className="admin-fact-grid">
             <div>
-              <dt>Resolved client IP</dt>
-              <dd>{state.diagnostics.resolvedIp || '—'}</dd>
+              <dt>{t('system.resolvedIp')}</dt>
+              <dd>{state.diagnostics.resolvedIp || t('common.dash')}</dd>
             </div>
             <div>
-              <dt>X-Forwarded-For</dt>
-              <dd>{state.diagnostics.forwardedFor || 'not set'}</dd>
+              <dt>{t('system.forwardedFor')}</dt>
+              <dd>{state.diagnostics.forwardedFor || t('system.notSet')}</dd>
             </div>
             <div>
-              <dt>Protocol</dt>
-              <dd>{state.diagnostics.forwardedProto || state.diagnostics.protocol || '—'}</dd>
+              <dt>{t('system.protocol')}</dt>
+              <dd>
+                {state.diagnostics.forwardedProto || state.diagnostics.protocol || t('common.dash')}
+              </dd>
             </div>
             <div>
-              <dt>Trusted proxy hops</dt>
+              <dt>{t('system.hops')}</dt>
               <dd>{state.diagnostics.trustProxyHops}</dd>
             </div>
           </dl>
-          <p className="admin-panel-foot">
-            If the resolved IP is not the address you are browsing from, every per-IP rate limit is
-            sharing one bucket and the audit trail is recording the proxy instead of the caller.
-          </p>
+          <p className="admin-panel-foot">{t('system.chainNote')}</p>
         </div>
       ) : null}
 
-      <div className="admin-panel">
+      <div className="admin-panel admin-animate-in">
         <div className="admin-panel-head">
-          <h2>Active admin sessions</h2>
-          <span>{state.sessions.length}</span>
+          <h2>{t('system.sessions')}</h2>
+          <span>{fmt.formatNumber(state.sessions.length)}</span>
         </div>
         {state.sessions.length ? (
           <div className="admin-table">
-            {state.sessions.map((session) => (
-              <article className="admin-row" key={`${session.createdAt}-${session.ip}`}>
+            {state.sessions.map((session, index) => (
+              <article
+                className="admin-row admin-animate-in"
+                key={`${session.createdAt}-${session.ip}`}
+                style={stagger(index)}
+              >
                 <div>
                   <div className="admin-row-title">
-                    <strong>{session.username || 'shared admin token'}</strong>
-                    <span>{session.username ? 'named account' : 'unattributed'}</span>
+                    <strong>{session.username || t('system.sharedTokenSession')}</strong>
+                    <span>
+                      {session.username
+                        ? t('system.sessionNamed')
+                        : t('system.sessionUnattributed')}
+                    </span>
                   </div>
                   <span>
-                    {session.ip || 'unknown address'} · opened {formatAge(session.createdAt)} ·
-                    expires {formatCountdown(session.expiresAt)}
+                    {t('system.sessionLine', {
+                      age: fmt.formatAge(session.createdAt),
+                      countdown: fmt.formatCountdown(session.expiresAt),
+                      ip: session.ip || t('system.unknownAddress'),
+                    })}
                   </span>
-                  <small>{session.userAgent || 'no user agent recorded'}</small>
+                  <small>{session.userAgent || t('system.noUserAgent')}</small>
                 </div>
               </article>
             ))}
           </div>
         ) : (
-          <p className="admin-empty-note">No live sessions — including this one, apparently.</p>
+          <p className="admin-empty-note">{t('system.noSessions')}</p>
         )}
       </div>
 
-      <div className="admin-panel">
+      <div className="admin-panel admin-animate-in">
         <div className="admin-panel-head">
-          <h2>Audit trail</h2>
-          <span>last {state.actions.length}</span>
+          <h2>{t('system.audit')}</h2>
+          <span>{t('system.lastN', { count: state.actions.length })}</span>
         </div>
         {state.actions.length ? (
           <ol className="admin-timeline">
-            {state.actions.map((action) => (
-              <li key={action.id}>
+            {state.actions.map((action, index) => (
+              <li className="admin-animate-in" key={action.id} style={stagger(index)}>
                 <span className="admin-timeline-icon">
                   <AdminIcon name="security" size={14} />
                 </span>
                 <div>
                   <p>
-                    <strong>{action.actorUsername || 'shared token (no actor)'}</strong>{' '}
+                    <strong>{action.actorUsername || t('system.auditActorShared')}</strong>{' '}
                     {action.action.replace(/[._-]/g, ' ')}{' '}
-                    <em>{action.targetEmail || action.targetUserId || 'a record'}</em>
+                    <em>{action.targetEmail || action.targetUserId || t('system.auditRecord')}</em>
                   </p>
                   {action.reason ? <small>{action.reason}</small> : null}
                 </div>
-                <span className="admin-timeline-age">{formatAge(action.createdAt)}</span>
+                <span className="admin-timeline-age">{fmt.formatAge(action.createdAt)}</span>
               </li>
             ))}
           </ol>
         ) : (
           <p className="admin-empty-note">
-            {status === 'loading' ? 'Loading…' : 'No administrative action has been recorded yet.'}
+            {status === 'loading' ? t('common.loading') : t('system.auditEmpty')}
           </p>
         )}
       </div>
 
-      {status === 'error' ? (
-        <p className="admin-empty-note">
-          Could not load sessions or the audit trail. The dashboard figures above still come from
-          the overview request and are current.
-        </p>
-      ) : null}
+      {status === 'error' ? <p className="admin-empty-note">{t('system.loadError')}</p> : null}
     </section>
   )
 }

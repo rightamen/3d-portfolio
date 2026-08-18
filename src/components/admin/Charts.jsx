@@ -1,12 +1,6 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
-import {
-  chartPalette,
-  compactNumber,
-  formatDay,
-  formatNumber,
-  niceScale,
-  roundedTopRect,
-} from './charts'
+import { chartPalette, niceScale, roundedTopRect } from './charts'
+import { useAdminI18n } from '../../lib/admin/i18nAdmin'
 
 // Charts are drawn at real pixel size rather than scaled from a fixed viewBox.
 // A viewBox that stretches would scale the 2px surface gaps and the 4px data
@@ -69,9 +63,13 @@ export const Sparkline = ({ accent = chartPalette.accent, height = 34, points = 
         </linearGradient>
       </defs>
       <path d={area} fill={`url(#${gradientId})`} />
+      {/* pathLength normalises the geometry to 1 so one dash offset animates
+          every sparkline, whatever its real length works out to. */}
       <path
+        className="admin-sparkline-line"
         d={line}
         fill="none"
+        pathLength="1"
         stroke={accent}
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -96,11 +94,13 @@ export const Sparkline = ({ accent = chartPalette.accent, height = 34, points = 
 // second -- the total is the silhouette, the composition is the fill.
 export const StackedColumns = ({
   data = [],
-  emptyLabel = 'No activity in this window yet.',
+  emptyLabel,
   height = 240,
   series = [],
   title,
 }) => {
+  const { fmt, t } = useAdminI18n()
+  const { compactNumber, formatDay, formatNumber } = fmt
   const [wrapRef, width] = useElementWidth()
   const [hovered, setHovered] = useState(null)
   const [showTable, setShowTable] = useState(false)
@@ -158,7 +158,7 @@ export const StackedColumns = ({
           onClick={() => setShowTable((current) => !current)}
           type="button"
         >
-          {showTable ? 'Show chart' : 'Show table'}
+          {showTable ? t('chart.showChart') : t('chart.showTable')}
         </button>
       </div>
 
@@ -167,13 +167,13 @@ export const StackedColumns = ({
           <table className="admin-chart-table">
             <thead>
               <tr>
-                <th scope="col">Day</th>
+                <th scope="col">{t('chart.day')}</th>
                 {series.map((item) => (
                   <th key={item.key} scope="col">
                     {item.label}
                   </th>
                 ))}
-                <th scope="col">Total</th>
+                <th scope="col">{t('chart.total')}</th>
               </tr>
             </thead>
             <tbody>
@@ -192,7 +192,11 @@ export const StackedColumns = ({
       ) : (
         <div className="admin-chart-plot" ref={wrapRef}>
           <svg
-            aria-label={`${title}: ${formatNumber(grandTotal)} events across ${data.length} days`}
+            aria-label={t('chart.summary', {
+              days: data.length,
+              title,
+              total: formatNumber(grandTotal),
+            })}
             height={height}
             onPointerLeave={() => setHovered(null)}
             onPointerMove={handlePointer}
@@ -246,17 +250,24 @@ export const StackedColumns = ({
                     const segmentHeight = Math.max(1, segment.bottom - segment.top)
                     const isTop = segmentIndex === stack.length - 1
 
+                    // Columns rise from the baseline in sequence. The delay is
+                    // capped in CSS, so a 90-day window still finishes its
+                    // entrance in about the same time a 7-day one does.
                     return isTop ? (
                       <path
+                        className="admin-chart-bar"
                         d={roundedTopRect(x, segment.top, barWidth, segmentHeight, 4)}
                         fill={segment.color}
                         key={segment.order}
+                        style={{ '--stagger-index': index % 30 }}
                       />
                     ) : (
                       <rect
+                        className="admin-chart-bar"
                         fill={segment.color}
                         height={segmentHeight}
                         key={segment.order}
+                        style={{ '--stagger-index': index % 30 }}
                         width={barWidth}
                         x={x}
                         y={segment.top}
@@ -299,7 +310,7 @@ export const StackedColumns = ({
                 x={padding.left + plotWidth / 2}
                 y={padding.top + plotHeight / 2}
               >
-                {emptyLabel}
+                {emptyLabel || t('chart.empty')}
               </text>
             ) : null}
           </svg>
@@ -323,7 +334,8 @@ export const StackedColumns = ({
                 </span>
               ))}
               <span className="admin-chart-tooltip-total">
-                <b>{formatNumber(totals[hovered])}</b>total
+                <b>{formatNumber(totals[hovered])}</b>
+                {t('chart.total')}
               </span>
             </div>
           ) : null}
@@ -336,21 +348,22 @@ export const StackedColumns = ({
 // Ranked magnitude. Nominal categories, so every bar wears the same hue --
 // colouring them by value would spend the identity channel re-encoding what
 // the bar length already says.
-export const BarList = ({ emptyLabel = 'Nothing here yet.', items = [], unit = '' }) => {
+export const BarList = ({ emptyLabel, items = [], unit = '' }) => {
+  const { fmt, t } = useAdminI18n()
   const max = Math.max(1, ...items.map((item) => item.value))
 
   if (!items.length) {
-    return <p className="admin-empty-note">{emptyLabel}</p>
+    return <p className="admin-empty-note">{emptyLabel || t('chart.empty')}</p>
   }
 
   return (
     <ul className="admin-bar-list">
-      {items.map((item) => (
-        <li key={item.id}>
+      {items.map((item, index) => (
+        <li className="admin-animate-in" key={item.id} style={{ '--stagger-index': index }}>
           <div className="admin-bar-list-head">
             <span title={item.label}>{item.label}</span>
             <strong>
-              {formatNumber(item.value)}
+              {fmt.formatNumber(item.value)}
               {unit ? ` ${unit}` : ''}
             </strong>
           </div>
@@ -370,6 +383,7 @@ export const BarList = ({ emptyLabel = 'Nothing here yet.', items = [], unit = '
 // One ratio against its limit. The unfilled track is a lighter step of the same
 // ramp rather than plain grey, so the whole bar carries the reading.
 export const Meter = ({ label, note, total = 0, value = 0 }) => {
+  const { fmt } = useAdminI18n()
   const safeTotal = Math.max(0, Number(total) || 0)
   const safeValue = Math.max(0, Number(value) || 0)
   const share = safeTotal > 0 ? Math.min(100, (safeValue / safeTotal) * 100) : 0
@@ -379,8 +393,8 @@ export const Meter = ({ label, note, total = 0, value = 0 }) => {
       <div className="admin-meter-head">
         <span>{label}</span>
         <strong>
-          {formatNumber(safeValue)}
-          <em>/ {formatNumber(safeTotal)}</em>
+          {fmt.formatNumber(safeValue)}
+          <em>/ {fmt.formatNumber(safeTotal)}</em>
         </strong>
       </div>
       <div className="admin-meter-track" role="presentation">

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   adminLogin,
   createAdminProject,
@@ -38,6 +38,7 @@ import {
 } from './lib/api'
 import AdminTotpEnrolment from './components/AdminTotpEnrolment'
 import AdminCommandPalette from './components/admin/AdminCommandPalette'
+import AdminLanguageSwitcher from './components/admin/AdminLanguageSwitcher'
 import AdminCommentsSection from './components/admin/AdminCommentsSection'
 import AdminCommunitySection from './components/admin/AdminCommunitySection'
 import AdminContentHealth from './components/admin/AdminContentHealth'
@@ -50,11 +51,9 @@ import AdminMessagesSection from './components/admin/AdminMessagesSection'
 import AdminProjectEditor from './components/admin/AdminProjectEditor'
 import AdminProjectsSection from './components/admin/AdminProjectsSection'
 import AdminSystemPanel from './components/admin/AdminSystemPanel'
-import { formatAge } from './components/admin/charts'
 import {
   appendKeyword,
   createSlug,
-  formatFileSize,
   getExtension,
   listToText,
   needsCommentReview,
@@ -72,12 +71,32 @@ import {
   projectPresets,
   translationFilters,
 } from './lib/admin/projectEditor'
-import { searchableSections, sectionGroups, sections } from './lib/admin/sections'
+import {
+  AdminI18nContext,
+  createAdminI18n,
+  getInitialAdminLanguage,
+  storeAdminLanguage,
+} from './lib/admin/i18nAdmin'
+import { stagger } from './lib/admin/motion'
+import {
+  searchableSections,
+  sectionGroupKey,
+  sectionGroups,
+  sectionLabelKey,
+  sections,
+} from './lib/admin/sections'
 
 const tokenKey = 'mrright-admin-token'
 
 const Admin = () => {
   const editorRef = useRef(null)
+  // The console's language is its own setting, stored separately from the
+  // public site's: the person moderating comments in Chinese may well be
+  // reading the portfolio in Japanese, and one switch flipping both was a
+  // surprise rather than a convenience.
+  const [language, setLanguage] = useState(getInitialAdminLanguage)
+  const i18n = useMemo(() => createAdminI18n(language), [language])
+  const { fmt, t } = i18n
   const [token, setToken] = useState(() => window.localStorage.getItem(tokenKey) || '')
   const [tokenInput, setTokenInput] = useState(() => window.localStorage.getItem(tokenKey) || '')
   const [status, setStatus] = useState('locked')
@@ -137,6 +156,10 @@ const Admin = () => {
   const [visitorActionStatus, setVisitorActionStatus] = useState('')
   const [actionMessage, setActionMessage] = useState('')
   const visitorRequestRef = useRef(0)
+
+  useEffect(() => {
+    storeAdminLanguage(language)
+  }, [language])
 
   useEffect(() => {
     if (!editorScrollKey) return
@@ -209,12 +232,10 @@ const Admin = () => {
         window.localStorage.removeItem(tokenKey)
         setToken('')
         setStatus('locked')
-        setAuthMessage(
-          'Admin session expired or rejected. Enter the ADMIN_TOKEN again to start a new session.',
-        )
+        setAuthMessage(t('auth.sessionRejected'))
       } else if (error?.status === 503) {
         setStatus('error')
-        setAuthMessage('The admin data store is not configured on the server.')
+        setAuthMessage(t('auth.storeUnavailable'))
       } else {
         setStatus('error')
         setAuthMessage('')
@@ -236,7 +257,7 @@ const Admin = () => {
       setOverview(payload?.overview || null)
       setLoadedAt(new Date().toISOString())
     } catch {
-      setActionMessage('Could not load that window. The figures shown are from the previous one.')
+      setActionMessage(t('shell.rangeError'))
     } finally {
       setOverviewLoading(false)
     }
@@ -284,7 +305,7 @@ const Admin = () => {
           window.localStorage.removeItem(tokenKey)
           setToken('')
           setStatus('locked')
-          setAuthMessage('That admin session has expired. Sign in again to continue.')
+          setAuthMessage(t('auth.sessionExpired'))
           return
         }
       }
@@ -340,20 +361,20 @@ const Admin = () => {
         // The password was right; the account just has not presented its second
         // factor yet. Saying so is safe here and saves an operator staring at a
         // form wondering which field is wrong.
-        setAuthMessage('Enter the 6-digit code from your authenticator app.')
+        setAuthMessage(t('auth.totpRequired'))
         return
       }
       if (error?.status === 423) {
-        setAuthMessage('This account is temporarily locked after too many failed attempts.')
+        setAuthMessage(t('auth.accountLocked'))
         return
       }
-      setAuthMessage(error?.message || 'Sign-in failed. Check the username, password and code.')
+      setAuthMessage(error?.message || t('auth.failed'))
       return
     }
 
     const sessionToken = payload?.session?.token
     if (!sessionToken) {
-      setAuthMessage('The server did not return a session. Try again.')
+      setAuthMessage(t('auth.noSession'))
       return
     }
 
@@ -367,7 +388,7 @@ const Admin = () => {
       setIdentity(payload?.admin || null)
       const left = payload?.admin?.recoveryCodesLeft
       if (typeof left === 'number' && left <= 2) {
-        setActionMessage(`Recovery codes left: ${left}. Generate a new set from your account soon.`)
+        setActionMessage(t('auth.recoveryLeft', { count: left }))
       }
     }
   }
@@ -386,7 +407,7 @@ const Admin = () => {
     } catch (error) {
       if (error?.status === 401) {
         setStatus('locked')
-        setAuthMessage('That admin token was rejected. Check the ADMIN_TOKEN value and try again.')
+        setAuthMessage(t('auth.tokenRejected'))
         return
       }
 
@@ -434,7 +455,7 @@ const Admin = () => {
       await updateAdminDownloadRequest(token, id, nextStatus)
       await loadAdminData(token)
     } catch (error) {
-      setActionMessage(error.message || 'Could not update this download request.')
+      setActionMessage(error.message || t('shell.requestFailed'))
     }
   }
 
@@ -450,7 +471,7 @@ const Admin = () => {
       await updateAdminCommentStatus(token, id, nextStatus)
       await loadAdminData(token)
     } catch (error) {
-      setActionMessage(error.message || 'Could not update this comment.')
+      setActionMessage(error.message || t('shell.commentFailed'))
     }
   }
 
@@ -461,7 +482,7 @@ const Admin = () => {
       await loadAdminData(token)
       setVisitorActionStatus('done')
     } catch (error) {
-      setVisitorActionStatus(error.message || 'Could not update this access level.')
+      setVisitorActionStatus(error.message || t('shell.accessFailed'))
     }
   }
 
@@ -472,7 +493,7 @@ const Admin = () => {
       await loadAdminData(token)
       setVisitorActionStatus('done')
     } catch (error) {
-      setVisitorActionStatus(error.message || 'Could not update this email verification.')
+      setVisitorActionStatus(error.message || t('shell.verificationFailed'))
     }
   }
 
@@ -491,7 +512,7 @@ const Admin = () => {
       }))
     } catch (error) {
       if (visitorRequestRef.current !== requestId) return
-      setActionMessage(error.message || 'Could not load visitors.')
+      setActionMessage(error.message || t('shell.visitorsFailed'))
     }
   }
 
@@ -544,15 +565,16 @@ const Admin = () => {
       await loadVisitors()
       if (visitorDetailTab !== 'overview') await loadVisitorTab(visitorDetailTab)
     } catch (error) {
-      setVisitorActionStatus(error.message || 'Could not refresh this visitor.')
+      setVisitorActionStatus(error.message || t('shell.visitorRefreshFailed'))
     }
   }
 
   const confirmVisitorModeration = async ({ action, fields = [], label }) => {
     if (!selectedVisitor) return
-    const reason = window.prompt(`Reason for ${label}:`, '')
+    const reason = window.prompt(t('members.reasonPrompt', { label }), '')
     if (reason === null) return
-    if (!window.confirm(`Confirm ${label} for ${selectedVisitor.displayName}?`)) return
+    if (!window.confirm(t('members.confirmAction', { label, name: selectedVisitor.displayName })))
+      return
     setVisitorActionStatus('working')
     try {
       if (action === 'visibility') {
@@ -585,7 +607,7 @@ const Admin = () => {
       await updateAdminCommunityUpload(token, id, nextStatus)
       await loadAdminData(token)
     } catch (error) {
-      setActionMessage(error.message || 'Could not update this community upload.')
+      setActionMessage(error.message || t('shell.uploadFailed'))
     }
   }
 
@@ -665,7 +687,7 @@ const Admin = () => {
       [targetField]: {
         phase: targetField === 'modelUrl' ? 'processing' : 'uploading',
         progress: 0,
-        message: targetField === 'modelUrl' ? 'Preparing model...' : '',
+        message: targetField === 'modelUrl' ? t('upload.preparingModel') : '',
       },
     }))
     try {
@@ -675,7 +697,7 @@ const Admin = () => {
           [targetField]: {
             phase: 'processing',
             progress: 6,
-            message: 'Converting locally to GLB...',
+            message: t('upload.convertingLocal'),
           },
         }))
 
@@ -683,7 +705,7 @@ const Admin = () => {
           localConversion = await convertModelInBrowser(selectedFiles)
           uploadFile = localConversion.file
         } catch (error) {
-          throw new Error(error.message || 'Local model conversion failed.')
+          throw new Error(error.message || t('upload.localConversionFailed'))
         }
       }
 
@@ -693,12 +715,12 @@ const Admin = () => {
           [targetField]: {
             phase: progress >= 100 && targetField === 'modelUrl' ? 'processing' : 'uploading',
             progress,
-            message: progress >= 100 && targetField === 'modelUrl' ? 'Finalizing model...' : '',
+            message: progress >= 100 && targetField === 'modelUrl' ? t('upload.finalizing') : '',
           },
         }))
       })
       const extension = getExtension(payload.file.name)
-      const size = formatFileSize(payload.file.size)
+      const size = fmt.formatFileSize(payload.file.size)
       const title = toTitle(file.name)
 
       setEditingProject((current) => {
@@ -720,6 +742,7 @@ const Admin = () => {
           if (!next.summary) {
             next.summary = `A realtime 3D asset preview for ${title || 'this project'}.`
           }
+
         }
 
         if (targetField === 'image') {
@@ -735,16 +758,16 @@ const Admin = () => {
       const conversionStatus = payload.conversion?.status
       const uploadMessage =
         targetField === 'modelUrl' && localConversion.converted && localConversion.textureCount > 0
-          ? 'Converted with textures and uploaded'
+          ? t('upload.convertedTextures')
           : targetField === 'modelUrl' && localConversion.converted
-            ? 'Converted locally and uploaded'
+            ? t('upload.convertedLocally')
           : targetField === 'modelUrl' && conversionStatus === 'converted'
-            ? 'Uploaded and converted to GLB'
+            ? t('upload.convertedServer')
           : targetField === 'modelUrl' && conversionStatus === 'skipped'
-            ? 'Uploaded, converter unavailable'
+            ? t('upload.converterUnavailable')
             : targetField === 'modelUrl' && conversionStatus === 'failed'
-              ? 'Uploaded, conversion failed'
-              : 'Uploaded successfully'
+              ? t('upload.conversionFailed')
+              : t('upload.uploaded')
       setUploadStatus((current) => ({
         ...current,
         [targetField]: { phase: 'done', progress: 100, message: uploadMessage },
@@ -757,8 +780,10 @@ const Admin = () => {
           progress: 0,
           message:
             targetField === 'modelUrl'
-              ? `Conversion failed: ${error.message || 'check OBJ, MTL, and texture files.'}`
-              : error.message || 'Upload failed. Check size and format.',
+              ? t('upload.conversionFailedMsg', {
+                  reason: error.message || t('upload.checkFiles'),
+                })
+              : error.message || t('upload.failed'),
         },
       }))
     }
@@ -794,15 +819,19 @@ const Admin = () => {
     setEditorScrollKey((current) => current + 1)
   }
 
-  const deleteItem = async (label, action) => {
-    if (!window.confirm(`Delete this ${label}? This cannot be undone.`)) return
+  // Takes the entity's translation key rather than an English noun: the
+  // confirmation and the failure notice are two sentences built from the same
+  // word, and in Japanese that word is not the one in the call site.
+  const deleteItem = async (entityKey, action) => {
+    const label = t(entityKey)
+    if (!window.confirm(t('shell.deleteConfirm', { label }))) return
 
     setActionMessage('')
     try {
       await action()
       await loadAdminData(token)
     } catch (error) {
-      setActionMessage(error.message || `Could not delete this ${label}.`)
+      setActionMessage(error.message || t('shell.deleteFailed', { label }))
     }
   }
 
@@ -842,114 +871,137 @@ const Admin = () => {
 
   if (!token || status === 'locked') {
     return (
-      <main className="admin-shell">
-        <form
-          className="admin-login"
-          onSubmit={authMode === 'account' ? signIn : unlock}
-        >
-          <div>
-            <p className="section-kicker">Admin</p>
-            <h1 className="text-3xl font-semibold text-white">mrright.blog control</h1>
+      <AdminI18nContext.Provider value={i18n}>
+        <main className="admin-shell admin-login-shell">
+          {/* Three drifting fields of light behind the form. Pure CSS, no
+              canvas: the sign-in screen is the one view that must paint before
+              anything else has loaded, and it must not pull three.js in to do
+              it. */}
+          <div aria-hidden="true" className="admin-login-aurora">
+            <span />
+            <span />
+            <span />
           </div>
 
-          {authMode === 'account' ? (
-            <>
-              <input
-                autoComplete="username"
-                className="field-input field-input-focus"
-                placeholder="Username"
-                type="text"
-                value={credentials.username}
-                onChange={(event) =>
-                  setCredentials((current) => ({ ...current, username: event.target.value }))
-                }
-                required
+          <form
+            className="admin-login admin-animate-in"
+            onSubmit={authMode === 'account' ? signIn : unlock}
+          >
+            <div className="admin-login-head">
+              <div>
+                <p className="section-kicker">{t('auth.kicker')}</p>
+                {/* One step smaller below sm: "mrright.blog コントロール" broke
+                    mid-word at 440px, which is legal Japanese typography and
+                    still reads as a mistake. */}
+                <h1 className="text-2xl font-semibold text-white sm:text-3xl">{t('auth.title')}</h1>
+                <p className="admin-login-subtitle">{t('auth.subtitle')}</p>
+              </div>
+              {/* The switcher sits on the locked screen too: an operator who
+                  cannot read this form is exactly the one who needs it. */}
+              <AdminLanguageSwitcher
+                label={t('shell.language')}
+                language={language}
+                onChange={setLanguage}
               />
-              <input
-                autoComplete="current-password"
-                className="field-input field-input-focus"
-                placeholder="Password"
-                type="password"
-                value={credentials.password}
-                onChange={(event) =>
-                  setCredentials((current) => ({ ...current, password: event.target.value }))
-                }
-                required
-              />
-              {useRecoveryCode ? (
+            </div>
+
+            {authMode === 'account' ? (
+              <>
                 <input
+                  autoComplete="username"
                   className="field-input field-input-focus"
-                  placeholder="Recovery code"
-                  type="text"
-                  value={recoveryCode}
-                  onChange={(event) => setRecoveryCode(event.target.value)}
-                  required
-                />
-              ) : (
-                <input
-                  // one-time-code lets a phone offer the code from the
-                  // notification instead of making the operator retype it.
-                  autoComplete="one-time-code"
-                  className="field-input field-input-focus"
-                  inputMode="numeric"
-                  maxLength={6}
-                  placeholder="6-digit code"
-                  type="text"
-                  value={credentials.totp}
                   onChange={(event) =>
-                    setCredentials((current) => ({ ...current, totp: event.target.value }))
+                    setCredentials((current) => ({ ...current, username: event.target.value }))
                   }
+                  placeholder={t('auth.username')}
                   required
+                  type="text"
+                  value={credentials.username}
                 />
+                <input
+                  autoComplete="current-password"
+                  className="field-input field-input-focus"
+                  onChange={(event) =>
+                    setCredentials((current) => ({ ...current, password: event.target.value }))
+                  }
+                  placeholder={t('auth.password')}
+                  required
+                  type="password"
+                  value={credentials.password}
+                />
+                {useRecoveryCode ? (
+                  <input
+                    className="field-input field-input-focus"
+                    onChange={(event) => setRecoveryCode(event.target.value)}
+                    placeholder={t('auth.recoveryCode')}
+                    required
+                    type="text"
+                    value={recoveryCode}
+                  />
+                ) : (
+                  <input
+                    // one-time-code lets a phone offer the code from the
+                    // notification instead of making the operator retype it.
+                    autoComplete="one-time-code"
+                    className="field-input field-input-focus"
+                    inputMode="numeric"
+                    maxLength={6}
+                    onChange={(event) =>
+                      setCredentials((current) => ({ ...current, totp: event.target.value }))
+                    }
+                    placeholder={t('auth.code')}
+                    required
+                    type="text"
+                    value={credentials.totp}
+                  />
+                )}
+              </>
+            ) : (
+              <input
+                className="field-input field-input-focus"
+                onChange={(event) => setTokenInput(event.target.value)}
+                placeholder={t('auth.sharedToken')}
+                required
+                type="password"
+                value={tokenInput}
+              />
+            )}
+
+            {(authMessage || status === 'error') && (
+              <p className="text-sm text-coral">{authMessage || t('auth.genericError')}</p>
+            )}
+
+            <button className="primary-action" type="submit">
+              {t('auth.submit')}
+            </button>
+
+            <div className="flex flex-wrap gap-4 text-sm text-neutral-400">
+              {authMode === 'account' && (
+                <button
+                  className="underline decoration-dotted underline-offset-4"
+                  onClick={() => {
+                    setUseRecoveryCode((current) => !current)
+                    setAuthMessage('')
+                  }}
+                  type="button"
+                >
+                  {useRecoveryCode ? t('auth.useAuthenticator') : t('auth.useRecovery')}
+                </button>
               )}
-            </>
-          ) : (
-            <input
-              className="field-input field-input-focus"
-              placeholder="Shared admin token"
-              type="password"
-              value={tokenInput}
-              onChange={(event) => setTokenInput(event.target.value)}
-              required
-            />
-          )}
-
-          {(authMessage || status === 'error') && (
-            <p className="text-sm text-coral">
-              {authMessage || 'Could not reach the admin API. Check your connection and try again.'}
-            </p>
-          )}
-
-          <button type="submit" className="primary-action">
-            Open Dashboard
-          </button>
-
-          <div className="flex flex-wrap gap-4 text-sm text-neutral-400">
-            {authMode === 'account' && (
               <button
-                type="button"
                 className="underline decoration-dotted underline-offset-4"
                 onClick={() => {
-                  setUseRecoveryCode((current) => !current)
+                  setAuthMode((current) => (current === 'account' ? 'token' : 'account'))
                   setAuthMessage('')
                 }}
+                type="button"
               >
-                {useRecoveryCode ? 'Use authenticator code' : 'Use a recovery code'}
+                {authMode === 'account' ? t('auth.useToken') : t('auth.useAccount')}
               </button>
-            )}
-            <button
-              type="button"
-              className="underline decoration-dotted underline-offset-4"
-              onClick={() => {
-                setAuthMode((current) => (current === 'account' ? 'token' : 'account'))
-                setAuthMessage('')
-              }}
-            >
-              {authMode === 'account' ? 'Sign in with the shared token' : 'Sign in with an account'}
-            </button>
-          </div>
-        </form>
-      </main>
+            </div>
+          </form>
+        </main>
+      </AdminI18nContext.Provider>
     )
   }
 
@@ -972,69 +1024,89 @@ const Admin = () => {
   }
 
   const paletteCommands = [
-    ...sections.map((section) => ({
-      group: section.group,
-      hint: `${section.group}${navBadges[section.key] ? ` · ${navBadges[section.key]} waiting` : ''}`,
-      key: `go-${section.key}`,
-      label: `Go to ${section.label}`,
-      run: () => openSection(section.key),
-    })),
+    ...sections.map((section) => {
+      const groupLabel = t(sectionGroupKey(section.group))
+
+      return {
+        group: groupLabel,
+        hint: `${groupLabel}${
+          navBadges[section.key]
+            ? ` · ${t('palette.waitingHint', { count: navBadges[section.key] })}`
+            : ''
+        }`,
+        key: `go-${section.key}`,
+        label: t('palette.goTo', { label: t(sectionLabelKey(section.key)) }),
+        run: () => openSection(section.key),
+      }
+    }),
     {
-      hint: 'Opens the project editor with a blank slug',
+      hint: t('palette.newProjectHint'),
       key: 'new-project',
-      label: 'New project',
+      label: t('palette.newProject'),
       run: () => {
         openSection('projects')
         startCreatingProject()
       },
     },
     {
-      hint: 'Refetch every list and the dashboard aggregate',
+      hint: t('palette.refreshHint'),
       key: 'refresh',
-      label: 'Refresh all data',
+      label: t('palette.refresh'),
       run: () => loadAdminData(token),
     },
     {
-      hint: 'Revokes this session server-side',
+      hint: t('palette.signOutHint'),
       key: 'sign-out',
-      label: 'Sign out',
+      label: t('palette.signOut'),
       run: logout,
     },
   ]
 
+  const activeSectionMeta = sections.find((section) => section.key === activeSection)
+
   return (
+    <AdminI18nContext.Provider value={i18n}>
     <div className="admin-console">
       <aside className={navOpen ? 'admin-sidebar admin-sidebar-open' : 'admin-sidebar'}>
         <div className="admin-brand">
           <span className="admin-brand-mark">MR</span>
           <div>
-            <strong>Portfolio Operations</strong>
+            <strong>{t('shell.brand')}</strong>
             <small>mrright.blog</small>
           </div>
         </div>
 
+        <AdminLanguageSwitcher
+          label={t('shell.language')}
+          language={language}
+          onChange={setLanguage}
+        />
+
         <nav className="admin-nav">
           {sectionGroups.map((group) => (
             <div className="admin-nav-group" key={group.name}>
-              <p>{group.name}</p>
-              {group.items.map((section) => (
+              <p>{t(sectionGroupKey(group.name))}</p>
+              {group.items.map((section, index) => (
                 <button
                   aria-current={activeSection === section.key ? 'page' : undefined}
                   className={
-                    activeSection === section.key ? 'admin-nav-item admin-nav-active' : 'admin-nav-item'
+                    activeSection === section.key
+                      ? 'admin-nav-item admin-nav-active admin-animate-in'
+                      : 'admin-nav-item admin-animate-in'
                   }
                   key={section.key}
                   onClick={() => openSection(section.key)}
+                  style={stagger(index)}
                   type="button"
                 >
                   <AdminIcon name={section.icon} />
-                  <span>{section.label}</span>
+                  <span>{t(sectionLabelKey(section.key))}</span>
                   {navBadges[section.key] ? (
                     <>
                       <em className="admin-nav-badge">{navBadges[section.key]}</em>
                       {/* Without this the button announces as "Community 2",
                           which is a number with no unit. */}
-                      <span className="sr-only">waiting</span>
+                      <span className="sr-only">{t('nav.waiting')}</span>
                     </>
                   ) : null}
                 </button>
@@ -1045,7 +1117,7 @@ const Admin = () => {
 
         <button className="admin-palette-hint" onClick={() => setPaletteOpen(true)} type="button">
           <AdminIcon name="search" />
-          <span>Jump to…</span>
+          <span>{t('shell.jumpTo')}</span>
           <kbd>⌘K</kbd>
         </button>
 
@@ -1054,14 +1126,12 @@ const Admin = () => {
             trail, and that should be visible while working, not discovered
             later. */}
         <div className={identity?.username ? 'admin-identity' : 'admin-identity admin-identity-shared'}>
-          <strong>{identity?.username || 'Shared admin token'}</strong>
+          <strong>{identity?.username || t('shell.sharedToken')}</strong>
           <small>
-            {identity?.username
-              ? 'Named account — actions are attributed to you'
-              : 'Actions taken now are recorded with no actor'}
+            {identity?.username ? t('shell.identityNamed') : t('shell.identityShared')}
           </small>
           <button className="admin-chip-button" onClick={logout} type="button">
-            Sign out
+            {t('common.signOut')}
           </button>
         </div>
       </aside>
@@ -1070,8 +1140,8 @@ const Admin = () => {
         <header className="admin-header">
           <div>
             <button
-              aria-label="Toggle navigation"
-              className="admin-nav-toggle"
+              aria-label={t('shell.toggleNav')}
+              className={navOpen ? 'admin-nav-toggle admin-nav-toggle-open' : 'admin-nav-toggle'}
               onClick={() => setNavOpen((current) => !current)}
               type="button"
             >
@@ -1080,28 +1150,46 @@ const Admin = () => {
               <span />
             </button>
             <p className="section-kicker mb-1">
-              {sections.find((section) => section.key === activeSection)?.group || 'Admin'}
+              {activeSectionMeta ? t(sectionGroupKey(activeSectionMeta.group)) : t('auth.kicker')}
             </p>
-            <h1 className="text-3xl font-semibold text-white">
-              {sections.find((section) => section.key === activeSection)?.label || 'Admin'}
+            {/* Keyed on the section so the title cross-fades with the view
+                below it instead of swapping under a static heading. */}
+            <h1 className="admin-title text-3xl font-semibold text-white" key={activeSection}>
+              {activeSectionMeta ? t(sectionLabelKey(activeSectionMeta.key)) : t('auth.kicker')}
             </h1>
           </div>
           <div className="admin-header-actions">
-            {loadedAt ? <span className="admin-header-stamp">Updated {formatAge(loadedAt)}</span> : null}
-            <button type="button" className="secondary-action" onClick={() => loadAdminData(token)}>
-              Refresh
+            {loadedAt ? (
+              <span className="admin-header-stamp">
+                {t('shell.updated', { age: fmt.formatAge(loadedAt) })}
+              </span>
+            ) : null}
+            <button
+              className={status === 'loading' ? 'secondary-action is-busy' : 'secondary-action'}
+              onClick={() => loadAdminData(token)}
+              type="button"
+            >
+              {t('common.refresh')}
             </button>
           </div>
         </header>
 
-        {status === 'loading' && <p className="text-neutral-400">Loading admin data...</p>}
-        {status === 'error' && (
-          <p className="text-coral">Could not load admin data. Check the token.</p>
+        {status === 'loading' && (
+          <div className="admin-skeleton" role="status">
+            <p className="text-neutral-400">{t('shell.loadingData')}</p>
+            <span />
+            <span />
+            <span />
+          </div>
         )}
-        {actionMessage && <p className="text-coral">{actionMessage}</p>}
+        {status === 'error' && <p className="text-coral">{t('shell.loadError')}</p>}
+        {actionMessage && <p className="admin-toast text-coral">{actionMessage}</p>}
 
         {status === 'ready' && (
-        <>
+        // Keyed on the section: React tears the old view down and mounts the
+        // new one, which is what re-runs the entrance animation. Without the
+        // key the panels are reused and the switch is a silent content swap.
+        <div className="admin-view" key={activeSection}>
           {activeSection === 'overview' && (
             <AdminDashboard
               days={overviewDays}
@@ -1111,7 +1199,7 @@ const Admin = () => {
               onRangeChange={changeRange}
               overview={overview}
               projects={data.projects}
-              systemLabel={loadedAt ? `data as of ${formatAge(loadedAt)}` : ''}
+              systemLabel={loadedAt ? t('dash.dataAsOf', { age: fmt.formatAge(loadedAt) }) : ''}
             />
           )}
 
@@ -1124,12 +1212,12 @@ const Admin = () => {
           )}
 
           {searchableSections.has(activeSection) && (
-          <div className="admin-search">
+          <div className="admin-search admin-animate-in">
             <input
               className="field-input field-input-focus"
-              placeholder="Search by project, visitor, author, email, status..."
-              value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
+              placeholder={t('shell.searchPlaceholder')}
+              value={searchQuery}
             />
             {activeSection === 'projects' && (
               <select
@@ -1139,18 +1227,14 @@ const Admin = () => {
               >
                 {translationFilters.map((filter) => (
                   <option key={filter.value} value={filter.value}>
-                    {filter.label}
+                    {t(filter.labelKey)}
                   </option>
                 ))}
               </select>
             )}
             {searchQuery && (
-              <button
-                type="button"
-                className="secondary-action"
-                onClick={() => setSearchQuery('')}
-              >
-                Clear
+              <button className="secondary-action" onClick={() => setSearchQuery('')} type="button">
+                {t('common.clear')}
               </button>
             )}
           </div>
@@ -1160,7 +1244,7 @@ const Admin = () => {
             <AdminProjectsSection
               onCreate={startCreatingProject}
               onDelete={(project) =>
-                deleteItem('project', () => deleteAdminProject(token, project.slug))
+                deleteItem('entity.project', () => deleteAdminProject(token, project.slug))
               }
               onEdit={startEditingProject}
               projects={visibleProjects}
@@ -1187,7 +1271,7 @@ const Admin = () => {
           {activeSection === 'downloads' && (
             <AdminDownloadsSection
               onDelete={(request) =>
-                deleteItem('download request', () =>
+                deleteItem('entity.downloadRequest', () =>
                   deleteAdminDownloadRequest(token, request.id),
                 )
               }
@@ -1200,15 +1284,15 @@ const Admin = () => {
             <AdminCommunitySection
               comments={visibleCommunityComments}
               onDeleteComment={(comment) =>
-                deleteItem('community comment', () =>
+                deleteItem('entity.communityComment', () =>
                   deleteAdminCommunityComment(token, comment.id),
                 )
               }
               onDeletePost={(post) =>
-                deleteItem('community post', () => deleteAdminCommunityPost(token, post.id))
+                deleteItem('entity.communityPost', () => deleteAdminCommunityPost(token, post.id))
               }
               onDeleteUpload={(upload) =>
-                deleteItem('community upload', () =>
+                deleteItem('entity.communityUpload', () =>
                   deleteAdminCommunityUpload(token, upload.id),
                 )
               }
@@ -1222,7 +1306,7 @@ const Admin = () => {
             <AdminCommentsSection
               comments={visibleComments}
               onDelete={(comment) =>
-                deleteItem('comment', () => deleteAdminComment(token, comment.id))
+                deleteItem('entity.comment', () => deleteAdminComment(token, comment.id))
               }
               onUpdateStatus={updateCommentStatus}
               pendingCount={pendingCommentCount}
@@ -1245,7 +1329,7 @@ const Admin = () => {
               }}
               onCloseDetail={() => setSelectedVisitor(null)}
               onDelete={() =>
-                deleteItem('visitor account', async () => {
+                deleteItem('entity.visitorAccount', async () => {
                   await deleteVisitor(selectedVisitor.id)
                   setSelectedVisitor(null)
                 })
@@ -1268,7 +1352,7 @@ const Admin = () => {
             <AdminMessagesSection
               messages={visibleMessages}
               onDelete={(message) =>
-                deleteItem('contact message', () =>
+                deleteItem('entity.contactMessage', () =>
                   deleteAdminContactMessage(token, message.id),
                 )
               }
@@ -1278,13 +1362,13 @@ const Admin = () => {
           {activeSection === 'security' && (
             <AdminTotpEnrolment signedInUsername={identity?.username} token={token} />
           )}
-        </>
+        </div>
         )}
       </main>
 
       {navOpen ? (
         <button
-          aria-label="Close navigation"
+          aria-label={t('common.close')}
           className="admin-nav-scrim"
           onClick={() => setNavOpen(false)}
           type="button"
@@ -1295,6 +1379,7 @@ const Admin = () => {
         <AdminCommandPalette commands={paletteCommands} onClose={() => setPaletteOpen(false)} />
       ) : null}
     </div>
+    </AdminI18nContext.Provider>
   )
 }
 

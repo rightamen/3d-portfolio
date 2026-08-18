@@ -11,6 +11,8 @@ import {
   stackKeywordPresets,
   viewerFeaturePresets,
 } from '../../lib/admin/projectEditor'
+import { useAdminI18n } from '../../lib/admin/i18nAdmin'
+import { stagger } from '../../lib/admin/motion'
 
 // The whole project form: the base copy, the per-language grid, the two
 // uploaders, and the preset dropdowns that fill the tedious fields in. It owns
@@ -29,461 +31,442 @@ const AdminProjectEditor = ({
   project,
   status,
   uploadStatus,
-}) => (
-  <section className="admin-section" ref={editorRef}>
-    <div className="admin-section-header">
-      <h2>{project.isNew ? 'New Project' : 'Edit Project'}</h2>
-      <span>{project.slug}</span>
-    </div>
-    <form className="admin-editor" onSubmit={onSubmit}>
-      <div className="translation-editor-summary">
-        <strong>Translation Coverage</strong>
-        <div className="translation-status-row">
-          {getTranslationStates(project).map((item) => (
-            <span key={item.suffix} className={`translation-status-${item.state}`}>
-              {item.suffix.replace('Zh', 'ZH').replace('En', 'EN').replace('Ja', 'JA')}
-              <strong>{item.state}</strong>
-            </span>
-          ))}
-        </div>
-      </div>
-      <label className="field-label">
-        Project Type Preset
-        <select
-          className="field-input field-input-focus"
-          defaultValue=""
-          onChange={(event) => {
-            onApplyPreset(event.target.value)
-            event.target.value = ''
-          }}
-        >
-          <option value="" disabled>
-            Apply a project type...
-          </option>
-          {projectPresets.map((preset) => (
-            <option key={preset.key} value={preset.key}>
-              {preset.label}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label className="field-label">
-        Asset Category
-        <select
-          className="field-input field-input-focus"
-          value={getAssetCategoryProfile(project).value}
-          onChange={(event) =>
-            onChange((current) => ({
-              ...current,
-              assetCategory: event.target.value,
-            }))
-          }
-        >
-          {assetCategoryPresets.map((category) => (
-            <option key={category.value} value={category.value}>
-              {category.label}
-            </option>
-          ))}
-        </select>
-        <span
-          className="asset-editor-note"
-          style={{
-            '--category-accent': getAssetCategoryProfile({
-              assetCategory: project.assetCategory,
-            }).accent,
-          }}
-        >
-          <strong>
-            {
-              getAssetCategoryProfile({
-                assetCategory: project.assetCategory,
-              }).label
-            }
-          </strong>
-          <span>
-            {
-              getAssetCategoryProfile({
-                assetCategory: project.assetCategory,
-              }).description
-            }
-          </span>
-        </span>
-      </label>
-      <label className="field-label">
-        Slug
-        <input
-          className="field-input field-input-focus"
-          value={project.slug}
-          disabled={!project.isNew}
-          placeholder="new-project-slug"
-          onChange={(event) =>
-            onChange((current) => ({
-              ...current,
-              slug: event.target.value.toLowerCase(),
-            }))
-          }
-          required
-        />
-      </label>
-      <label className="field-label">
-        Title
-        <input
-          className="field-input field-input-focus"
-          value={project.title}
-          onChange={(event) =>
-            onChange((current) => ({
-              ...current,
-              title: event.target.value,
-            }))
-          }
-          required
-        />
-      </label>
-      <label className="field-label">
-        Summary
-        <textarea
-          className="field-input field-input-focus min-h-24 resize-none"
-          value={project.summary}
-          onChange={(event) =>
-            onChange((current) => ({
-              ...current,
-              summary: event.target.value,
-            }))
-          }
-          required
-        />
-      </label>
-      <label className="field-label">
-        Workflow
-        <textarea
-          className="field-input field-input-focus min-h-28 resize-none"
-          value={project.workflow || ''}
-          onChange={(event) =>
-            onChange((current) => ({
-              ...current,
-              workflow: event.target.value,
-            }))
-          }
-        />
-      </label>
-      <details className="translation-panel">
-        <summary>
-          <span>
-            Language Versions
-            <small>Optional copy for Chinese, English, and Japanese visitors</small>
-          </span>
-        </summary>
-        <div className="translation-grid">
-          {localizedEditorLanguages.map((language) => (
-            <section key={language.suffix} className="translation-card">
-              <div className="translation-card-header">
-                <strong>{language.label}</strong>
-                <button
-                  type="button"
-                  className="secondary-action"
-                  onClick={() => onCopyBaseCopy(language.suffix)}
-                >
-                  Copy Base
-                </button>
-              </div>
-              {localizedEditorFields.map((field) => {
-                const fieldName = `${field.key}${language.suffix}`
-                const Input = field.multiline ? 'textarea' : 'input'
+}) => {
+  const { language, t } = useAdminI18n()
+  const category = getAssetCategoryProfile({ assetCategory: project.assetCategory }, language)
 
-                return (
-                  <label key={fieldName} className="field-label">
-                    {field.label}
-                    <Input
-                      className={`field-input field-input-focus ${
-                        field.multiline ? 'min-h-24 resize-none' : ''
-                      }`}
-                      value={project[fieldName] || ''}
-                      onChange={(event) =>
-                        onChange((current) => ({
-                          ...current,
-                          [fieldName]: event.target.value,
-                        }))
-                      }
-                    />
-                  </label>
-                )
-              })}
-            </section>
-          ))}
+  return (
+    <section className="admin-section admin-animate-in" ref={editorRef}>
+      <div className="admin-section-header">
+        <h2>{project.isNew ? t('editor.newTitle') : t('editor.editTitle')}</h2>
+        <span>{project.slug}</span>
+      </div>
+      <form className="admin-editor" onSubmit={onSubmit}>
+        <div className="translation-editor-summary">
+          <strong>{t('editor.translationCoverage')}</strong>
+          <div className="translation-status-row">
+            {getTranslationStates(project).map((item, index) => (
+              <span
+                className={`translation-status-${item.state} admin-animate-in`}
+                key={item.suffix}
+                style={stagger(index)}
+              >
+                {item.suffix.replace('Zh', 'ZH').replace('En', 'EN').replace('Ja', 'JA')}
+                <strong>{t(`translation.${item.state}`)}</strong>
+              </span>
+            ))}
+          </div>
         </div>
-      </details>
-      <div className="grid gap-3 md:grid-cols-2">
         <label className="field-label">
-          Year
-          <input
+          {t('editor.typePreset')}
+          <select
             className="field-input field-input-focus"
-            value={project.year}
+            defaultValue=""
+            onChange={(event) => {
+              onApplyPreset(event.target.value)
+              event.target.value = ''
+            }}
+          >
+            <option disabled value="">
+              {t('editor.applyType')}
+            </option>
+            {projectPresets.map((preset) => (
+              <option key={preset.key} value={preset.key}>
+                {t(`preset.${preset.key}`)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="field-label">
+          {t('editor.assetCategory')}
+          <select
+            className="field-input field-input-focus"
             onChange={(event) =>
               onChange((current) => ({
                 ...current,
-                year: event.target.value,
+                assetCategory: event.target.value,
+              }))
+            }
+            value={getAssetCategoryProfile(project).value}
+          >
+            {assetCategoryPresets.map((item) => (
+              <option key={item.value} value={item.value}>
+                {item.labels?.[language] || item.label}
+              </option>
+            ))}
+          </select>
+          <span className="asset-editor-note" style={{ '--category-accent': category.accent }}>
+            <strong>{category.label}</strong>
+            <span>{category.description}</span>
+          </span>
+        </label>
+        <label className="field-label">
+          {t('editor.slug')}
+          <input
+            className="field-input field-input-focus"
+            disabled={!project.isNew}
+            onChange={(event) =>
+              onChange((current) => ({
+                ...current,
+                slug: event.target.value.toLowerCase(),
+              }))
+            }
+            placeholder="new-project-slug"
+            required
+            value={project.slug}
+          />
+        </label>
+        <label className="field-label">
+          {t('editor.title')}
+          <input
+            className="field-input field-input-focus"
+            onChange={(event) =>
+              onChange((current) => ({
+                ...current,
+                title: event.target.value,
               }))
             }
             required
+            value={project.title}
           />
         </label>
         <label className="field-label">
-          Format
-          <select
-            className="field-input field-input-focus"
-            value=""
+          {t('editor.summary')}
+          <textarea
+            className="field-input field-input-focus min-h-24 resize-none"
             onChange={(event) =>
               onChange((current) => ({
                 ...current,
-                format: event.target.value,
-              }))
-            }
-          >
-            <option value="" disabled>
-              Choose a format preset...
-            </option>
-            {formatPresets.map((format) => (
-              <option key={format} value={format}>
-                {format}
-              </option>
-            ))}
-          </select>
-          <input
-            className="field-input field-input-focus"
-            value={project.format || ''}
-            onChange={(event) =>
-              onChange((current) => ({
-                ...current,
-                format: event.target.value,
-              }))
-            }
-          />
-        </label>
-        <label className="field-label">
-          Image URL
-          <input
-            className="field-input field-input-focus"
-            value={project.image}
-            onChange={(event) =>
-              onChange((current) => ({
-                ...current,
-                image: event.target.value,
+                summary: event.target.value,
               }))
             }
             required
+            value={project.summary}
           />
         </label>
         <label className="field-label">
-          Upload Image
-          <span
-            className={`asset-upload-control ${
-              uploadStatus.image.phase === 'done' ? 'asset-upload-control-done' : ''
-            }`}
-          >
-            {uploadStatus.image.phase === 'uploading' && 'Uploading image...'}
-            {uploadStatus.image.phase === 'done' && uploadStatus.image.message}
-            {uploadStatus.image.phase === 'error' && uploadStatus.image.message}
-            {uploadStatus.image.phase === 'idle' && 'Choose image file'}
-            <input
-              type="file"
-              accept=".jpg,.jpeg,.png,.webp,.gif"
-              onChange={(event) => onSelectAsset(event, 'image')}
-            />
-          </span>
-          {uploadStatus.image.phase !== 'idle' && (
-            <span className="asset-upload-progress">
-              <span style={{ width: `${uploadStatus.image.progress}%` }} />
-            </span>
-          )}
-        </label>
-        <label className="field-label">
-          Model URL
-          <input
-            className="field-input field-input-focus"
-            value={project.modelUrl || ''}
+          {t('editor.workflow')}
+          <textarea
+            className="field-input field-input-focus min-h-28 resize-none"
             onChange={(event) =>
               onChange((current) => ({
                 ...current,
-                modelUrl: event.target.value,
+                workflow: event.target.value,
               }))
             }
+            value={project.workflow || ''}
           />
         </label>
-        <label className="field-label">
-          Upload Model
-          <span
-            className={`asset-upload-control ${
-              uploadStatus.modelUrl.phase === 'done' ? 'asset-upload-control-done' : ''
-            }`}
-          >
-            {uploadStatus.modelUrl.phase === 'uploading' && 'Uploading model...'}
-            {uploadStatus.modelUrl.phase === 'processing' && uploadStatus.modelUrl.message}
-            {uploadStatus.modelUrl.phase === 'done' && uploadStatus.modelUrl.message}
-            {uploadStatus.modelUrl.phase === 'error' && uploadStatus.modelUrl.message}
-            {uploadStatus.modelUrl.phase === 'idle' && 'Choose model and texture files'}
-            <input
-              type="file"
-              accept=".glb,.gltf,.fbx,.obj,.mtl,.jpg,.jpeg,.png,.webp"
-              multiple
-              onChange={(event) => onSelectAsset(event, 'modelUrl')}
-            />
-          </span>
-          {uploadStatus.modelUrl.phase !== 'idle' && (
-            <span className="asset-upload-progress">
-              <span style={{ width: `${uploadStatus.modelUrl.progress}%` }} />
+        <details className="translation-panel">
+          <summary>
+            <span>
+              {t('editor.languageVersions')}
+              <small>{t('editor.languageVersionsHint')}</small>
             </span>
-          )}
-          <span className="field-hint">
-            Select OBJ, MTL, and web textures together. PSD/TGA references can use a selected
-            PNG/JPG/WebP replacement.
-          </span>
-        </label>
+          </summary>
+          <div className="translation-grid">
+            {localizedEditorLanguages.map((editorLanguage, index) => (
+              <section
+                className="translation-card admin-animate-in"
+                key={editorLanguage.suffix}
+                style={stagger(index)}
+              >
+                <div className="translation-card-header">
+                  <strong>{editorLanguage.label}</strong>
+                  <button
+                    className="secondary-action"
+                    onClick={() => onCopyBaseCopy(editorLanguage.suffix)}
+                    type="button"
+                  >
+                    {t('editor.copyBase')}
+                  </button>
+                </div>
+                {localizedEditorFields.map((field) => {
+                  const fieldName = `${field.key}${editorLanguage.suffix}`
+                  const Input = field.multiline ? 'textarea' : 'input'
+
+                  return (
+                    <label className="field-label" key={fieldName}>
+                      {t(field.labelKey)}
+                      <Input
+                        className={`field-input field-input-focus ${
+                          field.multiline ? 'min-h-24 resize-none' : ''
+                        }`}
+                        onChange={(event) =>
+                          onChange((current) => ({
+                            ...current,
+                            [fieldName]: event.target.value,
+                          }))
+                        }
+                        value={project[fieldName] || ''}
+                      />
+                    </label>
+                  )
+                })}
+              </section>
+            ))}
+          </div>
+        </details>
+        <div className="grid gap-3 md:grid-cols-2">
+          <label className="field-label">
+            {t('editor.year')}
+            <input
+              className="field-input field-input-focus"
+              onChange={(event) =>
+                onChange((current) => ({
+                  ...current,
+                  year: event.target.value,
+                }))
+              }
+              required
+              value={project.year}
+            />
+          </label>
+          <label className="field-label">
+            {t('editor.format')}
+            <select
+              className="field-input field-input-focus"
+              onChange={(event) =>
+                onChange((current) => ({
+                  ...current,
+                  format: event.target.value,
+                }))
+              }
+              value=""
+            >
+              <option disabled value="">
+                {t('editor.chooseFormat')}
+              </option>
+              {formatPresets.map((format) => (
+                <option key={format} value={format}>
+                  {format}
+                </option>
+              ))}
+            </select>
+            <input
+              className="field-input field-input-focus"
+              onChange={(event) =>
+                onChange((current) => ({
+                  ...current,
+                  format: event.target.value,
+                }))
+              }
+              value={project.format || ''}
+            />
+          </label>
+          <label className="field-label">
+            {t('editor.imageUrl')}
+            <input
+              className="field-input field-input-focus"
+              onChange={(event) =>
+                onChange((current) => ({
+                  ...current,
+                  image: event.target.value,
+                }))
+              }
+              required
+              value={project.image}
+            />
+          </label>
+          <label className="field-label">
+            {t('editor.uploadImage')}
+            <span
+              className={`asset-upload-control ${
+                uploadStatus.image.phase === 'done' ? 'asset-upload-control-done' : ''
+              }`}
+            >
+              {uploadStatus.image.phase === 'uploading' && t('editor.uploadingImage')}
+              {uploadStatus.image.phase === 'done' && uploadStatus.image.message}
+              {uploadStatus.image.phase === 'error' && uploadStatus.image.message}
+              {uploadStatus.image.phase === 'idle' && t('editor.chooseImage')}
+              <input
+                accept=".jpg,.jpeg,.png,.webp,.gif"
+                onChange={(event) => onSelectAsset(event, 'image')}
+                type="file"
+              />
+            </span>
+            {uploadStatus.image.phase !== 'idle' && (
+              <span className="asset-upload-progress">
+                <span style={{ width: `${uploadStatus.image.progress}%` }} />
+              </span>
+            )}
+          </label>
+          <label className="field-label">
+            {t('editor.modelUrl')}
+            <input
+              className="field-input field-input-focus"
+              onChange={(event) =>
+                onChange((current) => ({
+                  ...current,
+                  modelUrl: event.target.value,
+                }))
+              }
+              value={project.modelUrl || ''}
+            />
+          </label>
+          <label className="field-label">
+            {t('editor.uploadModel')}
+            <span
+              className={`asset-upload-control ${
+                uploadStatus.modelUrl.phase === 'done' ? 'asset-upload-control-done' : ''
+              }`}
+            >
+              {uploadStatus.modelUrl.phase === 'uploading' && t('editor.uploadingModel')}
+              {uploadStatus.modelUrl.phase === 'processing' && uploadStatus.modelUrl.message}
+              {uploadStatus.modelUrl.phase === 'done' && uploadStatus.modelUrl.message}
+              {uploadStatus.modelUrl.phase === 'error' && uploadStatus.modelUrl.message}
+              {uploadStatus.modelUrl.phase === 'idle' && t('editor.chooseModel')}
+              <input
+                accept=".glb,.gltf,.fbx,.obj,.mtl,.jpg,.jpeg,.png,.webp"
+                multiple
+                onChange={(event) => onSelectAsset(event, 'modelUrl')}
+                type="file"
+              />
+            </span>
+            {uploadStatus.modelUrl.phase !== 'idle' && (
+              <span className="asset-upload-progress">
+                <span style={{ width: `${uploadStatus.modelUrl.progress}%` }} />
+              </span>
+            )}
+            <span className="field-hint">{t('editor.modelHint')}</span>
+          </label>
+          <label className="field-label">
+            {t('editor.modelSize')}
+            <select
+              className="field-input field-input-focus"
+              onChange={(event) =>
+                onChange((current) => ({
+                  ...current,
+                  modelSize: event.target.value,
+                }))
+              }
+              value=""
+            >
+              <option disabled value="">
+                {t('editor.chooseSize')}
+              </option>
+              {modelSizePresets.map((size) => (
+                <option key={size} value={size}>
+                  {size}
+                </option>
+              ))}
+            </select>
+            <input
+              className="field-input field-input-focus"
+              onChange={(event) =>
+                onChange((current) => ({
+                  ...current,
+                  modelSize: event.target.value,
+                }))
+              }
+              value={project.modelSize || ''}
+            />
+          </label>
+          <label className="field-label">
+            {t('editor.downloadPolicy')}
+            <select
+              className="field-input field-input-focus"
+              onChange={(event) =>
+                onChange((current) => ({
+                  ...current,
+                  downloadPolicy: event.target.value,
+                }))
+              }
+              value={project.downloadPolicy || ''}
+            >
+              {downloadPolicyPresets.map((policy) => (
+                <option key={policy.value} value={policy.value}>
+                  {t(policy.labelKey)}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
         <label className="field-label">
-          Model Size
+          {t('editor.stack')}
           <select
             className="field-input field-input-focus"
+            onChange={(event) => {
+              onAddStackKeyword(event.target.value)
+              event.target.value = ''
+            }}
             value=""
-            onChange={(event) =>
-              onChange((current) => ({
-                ...current,
-                modelSize: event.target.value,
-              }))
-            }
           >
-            <option value="" disabled>
-              Choose a size preset...
+            <option disabled value="">
+              {t('editor.addKeyword')}
             </option>
-            {modelSizePresets.map((size) => (
-              <option key={size} value={size}>
-                {size}
+            {stackKeywordPresets.map((keyword) => (
+              <option key={keyword} value={keyword}>
+                {keyword}
               </option>
             ))}
           </select>
           <input
             className="field-input field-input-focus"
-            value={project.modelSize || ''}
             onChange={(event) =>
               onChange((current) => ({
                 ...current,
-                modelSize: event.target.value,
+                stackText: event.target.value,
               }))
             }
+            value={project.stackText}
           />
         </label>
         <label className="field-label">
-          Download Policy
+          {t('editor.viewerFeatures')}
           <select
             className="field-input field-input-focus"
-            value={project.downloadPolicy || ''}
-            onChange={(event) =>
-              onChange((current) => ({
-                ...current,
-                downloadPolicy: event.target.value,
-              }))
-            }
+            onChange={(event) => {
+              onAddViewerFeature(event.target.value)
+              event.target.value = ''
+            }}
+            value=""
           >
-            {downloadPolicyPresets.map((policy) => (
-              <option key={policy.value} value={policy.value}>
-                {policy.label}
+            <option disabled value="">
+              {t('editor.addFeature')}
+            </option>
+            {viewerFeaturePresets.map((feature) => (
+              <option key={feature} value={feature}>
+                {feature}
               </option>
             ))}
           </select>
+          <input
+            className="field-input field-input-focus"
+            onChange={(event) =>
+              onChange((current) => ({
+                ...current,
+                viewerFeaturesText: event.target.value,
+              }))
+            }
+            value={project.viewerFeaturesText}
+          />
         </label>
-      </div>
-      <label className="field-label">
-        Stack
-        <select
-          className="field-input field-input-focus"
-          value=""
-          onChange={(event) => {
-            onAddStackKeyword(event.target.value)
-            event.target.value = ''
-          }}
-        >
-          <option value="" disabled>
-            Add a keyword...
-          </option>
-          {stackKeywordPresets.map((keyword) => (
-            <option key={keyword} value={keyword}>
-              {keyword}
-            </option>
-          ))}
-        </select>
-        <input
-          className="field-input field-input-focus"
-          value={project.stackText}
-          onChange={(event) =>
-            onChange((current) => ({
-              ...current,
-              stackText: event.target.value,
-            }))
-          }
-        />
-      </label>
-      <label className="field-label">
-        Viewer Features
-        <select
-          className="field-input field-input-focus"
-          value=""
-          onChange={(event) => {
-            onAddViewerFeature(event.target.value)
-            event.target.value = ''
-          }}
-        >
-          <option value="" disabled>
-            Add a viewer feature...
-          </option>
-          {viewerFeaturePresets.map((feature) => (
-            <option key={feature} value={feature}>
-              {feature}
-            </option>
-          ))}
-        </select>
-        <input
-          className="field-input field-input-focus"
-          value={project.viewerFeaturesText}
-          onChange={(event) =>
-            onChange((current) => ({
-              ...current,
-              viewerFeaturesText: event.target.value,
-            }))
-          }
-        />
-      </label>
-      <label className="admin-toggle">
-        <input
-          type="checkbox"
-          checked={project.isPublic !== false}
-          onChange={(event) =>
-            onChange((current) => ({
-              ...current,
-              isPublic: event.target.checked,
-            }))
-          }
-        />
-        Public project
-      </label>
-      <div className="flex flex-wrap gap-3">
-        <button
-          type="submit"
-          className="primary-action"
-          disabled={status === 'saving'}
-        >
-          {status === 'saving' ? 'Saving...' : 'Save Project'}
-        </button>
-        <button
-          type="button"
-          className="secondary-action"
-          onClick={() => onCancel()}
-        >
-          Cancel
-        </button>
-      </div>
-      {status === 'error' && (
-        <p className="text-sm text-coral">Could not save this project.</p>
-      )}
-    </form>
-  </section>
-)
+        <label className="admin-toggle">
+          <input
+            checked={project.isPublic !== false}
+            onChange={(event) =>
+              onChange((current) => ({
+                ...current,
+                isPublic: event.target.checked,
+              }))
+            }
+            type="checkbox"
+          />
+          {t('editor.publicProject')}
+        </label>
+        <div className="flex flex-wrap gap-3">
+          <button className="primary-action" disabled={status === 'saving'} type="submit">
+            {status === 'saving' ? t('editor.saving') : t('editor.save')}
+          </button>
+          <button className="secondary-action" onClick={() => onCancel()} type="button">
+            {t('common.cancel')}
+          </button>
+        </div>
+        {status === 'error' && <p className="text-sm text-coral">{t('editor.saveError')}</p>}
+      </form>
+    </section>
+  )
+}
 
 export default AdminProjectEditor

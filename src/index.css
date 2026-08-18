@@ -3565,3 +3565,531 @@ body {
 .admin-row .admin-row-title span.admin-health-chip-ok {
   @apply border-mint/35 bg-mint/12 text-mint;
 }
+
+/* ===============================
+   Admin console — motion
+   ===============================
+
+   Every animation in here is declarative, which is the whole reason it can be
+   trusted: the `prefers-reduced-motion` block near the top of this file already
+   flattens durations across the file, and the block at the end of this section
+   removes the entrance delays that flattening leaves behind.
+
+   The rule the console follows: motion is for things that changed. Panels
+   enter when a section is opened, numbers travel when a window is switched,
+   and a queue that has work in it breathes. Nothing loops for decoration
+   except the sign-in aurora, which is the one screen with nothing to read. */
+
+@keyframes admin-rise {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 10px, 0);
+  }
+}
+
+@keyframes admin-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes admin-bar-rise {
+  from {
+    transform: scaleY(0);
+  }
+}
+
+@keyframes admin-grow-x {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+@keyframes admin-draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+}
+
+@keyframes admin-shimmer {
+  to {
+    background-position: 200% 0;
+  }
+}
+
+@keyframes admin-pulse-ring {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(234, 72, 132, 0.35);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(234, 72, 132, 0);
+  }
+}
+
+@keyframes admin-drift {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(4%, -6%, 0) scale(1.12);
+  }
+}
+
+@keyframes admin-float-dot {
+  0%,
+  100% {
+    transform: translate(-50%, -50%);
+  }
+  50% {
+    transform: translate(-50%, calc(-50% - 6px));
+  }
+}
+
+/* backwards, never forwards: the element is hidden while its delay runs and
+   then hands the property back to the stylesheet. `forwards` would pin
+   transform at the last keyframe and quietly kill every :hover lift on the
+   same element. */
+.admin-animate-in {
+  animation: admin-rise 460ms cubic-bezier(0.22, 0.68, 0.24, 1) backwards;
+  animation-delay: calc(var(--stagger-index, 0) * 42ms);
+}
+
+/* Re-keyed on every section change, so this runs on each switch. */
+.admin-view {
+  animation: admin-fade 260ms ease-out backwards;
+  display: grid;
+  gap: 1.25rem;
+}
+
+.admin-title {
+  animation: admin-rise 320ms cubic-bezier(0.22, 0.68, 0.24, 1) backwards;
+}
+
+.admin-chart-bar {
+  animation: admin-bar-rise 520ms cubic-bezier(0.22, 0.68, 0.24, 1) backwards;
+  animation-delay: calc(var(--stagger-index, 0) * 12ms);
+  transform-box: fill-box;
+  transform-origin: bottom;
+}
+
+.admin-sparkline-line {
+  animation: admin-draw 900ms ease-out backwards;
+  stroke-dasharray: 1;
+}
+
+.admin-bar-fill,
+.admin-meter-fill {
+  animation: admin-grow-x 640ms cubic-bezier(0.22, 0.68, 0.24, 1) backwards;
+  transform-origin: left center;
+}
+
+/* A queue with work in it is the one thing on the page allowed to keep
+   moving. It breathes once every two seconds rather than blinking: a state to
+   notice on the way past, not an alarm to dismiss. */
+.admin-queue-open {
+  animation: admin-pulse-ring 2.4s ease-in-out infinite;
+}
+
+.admin-nav-item {
+  will-change: transform;
+}
+
+.admin-nav-item:hover {
+  transform: translateX(2px);
+}
+
+.admin-nav-badge {
+  animation: admin-rise 320ms ease-out backwards;
+}
+
+/* The hamburger becomes the close button it actually is. */
+.admin-nav-toggle span {
+  transition: transform 220ms ease, opacity 160ms ease;
+}
+
+.admin-nav-toggle-open span:nth-child(1) {
+  transform: translateY(5px) rotate(45deg);
+}
+
+.admin-nav-toggle-open span:nth-child(2) {
+  opacity: 0;
+}
+
+.admin-nav-toggle-open span:nth-child(3) {
+  transform: translateY(-5px) rotate(-45deg);
+}
+
+.admin-panel,
+.admin-queue-card {
+  transition: border-color 200ms ease, transform 200ms ease;
+}
+
+.admin-panel:hover,
+.admin-queue-card:hover {
+  @apply border-aqua/25;
+  transform: translateY(-1px);
+}
+
+.secondary-action.is-busy {
+  @apply pointer-events-none opacity-70;
+}
+
+/* Loading is a shape, not a sentence: three bars where the rows will be, so
+   the page does not jump when they arrive. */
+.admin-skeleton {
+  @apply grid gap-3;
+}
+
+.admin-skeleton span {
+  @apply block h-16 rounded-xl;
+  animation: admin-shimmer 1.4s linear infinite;
+  background: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.035) 0%,
+      rgba(255, 255, 255, 0.09) 40%,
+      rgba(255, 255, 255, 0.035) 80%
+    )
+    0 0 / 200% 100%;
+}
+
+.admin-toast {
+  @apply rounded-lg border border-coral/30 bg-coral/8 px-3 py-2 text-sm;
+  animation: admin-rise 320ms cubic-bezier(0.22, 0.68, 0.24, 1) backwards;
+}
+
+/* ===============================
+   Admin console — language switch
+   =============================== */
+
+.admin-lang {
+  @apply relative grid w-full grid-cols-3 gap-0.5 rounded-full border border-white/10 p-[3px];
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.admin-lang-glider {
+  @apply pointer-events-none absolute rounded-full;
+  background: linear-gradient(135deg, #33c2cc, #57db96);
+  inset: 3px auto 3px 3px;
+  transform: translateX(calc(var(--lang-index, 0) * 100%));
+  transition: transform 280ms cubic-bezier(0.22, 0.68, 0.24, 1);
+  width: calc((100% - 6px) / 3);
+}
+
+.admin-lang-item {
+  @apply relative z-10 min-h-7 rounded-full px-2 text-xs font-semibold text-neutral-400 transition-colors duration-200;
+}
+
+.admin-lang-item:hover {
+  @apply text-white;
+}
+
+.admin-lang-active,
+.admin-lang-active:hover {
+  color: #04131a;
+}
+
+/* ===============================
+   Admin console — sign-in
+   =============================== */
+
+.admin-login-shell {
+  @apply relative overflow-hidden;
+}
+
+.admin-login-aurora {
+  @apply pointer-events-none absolute inset-0;
+  filter: blur(60px);
+}
+
+.admin-login-aurora span {
+  @apply absolute block rounded-full opacity-45;
+  animation: admin-drift 18s ease-in-out infinite;
+}
+
+.admin-login-aurora span:nth-child(1) {
+  background: radial-gradient(circle, rgba(51, 194, 204, 0.55), transparent 70%);
+  height: 26rem;
+  left: -6rem;
+  top: -8rem;
+  width: 26rem;
+}
+
+.admin-login-aurora span:nth-child(2) {
+  animation-delay: -6s;
+  background: radial-gradient(circle, rgba(122, 103, 219, 0.5), transparent 70%);
+  bottom: -10rem;
+  height: 30rem;
+  right: -8rem;
+  width: 30rem;
+}
+
+.admin-login-aurora span:nth-child(3) {
+  animation-delay: -12s;
+  background: radial-gradient(circle, rgba(234, 72, 132, 0.35), transparent 70%);
+  height: 18rem;
+  left: 40%;
+  top: 45%;
+  width: 18rem;
+}
+
+.admin-login {
+  @apply relative z-10;
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+}
+
+.admin-login-head {
+  @apply grid gap-4;
+}
+
+.admin-login-subtitle {
+  @apply mt-2 text-sm leading-relaxed text-neutral-400;
+}
+
+@media (min-width: 480px) {
+  .admin-login-head {
+    @apply grid-cols-[minmax(0,1fr)_auto] items-start gap-3;
+  }
+
+  .admin-login-head .admin-lang {
+    @apply w-auto;
+  }
+}
+
+/* ===============================
+   Admin console — operations map
+   ===============================
+
+   The dashboard's one three-dimensional object. Everything visible over the
+   canvas is DOM, not geometry: labels have to render three scripts including
+   two CJK ones, and a font atlas per language is a heavy price for a caption. */
+
+.admin-galaxy {
+  @apply grid gap-3 rounded-xl border border-white/10 p-4 md:p-5;
+  background:
+    radial-gradient(120% 80% at 12% 0%, rgba(51, 194, 204, 0.09), transparent 62%),
+    radial-gradient(90% 70% at 100% 100%, rgba(122, 103, 219, 0.1), transparent 60%),
+    rgba(16, 19, 33, 0.82);
+}
+
+.admin-galaxy-head {
+  @apply flex flex-wrap items-start justify-between gap-3;
+}
+
+.admin-galaxy-head h2 {
+  @apply text-base font-semibold text-white;
+}
+
+.admin-galaxy-head span {
+  @apply mt-1 block text-xs leading-relaxed text-neutral-500;
+}
+
+.admin-galaxy-stage {
+  @apply relative overflow-hidden rounded-lg border border-white/8;
+  background:
+    radial-gradient(70% 70% at 50% 45%, rgba(51, 194, 204, 0.07), transparent 70%),
+    linear-gradient(180deg, rgba(4, 6, 16, 0.9), rgba(8, 11, 24, 0.94));
+  /* Tall enough to read as a space, short enough that the panels below it are
+     not pushed off a laptop screen. */
+  height: clamp(15rem, 38vw, 26rem);
+  touch-action: pan-y;
+}
+
+.admin-galaxy-stage canvas {
+  @apply block h-full w-full;
+}
+
+.admin-galaxy-readout {
+  @apply pointer-events-none absolute left-3 top-3 z-10 grid gap-0.5 rounded-lg border border-white/10 px-3 py-2;
+  background: rgba(5, 7, 15, 0.72);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+}
+
+.admin-galaxy-readout span {
+  @apply text-[0.6rem] font-semibold uppercase tracking-[0.16em] text-neutral-500;
+}
+
+.admin-galaxy-readout strong {
+  @apply text-2xl font-semibold leading-none text-white;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-galaxy-readout small {
+  @apply text-[0.7rem] text-neutral-500;
+}
+
+/* The label that follows a sphere. drei's Html gives us a positioned wrapper;
+   this is the pill inside it. */
+.admin-galaxy-label {
+  @apply grid gap-0.5 whitespace-nowrap rounded-full border border-white/12 px-2.5 py-1 text-left transition;
+  background: rgba(5, 7, 15, 0.82);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+  transform: translateY(-2rem);
+}
+
+.admin-galaxy-label strong {
+  @apply text-xs font-semibold text-white;
+}
+
+.admin-galaxy-label small {
+  @apply text-[0.6rem] text-neutral-400;
+}
+
+.admin-galaxy-label:hover {
+  @apply border-aqua/50;
+}
+
+.admin-galaxy-label-below {
+  transform: translateY(2rem);
+}
+
+.admin-galaxy-label-busy {
+  @apply border-coral/45;
+}
+
+.admin-galaxy-label-busy small {
+  @apply text-coral;
+}
+
+/* --- The flat map: same data, no WebGL --- */
+
+.admin-galaxy-flat {
+  @apply absolute inset-0;
+}
+
+.admin-galaxy-flat-core {
+  @apply absolute left-1/2 top-1/2 block h-16 w-16 -translate-x-1/2 -translate-y-1/2 rounded-full;
+  animation: admin-pulse-ring 3.2s ease-in-out infinite;
+  background: radial-gradient(circle, rgba(126, 247, 230, 0.5), transparent 68%);
+  border: 1px solid rgba(126, 247, 230, 0.35);
+}
+
+.admin-galaxy-dot {
+  @apply absolute grid justify-items-center gap-1 text-center;
+  animation: admin-float-dot 6s ease-in-out infinite;
+  animation-delay: calc(var(--stagger-index, 0) * -420ms);
+  transform: translate(-50%, -50%);
+}
+
+.admin-galaxy-dot i {
+  @apply block rounded-full transition-transform duration-200;
+  background: radial-gradient(circle at 35% 30%, #7ef7e6, #33c2cc);
+  box-shadow: 0 0 12px rgba(51, 194, 204, 0.45);
+  height: var(--dot-size, 16px);
+  width: var(--dot-size, 16px);
+}
+
+.admin-galaxy-dot:hover i {
+  transform: scale(1.25);
+}
+
+.admin-galaxy-dot-busy i {
+  background: radial-gradient(circle at 35% 30%, #ffb3c4, #f4708f);
+  box-shadow: 0 0 14px rgba(244, 112, 143, 0.5);
+}
+
+.admin-galaxy-dot span {
+  @apply grid gap-0.5 rounded-md px-1.5 py-0.5;
+  background: rgba(5, 7, 15, 0.66);
+}
+
+.admin-galaxy-dot strong {
+  @apply block text-[0.65rem] font-semibold text-white;
+}
+
+.admin-galaxy-dot small {
+  @apply block text-[0.55rem] text-neutral-400;
+}
+
+.admin-galaxy-dot-busy small {
+  @apply text-coral;
+}
+
+.admin-galaxy-legend {
+  @apply flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-neutral-500;
+}
+
+.admin-galaxy-legend li {
+  @apply flex items-center gap-1.5;
+}
+
+.admin-galaxy-legend i {
+  @apply block h-2 w-2 rounded-full;
+  background: #33c2cc;
+}
+
+.admin-galaxy-legend-busy i {
+  background: #f4708f;
+}
+
+.admin-galaxy-legend-note {
+  @apply text-neutral-600;
+}
+
+/* Narrow screens get a shorter stage and no floating labels stacked over each
+   other: the flat map's captions are what stay readable at 440px. */
+@media (max-width: 640px) {
+  .admin-galaxy-stage {
+    height: 16rem;
+  }
+
+  /* The readout leaves the canvas rather than floating over a third of it. */
+  .admin-galaxy-readout {
+    @apply static grid-flow-col items-baseline justify-start gap-2;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: transparent;
+    border: 0;
+    padding: 0;
+  }
+
+  .admin-galaxy-readout strong {
+    @apply text-xl;
+  }
+
+  .admin-galaxy-dot small {
+    @apply hidden;
+  }
+}
+
+@media (min-width: 1536px) {
+  .admin-galaxy-stage {
+    height: 28rem;
+  }
+}
+
+/* Reduced motion: the entrance delays above outlive the duration flattening
+   near the top of this file, because that block never touches animation-delay
+   -- an element with `backwards` fill and a 400ms delay stays invisible for
+   400ms no matter how short its animation is. */
+@media (prefers-reduced-motion: reduce) {
+  .admin-animate-in,
+  .admin-view,
+  .admin-title,
+  .admin-chart-bar,
+  .admin-sparkline-line,
+  .admin-bar-fill,
+  .admin-meter-fill,
+  .admin-nav-badge,
+  .admin-toast,
+  .admin-galaxy-dot,
+  .admin-galaxy-flat-core,
+  .admin-queue-open,
+  .admin-login-aurora span {
+    animation: none !important;
+    opacity: 1 !important;
+    stroke-dashoffset: 0 !important;
+  }
+
+  .admin-galaxy-dot {
+    transform: translate(-50%, -50%) !important;
+  }
+
+  .admin-nav-item:hover {
+    transform: none;
+  }
+}
