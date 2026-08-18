@@ -2,28 +2,29 @@
 
 ## 下次从这里继续（截至 2026-08-18 第二十轮收工）
 
-**线上仍然运行 `d7924da`（2026-08-17 15:05 UTC 部署）。第二十轮的代码
-`156d9ac` 只在本机，既没有 push，也没有部署 —— 要不要上线由你决定。**
+**线上运行 `fdc602b`（2026-08-18 14:49 UTC 部署，已逐项验证）。
+本地、`origin/main`、线上三者一致。**
 第十二至二十轮都无数据库变更、无接口变更、无路由变更。
-回滚到第十九轮之前：`/opt/mrright-portfolio.backup-20260817-150516`
-（这是**第十九轮之前**的备份，不是本轮的；本轮还没有部署，所以还没有本轮备份）。
+回滚到第二十轮之前：`/opt/mrright-portfolio.backup-20260818-144934`。
 
 **第二十轮做的是后台界面**：三语（中/英/日）、动画、仪表盘上的 3D 运营星图、
 多分辨率适配。详见下面「2026-08-18（第二十轮）」。
 全部是前端改动，`server/` 一行没动。
 
-**线上内容健康：0 critical / 0 warning / 0 note**（2026-08-17 15:10 UTC 实测，
-补上了第十八轮欠的那次重测）。
+**线上内容健康：0 critical / 0 warning / 0 note**（2026-08-18 14:5x UTC 实测，
+第二十轮部署后复查，与第十九轮相同）。
 
 ⚠️ **VPS 只保留最新 3 个应用备份**，脚本每次部署自动清理旧的。
-所以下面各轮里写的历史回滚路径**大多已经不存在了**。截至第十九轮收工，
+所以下面各轮里写的历史回滚路径**大多已经不存在了**。截至第二十轮收工，
 `/opt` 上实际存在的是：
 
 ```text
-/opt/mrright-portfolio.backup-20260817-150516   第十九轮之前 ← 要回滚就用这个
+/opt/mrright-portfolio.backup-20260818-144934   第二十轮之前 ← 要回滚就用这个
+/opt/mrright-portfolio.backup-20260817-150516   第十九轮之前
 /opt/mrright-portfolio.backup-20260816-045603   第十八轮之前
-/opt/mrright-portfolio.backup-20260815-034745   第十七轮之前
 ```
+
+（第十七轮那份 `...-20260815-034745` 已被本轮部署按 3 份保留策略自动清掉。）
 
 要回滚先 `ls -dt /opt/mrright-portfolio.backup-*` 确认实际有什么，别照抄旧记录。
 
@@ -60,12 +61,12 @@ Members 详情在窄屏下不再把整页撑宽（一行 CSS）。
 
 **第二十轮收工时的状态（2026-08-18，当天工作到此为止）：**
 
-- 工作树干净；本地领先 `origin/main` 一个提交（`156d9ac`，**未 push**）
-- 线上是 `d7924da`，**本轮的东西一样都没上线**
+- 工作树干净；本地、`origin/main`、线上都是 `fdc602b`（外加这一段收尾文档）
 - 本机 `npm run dev`（5173）用完已停；本轮没有起过带数据库的实例
-- 本轮**没有连过 VPS**，没有跑过任何数据库语句
-- 「待你决策」清单里**新加了一条**：本轮的后台改动要不要 push + 部署
-- 后台前端验证走的是 fixture + Playwright，已固化成 `tests/e2e/admin-console.spec.js`
+- 本轮**没有跑过任何数据库写语句**，只用短期会话读了 content-health 和 overview（读完即撤销）
+- 「待你决策」清单**已清空**（唯一那条就是本轮要不要上线，已经上了）
+- 后台前端验证走的是 fixture + Playwright，已固化成 `tests/e2e/admin-console.spec.js`，
+  **同一套测试对线上也跑过一遍并且全绿**
 
 **第十九轮收工时的状态（2026-08-17 15:1x UTC，已冻结）：**
 
@@ -364,12 +365,7 @@ CSP 这件事能做完，就是因为 playwright 回来了。
 
 ### 待你决策的（我没有权限或不该替你决定）
 
-**一条：第二十轮的后台改动（`156d9ac`）要不要 push 到 GitHub、要不要部署到 VPS。**
-它只在本机。build 和 lint 都过了，六条端到端测试在本机全绿，
-服务端和数据库都没动，所以部署的风险面就是一份前端静态资源。
-你说一声就走 `mr-commit-push` 和 `mr-deploy`（部署前会先备份 `/opt/mrright-portfolio`，
-部署后逐项验证 `/api/health`、admin_summary、`/`、`/community`、`/admin`、
-`/login?mode=login`、`/account`）。
+**目前是空的。**（第二十轮那条「要不要上线」当天就定了：已 push、已部署。）
 
 - ~~计数角标在窄屏下位置发飘~~ —— **2026-08-16 第十八轮做掉了。**
   实际肇事的类是 `.admin-section-header`（不是记录里写的 `.admin-panel-head`），
@@ -581,10 +577,11 @@ CSP 这件事能做完，就是因为 playwright 回来了。
 ## 2026-08-18（第二十轮）：后台三语 + 动画 + 3D 运营星图
 
 **日期**：2026-08-18
-**commit**：`156d9ac`（**只在本机，没有 push，没有部署**）
-**build / lint**：`npm run build` 通过（6.1s），`npm run lint` 零错误零警告
-**是否部署 VPS**：**否**
-**VPS 备份路径**：本轮没有部署，因此没有新备份；线上仍是 `d7924da`
+**commit**：`156d9ac`（代码）、`fdc602b`（文档）—— 都已 push 到 `origin/main`
+**build / lint**：`npm run build` 通过，`npm run lint` 零错误零警告
+**是否部署 VPS**：**是**，2026-08-18 14:49 UTC，`npm run deploy:vps`，线上现为 `fdc602b`
+**VPS 备份路径**：`/opt/mrright-portfolio.backup-20260818-144934`
+（env 也备份了：`/etc/mrright-portfolio.env.backup-20260818-144934`，原文件没有被覆盖）
 **数据库 / API / 路由变更**：**无**，本轮只改前端
 
 ### 起因
@@ -699,11 +696,29 @@ key**（`labelKey`），`group` 保留成稳定 id。**以后加分区就是加 
 
 ### 验证结果
 
+本机：
+
 - `npm run lint`：通过（0 error / 0 warning）
 - `npm run build`：通过
 - `npx playwright test tests/e2e/admin-console.spec.js`（对本机 5173）：**6 条全绿**
 - `npm run test:openapi`：通过（206 个 $ref / 36 个错误码）
-- **线上接口没有验证**，因为本轮没有部署，也没有改任何服务端代码
+
+线上（2026-08-18 14:49–14:5x UTC，部署后）：
+
+- `/api/health` → 200
+- admin_summary → 200（由部署脚本自己做的：换短期会话 → 打接口 → 撤销会话）
+- `/` `/community` `/admin` `/login?mode=login` `/account` → 全部 200
+- `/api/admin/overview?days=30` → 200（3D 星图和仪表盘读的就是它）
+- 线上内容健康：**0 critical / 0 warning / 0 note**
+- `dist/index.html` 里的入口 hash 与本机构建**逐字一致**，
+  `Admin-*.js` 和 `AdminGalaxyScene-*.js` 两个 chunk 都能取到 200
+- **`tests/e2e/admin-console.spec.js` 对 `https://mrright.blog` 又跑了一遍：6 条全绿**
+  （三种语言 × 十一个分区 × 三个宽度，零 console 错误、零横向溢出）
+- `tests/e2e/production-smoke.spec.js`：6 过 1 跳过（跳过的那条要访客凭证）
+- 服务状态 active，备份保留 3 份，磁盘 42%
+
+⚠️ **部署日志里那条 `TRUST_PROXY_HOPS is unset` 是老问题**，
+和本轮无关，见「真实客户端 IP」那一节。
 
 ⚠️ **`npm run verify:visitor-studio` 仍然是红的，和第十九轮同一个原因**
 （要求 `AccountPage.jsx` 里出现 `accountStudioUploadNow`，而页面里根本没引用它）。
