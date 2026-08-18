@@ -1,11 +1,16 @@
 # mrright.blog 项目进度记录
 
-## 下次从这里继续（截至 2026-08-17 第十九轮收工）
+## 下次从这里继续（截至 2026-08-18 第二十轮收工）
 
-**线上运行 `d7924da`（2026-08-17 15:05 UTC 部署，已逐项验证）。
-`origin/main` 比线上多的几个提交**只有这份文档**，不需要为它再部署一次。**
-第十二至十九轮都无数据库变更。
-回滚到第十九轮之前：`/opt/mrright-portfolio.backup-20260817-150516`。
+**线上仍然运行 `d7924da`（2026-08-17 15:05 UTC 部署）。第二十轮的代码
+`156d9ac` 只在本机，既没有 push，也没有部署 —— 要不要上线由你决定。**
+第十二至二十轮都无数据库变更、无接口变更、无路由变更。
+回滚到第十九轮之前：`/opt/mrright-portfolio.backup-20260817-150516`
+（这是**第十九轮之前**的备份，不是本轮的；本轮还没有部署，所以还没有本轮备份）。
+
+**第二十轮做的是后台界面**：三语（中/英/日）、动画、仪表盘上的 3D 运营星图、
+多分辨率适配。详见下面「2026-08-18（第二十轮）」。
+全部是前端改动，`server/` 一行没动。
 
 **线上内容健康：0 critical / 0 warning / 0 note**（2026-08-17 15:10 UTC 实测，
 补上了第十八轮欠的那次重测）。
@@ -53,7 +58,16 @@ Members 详情在窄屏下不再把整页撑宽（一行 CSS）。
 ⚠️ **`scripts/verify-visitor-studio.mjs` 全文是 CRLF**，往里加任何一行
 `git diff --check` 都会报 trailing whitespace。不是新问题，别当回归修。
 
-**第十九轮收工时的状态（2026-08-17 15:1x UTC，当天工作到此为止）：**
+**第二十轮收工时的状态（2026-08-18，当天工作到此为止）：**
+
+- 工作树干净；本地领先 `origin/main` 一个提交（`156d9ac`，**未 push**）
+- 线上是 `d7924da`，**本轮的东西一样都没上线**
+- 本机 `npm run dev`（5173）用完已停；本轮没有起过带数据库的实例
+- 本轮**没有连过 VPS**，没有跑过任何数据库语句
+- 「待你决策」清单里**新加了一条**：本轮的后台改动要不要 push + 部署
+- 后台前端验证走的是 fixture + Playwright，已固化成 `tests/e2e/admin-console.spec.js`
+
+**第十九轮收工时的状态（2026-08-17 15:1x UTC，已冻结）：**
 
 - 工作树干净；本地与 `origin/main` 一致，线上是 `d7924da`（差的几个提交都只改这份文档）
 - 本机 `npm run dev`（5173）用完已停；**本轮没有起过带数据库的实例**
@@ -67,7 +81,8 @@ Members 详情在窄屏下不再把整页撑宽（一行 CSS）。
 - 线上 `dist/uploads` **不存在**（部署后已复查，第十六轮那道闸仍然有效）
 
 **下次开工第一件事**：读这一节，然后看「下一轮我建议先做的」——
-第 3 条已经划掉，现在排最前的是**第 4 条 react-router**。
+第 3 条已经划掉，现在排最前的仍然是**第 4 条 react-router**
+（第二十轮做的是后台界面，不在那张单子上）。
 
 第十八轮是**把后台十一个分区在 440px 下逐个走了一遍**（原「下一轮建议」第 3b 条），
 顺手结清了「待你决策」里那条角标对齐。详见下面「2026-08-16（第十八轮）」。
@@ -197,7 +212,7 @@ Publish / Mark Spam 就在 Delete 旁边**。
 第十二轮就是这么误触发的一次真实部署（结果无害：脚本本来就会备份 env、
 备份应用、健康检查、admin session 检查、清理旧备份）。
 
-### 收工时的未完项（截至第十九轮）
+### 收工时的未完项（截至第二十轮）
 
 第十四、十五轮关掉了假 EXR 和社区上传无校验，第十六轮关掉了「测试文件漏进生产构建」，
 第十七轮关掉了认证器绑定。**第十八、十九轮都没有关掉下面任何一条**
@@ -224,6 +239,15 @@ Publish / Mark Spam 就在 Delete 旁边**。
 
 5. `H:\HDRIs\` 里还有三张 4K HDRI（photostudio / citrus orchard / qwantani dusk）。
    想做「按项目切换环境光」时可以复用第十四轮那套转换流程，**先降到 2K 再转**。
+
+6b. **后台三语里有两处仍然是英文**（第二十轮，故意的）：
+   带变量的 content-health hint（里面嵌了路径 / 体积 / 解析器报错），
+   以及审计日志里的 action 名（`visitor.profile_disabled`）。
+   要翻译前者，服务端得把那些值结构化发出来，而不是拼进句子里。
+
+6c. **3D 运营星图不可 Tab 到**（第二十轮）。canvas 里的对象不在焦点顺序里，
+   键盘用户走侧边栏、命令面板或平面视图（那里的节点是真按钮）。
+   要补，得在画布上叠一层不可见的 DOM 焦点目标。
 
 6. **公开主页那个遮挡修复只在本机验过**（第十八轮）。
    线上没有任何用户设过 handle，`/u/<handle>` 拿不到真实页面，
@@ -340,7 +364,12 @@ CSP 这件事能做完，就是因为 playwright 回来了。
 
 ### 待你决策的（我没有权限或不该替你决定）
 
-**目前是空的。**
+**一条：第二十轮的后台改动（`156d9ac`）要不要 push 到 GitHub、要不要部署到 VPS。**
+它只在本机。build 和 lint 都过了，六条端到端测试在本机全绿，
+服务端和数据库都没动，所以部署的风险面就是一份前端静态资源。
+你说一声就走 `mr-commit-push` 和 `mr-deploy`（部署前会先备份 `/opt/mrright-portfolio`，
+部署后逐项验证 `/api/health`、admin_summary、`/`、`/community`、`/admin`、
+`/login?mode=login`、`/account`）。
 
 - ~~计数角标在窄屏下位置发飘~~ —— **2026-08-16 第十八轮做掉了。**
   实际肇事的类是 `.admin-section-header`（不是记录里写的 `.admin-panel-head`），
@@ -548,6 +577,146 @@ CSP 这件事能做完，就是因为 playwright 回来了。
 - ~~演练遗留的临时库~~ —— 用户已确认，`mrright_restore_drill` 已 `dropdb`（2026-08-11）。
   删除后复查：`mrright_portfolio` 仍在、17 张表、`visitor_users=1`/`project_comments=2`、
   `/api/health` 200，生产库未受影响。
+
+## 2026-08-18（第二十轮）：后台三语 + 动画 + 3D 运营星图
+
+**日期**：2026-08-18
+**commit**：`156d9ac`（**只在本机，没有 push，没有部署**）
+**build / lint**：`npm run build` 通过（6.1s），`npm run lint` 零错误零警告
+**是否部署 VPS**：**否**
+**VPS 备份路径**：本轮没有部署，因此没有新备份；线上仍是 `d7924da`
+**数据库 / API / 路由变更**：**无**，本轮只改前端
+
+### 起因
+
+公开站从第一天就有中英日三语，后台**一个字都没有**：每一个按钮、每一句空状态、
+每一条「3 项待处理」都是写死在组件里的英文。而且整个后台是静止的 ——
+换分区是内容瞬间替换，仪表盘的数字是直接落在那里的。
+
+### 一、三语（487 个 key × 3 种语言）
+
+新增 `src/lib/admin/i18nAdmin.js`：字典 + 插值 + **按语言的格式化器**。
+
+- 字典和公开站的 `src/lib/i18n.js` **是分开的**，故意的：公开站那份是可以随便重写的
+  宣传文案，这份命名的是「删除账号」这种按钮。分开之后改一边不用读另一边，
+  后台的包也不用背着 1600 行 hero 文案。
+- **中文是源语言，英文是兜底**。任何一种语言缺 key 都会回落到英文，
+  再缺才显示 key 本身（故意难看，这样截图里能看出漏翻，而不是变成一片空白）。
+- **界面语言存在 `mrright-admin-language`，和公开站的 `mrright-language` 分开。**
+  首次进来才读公开站那个，再不行才读浏览器语言。
+  理由：在后台用中文审评论的人，完全可能用日文读作品集。
+- 语言切换器同时放在**侧边栏和登录页**。登录页那个是重点：
+  看不懂登录表单的人，正是最需要它的人。
+
+⚠️ **日期、时长、年龄、数字全都跟着语言走了。**
+原来 `components/admin/charts.js` 和 `lib/admin/format.js` 里那几个格式化函数
+**写死了 `en-US` 和英文单位词**（`11 days ago`）—— 这正是必须随界面语言变的东西。
+它们已经从那两个文件里**删掉**，统一由 `createAdminFormatters(language, t)` 提供。
+以后要在后台格式化时间或数字，**从 `useAdminI18n()` 里拿 `fmt`，别再往那两个文件里加**。
+
+⚠️ **内容体检的 findings 是服务端写的英文散文，本轮按 `code` 翻译了。**
+查找顺序是 `finding.<code>.<severity>.<字段>` → `finding.<code>.<字段>` → 服务端原文。
+所以服务端明天新增一条 finding，界面上仍然会显示（英文），不会消失。
+**但带变量的那几条 hint 仍然是英文**（里面嵌了路径、体积、解析器报错），
+翻译一个缺了数字的壳比留一句英文更糟。同理，**审计日志里的 action 名
+（`visitor.profile_disabled`）也仍然是英文原样**。
+
+⚠️ **`src/lib/admin/sections.js` 和 `projectEditor.js` 里的 label 已经全部变成
+key**（`labelKey`），`group` 保留成稳定 id。**以后加分区就是加 key，
+不要再往那两个文件里写显示文案。** 下载策略的 `value`（`Open download` 等）
+**没动**，那是存进数据库、公开站要读的值。
+资源分类的名字直接用 `assetCategories.js` 里已有的三语表，没有再抄一份。
+
+### 二、动画
+
+全部是声明式 CSS（`src/index.css` 末尾新增一整节）：分区进场、行错峰淡入、
+数字滚动（这条是 JS：`useCountUp`）、柱状图从基线升起、迷你折线描边、
+进度条横向生长、骨架屏微光、导航悬停位移、汉堡按钮变叉、有待办的队列卡缓慢呼吸。
+
+⚠️ **进场动画一律用 `animation-fill-mode: backwards`，不要用 `forwards`。**
+`forwards` 会把 transform 钉在最后一帧，同一元素上的 `:hover` 位移就全死了
+（`.admin-stat:hover` 的 `-translate-y-0.5` 就是这么被压掉的）。
+
+⚠️ **文件顶部那个 `prefers-reduced-motion` 全局块不管 `animation-delay`。**
+它把 duration 压到 0.01ms，但一个带 `backwards` 和 400ms 延迟的元素
+**照样会先隐身 400ms**。所以本轮在文件末尾又加了一个 reduced-motion 块，
+专门把这些类的 `animation` 整个关掉。**以后再加错峰进场，记得把类名加进那个块。**
+
+### 三、3D 运营星图（`AdminGalaxy` + `AdminGalaxyScene`）
+
+仪表盘顶部，公开站之外**后台第一次出现三维内容**。它是一张地图，不是装饰：
+
+- 一个分区一个球，**半径 = 该分区在当前时间窗里的事件量**，
+  **颜色 = 有没有人在等你**（珊瑚色有待办、青色已清空），**点一下进那个分区**。
+- 十个节点分三层轨道。一层十一个球，从任何一个像样的机位看都会叠成一串手链。
+- 标签是 **DOM（drei 的 `Html`），不是 3D 文字**：三种语言里有两种是 CJK，
+  为了一行说明去打包字体图集不值得。
+- 标签会在**节点转到核心背后时自动隐藏**（每帧算一次投影，只在布尔值翻转时 setState）。
+- **窄屏（≤640px）只在悬停时出标签**：400px 宽的画布上六个胶囊会互相压。
+  那个宽度下有名字的是平面图。
+
+三种降级路径，**同一张图**：WebGL 能用就用；不能用就用 CSS 平面星图；
+场景 chunk 还在路上时先显示平面星图。三种形态里每个节点都能点、都带同样的数字。
+右上角有开关，选择记在 `mrright-admin-galaxy-mode`。
+`three.js` **只在仪表盘挂载时才加载**（新 chunk 4.3 kB，three 本体和公开站共用）。
+
+⚠️ **星图不可 Tab 到**（canvas 里的对象不在焦点顺序里）。这不是遗漏：
+每个分区都能从侧边栏和命令面板（⌘K）到达，平面视图里的节点则是真按钮、可 Tab。
+要给三维节点做键盘可达，得再叠一层不可见的 DOM 焦点目标。
+
+⚠️ **eslint 的 `react-hooks/purity` 和 `immutability` 会挡两种写法**，
+本轮撞到两次，都记下来：
+- `Math.random()` 在渲染期（**包括 useMemo 里**）会报错。星域改成了
+  模块加载时用固定种子生成一次（`mulberry32`），顺带保证每次渲染是同一片天。
+- **不能改 `useThree()` 返回的 `camera`**。要动相机，从 `useFrame((state) => state.camera)`
+  里拿，那个不是 React 交给你的值。
+
+### 四、多分辨率
+
+`tests/e2e/admin-console.spec.js`（**本轮新增**）在 **440 / 768 / 1440** 三个宽度、
+**中英日三种语言**下把十一个分区逐个走一遍，断言：**零 console 错误、零横向溢出**，
+并且**在 440px 下点开成员详情之后再测一次溢出** —— 那正是第十九轮修过的地方。
+
+⚠️ **这套测试不需要数据库、不需要会话、不需要种子数据。**
+它拦 `**/api/admin/**` 喂 fixture（注意：`lib/api.js` 的 `normalizeApiPayload`
+要求信封里 **`data` 和 `error` 两个键都在**才会解包，只给 `data` 会静默拿到空对象）。
+第十九轮建议的那条路，现在固化成仓库里的测试了。
+默认 `npm run test:e2e` 打的是线上；本地跑要 `E2E_BASE_URL=http://127.0.0.1:5173`。
+
+### 修改文件
+
+新增：
+- `src/lib/admin/i18nAdmin.js`（字典 + 翻译器 + 格式化器 + context）
+- `src/lib/admin/motion.js`（`usePrefersReducedMotion` / `useMediaQuery` / `useDocumentVisible` / `useCountUp` / `stagger`）
+- `src/components/admin/AdminLanguageSwitcher.jsx`
+- `src/components/admin/AdminGalaxy.jsx`（壳、平面降级、WebGL 探测、懒加载）
+- `src/components/admin/AdminGalaxyScene.jsx`（r3f 场景）
+- `tests/e2e/admin-console.spec.js`
+
+改动：`src/Admin.jsx`、后台十一个分区组件、`AdminTotpEnrolment.jsx`、
+`Charts.jsx` / `charts.js`、`lib/admin/{format,projectEditor,sections}.js`、
+`src/index.css`（+528 行）。
+
+### 验证结果
+
+- `npm run lint`：通过（0 error / 0 warning）
+- `npm run build`：通过
+- `npx playwright test tests/e2e/admin-console.spec.js`（对本机 5173）：**6 条全绿**
+- `npm run test:openapi`：通过（206 个 $ref / 36 个错误码）
+- **线上接口没有验证**，因为本轮没有部署，也没有改任何服务端代码
+
+⚠️ **`npm run verify:visitor-studio` 仍然是红的，和第十九轮同一个原因**
+（要求 `AccountPage.jsx` 里出现 `accountStudioUploadNow`，而页面里根本没引用它）。
+**不是本轮弄红的，别当回归修。**
+
+### 这一轮学到的
+
+- **本机截图里的中日文如果是方框，是容器没装 CJK 字体，不是站点的问题。**
+  本轮装了 `fonts-noto-cjk` 才看到真实排版。**评审三语界面前先确认字体在。**
+- `page.addInitScript` **每次导航都会重跑**。用它塞语言，测「刷新后还记得吗」
+  就会被自己覆盖掉 —— 本轮为此改了两次测试，不是应用的 bug。
+- 不设置语言时，后台跟随浏览器语言（Playwright 的 Chrome 是 en-US），
+  这和公开站 `getInitialLanguage()` 的行为一致。
 
 ## 2026-08-17（第十九轮）：拆 `Admin.jsx` 与 `postgresStores.js`
 
