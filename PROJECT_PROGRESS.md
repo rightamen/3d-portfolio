@@ -1,12 +1,22 @@
 # mrright.blog 项目进度记录
 
-## 下次从这里继续（截至 2026-08-19 第二十一轮收工）
+## 下次从这里继续（截至 2026-08-19 第二十二轮收工）
 
 **线上运行 `a3799b5`（2026-08-19 14:35 UTC 部署，已逐项验证）。
-`origin/main` 比线上多的提交**只有这份文档和一条测试大小写修正**，
-不需要为它们再部署一次。**
-第十二至二十一轮都无数据库变更、无服务端接口变更。
+`origin/main` 比线上多的提交**全部是测试、CI、文档和一个 `export` 关键字**——
+**第二十二轮没有可上线的运行时改动，也没有部署**（构建产物大小与线上完全一致）。
+第十二至二十二轮都无数据库变更、无服务端接口变更。
 回滚到第二十一轮之前：`/opt/mrright-portfolio.backup-20260819-143533`。
+
+**第二十二轮做的是前端单元测试**（原「下一轮建议」第 5 条）：
+vitest + jsdom，六个文件 106 条，已接进 CI 且排在 build 之前。
+同时**定性并关掉了未完项第 7 条**（`verify:visitor-studio` 是脚本错了，
+不是按钮被删），顺手补掉 `.gitattributes` 里漏掉的 `*.mjs eol=lf`。
+详见下面「2026-08-19（第二十二轮）」。
+
+⚠️ **跑单元测试用 `npm run test:unit`**，它读的是 `vitest.config.js` 而不是
+`vite.config.js`（后者带生产分块和一个会清空 `dist/uploads` 的钩子）。
+**`include` 写死在 `tests/unit/**`**，别放开——默认 glob 会去捡 Playwright 的 spec。
 
 **第二十一轮做的是 react-router**（原「下一轮建议」第 4 条）：
 站内跳转不再把整个文档拆掉重建。详见下面「2026-08-19（第二十一轮）」。
@@ -97,8 +107,17 @@ Members 详情在窄屏下不再把整页撑宽（一行 CSS）。
 - 线上 `dist/uploads` **不存在**（部署后已复查，第十六轮那道闸仍然有效）
 
 **下次开工第一件事**：读这一节，然后看「下一轮我建议先做的」——
-第 3、3b、3c、4 条都已划掉，现在排最前的是**第 5 条前端单元测试**
-（第 6 条 SSR/预渲染 SEO 现在比以前好做了：路由已经声明式了）。
+第 3、3b、3c、4、5 条都已划掉，现在排最前的是**第 6 条 SSR / 预渲染 SEO**
+（第二十一轮之后好做了不少：路由已经是声明式的）。
+**「待你决策」里有一条新的**（17 个没人渲染的翻译 key 删不删），
+本轮不删是因为那是产品文案，不是测试该替你做的决定。
+
+**第二十二轮收工时的状态（2026-08-19，当天第二轮，工作到此为止）：**
+
+- 工作树干净；**线上仍是 `a3799b5`，本轮没有部署，也不需要**
+- 本轮没有起过任何本地服务，没有跑过任何数据库语句
+- CI run `32269795765` 全绿（含新增的 Frontend unit tests 步骤）
+- 未完项从 8 条降到 7 条（第 7 条已关闭）；「待你决策」从空变成 1 条
 
 **第二十一轮收工时的状态（2026-08-19，当天工作到此为止）：**
 
@@ -242,15 +261,14 @@ Publish / Mark Spam 就在 Delete 旁边**。
 第十二轮就是这么误触发的一次真实部署（结果无害：脚本本来就会备份 env、
 备份应用、健康检查、admin session 检查、清理旧备份）。
 
-### 收工时的未完项（截至第二十一轮）
+### 收工时的未完项（截至第二十二轮）
 
 第十四、十五轮关掉了假 EXR 和社区上传无校验，第十六轮关掉了「测试文件漏进生产构建」，
-第十七轮关掉了认证器绑定。**第十八到二十一轮都没有关掉下面任何一条**
+第十七轮关掉了认证器绑定。第十八到二十一轮都没有关掉任何一条
 （后台窄屏、拆文件、后台三语、react-router，都不在这张单子上），
-但各自新增了：第十八轮加了第 6 条，第十九轮加了第 7、8 条，
-第二十轮加了 6b、6c。**第二十一轮没有新增未完项** —— 它衍生的两条
-（首页 3D 仍会重建、`/admin` 没进 router）都记在路线图第 4 条底下，
-属于「知道且刻意」，不是欠账。现在开着的是：
+但各自新增了：第十八轮加了第 6 条，第十九轮加了第 7、8 条，第二十轮加了 6b、6c。
+**第二十二轮关掉了第 7 条**（`verify:visitor-studio`：是脚本错了），
+且没有新增未完项。现在开着的是：
 
 1. **模型「能加载」和「能渲染」仍然是两件事。**
    Content Health 现在能确认文件可服务、是真 GLB、所需扩展有解码器，
@@ -287,12 +305,11 @@ Publish / Mark Spam 就在 Delete 旁边**。
    所以「名字换行不再被横幅盖住」目前只有本机种子数据作证。
    等第一个用户设了 handle，去 440px 下看一眼那个页头。
 
-7. **`npm run verify:visitor-studio` 是红的，没人知道它在报什么**（第十九轮）。
-   它要求 `src/pages/AccountPage.jsx` 里出现 `accountStudioUploadNow`，
-   而那个 i18n key 只在 `src/lib/i18n.js` 里有三份翻译，**页面里没有任何引用**。
-   第十九轮拆分前后都红（`git stash` 对照确认过），所以不是拆出来的。
-   两种可能：脚本的期望过期了，或者「上传资源」那个按钮在某一轮被拿掉了。
-   **后果完全不同，所以没有盲改。** 下次谁碰 `/account` 的 Studio 分区，顺便定性。
+7. ~~**`npm run verify:visitor-studio` 是红的**~~ —— **2026-08-19 第二十二轮定性并修掉了。**
+   答案是**脚本错了**：`accountStudioUploadNow` 在 `92dfbae` 里和这份脚本
+   一起进的仓库，**从来没有接到任何组件上**（`git log -S` 全仓确认）。
+   上传表单一直是好的。**「按钮被拿掉了」这个可能性不成立。**
+   现在脚本指向真实存在的标记并且通过。详见第二十二轮那一节。
 
 8. **Members 详情那条窄屏修复，线上没有真人验过**（第十九轮）。
    440px 下的溢出是在本机用 fixture 量的（256px → 0），线上要看它得有
@@ -397,7 +414,23 @@ CSP 这件事能做完，就是因为 playwright 回来了。
 
 ### 待你决策的（我没有权限或不该替你决定）
 
-**目前是空的。**（第二十轮那条「要不要上线」当天就定了：已 push、已部署。）
+- **17 个「写了三份翻译、谁也不渲染」的 i18n key，要不要删**（第二十二轮发现）。
+  它们是：`accountCenterIntro` / `accountCenterTitle` / `accountDeleteTitle` /
+  `accountOverviewIntro` / `accountOverviewTitle` / `accountReloginAction` /
+  `accountSessionExpired` / `accountSessionExpiredTitle` / `accountStudioKicker` /
+  `accountStudioOpen` / `accountStudioUploadNow` / `authFlowReset` /
+  `authHaveAccount` / `authNeedAccount` / `authResetSuccess` /
+  `commentStatusPending` / `commentStatusSpam`。
+  每个都有中/英/日三份，共 51 条字符串。
+  `git log -S` 确认**它们全都从没被任何组件引用过**——是「写了没接上」，
+  不是「接过又删了」，所以删掉不会让任何界面变空。
+  没替你删，是因为这是翻译好的产品文案，哪些是将来还要用的只有你知道。
+  **不删也没关系**：清单已经钉在 `tests/unit/i18n-usage.spec.js` 里，
+  第 18 个出现的当天测试就会红。
+  （要删的话：从 `src/lib/i18n.js` 的三份词典里各删一遍，
+  再把那份清单同步掉，`npm run test:unit` 会告诉你有没有漏。）
+
+（第二十轮那条「要不要上线」当天就定了：已 push、已部署。）
 
 - ~~计数角标在窄屏下位置发飘~~ —— **2026-08-16 第十八轮做掉了。**
   实际肇事的类是 `.admin-section-header`（不是记录里写的 `.admin-panel-head`），
@@ -484,7 +517,12 @@ CSP 这件事能做完，就是因为 playwright 回来了。
      （`pathname.startsWith('/admin') ? Admin : App`）。**这是刻意的**：
      访客不该下载 185 kB 的后台包，而且站内没有任何链接指向 `/admin`。
      后台内部的分区切换也不走 URL，接进来得先给它设计 URL 结构。
-5. 前端单元测试（目前只有 API 契约测试和 Playwright）
+5. ~~前端单元测试~~ —— **2026-08-19 第二十二轮做完了**（未部署，本来也没有运行时改动）。
+   `npm run test:unit`，六个文件 106 条，CI 里排在 build 之前。
+   衍生出来一条：**17 个「写了三份翻译、谁也不渲染」的 key**，
+   清单钉在 `tests/unit/i18n-usage.spec.js` 里，删不删见「待你决策」。
+   还没测的：组件渲染（那一层目前由 Playwright 覆盖）、`modelConversion.js`、
+   `useDialogAccessibility.js`、`motion.js`。
 6. SSR / 预渲染 SEO（社区帖子和公开主页搜索引擎抓不到）
 7. Asset Model（checksum / visibility / downloadPolicy）稳定后再回到 C++ SDK
 8. 下次恢复演练建议在 2026-11 之前（`docs/OPERATIONS_BACKUP.md` 要求每季度一次）
@@ -630,6 +668,112 @@ CSP 这件事能做完，就是因为 playwright 回来了。
 - ~~演练遗留的临时库~~ —— 用户已确认，`mrright_restore_drill` 已 `dropdb`（2026-08-11）。
   删除后复查：`mrright_portfolio` 仍在、17 张表、`visitor_users=1`/`project_comments=2`、
   `/api/health` 200，生产库未受影响。
+
+## 2026-08-19（第二十二轮）：前端单元测试，以及未完项第 7 条的定性
+
+原「下一轮建议」第 5 条。**本轮没有可上线的运行时改动，没有部署。**
+唯一进到 `src/` 的改动是给 `i18nAdmin.js` 的 `dictionaries` 加了个 `export`，
+构建产物大小一字未变（`Admin` 仍是 185.86 kB，只有内容 hash 变了）。
+
+### 装了什么
+
+`vitest` 4.1.11 + `jsdom` 30.0.1，都在 `devDependencies`（第二十一轮那条教训已生效，
+这次是 `npm install --save-dev`，装完就在对的栏里）。
+
+新增 `vitest.config.js`，**没有复用 `vite.config.js`**：那份配置带着生产分块
+和一个会清空 `dist/uploads` 的 `closeBundle` 钩子，不该因为有人敲了
+`npm run test:unit` 就跑起来。
+
+⚠️ **`include` 必须写死 `tests/unit/**`。** 默认 glob 会把 `tests/e2e/*.spec.js`
+一起扫进来，那些是 Playwright 的 spec，在 vitest 里跑不了。
+
+新脚本：`npm run test:unit`（`vitest run`）、`npm run test:unit:watch`。
+
+### 六个文件、106 条
+
+- **`i18n.spec.js`** —— 三份词典 key 集合一致、没有空串，以及各种兜底
+  （未知语言、未知错误码、未知标签）。
+- **`i18n-usage.spec.js`** —— 对 `src/` 做静态分析（**排除后台**，
+  它有自己的词典，而且 `AdminDashboard.jsx` 里有个同名的局部变量 `copy`，
+  扫进来会把 `copy.icon` 报成缺失 key）。两条断言：
+  代码里每个 `copy.<key>` 都要能解析；每个词典 key 都要有东西在渲染它。
+- **`i18n-admin.spec.js`** —— 后台词典同款，外加它自己文件头声明的那条不变量：
+  **`en` 必须完整**，因为其它语言都往它兜底。为此把 `dictionaries` 导出了——
+  翻译函数答的是 `en[key] ?? key`，**它自己看不见缺口**。
+  还检查后台源码里每个字面量 `t('...')` 都能解析。
+- **`api.spec.js`** —— 请求层（`request()` 没导出，通过调用方 + stub `fetch` 测）：
+  响应信封、错误的四种到达形状、Authorization 头在/不在、隐藏 iframe 下载及其清理定时器。
+- **`admin-logic.spec.js`** —— 文本助手、导航模型
+  （**每个分区和分组的标签在三种语言里都要能解析**）、图表刻度、翻译状态。
+- **`asset-categories.spec.js`** —— 推断顺序、那一条 legacy 别名、本地化。
+
+⚠️ **有两条是我预期写错了、代码是对的**，现在都固化成测试而不是假设：
+1. **HTML 错误页在失败响应上得到的是 `Request failed` + 状态码**，
+   不是 `Unexpected server response`——后者只出现在 **2xx 却返回非 JSON** 时
+   （`!response.ok` 那条分支里 `.catch(() => ({}))` 把解析错误吞掉了，这是故意的）。
+2. `toTitle` 只去掉**最后一个**扩展名，且 `\b\w` 会把点号后的词也大写：
+   `a  b.tar.gz` → `A B.Tar`。
+
+做过证伪：往 `Footer.jsx` 里塞一个 `copy.thisKeyDoesNotExist`，
+`i18n-usage` 立刻红，并且**报出了是哪个文件**。
+
+### 未完项第 7 条：定性完毕，是脚本错了
+
+`npm run verify:visitor-studio` 从第十九轮起一直红，只差一个标记
+`accountStudioUploadNow`。文档说过两种可能后果完全不同，所以没盲改。
+
+**是脚本错的。** `git log -S accountStudioUploadNow -- src/pages` 没有任何提交——
+这个 key 是在 `92dfbae` 里**和这份检查脚本一起**加进 `i18n.js` 的，
+**从来没有接到任何组件上**。上传表单一直好好的，它渲染的是
+`copy.communityUploadTitle`、提交走 `submitUpload`。
+标记已改成指向真实存在的东西，脚本现在通过。
+
+⚠️ **顺带发现这不是孤例：全站有 17 个 key 是「写了三份翻译、谁也不渲染」**
+（`git log -S` 确认 17 个全都从没被组件引用过，不是用过又删）。
+清单钉在 `i18n-usage.spec.js` 里，**第 18 个出现的当天会让测试变红**。
+**没有删**——那是翻译好的产品文案，删哪些是你的决定，见「待你决策」。
+
+### 顺手修掉的：仓库唯一一个 CRLF 文件
+
+⚠️ **`.gitattributes` 给 js/jsx/ts/tsx/json/md/css 都声明了 `eol=lf`，唯独漏了 `.mjs`。**
+全仓唯一的 CRLF 文件正好就是那个 `scripts/verify-visitor-studio.mjs`，
+这就是「往里加任何一行 `git diff --check` 都报 trailing whitespace」的原因——
+存的是 CRLF，那个 CR 就是尾随空白。
+
+第十九轮把它记成「不是新问题，别当回归修」，这话没错，但也把陷阱留在那里了。
+补一行属性 + 转一次行尾（`02e53b1`，**该提交不含任何内容改动**，
+所以标记修正那一版的 diff 是 9 增 2 删，读得动）。
+
+### CI
+
+`npm run test:unit` 已接进 `.github/workflows/web.yml` 的 `checks` job，
+**排在 build 之前**——少一个 key 应该在几秒内失败，而不是等一整轮 vite。
+实测 run `32269795765` 全绿，干净检出上 106 条通过
+（这也顺带证明了 `npm ci` 能从锁文件解出新依赖）。
+
+### 验证
+
+- `npm run lint`：通过（eslint 本来就覆盖 `tests/**`）
+- `npm run build`：通过，**产物大小与第二十一轮完全一致**
+- `npm run test:unit`：**106 通过 / 6 个文件**
+- `npm run verify:visitor-studio`：**通过**（第十九轮以来第一次）
+- `npm run test:openapi` / `test:content-health` / `test:deploy-script`：全通过
+- `git diff --check`：干净
+- 线上 `npm run test:e2e`：24 通过 / 0 失败 / 4 skipped
+- 线上 `/api/health` 200、`/` 200（线上仍是 `a3799b5`，本轮没动它）
+
+### 新增/修改文件
+
+- `vitest.config.js`（新增）
+- `tests/unit/i18n.spec.js`、`i18n-usage.spec.js`、`i18n-admin.spec.js`、
+  `api.spec.js`、`admin-logic.spec.js`、`asset-categories.spec.js`（均新增）
+- `src/lib/admin/i18nAdmin.js`（`dictionaries` 加 `export`，无行为变化）
+- `scripts/verify-visitor-studio.mjs`（标记修正 + 行尾归一）
+- `.gitattributes`（`*.mjs text eol=lf`）
+- `.github/workflows/web.yml`（新增 Frontend unit tests 步骤）
+- `package.json` / `package-lock.json`
+
+commit：`02e53b1`（行尾）、`4d72390`（标记修正）、`a2028bd`（单元测试套件）
 
 ## 2026-08-19（第二十一轮）：站内跳转不再重建文档 —— react-router
 
