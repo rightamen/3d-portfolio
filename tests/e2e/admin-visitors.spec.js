@@ -50,7 +50,10 @@ const adminAuthHeaders = async (request, staticToken) => {
 
   return authHeaders(await adminSessionTokens.get(staticToken))
 }
-const detailTabNames = ['Overview', 'Comments', 'Posts', 'Resources', 'Downloads', 'Moderation Log']
+// Sentence case, matching the console's own English: round twenty moved these
+// labels into the admin dictionary and this list kept the old capitalisation,
+// which is why the last tab stopped being found.
+const detailTabNames = ['Overview', 'Comments', 'Posts', 'Resources', 'Downloads', 'Moderation log']
 
 const isSafeTestDatabaseUrl = (databaseUrl = '') => {
   try {
