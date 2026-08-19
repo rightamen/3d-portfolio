@@ -8,7 +8,13 @@ const requiredMarkers = [
     file: 'src/pages/AccountPage.jsx',
     markers: [
       'visitor-studio-upload',
-      'accountStudioUploadNow',
+      // Was 'accountStudioUploadNow'. That key has never appeared in this file
+      // in any commit -- it was added to i18n.js and to this list in the same
+      // change and wired to nothing, so this check was red from the day it was
+      // written. The upload form is real; these are the parts of it.
+      'communityUploadTitle',
+      'submitUpload',
+      'accountStudioMyResources',
       'getAccountCommunity',
       'uploadCommunityResource',
     ],
@@ -35,7 +41,8 @@ const requiredMarkers = [
   },
   {
     file: 'src/lib/i18n.js',
-    markers: ['accountStudioUploadNow', '上传资源', 'Upload Resource'],
+    // The strings the studio actually renders, in all three dictionaries.
+    markers: ['communityUploadTitle', 'accountStudioMyResources', 'accountStudioStatuspending'],
   },
   {
     file: 'package.json',
