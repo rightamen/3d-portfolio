@@ -1,30 +1,45 @@
 # mrright.blog 项目进度记录
 
-## 下次从这里继续（截至 2026-08-18 第二十轮收工）
+## 下次从这里继续（截至 2026-08-19 第二十一轮收工）
 
-**线上运行 `fdc602b`（2026-08-18 14:49 UTC 部署，已逐项验证）。
-`origin/main` 比线上多的提交**只有这份文档的收尾**，不需要为它再部署一次。**
-第十二至二十轮都无数据库变更、无接口变更、无路由变更。
-回滚到第二十轮之前：`/opt/mrright-portfolio.backup-20260818-144934`。
+**线上运行 `a3799b5`（2026-08-19 14:35 UTC 部署，已逐项验证）。
+`origin/main` 比线上多的提交**只有这份文档和一条测试大小写修正**，
+不需要为它们再部署一次。**
+第十二至二十一轮都无数据库变更、无服务端接口变更。
+回滚到第二十一轮之前：`/opt/mrright-portfolio.backup-20260819-143533`。
+
+**第二十一轮做的是 react-router**（原「下一轮建议」第 4 条）：
+站内跳转不再把整个文档拆掉重建。详见下面「2026-08-19（第二十一轮）」。
+**全部是前端改动，`server/` 一行没动**，但**客户端路由的实现方式换了** ——
+不再读 `window.location.pathname`，改成 `BrowserRouter` + `Routes`。
+
+⚠️ **路由写成带尾部 splat（`/account/*`），是为了保住旧的 `startsWith` 前缀语义。**
+写成精确的 `/account`，`/account/settings` 就会掉进 `*` 去渲染首页。
+13 条路径的对照实测结果在那一节里。
+
+⚠️ **以后 `npm install` 任何前端依赖，装完要挪一次栏。**
+npm 默认写进 `dependencies`，而那一栏是 **VPS 上真正会安装的服务端运行时**；
+前端的东西全部属于 `devDependencies`。第二十一轮的 `react-router-dom` 就被挪过。
 
 **第二十轮做的是后台界面**：三语（中/英/日）、动画、仪表盘上的 3D 运营星图、
 多分辨率适配。详见下面「2026-08-18（第二十轮）」。
 全部是前端改动，`server/` 一行没动。
 
 **线上内容健康：0 critical / 0 warning / 0 note**（2026-08-18 14:5x UTC 实测，
-第二十轮部署后复查，与第十九轮相同）。
+第二十轮部署后复查，与第十九轮相同；第二十一轮没有新增或改动任何资源）。
 
 ⚠️ **VPS 只保留最新 3 个应用备份**，脚本每次部署自动清理旧的。
 所以下面各轮里写的历史回滚路径**大多已经不存在了**。截至第二十轮收工，
 `/opt` 上实际存在的是：
 
 ```text
-/opt/mrright-portfolio.backup-20260818-144934   第二十轮之前 ← 要回滚就用这个
+/opt/mrright-portfolio.backup-20260819-143533   第二十一轮之前 ← 要回滚就用这个
+/opt/mrright-portfolio.backup-20260818-144934   第二十轮之前
 /opt/mrright-portfolio.backup-20260817-150516   第十九轮之前
-/opt/mrright-portfolio.backup-20260816-045603   第十八轮之前
 ```
 
-（第十七轮那份 `...-20260815-034745` 已被本轮部署按 3 份保留策略自动清掉。）
+（第十八轮那份 `...-20260816-045603` 已被第二十一轮部署按 3 份保留策略自动清掉。
+上面这三条是 2026-08-19 14:3x UTC 在 VPS 上 `ls -dt` 实际看到的。）
 
 要回滚先 `ls -dt /opt/mrright-portfolio.backup-*` 确认实际有什么，别照抄旧记录。
 
@@ -82,8 +97,18 @@ Members 详情在窄屏下不再把整页撑宽（一行 CSS）。
 - 线上 `dist/uploads` **不存在**（部署后已复查，第十六轮那道闸仍然有效）
 
 **下次开工第一件事**：读这一节，然后看「下一轮我建议先做的」——
-第 3 条已经划掉，第 3c 条（后台三语 + 动画 + 3D）第二十轮也划掉了，
-现在排最前的是**第 4 条 react-router**。
+第 3、3b、3c、4 条都已划掉，现在排最前的是**第 5 条前端单元测试**
+（第 6 条 SSR/预渲染 SEO 现在比以前好做了：路由已经声明式了）。
+
+**第二十一轮收工时的状态（2026-08-19，当天工作到此为止）：**
+
+- 工作树干净；线上是 `a3799b5`，本地比线上多的是这份文档和 `a160d3f`（只改测试）
+- 本机 `npm run dev`(5173) 和 `vite preview`(4188) 用完都已停
+- 本轮**没有跑过任何数据库语句**，连读都没有；本机 scratch 库一次也没起
+- 「待你决策」清单**仍然是空的**
+- 线上 `dist/uploads` **不存在**（部署后已复查，第十六轮那道闸仍然有效）
+- 线上 `npm run test:e2e` 24 通过 / 0 失败，**这是第一次整套全绿**
+  （`admin-visitors` 那条自第二十轮起一直红，本轮定性并修掉了）
 
 **2026-08-18 的工作到此为止：代码已 push、已部署、已逐项验证，
 「待你决策」清单是空的，没有半途而废的改动挂在本机。**
@@ -216,12 +241,15 @@ Publish / Mark Spam 就在 Delete 旁边**。
 第十二轮就是这么误触发的一次真实部署（结果无害：脚本本来就会备份 env、
 备份应用、健康检查、admin session 检查、清理旧备份）。
 
-### 收工时的未完项（截至第二十轮）
+### 收工时的未完项（截至第二十一轮）
 
 第十四、十五轮关掉了假 EXR 和社区上传无校验，第十六轮关掉了「测试文件漏进生产构建」，
-第十七轮关掉了认证器绑定。**第十八、十九轮都没有关掉下面任何一条**
-（一个做的是后台窄屏和评论审核，一个做的是拆文件，都不在这张单子上），
-但各自新增了：第十八轮加了第 6 条，第十九轮加了第 7、8 条。现在开着的是：
+第十七轮关掉了认证器绑定。**第十八到二十一轮都没有关掉下面任何一条**
+（后台窄屏、拆文件、后台三语、react-router，都不在这张单子上），
+但各自新增了：第十八轮加了第 6 条，第十九轮加了第 7、8 条，
+第二十轮加了 6b、6c。**第二十一轮没有新增未完项** —— 它衍生的两条
+（首页 3D 仍会重建、`/admin` 没进 router）都记在路线图第 4 条底下，
+属于「知道且刻意」，不是欠账。现在开着的是：
 
 1. **模型「能加载」和「能渲染」仍然是两件事。**
    Content Health 现在能确认文件可服务、是真 GLB、所需扩展有解码器，
@@ -446,7 +474,15 @@ CSP 这件事能做完，就是因为 playwright 回来了。
    - 第十八轮留下的「后台字号统一」还没做（`.visitor-stat-line` 那条死规则等的就是它）。
      现在多了一套 `admin-animate-in` 的进场类，统一字号时**记得把新类名也加进
      `index.css` 末尾那个 reduced-motion 块**。
-4. react-router（现在靠 `window.location.pathname` 判断，页面跳转全是整页刷新，3D 场景每次重建）
+4. ~~react-router~~ —— **2026-08-19 第二十一轮做完并上线了。**
+   衍生出来两条，都不急：
+   - **回到首页时 3D 场景仍然会重建**（`HomePage` 被卸载了）。真正省下的是
+     整份文档的重建和 bundle 重新解析，不是场景本身。要连场景一起留住，
+     得让首页在路由切换时保持挂载（比如藏起来而不是卸载），那是另一件事。
+   - **`/admin` 没有进这个 router**，它仍然是 `main.jsx` 里那个独立入口
+     （`pathname.startsWith('/admin') ? Admin : App`）。**这是刻意的**：
+     访客不该下载 185 kB 的后台包，而且站内没有任何链接指向 `/admin`。
+     后台内部的分区切换也不走 URL，接进来得先给它设计 URL 结构。
 5. 前端单元测试（目前只有 API 契约测试和 Playwright）
 6. SSR / 预渲染 SEO（社区帖子和公开主页搜索引擎抓不到）
 7. Asset Model（checksum / visibility / downloadPolicy）稳定后再回到 C++ SDK
@@ -593,6 +629,116 @@ CSP 这件事能做完，就是因为 playwright 回来了。
 - ~~演练遗留的临时库~~ —— 用户已确认，`mrright_restore_drill` 已 `dropdb`（2026-08-11）。
   删除后复查：`mrright_portfolio` 仍在、17 张表、`visitor_users=1`/`project_comments=2`、
   `/api/health` 200，生产库未受影响。
+
+## 2026-08-19（第二十一轮）：站内跳转不再重建文档 —— react-router
+
+原「下一轮建议」第 4 条。**本轮只动前端，`server/` 一行没改。**
+
+线上运行 `a3799b5`（2026-08-19 14:35 UTC 部署，已逐项验证）。
+回滚点：`/opt/mrright-portfolio.backup-20260819-143533`。
+
+### 做了什么
+
+公开站原来是在渲染时读 `window.location.pathname` 来决定画哪一页，
+所以**换页的唯一办法就是把 URL 交还给浏览器**。每一次跳转都把整个文档拆掉重建：
+bundle 重新解析、访客会话重新拉一次、首页那块 WebGL 场景从零再搭一遍。
+
+`react-router-dom` 7.18.2 换掉了 `App.jsx` 里那四条前缀判断。
+
+⚠️ **路由用的是带尾部 splat 的写法（`/account/*`），不是精确路径。**
+旧代码是 `startsWith('/account')`，`/account/settings` 也会渲染账号页。
+写成精确的 `/account` 会悄悄改掉这个语义。已用 13 条路径逐一对照实测：
+`/`、`/login`、`/login/`、`/login?mode=register`、`/account`、`/account/settings`、
+`/u/rin-sato`、`/u/rin-sato/posts`、`/community`、`/community/`、`/community/post-1`、
+`/community/post-1/extra`、`/no-such-page` —— 落点与改动前完全一致
+（splat 能匹配到裸父路径，这一点是实测确认的，不是照文档推的）。
+
+三个自己解析 URL 的页面改成从路由拿：
+
+- `CommunityPage`：帖子 id 从 `useParams` 来（**路由已经解过码**），
+  它原来为 Back 键自己挂的那个 `popstate` 监听器可以删了。
+- `PublicProfilePage`：handle 同上，`decodePathSegment` 删掉。
+- `AuthPage`：`mode` 改成**直接从 `useSearchParams` 读**，不再镜像进 state。
+  这样从 `/account` 点「去验证邮箱」跳 `?mode=verify` 时，
+  即使登录页已经挂着，也会落到正确的那一步。
+  四处 `window.location.replace('/account')` 换成 `navigate(..., { replace: true })`。
+
+站内 20 处 `<a href="/...">` 换成 `<Link>`。
+`Navbar` 是混合的：`#about` 这类页内锚点**仍然是普通 `<a>`**（哈希滚动交给浏览器），
+只有 `/community` 那一条变成 `Link`。
+
+### 两个不显眼但要记住的决定
+
+⚠️ **`react-router-dom` 放在 `devDependencies`，不是 `dependencies`。**
+npm 默认装进了 `dependencies`，但那一栏是 **VPS 上真正会安装的服务端运行时**
+（express / pg / helmet / multer / cors / express-rate-limit），
+前端的 react / three / motion 全部在 `devDependencies` 里。
+放错栏会让线上多装一份永远用不到的包。**以后 `npm install` 任何前端依赖都要挪一次。**
+
+⚠️ **它在 `vite.config.js` 里被并进了 `react-vendor` 块。**
+不并的话它落在每次部署都会变的 `index` 入口块里，等于每次发版都让用户重下一遍。
+并进去之后：`index` 216.1 → 216.8 kB（几乎不变，路由代码换掉了原来的手写分支），
+`react-vendor` 192.5 → 230.5 kB。**首屏净增约 13.6 kB（gzip），这就是这次改动的全部代价。**
+
+### 验证
+
+⚠️ **这轮的核心改动在截图里是看不见的**，所以测试断言的是另一件事：
+首次加载后往 `window` 上写一个哨兵，**跳转之后它还在，就说明文档没被重建**。
+固化成 `tests/e2e/site-routing.spec.js`（8 条）。
+
+**做过证伪**：`git stash` 掉本轮改动、对旧代码跑同一套 —— **5 条红**
+（全是断言「客户端跳转」的那几条），另外 3 条只断言渲染的两边都绿。
+
+其它验证：
+
+- `npm run lint`：通过
+- `npm run build`：通过
+- `npm run test:openapi` / `test:content-health` / `test:deploy-script` / `test:deploy-backup`：全通过
+- `git diff --check`：通过
+- 本机 `npm run dev`(5173) 与 `vite preview`(4188) 两边各跑一遍路由测试：8/8 通过
+- 跨路由探针：首页→社区→Back，**全程只有 1 次 document load**，console 0 错误
+- 440px / 1440px 截图与横向溢出量测：社区页两个宽度都是 **0px 溢出**
+- 线上部署后：`/api/health` 200、`/` 200、`/community` 200、`/admin` 200、
+  `/login?mode=login` 200、`/account` 200、`/u/not-exist-test-handle` 200、
+  `/community/does-not-exist` 200、`/no-such-page` 200
+- admin_summary：部署脚本用短期会话验过并已吊销（**不是拿静态 token 直调**）
+- 线上 API：`/api/profile` 200、`/api/projects` 200、`/api/community/posts` 200、
+  `/api/account/profile` 未登录 401、`/api/users/not-exist-test-handle` 404
+- 线上首页引用的 chunk 与本机构建产物一致（`index-BhYYYMmB.js` / `react-vendor-rtWop11s.js`）
+- 线上 `npm run test:e2e`：**24 通过 / 0 失败 / 4 skipped**
+
+### 顺手修掉的一条红灯（不是本轮弄红的）
+
+⚠️ **`tests/e2e/admin-visitors.spec.js` 自第二十轮起就一直红**，
+今天跑线上 e2e 才撞见。原因是**一个词的大小写**：
+第二十轮（`156d9ac`）把后台文案挪进 `i18nAdmin.js` 时，最后一个标签写的是
+`Moderation log`（句首大写，与 `Visitor management` / `Last login` / `Delete account`
+这一整套英文一致），而测试里还写着 `Moderation Log` 且 `exact: true`。
+**过期的是测试**，已改测试那一侧（`a160d3f`）。
+
+这和第十二轮那条教训是同一件事的第二次发生（那次是 Visitors 改名 Members 没同步测试）。
+**改后台英文文案时，连读它的 spec 一起改。**
+
+### 撞见但没修
+
+- **本机 scratch 库这轮又没用上。** `su postgres -c "psql ... ALTER ROLE mrright_local PASSWORD ..."`
+  **仍然被权限策略挡下**（和第十九轮同一条）。走的还是那条备用路线：
+  Playwright 拦 `**/api/**` 喂 fixture。**做前端的活基本不需要那个库，别再为它卡住。**
+- `npm run verify:visitor-studio` 仍然是红的（未完项第 7 条），本轮没碰 `/account` 的 Studio 分区。
+
+### 新增/修改文件
+
+- `src/App.jsx`（路由；首页拆成 `HomePage`，数据拉取跟着它走，
+  原来那道 `pathname !== '/'` 守卫随之消失）
+- `src/pages/AuthPage.jsx`、`src/pages/CommunityPage.jsx`、`src/pages/PublicProfilePage.jsx`
+- `src/pages/AccountPage.jsx`、`src/components/AccountMenu.jsx`、`src/components/CommentSection.jsx`
+- `src/sections/Navbar.jsx`、`src/sections/Community.jsx`
+- `vite.config.js`（`react-router` / `react-router-dom` → `react-vendor`）
+- `package.json` / `package-lock.json`
+- `tests/e2e/site-routing.spec.js`（新增）
+- `tests/e2e/admin-visitors.spec.js`（顺手修的那条）
+
+commit：`a3799b5`（路由）、`a160d3f`（测试大小写）
 
 ## 2026-08-18（第二十轮）：后台三语 + 动画 + 3D 运营星图
 
