@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { getAccessLevelLabel } from '../lib/i18n'
 
 const AccountMenu = ({
@@ -40,9 +41,9 @@ const AccountMenu = ({
                 <span>{copy.authEmailStatus}</span>
                 <strong>{visitorUser.emailVerified ? copy.authVerified : copy.authUnverified}</strong>
               </div>
-              <a href="/account" className="primary-action w-full" role="menuitem">
+              <Link to="/account" className="primary-action w-full" role="menuitem">
                 {copy.accountCenter}
-              </a>
+              </Link>
               <button
                 type="button"
                 className="secondary-action w-full"
@@ -61,12 +62,12 @@ const AccountMenu = ({
                 <div className="section-kicker mb-1">{copy.account}</div>
                 <p className="text-sm leading-relaxed text-neutral-400">{copy.authHint}</p>
               </div>
-              <a href="/login?mode=login" className="primary-action w-full" role="menuitem">
+              <Link to="/login?mode=login" className="primary-action w-full" role="menuitem">
                 {copy.authLogin}
-              </a>
-              <a href="/login?mode=register" className="secondary-action w-full" role="menuitem">
+              </Link>
+              <Link to="/login?mode=register" className="secondary-action w-full" role="menuitem">
                 {copy.authRegister}
-              </a>
+              </Link>
             </>
           )}
         </div>

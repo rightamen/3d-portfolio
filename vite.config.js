@@ -39,6 +39,8 @@ const packageChunkGroups = new Map([
   ['react', 'react-vendor'],
   ['react-dom', 'react-vendor'],
   ['scheduler', 'react-vendor'],
+  ['react-router', 'react-vendor'],
+  ['react-router-dom', 'react-vendor'],
   ['@react-three/drei', 'three-fiber'],
   ['@react-three/fiber', 'three-fiber'],
   ['@pmndrs/pointer-events', 'three-fiber'],

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { motion as Motion } from 'motion/react'
+import { Link } from 'react-router-dom'
 import AccountMenu from '../components/AccountMenu'
 import { languages } from '../lib/i18n'
 
@@ -13,13 +14,22 @@ function Navigation({ onNavigate, copy }) {
     { label: copy.navContact, href: '#contact' },
   ]
 
+  // Mixed list: the in-page sections stay plain anchors so the browser keeps
+  // doing the hash scrolling, and only the one that leaves the homepage
+  // becomes a router Link.
   return (
     <ul className="nav-ul">
       {navItems.map((item) => (
         <li key={item.href} className="nav-li">
-          <a href={item.href} className="nav-link" onClick={onNavigate}>
-            {item.label}
-          </a>
+          {item.href.startsWith('/') ? (
+            <Link to={item.href} className="nav-link" onClick={onNavigate}>
+              {item.label}
+            </Link>
+          ) : (
+            <a href={item.href} className="nav-link" onClick={onNavigate}>
+              {item.label}
+            </a>
+          )}
         </li>
       ))}
     </ul>

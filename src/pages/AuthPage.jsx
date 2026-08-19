@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { getApiErrorMessage, languages } from '../lib/i18n'
 
 const emptyForm = {
@@ -13,10 +14,7 @@ const emptyForm = {
 // directly from the link in the email.
 const authModes = ['login', 'register', 'verify', 'forgot', 'reset']
 
-const getInitialMode = () => {
-  const mode = new URLSearchParams(window.location.search).get('mode')
-  return authModes.includes(mode) ? mode : 'login'
-}
+const normalizeMode = (mode) => (authModes.includes(mode) ? mode : 'login')
 
 const LanguageSwitch = ({ language, onLanguageChange, copy }) => (
   <div className="language-switch" aria-label={copy.toggleLanguage}>
@@ -47,7 +45,12 @@ const AuthPage = ({
   onVerifyEmail,
   visitorUser,
 }) => {
-  const [mode, setMode] = useState(getInitialMode)
+  const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
+  // The mode is read straight off the query string rather than mirrored into
+  // state, so a link into ?mode=verify lands on the right step even when this
+  // page is already mounted.
+  const mode = normalizeMode(searchParams.get('mode'))
   const [form, setForm] = useState(emptyForm)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
@@ -77,17 +80,23 @@ const AuthPage = ({
   }[mode]
 
   useEffect(() => {
-    if (visitorUser) window.location.replace('/account')
-  }, [visitorUser])
+    if (visitorUser) navigate('/account', { replace: true })
+  }, [navigate, visitorUser])
 
   const changeMode = (nextMode) => {
-    setMode(nextMode)
     setError('')
     setMessage('')
 
-    const url = new URL(window.location.href)
-    url.searchParams.set('mode', nextMode)
-    window.history.replaceState(null, '', url)
+    // replace, not push: the modes are steps inside one flow, so Back should
+    // leave the sign-in page instead of walking the steps backwards.
+    setSearchParams(
+      (current) => {
+        const next = new URLSearchParams(current)
+        next.set('mode', nextMode)
+        return next
+      },
+      { replace: true },
+    )
   }
 
   const updateForm = (event) => {
@@ -141,7 +150,7 @@ const AuthPage = ({
           email: form.email,
           password: form.password,
         })
-        window.location.replace('/account')
+        navigate('/account', { replace: true })
         return
       }
 
@@ -160,12 +169,12 @@ const AuthPage = ({
           await onVerifyEmail({ code: form.code, email: form.email })
         }
         setCompletedSteps(['account', 'email'])
-        window.location.replace('/account')
+        navigate('/account', { replace: true })
         return
       }
 
       await onLogin({ email: form.email, password: form.password })
-      window.location.replace('/account')
+      navigate('/account', { replace: true })
     } catch (caughtError) {
       if (caughtError.code === 'EMAIL_NOT_VERIFIED') {
         setCompletedSteps(['account'])
@@ -180,9 +189,9 @@ const AuthPage = ({
   return (
     <main className="auth-page">
       <nav className="auth-nav">
-        <a href="/" className="text-xl font-bold text-neutral-300 hover:text-white">
+        <Link to="/" className="text-xl font-bold text-neutral-300 hover:text-white">
           mrright.blog
-        </a>
+        </Link>
         <LanguageSwitch language={language} onLanguageChange={onLanguageChange} copy={copy} />
       </nav>
 

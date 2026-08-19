@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import {
   createCommunityComment,
   deleteCommunityComment,
@@ -310,9 +311,9 @@ const CommentSection = ({ authToken, copy, language, postId, visitorUser }) => {
         <div className="community-login-required">
           <strong>{copy.communityCommentLoginTitle}</strong>
           <p>{copy.communityCommentLoginRequired}</p>
-          <a className="secondary-action w-fit" href="/login">
+          <Link className="secondary-action w-fit" to="/login">
             {copy.authLogin}
-          </a>
+          </Link>
         </div>
       )}
 

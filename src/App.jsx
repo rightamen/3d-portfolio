@@ -1,4 +1,5 @@
 import { Suspense, lazy, useEffect, useState } from 'react'
+import { BrowserRouter, Route, Routes, useLocation, useNavigationType } from 'react-router-dom'
 import {
   getCurrentVisitor,
   getExperience,
@@ -35,9 +36,36 @@ const SectionFallback = ({ title, copy }) => (
   </section>
 )
 
-const App = () => {
-  const [language, setLanguage] = useState(getInitialLanguage)
-  const copy = getCopy(language)
+// A full page load used to reset the scroll position for us. Client-side
+// navigation does not, so do it here -- but only for PUSH. On POP the browser
+// restores the previous offset, which is what a Back button should do, and
+// scrolling to the top would undo it.
+const ScrollToTop = () => {
+  const { pathname } = useLocation()
+  const navigationType = useNavigationType()
+
+  useEffect(() => {
+    if (navigationType !== 'PUSH') return
+    window.scrollTo(0, 0)
+  }, [navigationType, pathname])
+
+  return null
+}
+
+// The homepage owns its own data. It used to live in App behind a
+// `pathname !== '/'` guard, which existed only because every route shared one
+// component; now the fetch simply does not mount anywhere else.
+const HomePage = ({
+  authStatus,
+  copy,
+  language,
+  onLanguageChange,
+  onVisitorLogin,
+  onVisitorLogout,
+  onVisitorRegister,
+  visitorToken,
+  visitorUser,
+}) => {
   const [siteData, setSiteData] = useState({
     profile: null,
     skills: [],
@@ -45,27 +73,9 @@ const App = () => {
     experience: [],
   })
   const [status, setStatus] = useState('loading')
-  const [visitorToken, setVisitorToken] = useState(getStoredVisitorToken)
-  const [visitorUser, setVisitorUser] = useState(null)
-  const [visitorSessionChecked, setVisitorSessionChecked] = useState(() => !getStoredVisitorToken())
-  const [authStatus, setAuthStatus] = useState('idle')
-  const visitorLoading = !visitorSessionChecked
-
-  useEffect(() => {
-    window.localStorage.setItem('mrright-language', language)
-    document.documentElement.lang = language === 'zh' ? 'zh-CN' : language === 'ja' ? 'ja' : 'en'
-  }, [language])
 
   useEffect(() => {
     let isMounted = true
-
-    // Account, community, profile and auth routes have their own data
-    // boundaries. Avoid fetching homepage content for those pages.
-    if (window.location.pathname !== '/') {
-      return () => {
-        isMounted = false
-      }
-    }
 
     Promise.all([getProfile(), getProjects(), getExperience()])
       .then(([profilePayload, projectsPayload, experiencePayload]) => {
@@ -87,6 +97,75 @@ const App = () => {
       isMounted = false
     }
   }, [])
+
+  return (
+    <div id="home" className="site-home min-h-screen overflow-hidden">
+      <Navbar
+        authStatus={authStatus}
+        copy={copy}
+        language={language}
+        onLanguageChange={onLanguageChange}
+        onVisitorLogin={onVisitorLogin}
+        onVisitorLogout={onVisitorLogout}
+        onVisitorRegister={onVisitorRegister}
+        visitorUser={visitorUser}
+      />
+      <Suspense fallback={<SectionFallback title="Hero" copy={copy} />}>
+        <Hero profile={siteData.profile} status={status} language={language} copy={copy} />
+      </Suspense>
+      <main className="relative z-10 mx-auto max-w-7xl">
+        <Suspense fallback={<SectionFallback title="About" copy={copy} />}>
+          <About
+            profile={siteData.profile}
+            skills={siteData.skills}
+            language={language}
+            copy={copy}
+          />
+        </Suspense>
+        <Suspense fallback={<SectionFallback title="Projects" copy={copy} />}>
+          <Projects
+            authToken={visitorToken}
+            copy={copy}
+            language={language}
+            projects={siteData.projects}
+            visitorUser={visitorUser}
+          />
+        </Suspense>
+        <Suspense fallback={<SectionFallback title="Community" copy={copy} />}>
+          <Community copy={copy} />
+        </Suspense>
+        <Suspense fallback={<SectionFallback title="Experience" copy={copy} />}>
+          <Experience
+            experience={siteData.experience}
+            skills={siteData.skills}
+            language={language}
+            copy={copy}
+          />
+        </Suspense>
+        <Suspense fallback={<SectionFallback title="Contact" copy={copy} />}>
+          <Contact profile={siteData.profile} copy={copy} />
+        </Suspense>
+        <Suspense fallback={null}>
+          <Footer profile={siteData.profile} copy={copy} />
+        </Suspense>
+      </main>
+    </div>
+  )
+}
+
+const App = () => {
+  const [language, setLanguage] = useState(getInitialLanguage)
+  const copy = getCopy(language)
+  const [visitorToken, setVisitorToken] = useState(getStoredVisitorToken)
+  const [visitorUser, setVisitorUser] = useState(null)
+  const [visitorSessionChecked, setVisitorSessionChecked] = useState(() => !getStoredVisitorToken())
+  const [authStatus, setAuthStatus] = useState('idle')
+  const visitorLoading = !visitorSessionChecked
+
+  useEffect(() => {
+    window.localStorage.setItem('mrright-language', language)
+    document.documentElement.lang = language === 'zh' ? 'zh-CN' : language === 'ja' ? 'ja' : 'en'
+  }, [language])
 
   useEffect(() => {
     const syncVisitorToken = () => {
@@ -252,123 +331,95 @@ const App = () => {
     if (token) logoutVisitor(token).catch(() => {})
   }
 
-  const routePath = window.location.pathname
+  const homePage = (
+    <HomePage
+      authStatus={authStatus}
+      copy={copy}
+      language={language}
+      onLanguageChange={setLanguage}
+      onVisitorLogin={handleVisitorLogin}
+      onVisitorLogout={handleVisitorLogout}
+      onVisitorRegister={handleVisitorRegister}
+      visitorToken={visitorToken}
+      visitorUser={visitorUser}
+    />
+  )
 
-  if (routePath.startsWith('/login')) {
-    return (
-      <Suspense fallback={<SectionFallback title="Login" copy={copy} />}>
-        <AuthPage
-          authStatus={authStatus}
-          copy={copy}
-          language={language}
-          onLanguageChange={setLanguage}
-          onLogin={handleVisitorLogin}
-          onRegister={handleVisitorRegister}
-          onRequestPasswordReset={handleRequestPasswordReset}
-          onResendVerification={handleVisitorResendVerification}
-          onResetPassword={handleResetPassword}
-          onVerifyEmail={handleVisitorVerifyEmail}
-          visitorUser={visitorUser}
-        />
-      </Suspense>
-    )
-  }
-
-  if (routePath.startsWith('/account')) {
-    return (
-      <Suspense fallback={<SectionFallback title="Account" copy={copy} />}>
-        <AccountPage
-          authToken={visitorToken}
-          copy={copy}
-          language={language}
-          onLanguageChange={setLanguage}
-          onLogout={handleVisitorLogout}
-          visitorLoading={visitorLoading}
-          visitorUser={visitorUser}
-        />
-      </Suspense>
-    )
-  }
-
-  if (routePath.startsWith('/u/')) {
-    return (
-      <Suspense fallback={<SectionFallback title="Profile" copy={copy} />}>
-        <PublicProfilePage
-          copy={copy}
-          language={language}
-          onLanguageChange={setLanguage}
-        />
-      </Suspense>
-    )
-  }
-
-  if (routePath.startsWith('/community')) {
-    return (
-      <Suspense fallback={<SectionFallback title="Community" copy={copy} />}>
-        <CommunityPage
-          authToken={visitorToken}
-          copy={copy}
-          language={language}
-          onLanguageChange={setLanguage}
-          visitorLoading={visitorLoading}
-          visitorUser={visitorUser}
-        />
-      </Suspense>
-    )
-  }
-
-  return (
-    <div id="home" className="site-home min-h-screen overflow-hidden">
-      <Navbar
-        authStatus={authStatus}
+  const communityPage = (
+    <Suspense fallback={<SectionFallback title="Community" copy={copy} />}>
+      <CommunityPage
+        authToken={visitorToken}
         copy={copy}
         language={language}
         onLanguageChange={setLanguage}
-        onVisitorLogin={handleVisitorLogin}
-        onVisitorLogout={handleVisitorLogout}
-        onVisitorRegister={handleVisitorRegister}
+        visitorLoading={visitorLoading}
         visitorUser={visitorUser}
       />
-      <Suspense fallback={<SectionFallback title="Hero" copy={copy} />}>
-        <Hero profile={siteData.profile} status={status} language={language} copy={copy} />
-      </Suspense>
-      <main className="relative z-10 mx-auto max-w-7xl">
-        <Suspense fallback={<SectionFallback title="About" copy={copy} />}>
-          <About
-            profile={siteData.profile}
-            skills={siteData.skills}
-            language={language}
-            copy={copy}
-          />
-        </Suspense>
-        <Suspense fallback={<SectionFallback title="Projects" copy={copy} />}>
-          <Projects
-            authToken={visitorToken}
-            copy={copy}
-            language={language}
-            projects={siteData.projects}
-            visitorUser={visitorUser}
-          />
-        </Suspense>
-        <Suspense fallback={<SectionFallback title="Community" copy={copy} />}>
-          <Community copy={copy} />
-        </Suspense>
-        <Suspense fallback={<SectionFallback title="Experience" copy={copy} />}>
-          <Experience
-            experience={siteData.experience}
-            skills={siteData.skills}
-            language={language}
-            copy={copy}
-          />
-        </Suspense>
-        <Suspense fallback={<SectionFallback title="Contact" copy={copy} />}>
-          <Contact profile={siteData.profile} copy={copy} />
-        </Suspense>
-        <Suspense fallback={null}>
-          <Footer profile={siteData.profile} copy={copy} />
-        </Suspense>
-      </main>
-    </div>
+    </Suspense>
+  )
+
+  return (
+    <BrowserRouter>
+      <ScrollToTop />
+      <Routes>
+        <Route
+          path="/login/*"
+          element={
+            <Suspense fallback={<SectionFallback title="Login" copy={copy} />}>
+              <AuthPage
+                authStatus={authStatus}
+                copy={copy}
+                language={language}
+                onLanguageChange={setLanguage}
+                onLogin={handleVisitorLogin}
+                onRegister={handleVisitorRegister}
+                onRequestPasswordReset={handleRequestPasswordReset}
+                onResendVerification={handleVisitorResendVerification}
+                onResetPassword={handleResetPassword}
+                onVerifyEmail={handleVisitorVerifyEmail}
+                visitorUser={visitorUser}
+              />
+            </Suspense>
+          }
+        />
+        <Route
+          path="/account/*"
+          element={
+            <Suspense fallback={<SectionFallback title="Account" copy={copy} />}>
+              <AccountPage
+                authToken={visitorToken}
+                copy={copy}
+                language={language}
+                onLanguageChange={setLanguage}
+                onLogout={handleVisitorLogout}
+                visitorLoading={visitorLoading}
+                visitorUser={visitorUser}
+              />
+            </Suspense>
+          }
+        />
+        <Route
+          path="/u/:handle/*"
+          element={
+            <Suspense fallback={<SectionFallback title="Profile" copy={copy} />}>
+              <PublicProfilePage
+                copy={copy}
+                language={language}
+                onLanguageChange={setLanguage}
+              />
+            </Suspense>
+          }
+        />
+        <Route path="/" element={homePage} />
+        <Route path="/community" element={communityPage} />
+        <Route path="/community/:postId/*" element={communityPage} />
+        {/* The trailing splats keep the prefix semantics the pathname checks
+            had before the router existed: /account/anything used to render the
+            account page, and unknown paths still fall through to the
+            homepage. */}
+        <Route path="*" element={homePage} />
+      </Routes>
+    </BrowserRouter>
   )
 }
 

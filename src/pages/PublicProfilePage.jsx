@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Link, useParams } from 'react-router-dom'
 import {
   getPublicUserActivity,
   getPublicUserPosts,
@@ -46,16 +47,8 @@ const getInitials = (name = '', handle = '') => {
 
 const formatDate = (value) => (value ? new Date(value).toLocaleDateString() : '')
 
-const decodePathSegment = (value) => {
-  try {
-    return decodeURIComponent(value)
-  } catch {
-    return ''
-  }
-}
-
 const PublicProfilePage = ({ copy, language, onLanguageChange }) => {
-  const handle = decodePathSegment(window.location.pathname.replace(/^\/u\/?/, '')).split('/')[0]
+  const { handle = '' } = useParams()
   const [activeTab, setActiveTab] = useState('overview')
   const [profile, setProfile] = useState(null)
   const [activity, setActivity] = useState({ comments: [], posts: [], resources: [] })
@@ -291,9 +284,9 @@ const PublicProfilePage = ({ copy, language, onLanguageChange }) => {
   return (
     <main className="admin-shell public-profile-shell">
       <header className="auth-nav">
-        <a href="/" className="text-xl font-bold text-neutral-300 hover:text-white">
+        <Link to="/" className="text-xl font-bold text-neutral-300 hover:text-white">
           mrright.blog
-        </a>
+        </Link>
         <LanguageSwitch language={language} onLanguageChange={onLanguageChange} copy={copy} />
       </header>
 
@@ -309,9 +302,9 @@ const PublicProfilePage = ({ copy, language, onLanguageChange }) => {
           <p className="section-kicker">{copy.publicProfileKicker}</p>
           <h1>{copy.publicProfileMissingTitle}</h1>
           <p>{message || copy.publicProfileMissingBody}</p>
-          <a href="/" className="secondary-action">
+          <Link to="/" className="secondary-action">
             {copy.accountBackHome}
-          </a>
+          </Link>
         </section>
       )}
 
@@ -320,9 +313,9 @@ const PublicProfilePage = ({ copy, language, onLanguageChange }) => {
           <p className="section-kicker">{copy.publicProfileKicker}</p>
           <h1>{copy.publicProfilePrivateTitle}</h1>
           <p>{copy.publicProfilePrivateBody}</p>
-          <a href="/" className="secondary-action">
+          <Link to="/" className="secondary-action">
             {copy.accountBackHome}
-          </a>
+          </Link>
         </section>
       )}
 
@@ -331,9 +324,9 @@ const PublicProfilePage = ({ copy, language, onLanguageChange }) => {
           <p className="section-kicker">{copy.publicProfileKicker}</p>
           <h1>{copy.publicProfileAdminDisabledTitle}</h1>
           <p>{copy.publicProfileAdminDisabledBody}</p>
-          <a href="/" className="secondary-action">
+          <Link to="/" className="secondary-action">
             {copy.accountBackHome}
-          </a>
+          </Link>
         </section>
       )}
 

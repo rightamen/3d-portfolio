@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
+import { Link, useParams } from 'react-router-dom'
 import { assetCategoryProfiles, getAssetCategoryProfile } from '../lib/assetCategories'
 import {
   createCommunityPost,
@@ -56,30 +57,19 @@ const LanguageSwitch = ({ language, onLanguageChange, copy }) => (
 const CommunityShell = ({ children, copy, language, onLanguageChange }) => (
   <main className="auth-page">
     <nav className="auth-nav">
-      <a href="/" className="text-xl font-bold text-neutral-300 hover:text-white">
+      <Link to="/" className="text-xl font-bold text-neutral-300 hover:text-white">
         mrright.blog
-      </a>
+      </Link>
       <div className="flex items-center gap-2 sm:gap-3">
-        <a className="secondary-action px-3 py-2 text-xs sm:px-4 sm:text-sm" href="/">
+        <Link className="secondary-action px-3 py-2 text-xs sm:px-4 sm:text-sm" to="/">
           ← {copy.communityBackHome}
-        </a>
+        </Link>
         <LanguageSwitch language={language} onLanguageChange={onLanguageChange} copy={copy} />
       </div>
     </nav>
     <div className="community-page">{children}</div>
   </main>
 )
-
-const getPostIdFromPath = () => {
-  const match = window.location.pathname.match(/^\/community\/([^/]+)/)
-  if (!match) return ''
-
-  try {
-    return decodeURIComponent(match[1])
-  } catch {
-    return ''
-  }
-}
 
 const PostDetail = ({ authToken, copy, language, postId, visitorUser }) => {
   const [post, setPost] = useState(null)
@@ -112,18 +102,18 @@ const PostDetail = ({ authToken, copy, language, postId, visitorUser }) => {
       <div className="asset-empty-state">
         <strong>{copy.communityPostMissingTitle}</strong>
         <span>{copy.communityPostMissingBody}</span>
-        <a className="secondary-action mt-4 w-fit" href="/community">
+        <Link className="secondary-action mt-4 w-fit" to="/community">
           {copy.communityBackToList}
-        </a>
+        </Link>
       </div>
     )
   }
 
   return (
     <div className="community-detail">
-      <a className="community-back-link" href="/community">
+      <Link className="community-back-link" to="/community">
         ← {copy.communityBackToList}
-      </a>
+      </Link>
 
       <article className="community-detail-post">
         <div className="community-post-meta">
@@ -318,15 +308,19 @@ const PostList = ({ authToken, copy, language, visitorUser }) => {
           <div className="community-login-required">
             <strong>{copy.communityPostLoginTitle}</strong>
             <p>{copy.communityPostLoginRequired}</p>
-            <a className="secondary-action w-fit" href="/login">
+            <Link className="secondary-action w-fit" to="/login">
               {copy.authLogin}
-            </a>
+            </Link>
           </div>
         )}
 
         <div className="community-post-list">
           {posts.map((post) => (
-            <a key={post.id} className="community-post-card community-post-link" href={`/community/${post.id}`}>
+            <Link
+              key={post.id}
+              className="community-post-card community-post-link"
+              to={`/community/${encodeURIComponent(post.id)}`}
+            >
               <div className="community-post-meta">
                 <span>{getTopicLabel(copy, post.topic)}</span>
                 <small>{new Date(post.createdAt).toLocaleDateString(dateLocale)}</small>
@@ -335,7 +329,7 @@ const PostList = ({ authToken, copy, language, visitorUser }) => {
               <p>{post.message}</p>
               <small>{post.user?.displayName || copy.accountGuest}</small>
               <span className="community-post-open">{copy.communityViewPost} →</span>
-            </a>
+            </Link>
           ))}
           {status === 'ready' && posts.length === 0 && (
             <div className="asset-empty-state">
@@ -511,13 +505,9 @@ const CommunityPage = ({
   visitorLoading,
   visitorUser,
 }) => {
-  const [postId, setPostId] = useState(getPostIdFromPath)
-
-  useEffect(() => {
-    const handlePopState = () => setPostId(getPostIdFromPath())
-    window.addEventListener('popstate', handlePopState)
-    return () => window.removeEventListener('popstate', handlePopState)
-  }, [])
+  // The router decodes the segment, and re-renders on Back/Forward, so the
+  // popstate listener this used to keep is no longer needed.
+  const { postId = '' } = useParams()
 
   return (
     <CommunityShell copy={copy} language={language} onLanguageChange={onLanguageChange}>

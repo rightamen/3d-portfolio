@@ -1,3 +1,5 @@
+import { Link } from 'react-router-dom'
+
 const communityLinks = [
   { key: 'enter', href: '/community', variant: 'primary' },
   { key: 'discussion', href: '/community', variant: 'secondary' },
@@ -19,13 +21,13 @@ const Community = ({ copy }) => {
           <p>{copy.communityEntryBody}</p>
           <div className="community-entry-actions">
             {communityLinks.map((link) => (
-              <a
+              <Link
                 key={link.key}
-                href={link.href}
+                to={link.href}
                 className={link.variant === 'primary' ? 'primary-action' : 'secondary-action'}
               >
                 {copy[`communityEntry${link.key[0].toUpperCase()}${link.key.slice(1)}`]}
-              </a>
+              </Link>
             ))}
           </div>
         </div>

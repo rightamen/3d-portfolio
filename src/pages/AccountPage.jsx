@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { assetCategoryProfiles, getAssetCategoryProfile } from '../lib/assetCategories'
 import {
   cancelEmailChange,
@@ -126,9 +127,9 @@ const getContactLabel = (copy, key) => copy[`accountContact${key[0].toUpperCase(
 const AccountShell = ({ children, copy, language, onLanguageChange }) => (
   <main className="auth-page">
     <nav className="auth-nav">
-      <a href="/" className="text-xl font-bold text-neutral-300 hover:text-white">
+      <Link to="/" className="text-xl font-bold text-neutral-300 hover:text-white">
         mrright.blog
-      </a>
+      </Link>
       <LanguageSwitch language={language} onLanguageChange={onLanguageChange} copy={copy} />
     </nav>
     {children}
@@ -470,12 +471,12 @@ const AccountPage = ({
           <h1>{copy.accountLoginRequiredTitle}</h1>
           <p>{copy.accountLoginRequired}</p>
           <div className="account-center-actions">
-            <a href="/login?mode=login" className="primary-action">
+            <Link to="/login?mode=login" className="primary-action">
               {copy.authLogin}
-            </a>
-            <a href="/" className="secondary-action">
+            </Link>
+            <Link to="/" className="secondary-action">
               {copy.accountBackHome}
-            </a>
+            </Link>
           </div>
         </section>
       </AccountShell>
@@ -1294,13 +1295,13 @@ const AccountPage = ({
         </div>
         <div className="account-center-actions">
           {!visitorUser.emailVerified && (
-            <a href="/login?mode=verify" className="primary-action">
+            <Link to="/login?mode=verify" className="primary-action">
               {copy.accountSettingsVerifyAction}
-            </a>
+            </Link>
           )}
-          <a href="/" className="secondary-action">
+          <Link to="/" className="secondary-action">
             {copy.accountBackHome}
-          </a>
+          </Link>
           <button type="button" className="danger-action" onClick={onLogout}>
             {copy.accountSignOut}
           </button>
@@ -1539,9 +1540,9 @@ const AccountPage = ({
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <LanguageSwitch language={language} onLanguageChange={onLanguageChange} copy={copy} />
-          <a href="/" className="secondary-action">
+          <Link to="/" className="secondary-action">
             {copy.accountBackHome}
-          </a>
+          </Link>
           <button type="button" className="danger-action" onClick={onLogout}>
             {copy.accountSignOut}
           </button>
