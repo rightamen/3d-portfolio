@@ -5,6 +5,9 @@
 # (cpp-app.yml) had a three-platform matrix. Nothing enforced the 37 API
 # contract tests, 19 DB contract tests, or the OpenAPI check before a merge.
 #
+# tests/unit/* (vitest) runs here too: it needs no browser, no database and no
+# secret, and it is where the dictionary and request-layer invariants live.
+#
 # Deliberately NOT here: tests/e2e/*. production-smoke.spec.js defaults to
 # https://mrright.blog and admin-visitors.spec.js needs E2E_ADMIN_TOKEN, so
 # both are operator-run against a live deployment, not PR gates. Nothing in
@@ -51,6 +54,11 @@ jobs:
 
       - name: Lint
         run: npm run lint
+
+      # Before the build, so a missing dictionary key or a broken request-layer
+      # invariant fails in seconds rather than after a full vite run.
+      - name: Frontend unit tests
+        run: npm run test:unit
 
       - name: Build
         run: npm run build

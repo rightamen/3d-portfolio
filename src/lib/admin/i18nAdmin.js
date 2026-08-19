@@ -1671,7 +1671,11 @@ const findingCopy = {
 
 // English is the server's own wording, so it needs no table: an untranslated
 // key falls through to `finding[field]`, which is that wording.
-const dictionaries = {
+// Exported so a test can check the invariant this file's header states -- that
+// `en` stays complete, because it is what every other language falls back to.
+// The translator itself cannot show a gap: it answers `en[key] ?? key`, so a
+// missing Chinese string renders as English and looks deliberate.
+export const dictionaries = {
   en,
   ja: { ...ja, ...findingCopy.ja },
   zh: { ...zh, ...findingCopy.zh },
