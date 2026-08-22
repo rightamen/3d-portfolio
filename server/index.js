@@ -4,7 +4,7 @@ import rateLimit from 'express-rate-limit'
 import helmet from 'helmet'
 import multer from 'multer'
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
-import { mkdir, unlink, access } from 'node:fs/promises'
+import { mkdir, unlink, access, readFile, stat } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createContactMessagesStore } from './contactMessagesStore.js'
@@ -31,6 +31,7 @@ import {
   verifyTotp,
 } from './adminTotp.js'
 import { API_ERROR_CODES, describeUploadError, sendData, sendError, sendPage } from './responses.js'
+import { renderSeoHtml, resolveRoute } from './seo.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -4044,23 +4045,44 @@ app.get('/robots.txt', (_request, response) => {
   )
 })
 
+// Community posts are listed one URL each -- they are the only public pages
+// this site has that a crawler cannot reach from the homepage without running
+// JavaScript. Cached briefly because a sitemap fetch is a full post listing and
+// crawlers do not coordinate with each other.
+const sitemapCacheMs = 5 * 60 * 1000
+let sitemapCache = { body: '', expiresAt: 0 }
+
 app.get('/sitemap.xml', async (_request, response) => {
+  if (sitemapCache.body && Date.now() < sitemapCache.expiresAt) {
+    return response.type('application/xml').send(sitemapCache.body)
+  }
+
   const entries = [
     { changefreq: 'weekly', loc: '/', priority: '1.0' },
     { changefreq: 'daily', loc: '/community', priority: '0.8' },
   ]
 
+  // Projects used to be listed here as `/?project=<slug>`, which was wrong:
+  // nothing reads that query parameter, so all four URLs served the homepage
+  // and the sitemap was advertising four duplicates of `/`. They are covered by
+  // the `/` entry until projects get a route of their own.
+  //
   // Public profiles are deliberately absent: listing them would enumerate
   // registered users, which the /api/users/:handle responses go out of their
-  // way to prevent.
+  // way to prevent. They stay indexable when linked to -- see the SEO handler
+  // below, which serves them with a canonical URL.
   try {
-    const projects = await projectStore.listProjects(staticProjects)
-    for (const project of projects) {
-      if (project.isPublic === false) continue
-      entries.push({ changefreq: 'monthly', loc: `/?project=${project.slug}`, priority: '0.6' })
+    const posts = (await communityStore?.listPosts()) || []
+    for (const post of posts) {
+      entries.push({
+        changefreq: 'weekly',
+        lastmod: post.updatedAt || post.createdAt || '',
+        loc: `/community/${encodeURIComponent(post.id)}`,
+        priority: '0.6',
+      })
     }
   } catch (error) {
-    console.error('Sitemap project listing failed:', error.message)
+    console.error('Sitemap community listing failed:', error.message)
   }
 
   const body = [
@@ -4070,6 +4092,7 @@ app.get('/sitemap.xml', async (_request, response) => {
       [
         '  <url>',
         `    <loc>${publicSiteUrl}${entry.loc}</loc>`,
+        ...(entry.lastmod ? [`    <lastmod>${entry.lastmod}</lastmod>`] : []),
         `    <changefreq>${entry.changefreq}</changefreq>`,
         `    <priority>${entry.priority}</priority>`,
         '  </url>',
@@ -4079,14 +4102,103 @@ app.get('/sitemap.xml', async (_request, response) => {
     '',
   ].join('\n')
 
+  sitemapCache = { body, expiresAt: Date.now() + sitemapCacheMs }
   response.type('application/xml').send(body)
 })
 
-app.use(express.static(distDir, { setHeaders: setStaticCacheHeaders }))
+// index: false so `/` falls through to the SEO handler below instead of being
+// answered here with the unmodified template.
+app.use(express.static(distDir, { index: false, setHeaders: setStaticCacheHeaders }))
 
-app.get(/.*/, (_request, response) => {
+// The built template, re-read only when it changes on disk. A deploy restarts
+// the service so this could be read once, but a local `npm run build` against a
+// running server should not need a restart to be visible.
+let indexTemplateCache = { html: '', mtimeMs: 0 }
+
+const readIndexTemplate = async () => {
+  const { mtimeMs } = await stat(distIndexPath)
+  if (indexTemplateCache.html && indexTemplateCache.mtimeMs === mtimeMs) {
+    return indexTemplateCache.html
+  }
+
+  const html = await readFile(distIndexPath, 'utf8')
+  indexTemplateCache = { html, mtimeMs }
+  return html
+}
+
+// The /community post list, for the <noscript> index. Same reasoning as the
+// sitemap cache: it is one query serving anonymous, identical output.
+const communityListCacheMs = 60 * 1000
+let communityListCache = { expiresAt: 0, posts: [] }
+
+const recentPostsForNoscript = async () => {
+  if (Date.now() < communityListCache.expiresAt) return communityListCache.posts
+
+  const posts = ((await communityStore?.listPosts()) || []).slice(0, 30)
+  communityListCache = { expiresAt: Date.now() + communityListCacheMs, posts }
+  return posts
+}
+
+// Everything a route's head needs, plus whether the URL names something that
+// does not exist. A store that is missing or throwing is "unknown", not
+// "missing": a database blip must not turn a real post into a 404 that a
+// crawler then remembers.
+const loadSeoData = async (route) => {
+  if (route.kind === 'community') return { posts: await recentPostsForNoscript() }
+
+  if (route.kind === 'post') {
+    if (!communityStore) return {}
+    const post = await communityStore.getPost(route.postId)
+    return post ? { post } : { missing: true }
+  }
+
+  if (route.kind === 'profile') {
+    if (!authStore) return {}
+    // Named to stay clear of the static `profile` imported from content.js.
+    const publicProfile = await authStore.getUserByHandle(route.handle)
+    if (!publicProfile || publicProfile.profileAdminDisabled) return { missing: true }
+    return { profile: publicProfile }
+  }
+
+  return {}
+}
+
+app.get(/.*/, async (request, response) => {
   setNoStoreHeaders(response)
-  response.sendFile(distIndexPath)
+
+  let template
+  try {
+    template = await readIndexTemplate()
+  } catch (error) {
+    console.error('Reading the built index.html failed:', error.message)
+    return response.status(503).type('text/plain').send('Site build unavailable.')
+  }
+
+  const route = resolveRoute(request.path)
+
+  let data = {}
+  try {
+    data = await loadSeoData(route)
+  } catch (error) {
+    console.error(`SEO lookup failed for ${request.path}:`, error.message)
+  }
+
+  // A real 404 only when the lookup positively said "no such post/profile".
+  // Unmatched paths still answer 200 and render the homepage, as they always
+  // have; they are kept out of the index with noindex instead, because this
+  // file does not know the client router's full route table.
+  if (data.missing) response.status(404)
+
+  return response.type('html').send(
+    renderSeoHtml({
+      post: data.post || null,
+      posts: data.posts || [],
+      profile: data.profile || null,
+      route,
+      siteUrl: publicSiteUrl,
+      template,
+    }),
+  )
 })
 
 // Expired sessions cannot authenticate (getSessionUser filters on expires_at)

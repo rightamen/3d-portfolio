@@ -129,6 +129,13 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # The suite asserts the per-route <head> the server splices into
+      # dist/index.html (server/seo.js), so the built template has to exist.
+      # Without this the HTML cases skip themselves and the post and profile
+      # heads go unchecked.
+      - name: Build
+        run: npm run build
+
       - name: DB-backed API contract tests
         env:
           API_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/mrright_api_contract_test

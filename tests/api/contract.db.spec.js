@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { spawn } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
+import { existsSync } from 'node:fs'
 import { readdir, unlink } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -1521,5 +1522,131 @@ test.describe('operational endpoints', () => {
     expectContractShape(payload, { legacyKeys: ['diagnostics'] })
     expect(payload.data.diagnostics.resolvedIp).toEqual(expect.any(String))
     expect(payload.data.diagnostics.trustProxyHops).toEqual(expect.any(Number))
+  })
+})
+
+// The half of server/seo.js that needs real rows: a post's head comes from the
+// post, and a profile's head is allowed to exist only while the profile is
+// public. The DB-free cases (homepage, community index, noindex on the private
+// areas, the sitemap shape) live in contract.spec.js.
+test.describe('per-route HTML head, from real rows', () => {
+  const distIndex = path.join(repoRoot, 'dist', 'index.html')
+  const seoHandle = 'contract-visitor-a'
+
+  test.skip(!existsSync(distIndex), 'dist/index.html is missing; run npm run build first')
+
+  const getHtml = async (requestPath) => {
+    const response = await fetch(`${baseURL}${requestPath}`)
+    return { body: await response.text(), response }
+  }
+
+  const setProfileVisibility = async (profilePublic) => {
+    const updated = await sendJson(
+      'PUT',
+      '/api/account/profile',
+      {
+        activityPublic: true,
+        bio: 'Environment artist, mostly props.',
+        contactsPublic: false,
+        displayName: 'Contract Test Visitor A',
+        handle: seoHandle,
+        profilePublic,
+      },
+      visitorA.sessionToken,
+    )
+    expect(updated.response.status).toBe(200)
+  }
+
+  test.beforeAll(async () => {
+    await setProfileVisibility(true)
+  })
+
+  test('a post page carries the post title, body and author', async () => {
+    const { body, response } = await getHtml(`/community/${seededPostId}`)
+
+    expect(response.status).toBe(200)
+    expect(body).toContain('<title>Contract test post | mrright.blog Community</title>')
+    expect(body).toContain('DB-backed contract seed post.')
+    expect(body).toContain('<meta property="og:type" content="article" />')
+    expect(body).toContain(
+      `<link rel="canonical" href="https://mrright.blog/community/${seededPostId}" />`,
+    )
+    expect(body).toContain('<meta property="article:author" content="Contract Test Visitor A" />')
+    expect(body).not.toContain('name="robots"')
+  })
+
+  test('a post page is crawlable without javascript', async () => {
+    const { body } = await getHtml(`/community/${seededPostId}`)
+    const noscript = body.match(/<noscript>[\s\S]*?<\/noscript>/)?.[0] || ''
+
+    expect(noscript).toContain('<h1>Contract test post</h1>')
+    expect(noscript).toContain('DB-backed contract seed post.')
+  })
+
+  test('a tab under a post canonicalises to the post itself', async () => {
+    const { body } = await getHtml(`/community/${seededPostId}/comments`)
+
+    expect(body).toContain(
+      `<link rel="canonical" href="https://mrright.blog/community/${seededPostId}" />`,
+    )
+  })
+
+  test('a post that does not exist answers 404 rather than a soft 404', async () => {
+    const { body, response } = await getHtml('/community/1700000000000-nope00')
+
+    expect(response.status).toBe(404)
+    expect(body).toContain('<meta name="robots" content="noindex, follow" />')
+    expect(body).not.toContain('rel="canonical"')
+  })
+
+  test('a public profile gets its own title, description and canonical', async () => {
+    const { body, response } = await getHtml(`/u/${seoHandle}`)
+
+    expect(response.status).toBe(200)
+    expect(body).toContain(`<title>Contract Test Visitor A (@${seoHandle}) | mrright.blog</title>`)
+    expect(body).toContain('Environment artist, mostly props.')
+    expect(body).toContain('<meta property="og:type" content="profile" />')
+    expect(body).toContain(`<link rel="canonical" href="https://mrright.blog/u/${seoHandle}" />`)
+  })
+
+  test('the profile head survives a handle typed with different case or an @', async () => {
+    const { body } = await getHtml(`/u/@${seoHandle.toUpperCase()}`)
+
+    expect(body).toContain(`<link rel="canonical" href="https://mrright.blog/u/${seoHandle}" />`)
+  })
+
+  test('a handle nobody owns answers 404 and stays out of the index', async () => {
+    const { body, response } = await getHtml('/u/not-exist-test-handle')
+
+    expect(response.status).toBe(404)
+    expect(body).toContain('<meta name="robots" content="noindex, follow" />')
+  })
+
+  // Turning the profile off has to take the head off the page with it,
+  // otherwise the display name and bio keep being served to every scraper that
+  // asks for the URL.
+  test('a profile switched to private stops advertising itself', async () => {
+    await setProfileVisibility(false)
+
+    try {
+      const { body, response } = await getHtml(`/u/${seoHandle}`)
+
+      expect(response.status).toBe(200)
+      expect(body).toContain('<meta name="robots" content="noindex, follow" />')
+      expect(body).not.toContain('Contract Test Visitor A')
+      expect(body).not.toContain('Environment artist, mostly props.')
+      expect(body).not.toContain('rel="canonical"')
+    } finally {
+      await setProfileVisibility(true)
+    }
+  })
+
+  test('the sitemap lists the seeded post with a last-modified date', async () => {
+    const body = await (await fetch(`${baseURL}/sitemap.xml`)).text()
+
+    expect(body).toContain(`<loc>https://mrright.blog/community/${seededPostId}</loc>`)
+    expect(body).toContain('<lastmod>')
+    // Still no user enumeration, even though profiles now have real heads.
+    expect(body).not.toContain('/u/')
   })
 })

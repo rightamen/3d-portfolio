@@ -258,6 +258,17 @@ The server is the authority for:
 - Asset conversion and metadata.
 - Moderation actions.
 - Audit logs.
+- The per-route `<head>` of every HTML response.
+
+That last one is worth spelling out, because it is the one place the server
+renders something other than JSON. The client is single-page, so the built
+`dist/index.html` is the same file for every URL. `server/seo.js` rewrites its
+head per path before it is sent — title, description, canonical, Open Graph,
+Twitter card, `noindex` on the private areas — and appends a `<noscript>` body
+for crawlers that run no JavaScript. It is not React SSR and deliberately so;
+see `docs/adr/ADR_WEB_SEO_RENDERING_STRATEGY.md`. Public profile visibility is
+enforced there as well as in the API: a profile that is private or
+admin-disabled never reaches the HTML.
 
 Future server improvements should focus on response helpers, error code normalization, and asset normalization before large feature additions.
 

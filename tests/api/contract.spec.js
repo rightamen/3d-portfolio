@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { spawn } from 'node:child_process'
+import { existsSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 
 import { describeUploadError } from '../../server/responses.js'
 
@@ -730,5 +732,116 @@ test.describe('describeUploadError mapping (shared upload error handler)', () =>
   test('unrelated errors are not classified as upload errors', () => {
     expect(describeUploadError(null)).toBeNull()
     expect(describeUploadError(new Error('Something unrelated blew up'))).toBeNull()
+  })
+})
+
+// The HTML the server hands a crawler, as opposed to the JSON it hands the
+// client. Every route used to get dist/index.html verbatim, so every route
+// claimed to be the homepage; server/seo.js rewrites the head per path. These
+// cases are the ones reachable without a database — the post and profile heads
+// need real rows and live in contract.db.spec.js.
+test.describe('per-route HTML head', () => {
+  const distIndex = fileURLToPath(new URL('../../dist/index.html', import.meta.url))
+
+  // The head is spliced into the built template, so there has to be one. CI
+  // builds before this suite runs; a local run that skipped `npm run build`
+  // reports that rather than failing on a 503.
+  test.skip(!existsSync(distIndex), 'dist/index.html is missing; run npm run build first')
+
+  const getHtml = async (path) => {
+    const response = await fetch(`${baseURL}${path}`)
+    return { body: await response.text(), response }
+  }
+
+  test('the homepage keeps the site defaults and points a canonical at itself', async () => {
+    const { body, response } = await getHtml('/')
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get('content-type')).toContain('text/html')
+    expect(body).toContain('<title>mrright.blog | 3D Portfolio</title>')
+    expect(body).toContain('<link rel="canonical" href="https://mrright.blog/" />')
+    expect(body).not.toContain('name="robots"')
+  })
+
+  test('the community index gets its own title, not the homepage one', async () => {
+    const { body, response } = await getHtml('/community')
+
+    expect(response.status).toBe(200)
+    expect(body).toContain('<title>Community | mrright.blog</title>')
+    expect(body).toContain('<link rel="canonical" href="https://mrright.blog/community" />')
+  })
+
+  test('the built script tag survives the head rewrite', async () => {
+    const { body } = await getHtml('/community')
+
+    expect(body).toContain('<div id="root"></div>')
+    expect(body).toMatch(/<script type="module"[^>]*src="\/assets\/index-[^"]+\.js"/)
+  })
+
+  test('exactly one title and one description survive the rewrite', async () => {
+    const { body } = await getHtml('/')
+
+    expect(body.match(/<title>/g)).toHaveLength(1)
+    expect(body.match(/name="description"/g)).toHaveLength(1)
+    expect(body.match(/property="og:title"/g)).toHaveLength(1)
+  })
+
+  test('per-visitor and privileged pages are told not to index', async () => {
+    for (const path of ['/account', '/login?mode=login', '/admin']) {
+      const { body, response } = await getHtml(path)
+
+      expect(response.status, path).toBe(200)
+      expect(body, path).toContain('<meta name="robots" content="noindex, follow" />')
+      expect(body, path).not.toContain('rel="canonical"')
+    }
+  })
+
+  // The client router renders the homepage for anything it does not recognise.
+  // That is a soft 404, so it answers 200 and stays out of the index rather
+  // than 404-ing a path this file may simply not know about yet.
+  test('an unknown path renders but is not indexable', async () => {
+    const { body, response } = await getHtml('/no-such-page')
+
+    expect(response.status).toBe(200)
+    expect(body).toContain('<meta name="robots" content="noindex, follow" />')
+  })
+
+  test('the HTML is served no-store so a rewritten head is never stale', async () => {
+    const { response } = await getHtml('/community')
+
+    expect(response.headers.get('cache-control')).toContain('no-store')
+  })
+
+  test('hashed assets are still served straight from disk with a long cache', async () => {
+    const index = await (await fetch(`${baseURL}/`)).text()
+    const asset = index.match(/src="(\/assets\/index-[^"]+\.js)"/)?.[1]
+
+    expect(asset).toBeTruthy()
+
+    const response = await fetch(`${baseURL}${asset}`)
+    expect(response.status).toBe(200)
+    expect(response.headers.get('cache-control')).toContain('immutable')
+  })
+
+  test('robots.txt points at the sitemap and keeps crawlers out of the private areas', async () => {
+    const response = await fetch(`${baseURL}/robots.txt`)
+    const body = await response.text()
+
+    expect(response.status).toBe(200)
+    expect(body).toContain('Sitemap: https://mrright.blog/sitemap.xml')
+    expect(body).toContain('Disallow: /admin')
+    expect(body).toContain('Disallow: /account')
+    expect(body).toContain('Disallow: /login')
+  })
+
+  // They were listed as `/?project=<slug>`, which nothing reads: four sitemap
+  // entries that all served the homepage.
+  test('the sitemap no longer advertises query-string duplicates of the homepage', async () => {
+    const body = await (await fetch(`${baseURL}/sitemap.xml`)).text()
+
+    expect(body).toContain('<loc>https://mrright.blog/</loc>')
+    expect(body).toContain('<loc>https://mrright.blog/community</loc>')
+    expect(body).not.toContain('?project=')
+    expect(body).not.toContain('/u/')
   })
 })
