@@ -47,6 +47,18 @@ prerender 服务、什么都不做）和各自的理由写在
 并且每处 `String.replace` 都用函数形式的替换 ——
 否则一条标题叫 `$&` 的帖子会把匹配到的整段文本再拼回页面里。
 
+**2026-08-22 收工**：当天只做了这一轮，代码已 push、已部署、已逐项验证，
+CI 两个 job 全绿（`api-db` 那个 job 本轮加了 build 步骤，新增用例是真跑了不是跳过）。
+工作树干净、本地与线上同码、本机没有任何服务在跑、
+**当天没有跑过任何数据库写语句**。
+「待你决策」仍然是 1 条（17 个翻译 key），未完项仍然是 7 条，本轮没开新的。
+没有半途而废的改动挂在本机。
+
+顺手把这一节里两条已经过期的警告清掉了（都是第二十二轮修好但忘了从这里删的）：
+`verify:visitor-studio` 早就不红了，`verify-visitor-studio.mjs` 也早就不是 CRLF 了。
+
+---
+
 ### 2026-08-19 当天收工总览
 
 **这一天做了两轮：第二十一轮（react-router，已部署）和第二十二轮（前端单元测试，未部署）。**
@@ -113,7 +125,7 @@ express-rate-limit，只有这六个）；前端的东西全部属于 `devDepend
 全部是前端改动，`server/` 一行没动。
 
 **线上内容健康：0 critical / 0 warning / 0 note**（2026-08-18 14:5x UTC 实测，
-第二十轮部署后复查，与第十九轮相同；第二十一轮没有新增或改动任何资源）。
+第二十轮部署后复查，与第十九轮相同；第二十一至二十三轮都没有新增或改动任何资源）。
 
 ⚠️ **VPS 只保留最新 3 个应用备份**，脚本每次部署自动清理旧的。
 所以下面各轮里写的历史回滚路径**大多已经不存在了**。截至第二十三轮收工，
@@ -153,13 +165,12 @@ Members 详情在窄屏下不再把整页撑宽（一行 CSS）。
 **以后新增 store 间调用，从 `postgresStores.js` 的工厂参数里传，
 别在一个 store 文件里 import 另一个 store。**
 
-⚠️ **`npm run verify:visitor-studio` 是红的，而且不是本轮弄红的。**
-它要求 `AccountPage.jsx` 里出现 `accountStudioUploadNow`，而那个 i18n key
-页面里根本没有引用。拆分前后都红（已用 `git stash` 对照确认）。
-详见第十九轮那节的「撞见但没修」。
-
-⚠️ **`scripts/verify-visitor-studio.mjs` 全文是 CRLF**，往里加任何一行
-`git diff --check` 都会报 trailing whitespace。不是新问题，别当回归修。
+~~⚠️ `npm run verify:visitor-studio` 是红的~~、
+~~⚠️ `scripts/verify-visitor-studio.mjs` 全文是 CRLF~~ ——
+**两条都在 2026-08-19 第二十二轮修掉了**，只是当时忘了从这一节删。
+脚本现在指向真实存在的标记并且通过（2026-08-22 复跑仍通过），
+文件也已经是 LF（`.gitattributes` 补了 `*.mjs eol=lf`）。
+来龙去脉见未完项第 7 条和第二十二轮那一节。
 
 **第二十轮收工时的状态（2026-08-18，当天工作到此为止）：**
 
@@ -401,6 +412,9 @@ Publish / Mark Spam 就在 Delete 旁边**。
    线上没有任何用户设过 handle，`/u/<handle>` 拿不到真实页面，
    所以「名字换行不再被横幅盖住」目前只有本机种子数据作证。
    等第一个用户设了 handle，去 440px 下看一眼那个页头。
+   **第二十三轮之后这条多了一件要一起看的事**：那一刻 `/u/<handle>`
+   会从 404 变成 200，并且第一次带上真实的 title / description / og:image（头像）。
+   到时候顺手抓一次 HTML 确认一下，别只看页面开得出来。
 
 7. ~~**`npm run verify:visitor-studio` 是红的**~~ —— **2026-08-19 第二十二轮定性并修掉了。**
    答案是**脚本错了**：`accountStudioUploadNow` 在 `92dfbae` 里和这份脚本
