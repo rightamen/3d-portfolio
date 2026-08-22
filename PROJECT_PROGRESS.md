@@ -1,6 +1,51 @@
 # mrright.blog 项目进度记录
 
-## 下次从这里继续（截至 2026-08-19 第二十二轮收工）
+## 下次从这里继续（截至 2026-08-22 第二十三轮收工）
+
+### 2026-08-22（第二十三轮）：每条路由自己的 `<head>`
+
+**做的是路线图第 6 条 SEO，但没有做 SSR。** 做的是**服务端注入 `<head>`**
+（外加一段 `<noscript>`）。被否掉的四个方案（完整 React SSR、构建期预渲染、
+prerender 服务、什么都不做）和各自的理由写在
+`docs/adr/ADR_WEB_SEO_RENDERING_STRATEGY.md`。
+
+| | 第二十三轮 |
+|---|---|
+| 做的事 | 每条路由自己的 title / description / canonical / og / twitter |
+| 路线图 | 第 6 条 ✅（走「注入 head」这条路，不是 SSR） |
+| 前端 | **一行没动**（`src/` 零改动，构建产物只有 index.html 变了） |
+| 服务端 | 新增 `server/seo.js`，改 `server/index.js` 的兜底路由与 sitemap |
+| 数据库 | 无变更，无写语句 |
+| 部署 | ✅ `76260b1`，2026-08-22 03:49 UTC |
+| 回滚点 | `/opt/mrright-portfolio.backup-20260822-034955` |
+
+⚠️ **起因不是 Google。** Google 会跑 JS，迟早看得到真页面。看不到的是
+**Twitter / Discord / Slack / Telegram / 微信** —— 它们只抓一次 HTML，
+一行脚本都不跑。所以在这些地方分享一条社区帖子，标题永远是
+「mrright.blog | 3D Portfolio」、配图永远是那个灭火器。
+
+⚠️ **`express.static` 现在带 `index: false`。** 不带的话 `/` 会被 static
+用**未改写的模板**直接答掉，永远拿不到自己的 head。动那一行前先想起这件事。
+
+⚠️ **只有「查过、确实不存在」才回 404**（帖子 ID 查无此帖、handle 查无此人）。
+**库不在或查询抛错时回 200 + noindex**，不回 404 ——
+一次数据库抖动不能把一条活着的帖子变成爬虫记住的 404。
+**没匹配上的路径也仍然是 200**（照旧渲染首页），只是挂 noindex：
+服务端不知道客户端路由表的全貌，把将来新加的路由 404 掉比不给它建索引更糟。
+
+⚠️ **路由表现在有两份**：`src/App.jsx` 的 `<Routes>` 和 `server/seo.js` 的
+`resolveRoute`。**以后新增公开路由，两边都要加**，否则新路由会被当成未知路径
+挂上 noindex —— 页面照常渲染，只是不进索引，不会报错，所以不会有人发现。
+
+⚠️ **没有 JSON-LD，是故意的。** `<script type="application/ld+json">`
+在 CSP 眼里就是 script，而本站 `script-src` 是 `'self' 'wasm-unsafe-eval'`，
+没有 inline 余地。要加就得每次响应算 hash 塞进 CSP 头，或者放宽策略；
+在普通 meta 标签还没验证出成效之前不值得动 CSP。
+
+⚠️ **转义是这一轮的承重墙。** 帖子标题、正文、显示名、简介全是访客写的，
+最后都进 `content="..."`。`server/seo.js` 对每个值转义 `& < > " '`，
+并且每处 `String.replace` 都用函数形式的替换 ——
+否则一条标题叫 `$&` 的帖子会把匹配到的整段文本再拼回页面里。
 
 ### 2026-08-19 当天收工总览
 
@@ -26,11 +71,14 @@
 
 ---
 
-**线上运行 `a3799b5`（2026-08-19 14:35 UTC 部署，已逐项验证）。
-`origin/main` 比线上多的提交**全部是测试、CI、文档和一个 `export` 关键字**——
-**第二十二轮没有可上线的运行时改动，也没有部署**（构建产物大小与线上完全一致）。
-第十二至二十二轮都无数据库变更、无服务端接口变更。
-回滚到第二十一轮之前：`/opt/mrright-portfolio.backup-20260819-143533`。
+**线上运行 `76260b1`（2026-08-22 03:49 UTC 部署，已逐项验证）。**
+第二十三轮**有服务端改动**：每个 HTML 响应的 `<head>` 现在是服务端拼的。
+第十二至二十三轮都**无数据库变更**；第二十三轮是第十二轮以来
+**第一次动服务端的非 API 路径**（`/sitemap.xml` 和那条兜底路由），
+API 接口本身仍然一个都没动。
+回滚到第二十三轮之前：`/opt/mrright-portfolio.backup-20260822-034955`。
+
+（历史：第二十二轮线上是 `a3799b5`，那一轮没有可上线的运行时改动，也没有部署。）
 
 **第二十二轮做的是前端单元测试**（原「下一轮建议」第 5 条）：
 vitest + jsdom，六个文件 106 条，已接进 CI 且排在 build 之前。
@@ -68,17 +116,17 @@ express-rate-limit，只有这六个）；前端的东西全部属于 `devDepend
 第二十轮部署后复查，与第十九轮相同；第二十一轮没有新增或改动任何资源）。
 
 ⚠️ **VPS 只保留最新 3 个应用备份**，脚本每次部署自动清理旧的。
-所以下面各轮里写的历史回滚路径**大多已经不存在了**。截至第二十二轮收工，
-`/opt` 上实际存在的是（第二十二轮没有部署，所以这份列表自第二十一轮起没变）：
+所以下面各轮里写的历史回滚路径**大多已经不存在了**。截至第二十三轮收工，
+`/opt` 上实际存在的是：
 
 ```text
-/opt/mrright-portfolio.backup-20260819-143533   第二十一轮之前 ← 要回滚就用这个
+/opt/mrright-portfolio.backup-20260822-034955   第二十三轮之前 ← 要回滚就用这个
+/opt/mrright-portfolio.backup-20260819-143533   第二十一轮之前
 /opt/mrright-portfolio.backup-20260818-144934   第二十轮之前
-/opt/mrright-portfolio.backup-20260817-150516   第十九轮之前
 ```
 
-（第十八轮那份 `...-20260816-045603` 已被第二十一轮部署按 3 份保留策略自动清掉。
-上面这三条是 2026-08-19 14:3x UTC 在 VPS 上 `ls -dt` 实际看到的。）
+（第十九轮那份 `...-20260817-150516` 已被第二十三轮部署按 3 份保留策略自动清掉。
+上面这三条是 2026-08-22 03:5x UTC 在 VPS 上 `ls -dt` 实际看到的。）
 
 要回滚先 `ls -dt /opt/mrright-portfolio.backup-*` 确认实际有什么，别照抄旧记录。
 
@@ -136,10 +184,29 @@ Members 详情在窄屏下不再把整页撑宽（一行 CSS）。
 - 线上 `dist/uploads` **不存在**（部署后已复查，第十六轮那道闸仍然有效）
 
 **下次开工第一件事**：读这一节，然后看「下一轮我建议先做的」——
-第 3、3b、3c、4、5 条都已划掉，现在排最前的是**第 6 条 SSR / 预渲染 SEO**
-（第二十一轮之后好做了不少：路由已经是声明式的）。
-**「待你决策」里有一条新的**（17 个没人渲染的翻译 key 删不删），
-本轮不删是因为那是产品文案，不是测试该替你做的决定。
+第 3、3b、3c、4、5、6 条都已划掉，现在排最前的是**第 7 条 C++ SDK**，
+不过第二十三轮衍生出来的几条（给项目做真正的路由 / JSON-LD / 富媒体分享图）
+比它小得多，想挑轻的做就从那几条里挑。
+**「待你决策」里那条还在**（17 个没人渲染的翻译 key 删不删）——
+第二十三轮也没有替你删，理由不变：那是产品文案。
+
+**第二十三轮收工时的状态（2026-08-22，工作到此为止）：**
+
+- 工作树干净；已全部 push；**线上是 `76260b1`，本地与线上同码**
+- 本轮起过两个本机实例（`PORT=4194` 和 `PORT=4188` 的 express），**都已停**
+- 本轮**没有跑过任何数据库写语句**；本机只用一次性 disposable 集群跑了
+  `npm run test:api:db`（脚本自带，跑完连集群目录一起销毁）
+- 「待你决策」仍然是 1 条（17 个翻译 key），未完项仍然是 7 条，本轮没开新的
+- 线上 `dist/uploads` **不存在**（部署后已复查，第十六轮那道闸仍然有效）
+- 线上 `journalctl` 自部署起 0 条 error、0 条 500
+
+⚠️ **本轮踩到一个假红灯，记下来免得下次再上当**：
+`npm run test:api` 报了两条 admin 503 的失败，看起来像回归。
+真实原因是**我自己起的调试服务器占着 4194 端口**，而
+`contract.spec.js` 里那个「admin store 不可用」的子服务器正好也用 4194 ——
+它绑不上端口，请求全打到我那台没有 `ADMIN_TOKEN` 的实例上，于是 401。
+**本机手工起服务不要用 4193 / 4194 / 4195** —— 那三个是 API 契约套件自己的端口
+（`contract.spec.js` 用 4193 和 4194，`contract.db.spec.js` 用 4195）。
 
 **第二十二轮收工时的状态（2026-08-19，当天第二轮，工作到此为止）：**
 
@@ -290,14 +357,15 @@ Publish / Mark Spam 就在 Delete 旁边**。
 第十二轮就是这么误触发的一次真实部署（结果无害：脚本本来就会备份 env、
 备份应用、健康检查、admin session 检查、清理旧备份）。
 
-### 收工时的未完项（截至第二十二轮）
+### 收工时的未完项（截至第二十三轮）
 
 第十四、十五轮关掉了假 EXR 和社区上传无校验，第十六轮关掉了「测试文件漏进生产构建」，
 第十七轮关掉了认证器绑定。第十八到二十一轮都没有关掉任何一条
 （后台窄屏、拆文件、后台三语、react-router，都不在这张单子上），
 但各自新增了：第十八轮加了第 6 条，第十九轮加了第 7、8 条，第二十轮加了 6b、6c。
 **第二十二轮关掉了第 7 条**（`verify:visitor-studio`：是脚本错了），
-且没有新增未完项。现在开着的是：
+且没有新增未完项。**第二十三轮既没关也没开新的**（SEO 那一轮衍生的几条
+都属于「可以做得更好」，进的是路线图不是这张单子）。现在开着的是：
 
 1. **模型「能加载」和「能渲染」仍然是两件事。**
    Content Health 现在能确认文件可服务、是真 GLB、所需扩展有解码器，
@@ -552,7 +620,20 @@ CSP 这件事能做完，就是因为 playwright 回来了。
    清单钉在 `tests/unit/i18n-usage.spec.js` 里，删不删见「待你决策」。
    还没测的：组件渲染（那一层目前由 Playwright 覆盖）、`modelConversion.js`、
    `useDialogAccessibility.js`、`motion.js`。
-6. SSR / 预渲染 SEO（社区帖子和公开主页搜索引擎抓不到）
+6. ~~SSR / 预渲染 SEO~~ —— **2026-08-22 第二十三轮做完并上线了**，
+   走的是**服务端注入 `<head>`**，不是 SSR（方案对比见
+   `docs/adr/ADR_WEB_SEO_RENDERING_STRATEGY.md`）。衍生出来四条，都不急：
+   - **项目没有自己的 URL**。sitemap 里原来那四条 `/?project=<slug>` 是假的
+     —— 客户端根本不读这个查询参数，四条全是 `/` 的重复，本轮已删掉。
+     要让四个项目各自可被索引、各自有分享卡片，得先给它们一条真路由
+     （`/projects/:slug`，或者让 `?project=` 真的打开对应项目）。
+     **这是本轮之后 SEO 上最大的一块空白。**
+   - **没有 JSON-LD**（Article / ProfilePage / BreadcrumbList）。挡住它的是 CSP：
+     `ld+json` 也算 script。要做就得每次响应把它的 sha256 塞进 CSP 头。
+   - **分享卡片的图还是全站一张灭火器**（公开主页除外，那里用头像）。
+     帖子想要自己的图，得先有「帖子配图」这个概念。
+   - **`<noscript>` 里是纯文本，不是真页面**。不跑 JS 的爬虫看到的是标题+正文，
+     不是排版。真要让版面本身参与排名，那才轮到 SSR。
 7. Asset Model（checksum / visibility / downloadPolicy）稳定后再回到 C++ SDK
 8. 下次恢复演练建议在 2026-11 之前（`docs/OPERATIONS_BACKUP.md` 要求每季度一次）
 9. CSP 还可以再紧一格：`style-src` 现在带 `'unsafe-inline'`（Tailwind 与 three.js 的内联样式），
@@ -697,6 +778,142 @@ CSP 这件事能做完，就是因为 playwright 回来了。
 - ~~演练遗留的临时库~~ —— 用户已确认，`mrright_restore_drill` 已 `dropdb`（2026-08-11）。
   删除后复查：`mrright_portfolio` 仍在、17 张表、`visitor_users=1`/`project_comments=2`、
   `/api/health` 200，生产库未受影响。
+
+## 2026-08-22（第二十三轮）：每条路由自己的 `<head>`
+
+路线图第 6 条。**有服务端改动，已部署**（`76260b1`，2026-08-22 03:49 UTC）。
+`src/` 一行没动。
+
+### 为什么不是 SSR
+
+四个方案都写进了 ADR（`docs/adr/ADR_WEB_SEO_RENDERING_STRATEGY.md`），
+这里只记结论：
+
+- **完整 React SSR** —— 组件树里挂着 three.js、`@react-three/fiber`、drei，
+  在 Node 里跑不起来；六个 lazy chunk 要在服务端解析；而且**首页
+  hydration 一旦对不上，3D 场景是直接坏掉，不是优雅降级**。
+- **构建期预渲染** —— 帖子和资料是访客写的数据库行，构建产物出炉那一刻就过期了。
+- **prerender 服务**（Prerender.io 之类）—— 多一个外部依赖 + 一条没人跑的渲染路径，
+  按 UA 分流本身也接近 cloaking。
+- **注入 `<head>`** —— 一次字符串改写，拿到几乎全部收益，且**完全没有
+  hydration 风险**（客户端渲染路径一字未改）。选它。
+
+### 做了什么
+
+新增 `server/seo.js`（纯函数，不碰数据库，所以能单测），
+改 `server/index.js` 的兜底路由与 `/sitemap.xml`。
+
+覆盖的路由：`/`、`/community`、`/community/:id`、`/u/:handle`。
+带尾巴的路径（`/u/:handle/posts`、`/community/:id/comments`）**收敛到父路径**
+当 canonical —— 那些 tab 本来就是同一个页面。
+
+每个可索引页面现在都有：`<title>`、`description`、`canonical`、
+`og:type/site_name/title/description/image/url`、`twitter:card/title/description/image`；
+帖子额外带 `article:published_time / modified_time / author / section`，
+资料页额外带 `profile:username`。
+
+`/admin`、`/account`、`/login` 和**没匹配上的路径**：`noindex, follow`，且**不发 canonical**
+（robots noindex 和 rel=canonical 是互相矛盾的指令，二选一，noindex 赢，
+但 `og:url` 保留 —— 那是分享卡片点回来的地址，没有爬虫把它当索引指令）。
+
+`<noscript>` 里放：帖子正文 / 资料摘要 / **社区帖子列表**。
+最后那个是**不跑 JS 时唯一能走到各条帖子的路**。
+
+`sitemap.xml`：`/`、`/community`，加上**每条帖子一行**（带 `lastmod`）。
+公开主页仍然**不列**（列了就等于枚举注册用户，而 `/api/users/:handle`
+整个设计就是为了防这件事）—— 但它们被链接到时是可索引的。
+
+### 隐私这条线，服务端也守着
+
+`profilePublic: false` 或 `profileAdminDisabled` 的资料页，
+**显示名和简介根本不进 HTML**，页面拿默认 head + noindex。
+契约测试里有一条专门做这件事：把资料切成私密，再抓一次页面，
+断言页面里既没有显示名也没有简介，抓完再切回来。
+
+### 三处容易再踩的地方
+
+1. **`express.static` 必须 `index: false`。** 否则 `/` 被 static
+   用未改写的模板答掉，首页永远拿不到自己的 head。
+2. **404 只发给「查过、确实不存在」的东西。** 库不在 / 查询抛错 → 200 + noindex。
+   一次数据库抖动不能把活帖子变成爬虫记住的 404。
+3. **转义 + 函数式 replace。** 用户文本进 `content="..."`；
+   而且 `String.replace` 的字符串替换会展开 `$&` / `$1`，
+   所以每处替换都写成函数。这两件事各有一条单测钉着。
+
+### 顺手修掉的一个假 sitemap
+
+原来 sitemap 里有四条 `/?project=<slug>`。**客户端从来不读这个查询参数**
+（全仓 `grep` 过，`useSearchParams` 只有 `AuthPage` 在用），
+所以那四个 URL 全部返回首页 —— 等于对搜索引擎宣称「我有四个和 `/` 一模一样的页面」。
+已删掉。要让项目页真的可被索引，得先给它们一条真路由，见路线图第 6 条下面那几条。
+
+### 验证
+
+| 项 | 结果 |
+|---|---|
+| `npm run lint` | 通过 |
+| `npm run test:unit` | 143 通过（新增 `tests/unit/seo.spec.js` 37 条，原 106 条） |
+| `npm run build` | 通过 |
+| `npm run test:api` | 47 通过 / 0 失败 / 13 skipped（新增 10 条 HTML 用例） |
+| `npm run test:api:db` | 77 通过 / 0 失败（新增 9 条，用真实帖子和真实资料行） |
+| `npm run test:openapi` | 通过 |
+| `npm run test:deploy-backup` / `test:deploy-script` | 通过 |
+| `npm run test:admin-totp` / `test:content-health` / `verify:visitor-studio` | 通过 |
+| `git diff --check` | 通过 |
+| 本机 express + `site-routing.spec.js` | 8 通过（确认注入没打断客户端路由） |
+| 部署前 env 检查 | `DATABASE_URL` / `ADMIN_TOKEN` 均为 `[set]`（远端脚本的必需键断言，缺任一直接中止；未输出 value） |
+| 部署前备份 | `/opt/mrright-portfolio.backup-20260822-034955`（硬链接）+ env 备份 |
+| VPS 部署 | 成功，服务重启成功 |
+| 线上 `production-smoke` + `site-routing` | 14 通过 / 1 skipped（skip 的那条要访客凭证） |
+
+线上逐项（2026-08-22 03:5x UTC 实测）：
+
+```text
+/api/health              200
+/                        200   <title>mrright.blog | 3D Portfolio</title>       canonical /
+/community               200   <title>Community | mrright.blog</title>          canonical /community
+/community/<真实帖子>     200   <title>分三次都是 | mrright.blog Community</title>  og:type=article
+/admin                   200   noindex
+/login?mode=login        200   noindex
+/account                 200   noindex
+/robots.txt              200
+/sitemap.xml             200   3 条（/、/community、1 条帖子带 lastmod）
+/u/not-exist-test-handle 404   noindex（原来是 200）
+/community/<不存在>       404   noindex
+admin_summary            200（部署脚本用一次性会话验的，用完即撤销）
+journalctl 自部署起       0 error / 0 500
+```
+
+⚠️ **线上那条帖子是中文的，正好顺带验证了 UTF-8 和转义**：
+`<title>分三次都是 | mrright.blog Community</title>`、
+`og:description` 是 `撒大苏打的地方`、`article:author` 是 `111111`，
+`content-type: text/html; charset=utf-8`。
+
+⚠️ **`/u/not-exist-test-handle` 的状态码从 200 变成了 404。**
+`production-smoke.spec.js` 只断言 `< 500`，所以它照旧绿；
+但如果以后有什么监控在盯这个路径的 200，会开始报警。**这是有意的改动。**
+
+### CI
+
+`api-db-contract` 那个 job 加了一步 `npm run build`。
+它原来不构建，而新增的 9 条用例要读 `dist/index.html` ——
+不加这一步它们会自己 skip 掉，帖子和资料的 head 就等于没测。
+两个套件里的 HTML 用例都写了 `test.skip(!existsSync(distIndex), ...)`，
+所以本机忘了 build 时是「跳过并说明原因」，不是一堆 503 失败。
+
+### 改动的文件
+
+- `server/seo.js`（新）
+- `server/index.js`
+- `tests/unit/seo.spec.js`（新）
+- `tests/api/contract.spec.js`
+- `tests/api/contract.db.spec.js`
+- `docs/adr/ADR_WEB_SEO_RENDERING_STRATEGY.md`（新）
+- `docs/ARCHITECTURE.md`
+- `.github/workflows/web.yml`
+
+commit：`76260b1`（代码）+ 本次文档提交
+备份路径：`/opt/mrright-portfolio.backup-20260822-034955`
 
 ## 2026-08-19（第二十二轮）：前端单元测试，以及未完项第 7 条的定性
 
