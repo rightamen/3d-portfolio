@@ -1,6 +1,53 @@
 # mrright.blog 项目进度记录
 
-## 下次从这里继续（截至 2026-08-22 第二十三轮收工）
+## 下次从这里继续（截至 2026-08-26 第二十四轮收工）
+
+### 2026-08-26（第二十四轮）：四个项目各自有了地址
+
+**做的是第二十三轮衍生出来的第一条**（也是那一轮自己写下的
+「本轮之后 SEO 上最大的一块空白」）：项目详情面板原来是 React state，
+**没有地址** —— 分享不了、Back 关不掉、爬虫也没有东西可抓。现在它是
+`/projects/:slug`。
+
+| | 第二十四轮 |
+|---|---|
+| 做的事 | 项目详情有了自己的 URL、自己的 head、自己的分享图 |
+| 路线图 | 第 6 条衍生的第 1 条 ✅（另外三条仍未做） |
+| 前端 | `src/App.jsx`（路由 + 一处滚动例外）、`src/sections/Projects.jsx` |
+| 服务端 | `server/seo.js` 加 project 分支，`server/index.js` 加查询与 sitemap |
+| 数据库 | 无变更，**本轮没有跑过任何数据库写语句** |
+| 部署 | ✅ `4b04f46`，2026-08-26 02:57 UTC |
+| 回滚点 | `/opt/mrright-portfolio.backup-20260826-025716` |
+
+⚠️ **`/projects/:slug` 渲染的是和 `/` 完全同一个 `homePage` 元素。**
+详情是叠在首页上的浮层，不是另一个页面 —— 同一个元素在同一个位置，
+React 才会保住 `HomePage`（以及里面那个 3D 场景）不被卸载重建。
+**改这条路由的 element 前先想起这件事**，换成别的元素，进详情就等于重建首页。
+
+⚠️ **打开详情是唯一一次「PUSH 但不滚到顶」。** 走的是
+`state.preserveScroll`，`ScrollToTop` 见到就跳过。不做这个例外的话，
+浮层底下的首页会被拉到顶，关掉的瞬间访客就丢了自己在网格里的位置。
+
+⚠️ **`resolveRoute` 里项目那条是锚定到行尾的**（`$`），和帖子、资料那两条不一样。
+项目详情没有标签页，`/projects/<slug>/anything` 不是项目页 ——
+客户端在那里渲染的是干净的首页，服务端必须和它保持一致。
+
+⚠️ **`/projects` 不是页面**：它渲染首页，canonical 指向 `/`，
+不让它变成首页的第二个 URL。
+
+⚠️ **隐藏项目和不存在的项目在这里是同一回事，这是故意的。**
+`listProjects` 默认丢掉 `is_public = false` 的行，所以下架的项目在 SEO 这条路上
+拿到的是 404 + noindex —— 下架必须把 head 一起从页面上拿走。
+
+⚠️ **路由表仍然是两份**（`src/App.jsx` 与 `server/seo.js`），本轮又加了一条。
+第二十三轮那句提醒继续有效：**新增公开路由两边都要加。**
+
+**2026-08-26 收工**：当天只做了这一轮，代码已 push、已部署、已逐项验证。
+工作树干净、本地与线上同码、本机没有任何服务在跑。
+未完项仍然是 7 条（本轮既没关也没开新的），
+**「待你决策」从 1 条变成 2 条** —— 新增的那条是截图时撞见的数据错，见下。
+
+---
 
 ### 2026-08-22（第二十三轮）：每条路由自己的 `<head>`
 
@@ -83,7 +130,15 @@ CI 两个 job 全绿（`api-db` 那个 job 本轮加了 build 步骤，新增用
 
 ---
 
-**线上运行 `76260b1`（2026-08-22 03:49 UTC 部署，已逐项验证）。**
+**线上运行 `4b04f46`（2026-08-26 02:57 UTC 部署，已逐项验证）。**
+第二十四轮**前端和服务端都有改动**：多了 `/projects/:slug` 这条路由，
+前端的项目详情从组件状态改成读 URL，服务端多认一种页面类型。
+**API 接口仍然一个都没动**，数据库自第十二轮起仍然无变更。
+回滚到第二十四轮之前：`/opt/mrright-portfolio.backup-20260826-025716`。
+
+（上一轮的说明保留在下面。）
+
+**第二十三轮线上是 `76260b1`（2026-08-22 03:49 UTC 部署，已逐项验证）。**
 第二十三轮**有服务端改动**：每个 HTML 响应的 `<head>` 现在是服务端拼的。
 第十二至二十三轮都**无数据库变更**；第二十三轮是第十二轮以来
 **第一次动服务端的非 API 路径**（`/sitemap.xml` 和那条兜底路由），
@@ -132,13 +187,13 @@ express-rate-limit，只有这六个）；前端的东西全部属于 `devDepend
 `/opt` 上实际存在的是：
 
 ```text
-/opt/mrright-portfolio.backup-20260822-034955   第二十三轮之前 ← 要回滚就用这个
+/opt/mrright-portfolio.backup-20260826-025716   第二十四轮之前 ← 要回滚就用这个
+/opt/mrright-portfolio.backup-20260822-034955   第二十三轮之前
 /opt/mrright-portfolio.backup-20260819-143533   第二十一轮之前
-/opt/mrright-portfolio.backup-20260818-144934   第二十轮之前
 ```
 
-（第十九轮那份 `...-20260817-150516` 已被第二十三轮部署按 3 份保留策略自动清掉。
-上面这三条是 2026-08-22 03:5x UTC 在 VPS 上 `ls -dt` 实际看到的。）
+（第二十轮那份 `...-20260818-144934` 已被第二十四轮部署按 3 份保留策略自动清掉。
+上面这三条是 2026-08-26 02:5x UTC 在 VPS 上 `ls -dt` 实际看到的。）
 
 要回滚先 `ls -dt /opt/mrright-portfolio.backup-*` 确认实际有什么，别照抄旧记录。
 
@@ -195,9 +250,10 @@ Members 详情在窄屏下不再把整页撑宽（一行 CSS）。
 - 线上 `dist/uploads` **不存在**（部署后已复查，第十六轮那道闸仍然有效）
 
 **下次开工第一件事**：读这一节，然后看「下一轮我建议先做的」——
-第 3、3b、3c、4、5、6 条都已划掉，现在排最前的是**第 7 条 C++ SDK**，
-不过第二十三轮衍生出来的几条（给项目做真正的路由 / JSON-LD / 富媒体分享图）
-比它小得多，想挑轻的做就从那几条里挑。
+第 3、3b、3c、4、5、6 条都已划掉，现在排最前的是**第 7 条 C++ SDK**。
+第二十三轮衍生的四条里，**「给项目做真正的路由」已由第二十四轮做掉**，
+还剩三条小的：JSON-LD（要动 CSP）、帖子自己的分享图（要先有「帖子配图」这个概念）、
+`<noscript>` 里是纯文本（真要解决那才轮到 SSR）。
 **「待你决策」里那条还在**（17 个没人渲染的翻译 key 删不删）——
 第二十三轮也没有替你删，理由不变：那是产品文案。
 
@@ -375,8 +431,10 @@ Publish / Mark Spam 就在 Delete 旁边**。
 （后台窄屏、拆文件、后台三语、react-router，都不在这张单子上），
 但各自新增了：第十八轮加了第 6 条，第十九轮加了第 7、8 条，第二十轮加了 6b、6c。
 **第二十二轮关掉了第 7 条**（`verify:visitor-studio`：是脚本错了），
-且没有新增未完项。**第二十三轮既没关也没开新的**（SEO 那一轮衍生的几条
-都属于「可以做得更好」，进的是路线图不是这张单子）。现在开着的是：
+且没有新增未完项。**第二十三、二十四轮都既没关也没开新的**
+（两轮 SEO 衍生出来的都属于「可以做得更好」，进的是路线图不是这张单子；
+第二十四轮撞见的那条中文标题错是数据不是代码，进的是「待你决策」）。
+现在开着的是：
 
 1. **模型「能加载」和「能渲染」仍然是两件事。**
    Content Health 现在能确认文件可服务、是真 GLB、所需扩展有解码器，
@@ -525,6 +583,17 @@ CSP 这件事能做完，就是因为 playwright 回来了。
 
 ### 待你决策的（我没有权限或不该替你决定）
 
+- **`crimson-rune-greatsword` 的中文标题和中文简介是另一个项目的**
+  （2026-08-26 第二十四轮截图时撞见，**不是本轮改出来的，是数据本身**）。
+  线上 `/api/projects` 里它的 `titleZh` 是「暗影祭坛烛台」、
+  `summaryZh` 是那款祭坛壁饰的介绍，而 `title`（赤焰符文长剑）、
+  `titleEn`（Crimson Rune Greatsword）、`titleJa`（紅炎ルーン大剣）都是对的 ——
+  看起来是照着上一个项目建条目时中文两栏没改。
+  **后果**：中文界面里两张卡片同名同简介（首页截图上一眼可见）；
+  英文和日文不受影响，本轮新加的 `<head>` 读的是英文栏，所以分享卡片是对的。
+  **没替你改**，因为这是你的产品文案，正确的中文标题只有你知道。
+  改法：`/admin` 的 Projects 分区直接编辑那两栏即可，不需要跑 SQL。
+
 - **17 个「写了三份翻译、谁也不渲染」的 i18n key，要不要删**（第二十二轮发现）。
   它们是：`accountCenterIntro` / `accountCenterTitle` / `accountDeleteTitle` /
   `accountOverviewIntro` / `accountOverviewTitle` / `accountReloginAction` /
@@ -637,11 +706,10 @@ CSP 这件事能做完，就是因为 playwright 回来了。
 6. ~~SSR / 预渲染 SEO~~ —— **2026-08-22 第二十三轮做完并上线了**，
    走的是**服务端注入 `<head>`**，不是 SSR（方案对比见
    `docs/adr/ADR_WEB_SEO_RENDERING_STRATEGY.md`）。衍生出来四条，都不急：
-   - **项目没有自己的 URL**。sitemap 里原来那四条 `/?project=<slug>` 是假的
-     —— 客户端根本不读这个查询参数，四条全是 `/` 的重复，本轮已删掉。
-     要让四个项目各自可被索引、各自有分享卡片，得先给它们一条真路由
-     （`/projects/:slug`，或者让 `?project=` 真的打开对应项目）。
-     **这是本轮之后 SEO 上最大的一块空白。**
+   - ~~**项目没有自己的 URL**~~ —— **2026-08-26 第二十四轮做完并上线了**，
+     走的就是这里写的 `/projects/:slug`。四个项目现在各自有 canonical、
+     各自有 `og:image`（自己的渲染图，不再是全站那张灭火器），
+     并且各自列进了 sitemap。详见下面「2026-08-26（第二十四轮）」。
    - **没有 JSON-LD**（Article / ProfilePage / BreadcrumbList）。挡住它的是 CSP：
      `ld+json` 也算 script。要做就得每次响应把它的 sha256 塞进 CSP 头。
    - **分享卡片的图还是全站一张灭火器**（公开主页除外，那里用头像）。
@@ -792,6 +860,143 @@ CSP 这件事能做完，就是因为 playwright 回来了。
 - ~~演练遗留的临时库~~ —— 用户已确认，`mrright_restore_drill` 已 `dropdb`（2026-08-11）。
   删除后复查：`mrright_portfolio` 仍在、17 张表、`visitor_users=1`/`project_comments=2`、
   `/api/health` 200，生产库未受影响。
+
+## 2026-08-26（第二十四轮）：四个项目各自有了地址
+
+第二十三轮衍生清单里的第一条，也是那一轮自己认定的最大空白。
+
+### 起因
+
+这个站存在的意义就是展示那四件作品，而它们**没有地址**。
+点「查看详情」打开的是一个 React state 里的浮层：URL 不变，
+所以复制不了链接、分享不出去、Back 关不掉、爬虫也没有东西可抓。
+第二十三轮把 sitemap 里那四条假的 `/?project=<slug>` 删掉的时候
+就写下了这件事——删掉是对的（没人读那个查询参数），但删完之后
+四个项目就只剩首页那一条 `/` 覆盖了。
+
+### 做了什么
+
+`/projects/:slug`。
+
+**前端**
+
+- `src/App.jsx` 加一条路由，element 是**和 `/` 完全同一个** `homePage`。
+  详情是叠在首页上的浮层，不是另一个页面；同一个元素在同一个位置，
+  React 才会保住 `HomePage` 和里面那个 3D 场景不被卸载重建。
+- `src/sections/Projects.jsx` 不再用 `useState` 记「当前打开哪个项目」，
+  改成 `useMatch('/projects/:slug')` 从 URL 读。
+- 卡片上的「查看详情」从 `<button>` 换成 `<Link>`。这一步不只是为了能复制地址：
+  **爬虫要能从首页走进每个项目，靠的就是这个 `<a href>`。**
+- 关闭的走向分两种：从网格点进来的（`state.fromCatalogue`）走 `navigate(-1)`，
+  这样 Back 仍然是 Back，也不会往历史里多塞一条；
+  从外部链接直接落地的走 `navigate('/')`，因为这条 URL 背后没有东西可退。
+
+**服务端**
+
+- `server/seo.js` 多认一种页面：`resolveRoute` 认 `/projects/:slug`，
+  `buildPageMeta` 给它拼标题、简介、canonical 和 `og:image`，
+  `renderNoscript` 给不跑脚本的爬虫写一段正文加一条回首页的链接。
+- `server/index.js` 的 `loadSeoData` 多一条查询，兜底路由多传一个 `project`，
+  sitemap 里每个公开项目一条 URL。
+
+### 五个当时想清楚了的决定
+
+1. **项目文案取英文栏**（`titleEn` / `summaryEn`，取不到再退回基础栏）。
+   head 对所有人是同一份，而这份 head 的其余部分和模板的 `lang="en"` 都是英文。
+   退回基础栏这条路是有用的：`content.js` 里的项目只填了基础栏和中/日翻译，
+   压根没有 `titleEn`。
+2. **项目那条匹配锚定到行尾**，和帖子、资料那两条不一样。
+   那两条底下有标签页，所以 `/u/x/posts` 要收敛到 `/u/x`；
+   项目详情**没有标签页**，`/projects/<slug>/anything` 不是项目页 ——
+   客户端在那里渲染干净的首页，服务端必须同意它。
+3. **`/projects` 不是页面**：渲染首页，canonical 指向 `/`。
+   否则它就成了首页的第二个 URL。
+4. **隐藏的项目和不存在的项目，在这里是同一回事**。
+   `listProjects` 默认丢掉 `is_public = false` 的行，所以下架的项目拿到
+   404 + noindex —— 下架必须把 head 一起拿走，而不只是从网格里消失。
+5. **打开详情是唯一一次「PUSH 但不滚到顶」**（`state.preserveScroll`）。
+   不做这个例外，浮层底下的首页会被拉到顶，关掉的瞬间访客就丢了自己的位置。
+
+### 分享卡片终于不全是灭火器了
+
+项目是这个站上**第一批有自己配图的页面**（公开主页用头像那次不算，
+那是访客自己的图）。`og:image` 现在是项目自己的渲染图：
+
+```text
+/projects/shadow-altar-candle-shrine   og:image=/uploads/images/1781587765165-sc-jitan.png
+/projects/crimson-rune-greatsword      og:image=/uploads/images/1781583835117-tl-jian.png
+/projects/md-leimu                     og:image=/uploads/images/1780997894761-md-leimu-final.png
+/projects/fire-extinguisher-next-gen   og:image=/uploads/images/1780998862555-tl-meihuoqi-render.png
+```
+
+（**帖子仍然是全站那张灭火器**，那条还在路线图上没做。）
+
+### 验证
+
+| 项 | 结果 |
+|---|---|
+| `npm run lint` | 通过 |
+| `npm run test:unit` | 152 通过（新增 14 条，原 138） |
+| `npm run build` | 通过 |
+| `npm run test:api` | 53 通过 / 13 skipped（新增 6 条） |
+| `npm run test:api:db` | 82 通过 / 0 失败（新增 5 条，含真建一个项目再下架） |
+| `npm run test:openapi` | 通过（本轮没动 API） |
+| `npm run test:deploy-backup` / `test:deploy-script` | 通过 |
+| `npm run test:admin-totp` / `test:content-health` / `verify:visitor-studio` | 通过 |
+| `git diff --check` | 通过 |
+| 本机 express + `site-routing.spec.js` | 13 通过（原 8，新增 5） |
+| 部署前 env 检查 | `DATABASE_URL` / `ADMIN_TOKEN` 均为 `[set]`（未输出 value） |
+| 部署前备份 | `/opt/mrright-portfolio.backup-20260826-025716`（硬链接）+ env 备份 |
+| VPS 部署 | 成功，服务重启成功 |
+| 线上 `production-smoke` + `site-routing` | 19 通过 / 1 skipped（skip 的那条要访客凭证） |
+
+线上逐项（2026-08-26 02:5x / 03:0x UTC 实测）：
+
+```text
+/api/health                                200
+/                                          200
+/community                                 200
+/admin                                     200   noindex
+/login?mode=login                          200   noindex
+/account                                   200   noindex
+/projects/shadow-altar-candle-shrine       200   <title>Shadow Altar Candle Shrine | mrright.blog</title>
+/projects/crimson-rune-greatsword          200   <title>Crimson Rune Greatsword | mrright.blog</title>
+/projects/md-leimu                         200   <title>MD Leimu | mrright.blog</title>
+/projects/fire-extinguisher-next-gen       200   <title>Next-Gen Fire Extinguisher | mrright.blog</title>
+/projects                                  200   canonical /
+/projects/no-such-project-slug             404   noindex
+/projects/fire-extinguisher-next-gen/extra 200   noindex（渲染首页）
+/sitemap.xml                               200   7 条（/、/community、4 个项目、1 条帖子）
+admin_summary                              200（部署脚本用一次性会话验的，用完即撤销）
+journalctl 自部署起                          0 error / 0 500
+```
+
+440px 和 1280px 各截了一次首页项目区：`document.scrollWidth - clientWidth`
+两边都是 **0**，卡片上那颗按钮换成 `<a>` 之后外观和之前一致
+（`.primary-action` 本来就是 `inline-flex`，`w-full` 对 `<a>` 一样生效）。
+
+### 顺手撞见但没动的
+
+**`crimson-rune-greatsword` 的 `titleZh` / `summaryZh` 是另一个项目的文案。**
+中文界面里两张卡片同名同简介。**不是本轮改出来的，是数据本身**，
+而且只有中文栏错，英文和日文都是对的（所以本轮新加的 head 是对的）。
+没替你改产品文案，已记到「待你决策」。
+
+### 改动的文件
+
+- `server/seo.js`
+- `server/index.js`
+- `src/App.jsx`
+- `src/sections/Projects.jsx`
+- `tests/unit/seo.spec.js`
+- `tests/api/contract.spec.js`
+- `tests/api/contract.db.spec.js`
+- `tests/e2e/site-routing.spec.js`
+- `docs/adr/ADR_WEB_SEO_RENDERING_STRATEGY.md`（加了一节 2026-08-26 修订）
+- `docs/ARCHITECTURE.md`
+
+commit：`4b04f46`（代码）+ 本次文档提交
+备份路径：`/opt/mrright-portfolio.backup-20260826-025716`
 
 ## 2026-08-22（第二十三轮）：每条路由自己的 `<head>`
 
