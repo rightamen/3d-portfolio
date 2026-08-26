@@ -1,8 +1,69 @@
 # mrright.blog 项目进度记录
 
-## 下次从这里继续（截至 2026-08-26 第二十四轮收工）
+## 下次从这里继续（截至 2026-08-26 第二十五轮收工）
 
-### 2026-08-26（第二十四轮）：四个项目各自有了地址
+### 2026-08-26（第二十五轮）：每个页面都说清自己是什么，而 CSP 根本不用动
+
+**做的是第二十三轮衍生清单里的 JSON-LD**，但真正的收获是**推翻了那一轮写下的一个前提**。
+
+| | 第二十五轮 |
+|---|---|
+| 做的事 | 每个可索引页面一份 JSON-LD `@graph` |
+| 路线图 | 第 6 条衍生的第 2 条 ✅（还剩帖子配图、`<noscript>` 两条） |
+| 前端 | **一行没动**（但构建产物变了，见下面那条 Tailwind 的坑） |
+| 服务端 | `server/seo.js` 加图谱构建，`server/index.js` 只多传一个 `owner` |
+| CSP | **一个字都没改** |
+| 数据库 | 无变更，本轮没有跑过任何数据库写语句 |
+| 部署 | ✅ `847701a`，2026-08-26 14:17 UTC |
+| 回滚点 | **`/opt/mrright-portfolio.backup-20260826-141025`**（注意不是最新那份，原因见下） |
+
+⚠️ **「CSP 会拦 `ld+json`」是错的，这一轮实测推翻了它。**
+第二十三轮据此把 JSON-LD 列为「不做」，理由是要么每次响应算 sha256 塞进 CSP 头、
+要么放宽策略。**两者都不需要**：`type` 不是 JavaScript 类型的 `<script>` 是
+**data block**，HTML 解析器从不「准备执行」它，所以它要过的那道 CSP 检查根本走不到。
+真实 Chromium 实测：带 hash 和不带 hash 两种响应头，元素都在 DOM 里、内容都能解析、
+`securitypolicyviolation` 事件 0 条、console 报错 0 条。
+再用线上那份真策略（含 report-uri）跑 4 条路由复验，同样干净。
+
+⚠️ **本轮一度真的写了那套 hash 机制，量完之后把它删了。**
+每个 HTML 响应都去改写一次安全头是有成本的，而它什么也没换来。
+**别再把它加回来**：`tests/api/contract.spec.js` 里有一条断言盯着
+「两个图谱不同的页面，CSP 头必须一字不差」。
+
+⚠️ **转义在这里是唯一的防线，比 meta 标签那轮更要紧。**
+帖子标题、正文、昵称、简介都会进到 script 元素里，而 `<` 是唯一能提前结束它的字符 ——
+一条写着 `</script>` 的简介会把它关掉，后面全被当 HTML 解析。
+`encodeJsonLd` 把 `& < >` 和 U+2028/2029 转成 `\uXXXX`。
+**CSP 不会替你兜这个底** —— 这正是上面那个实测的另一面：
+CSP 不检查的 data block，也就是 CSP 救不了的 data block。
+
+⚠️ **noindex 的页面一律没有图谱。** 私有区、未知路径、查无此行、
+被设为私密的资料、被下架的项目 —— 结构化数据是页面上最机器可读的东西，
+它必须跟着 head 一起消失，不能比 head 活得久。
+
+⚠️ **站长邮箱没有进 Person 节点，是故意的。** 页面上本来就有 `mailto:` 链接，
+但把它变成结构化数据里的一个类型化字段是另一回事。`sameAs` 只放 `https://` 的主页链接。
+
+**2026-08-26 当天收工（这一天做了两轮：第二十四轮和第二十五轮，都已部署）：**
+
+- 代码 `847701a`、文档（本次提交），已 push，`main` 与 `origin/main` 一致
+- 线上跑的就是 `847701a`（14:17 UTC 部署），本地与线上同码
+- 本机没有任何服务在跑；本轮没有跑过任何数据库写语句
+- 未完项从 7 条涨到 **9 条**（本轮新开两条，都是撞见的，不是本轮弄出来的）
+- 「待你决策」仍然是 2 条（17 个翻译 key、`crimson-rune-greatsword` 的中文文案串了）
+- 没有半途而废的改动挂在本机
+
+⚠️ **本轮我犯了一个操作失误，记在这里免得下次再犯。**
+为了读一行备份路径，我把 `npm run deploy:vps` 重跑了一遍 —— 那是**一次真实的重复部署**。
+代码没变（同一个 commit），服务正常，但它多占了一个备份位，
+**把第二十三轮的回滚点 `...-20260822-034955` 挤掉了**（脚本只保留最新 3 份）。
+结果是最新那份 `...-141745` 里装的就是第二十五轮的代码，**当不了本轮的回滚点**；
+真正的回滚点是它下面那份 `...-141025`。
+**教训：部署输出要一次抓全（`tee` 或抓完整日志），不要为了补看一行而重跑部署。**
+
+---
+
+### 2026-08-26（第二十四轮）：四个项目各自有了地址（当天第一轮）
 
 **做的是第二十三轮衍生出来的第一条**（也是那一轮自己写下的
 「本轮之后 SEO 上最大的一块空白」）：项目详情面板原来是 React state，
@@ -42,19 +103,11 @@ React 才会保住 `HomePage`（以及里面那个 3D 场景）不被卸载重�
 ⚠️ **路由表仍然是两份**（`src/App.jsx` 与 `server/seo.js`），本轮又加了一条。
 第二十三轮那句提醒继续有效：**新增公开路由两边都要加。**
 
-**2026-08-26 当天收工（这一天只做了第二十四轮这一轮）：**
-
-- 代码 `4b04f46`、文档 `f440935`，**两个都已 push**，`main` 与 `origin/main` 一致
-- 线上跑的就是 `4b04f46`（02:57 UTC 部署），**本地与线上同码**
-- CI：两个提交 × 两个 job（`Web and API` / `C++ App Skeleton`）**全绿**
-- 本机没有任何服务在跑（验证用的 express 4321 用完已停）
-- **当天没有跑过任何数据库写语句**，只用一次性管理会话验了 admin_summary（用完即撤销）
-- 未完项仍然是 7 条 —— **本轮既没关也没开新的**
-- **「待你决策」从 1 条变成 2 条**：原来那条 17 个翻译 key 还在，
-  新增的是 `crimson-rune-greatsword` 的中文标题/简介串了另一个项目（数据错，不是代码）
-- 没有半途而废的改动挂在本机
-
-**下次开工**：先读这一节，再看下面「下一轮我建议先做的」。
+**第二十四轮收工时**：代码 `4b04f46`、文档 `f440935` 都已 push，
+线上是 `4b04f46`（02:57 UTC 部署），CI 两个提交 × 两个 job 全绿，
+未完项仍是 7 条，「待你决策」从 1 条变成 2 条
+（新增 `crimson-rune-greatsword` 的中文文案串了另一个项目）。
+当天随后又做了第二十五轮，见上面那一节。
 
 ---
 
@@ -139,11 +192,15 @@ CI 两个 job 全绿（`api-db` 那个 job 本轮加了 build 步骤，新增用
 
 ---
 
-**线上运行 `4b04f46`（2026-08-26 02:57 UTC 部署，已逐项验证）。**
-第二十四轮**前端和服务端都有改动**：多了 `/projects/:slug` 这条路由，
-前端的项目详情从组件状态改成读 URL，服务端多认一种页面类型。
+**线上运行 `847701a`（2026-08-26 14:17 UTC 部署，已逐项验证）。**
+第二十五轮**只有服务端改动**（`src/` 一行没动），
+每个可索引页面的 head 里多了一份 JSON-LD，**CSP 头一个字没改**。
 **API 接口仍然一个都没动**，数据库自第十二轮起仍然无变更。
-回滚到第二十四轮之前：`/opt/mrright-portfolio.backup-20260826-025716`。
+回滚到第二十五轮之前：`/opt/mrright-portfolio.backup-20260826-141025`
+（**不是最新那份**，最新那份是重复部署产生的，里面装的就是第二十五轮）。
+
+（上一轮：第二十四轮 `4b04f46`，02:57 UTC 部署，前端和服务端都有改动
+—— 多了 `/projects/:slug` 这条路由。）
 
 （上一轮的说明保留在下面。）
 
@@ -196,13 +253,14 @@ express-rate-limit，只有这六个）；前端的东西全部属于 `devDepend
 `/opt` 上实际存在的是：
 
 ```text
-/opt/mrright-portfolio.backup-20260826-025716   第二十四轮之前 ← 要回滚就用这个
-/opt/mrright-portfolio.backup-20260822-034955   第二十三轮之前
-/opt/mrright-portfolio.backup-20260819-143533   第二十一轮之前
+/opt/mrright-portfolio.backup-20260826-141745   ← 没用：这是重复部署产生的，里面就是第二十五轮
+/opt/mrright-portfolio.backup-20260826-141025   第二十五轮之前 ← 要回滚就用这个
+/opt/mrright-portfolio.backup-20260826-025716   第二十四轮之前
 ```
 
-（第二十轮那份 `...-20260818-144934` 已被第二十四轮部署按 3 份保留策略自动清掉。
-上面这三条是 2026-08-26 02:5x UTC 在 VPS 上 `ls -dt` 实际看到的。）
+（2026-08-26 14:2x UTC 在 VPS 上 `ls -dt` 实际看到的，并且逐个 `grep ld+json`
+确认过哪一份在第二十五轮之前。第二十三轮那份 `...-20260822-034955`
+被本轮那次多余的重复部署挤掉了，来龙去脉见上面第二十五轮那一节。）
 
 要回滚先 `ls -dt /opt/mrright-portfolio.backup-*` 确认实际有什么，别照抄旧记录。
 
@@ -259,10 +317,12 @@ Members 详情在窄屏下不再把整页撑宽（一行 CSS）。
 - 线上 `dist/uploads` **不存在**（部署后已复查，第十六轮那道闸仍然有效）
 
 **下次开工第一件事**：读这一节，然后看「下一轮我建议先做的」——
-第 3、3b、3c、4、5、6 条都已划掉，现在排最前的是**第 7 条 C++ SDK**。
-第二十三轮衍生的四条里，**「给项目做真正的路由」已由第二十四轮做掉**，
-还剩三条小的：JSON-LD（要动 CSP）、帖子自己的分享图（要先有「帖子配图」这个概念）、
-`<noscript>` 里是纯文本（真要解决那才轮到 SSR）。
+第 3、3b、3c、4、5、6 条都已划掉，路线图上排最前的是**第 7 条 C++ SDK**。
+第二十三轮衍生的四条里，项目路由（第二十四轮）和 JSON-LD（第二十五轮）都做掉了，
+还剩帖子配图和 `<noscript>`。
+**但我建议下一轮先做未完项第 9 条**（分享出去的项目链接要等 20～35 秒 ——
+第二十四轮做 URL 就是为了分享，这条正好把它抵消掉了），
+第 10 条（文档改动会冲掉全站 CSS 缓存）是一行的事，可以顺手带上。
 **「待你决策」里那条还在**（17 个没人渲染的翻译 key 删不删）——
 第二十三轮也没有替你删，理由不变：那是产品文案。
 
@@ -443,7 +503,35 @@ Publish / Mark Spam 就在 Delete 旁边**。
 且没有新增未完项。**第二十三、二十四轮都既没关也没开新的**
 （两轮 SEO 衍生出来的都属于「可以做得更好」，进的是路线图不是这张单子；
 第二十四轮撞见的那条中文标题错是数据不是代码，进的是「待你决策」）。
-现在开着的是：
+**第二十五轮没关掉任何一条，但开了两条新的（第 9、10 条）** ——
+两条都是本轮验证时量出来的，不是本轮改出来的。现在开着的是：
+
+9. **分享一条项目链接，冷启动要 21～35 秒才看得到那个面板**（第二十五轮量的）。
+   实测：本机冷缓存打开线上 `/projects/md-leimu`，到 `.detail-overlay` 可见
+   三次分别是 21.6s / 34.9s / 30.9s；同样条件下 `/community` 是 5.5～9.6s。
+   原因不是服务端 —— 是**面板出现之前要先下 16 个 JS 文件、约 1489 KB**，
+   其中 `three-core` 703 KB + `three-fiber` 268 KB **合计 971 KB 是那个面板根本用不到的**
+   （面板自己只有 9 KB）。第二十四轮给项目做 URL 就是为了让人分享，
+   而**被分享的人要等整个首页 3D 场景加载完**才看得到分享的东西。
+   要修就是让 `/projects/:slug` 不必先把首页那套 three.js 拉完
+   （例如详情打开时不挂载 Hero，或给这条路由一个不含 3D 的外壳）。
+   ⚠️ **这不是第二十五轮引入的**：本轮 `src/` 一行没动，第二十四轮部署时就是这样，
+   只是那天的链路快到刚好没触发测试超时。
+   **这也是那 4 条线上 e2e 失败的原因**（断言超时 10s，实际要 20s+），
+   不是功能坏了 —— 手工给足时间面板是正常出现的。
+
+10. **文档里的一句话会往生产 CSS 里加规则**（第二十五轮撞见）。
+   本轮 `src/` 一行没动，构建产物的 hash 却变了：CSS 从 `index-DKM1MyBH.css`
+   变成 `index-C1pDSQKD.css`，两份 diff 下来**只差一条 `.inline-flex` 规则**，
+   而 JS 因为要引用 CSS 文件名也跟着换了 hash。
+   根因是 **Tailwind v4 的自动内容检测会扫描仓库里所有没被 gitignore 的文件，
+   `.md` 也在内**：第二十四轮的收工文档里写了「`.primary-action` 本来就是 inline-flex」
+   这句话，Tailwind 把它当成了用到的工具类。
+   （`git log -S` 确认：这个字面量是 `f440935` 那次**文档**提交带进仓库的。）
+   **后果不是那 27 个字节，是缓存**：以后每一轮只要文档里出现新的工具类名，
+   下次部署就会换掉 CSS 和主 JS 的 hash，所有访客的缓存一起失效。
+   修法是一行：在 `src/index.css` 里用 `@source` 把扫描范围限死在 `src/`。
+   没顺手改，是因为它会动前端构建产物，而本轮是纯服务端轮次、已经部署完了。
 
 1. **模型「能加载」和「能渲染」仍然是两件事。**
    Content Health 现在能确认文件可服务、是真 GLB、所需扩展有解码器，
@@ -719,8 +807,11 @@ CSP 这件事能做完，就是因为 playwright 回来了。
      走的就是这里写的 `/projects/:slug`。四个项目现在各自有 canonical、
      各自有 `og:image`（自己的渲染图，不再是全站那张灭火器），
      并且各自列进了 sitemap。详见下面「2026-08-26（第二十四轮）」。
-   - **没有 JSON-LD**（Article / ProfilePage / BreadcrumbList）。挡住它的是 CSP：
-     `ld+json` 也算 script。要做就得每次响应把它的 sha256 塞进 CSP 头。
+   - ~~**没有 JSON-LD**~~ —— **2026-08-26 第二十五轮做完并上线了**，
+     而且**「挡住它的是 CSP」这句话是错的**：`ld+json` 是 data block，
+     CSP 根本不检查它，实测确认（详见下面「2026-08-26（第二十五轮）」和
+     `docs/adr/ADR_WEB_SEO_RENDERING_STRATEGY.md` 第 8 节）。
+     最终**没有动 CSP 头**，没有 hash 也没有 nonce。
    - **分享卡片的图还是全站一张灭火器**（公开主页除外，那里用头像）。
      帖子想要自己的图，得先有「帖子配图」这个概念。
    - **`<noscript>` 里是纯文本，不是真页面**。不跑 JS 的爬虫看到的是标题+正文，
@@ -869,6 +960,128 @@ CSP 这件事能做完，就是因为 playwright 回来了。
 - ~~演练遗留的临时库~~ —— 用户已确认，`mrright_restore_drill` 已 `dropdb`（2026-08-11）。
   删除后复查：`mrright_portfolio` 仍在、17 张表、`visitor_users=1`/`project_comments=2`、
   `/api/health` 200，生产库未受影响。
+
+## 2026-08-26（第二十五轮）：JSON-LD，以及被推翻的那个 CSP 前提
+
+第二十三轮衍生清单的第二条。**纯服务端，`src/` 一行没动。**
+
+### 起因，以及第一件事是先去量
+
+第二十三轮把 JSON-LD 列为「不做」，理由写得很具体：`ld+json` 在 CSP 眼里就是
+script，而本站 `script-src` 是 `'self' 'wasm-unsafe-eval'` 没有 inline 余地，
+所以要么每次响应算 sha256 塞进 CSP 头，要么放宽策略。
+
+**本轮先照这个理由把那套 hash 机制写了出来**：`renderSeoHtml` 返回
+`{ html, cspSource }`，服务端把 helmet 已经设好的头读回来、往 `script-src`
+里拼一个 `'sha256-…'`，头拼不成就不发那段脚本。写完之后才去量它到底需不需要。
+
+**量下来是不需要。** 真实 Chromium，两个只有响应头不同的合成页面 ——
+一个 `script-src` 里带匹配的 `'sha256-…'`，一个不带 —— 各含一段内联
+`<script type="application/ld+json">`。两次都是：元素在 DOM 里、内容能 `JSON.parse`、
+`securitypolicyviolation` **0 条**、console 报错 **0 条**。
+
+原因很清楚：`type` 不是 JavaScript MIME 类型的 `<script>` 是 **data block**。
+HTML 的「prepare the script element」算法对它提前 return，
+**元素压根不会被准备执行**，那道它过不了的 CSP 检查也就永远走不到。
+`script-src` 管的是执行，而这里没有执行。
+
+⚠️ **第一版探针得出的「两边都没违规」是靠不住的，差点被它骗过去。**
+那个监听 `securitypolicyviolation` 的脚本自己就是一段内联 `<script>`，
+**它才是被 CSP 拦掉的那个** —— 所以 `window.__violations` 根本没建起来，
+两边都读到空数组。把监听器换成 `addInitScript`（跑在隔离世界、不受页面 CSP 约束）
+之后结果才可信。**一个静默失败的安全检查，长得和一个通过了的安全检查一模一样。**
+
+然后用线上那份真策略（带 `report-uri`、`upgrade-insecure-requests`）
+在本机服务上跑 `/`、`/community`、`/projects/:slug`、`/account` 四条路由复验：
+图谱都在、都能解析、违规 0 条、报错 0 条。
+
+**于是把那套 hash 机制删了。** 每个 HTML 响应都改写一次安全头是实打实的成本，
+而它什么都没换来。
+
+### 上线的是什么
+
+每个**可索引**页面的 `<head>` 里一段 `<script type="application/ld+json">`，
+装一个 `@graph`：
+
+- 打头永远是同样两个节点：`WebSite` 和站长 `Person`，用 `@id` 互相指。
+  重复放是有意的 —— 只抓到一个 URL 的爬虫也应该知道这站是谁发布的。
+- 然后是这一页自己的节点：`/community` 是 `CollectionPage`，
+  帖子是 `DiscussionForumPosting`（作者、`datePublished`、`dateModified`、正文），
+  项目是 `CreativeWork`（配图、`dateCreated`、`keywords`、作者），
+  公开主页是 `ProfilePage` 包一个 `Person`。
+- 首页以下的每一页都带 `BreadcrumbList`。
+- **head 标了 noindex 的页面一个节点都没有。**
+- 站长邮箱**没有**进 Person 节点；`sameAs` 只放 `https://` 的主页链接。
+
+`injectSeo` 现在也把已有的 `ld+json` 先剥掉再拼，和它剥托管 meta 标签一样，
+所以重复渲染是替换而不是叠加。
+
+### 转义
+
+帖子标题、正文、昵称、简介都会落进 script 元素里，`<` 是唯一能提前结束它的字符。
+`encodeJsonLd` 把 `& < >` 和 U+2028/2029 转成 `\uXXXX` ——
+对 JSON 解析器完全等价，对 HTML tokenizer 则彻底无害。
+**CSP 在这里不是后备**：不检查 data block 的 CSP，也就救不了 data block。
+
+### 验证
+
+| 项 | 结果 |
+|---|---|
+| `npm run lint` | 通过 |
+| `npm run test:unit` | 166 通过（新增 16 条，原 152） |
+| `npm run build` | 通过 |
+| `npm run test:api` | 57 通过 / 13 skipped（新增 5 条） |
+| `npm run test:api:db` | 86 通过 / 0 失败（新增 4 条） |
+| `npm run test:openapi` | 通过（本轮没动 API） |
+| `npm run test:deploy-backup` / `test:deploy-script` | 通过 |
+| `npm run test:admin-totp` / `test:content-health` / `verify:visitor-studio` | 通过 |
+| `git diff --check` | 通过 |
+| 本机 express + `site-routing.spec.js` | 13 通过 |
+| 本机真实浏览器（4 条路由） | 图谱都在、CSP 违规 0、报错 0 |
+| 部署前 env 检查 | `DATABASE_URL` / `ADMIN_TOKEN` 均为 `[set]`（未输出 value） |
+| 部署前备份 | `/opt/mrright-portfolio.backup-20260826-141025`（硬链接）+ env 备份 |
+| VPS 部署 | 成功，服务重启成功 |
+| 线上 `production-smoke` + `site-routing` | **15 通过 / 4 失败 / 1 skipped** —— 4 条全是超时，见下 |
+
+线上逐项（2026-08-26 14:2x UTC 实测）：
+
+```text
+/api/health                      200
+/                                200   WebSite,Person
+/community                       200   WebSite,Person,CollectionPage,BreadcrumbList
+/projects/md-leimu               200   WebSite,Person,CreativeWork,BreadcrumbList
+/community/<真实帖子>             200   WebSite,Person,DiscussionForumPosting,BreadcrumbList
+/account                         200   (无图谱)
+/no-such-page                    200   (无图谱)
+/admin、/login?mode=login         200   noindex
+CSP 头                            与本轮之前一字不差，无 sha256、无 nonce
+journalctl 自部署起                0 error / 0 500 / 0 条 CSP 上报
+```
+
+⚠️ **那 4 条线上 e2e 失败不是功能坏了，是慢。** 全是项目详情那 4 条
+（断言超时 10s）。手工量：冷缓存打开线上 `/projects/md-leimu`，
+面板可见耗时 21.6s / 34.9s / 30.9s。**本轮 `src/` 一行没动**，
+第二十四轮部署时就是这个速度，只是那天链路快到刚好没触发超时。
+详情和数字见未完项第 9 条 —— **建议下一轮就修这个**。
+
+### 撞见的第二件事：文档会改变生产 CSS
+
+本轮前端源码一行没动，构建产物的 hash 却变了。查到底：
+两份 CSS 只差一条 `.inline-flex` 规则，来源是**第二十四轮收工文档里的一句话** ——
+Tailwind v4 的自动内容检测会扫 `.md`。详见未完项第 10 条。
+
+### 改动的文件
+
+- `server/seo.js`
+- `server/index.js`（只多传一个 `owner`）
+- `tests/unit/seo.spec.js`
+- `tests/api/contract.spec.js`
+- `tests/api/contract.db.spec.js`
+- `docs/adr/ADR_WEB_SEO_RENDERING_STRATEGY.md`（就地纠正 §4 那段错的前提，并加了第 8 节）
+- `docs/ARCHITECTURE.md`
+
+commit：`847701a`（代码）+ 本次文档提交
+回滚点：`/opt/mrright-portfolio.backup-20260826-141025`
 
 ## 2026-08-26（第二十四轮）：四个项目各自有了地址
 
