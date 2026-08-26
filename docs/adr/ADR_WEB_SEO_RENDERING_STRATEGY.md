@@ -85,6 +85,10 @@ HTML.
   per-response hash spliced into the CSP header or a policy relaxation, and
   neither is worth it before the plain tags are proven.
 
+  > **Corrected 2026-08-26 (§8).** The premise in that paragraph is wrong: CSP
+  > does not apply to `ld+json` at all. It was measured, not argued. JSON-LD
+  > shipped in round twenty-five with no change to the CSP header.
+
 ## 5. Verification
 
 - `tests/unit/seo.spec.js` — 37 cases over the pure builders: route resolution,
@@ -149,3 +153,80 @@ admin-created project, including hiding it), and 5 in
 What this amendment does **not** change: still no SSR, still no JSON-LD, and a
 project's share card is its existing render — there is no per-project social
 image.
+
+## 8. Amendment, 2026-08-26: JSON-LD, and the CSP premise that was wrong
+
+§4 listed "no JSON-LD" as a deliberate omission and gave a reason: `ld+json` is
+a `<script>`, `script-src` here is `'self' 'wasm-unsafe-eval'`, so it would need
+a per-response sha256 spliced into the CSP header. That reason does not hold.
+
+**What was measured.** Real Chromium, two synthetic pages identical except for
+the response's CSP header — one with a matching `'sha256-…'` in `script-src`,
+one without — each containing an inline `<script type="application/ld+json">`.
+Both: element in the DOM, contents parsed, **zero** `securitypolicyviolation`
+events, **zero** console errors. Then the same check against a local server
+running this site's actual policy (`report-uri`, `upgrade-insecure-requests`
+and all) on `/`, `/community`, `/projects/:slug` and `/account`: graphs present
+and parsing, no violations.
+
+**Why.** A `<script>` whose `type` is not a JavaScript MIME type is a *data
+block*. HTML's "prepare the script element" algorithm returns early for it —
+the element is never prepared for execution, so the CSP check it would have to
+pass is never reached. `script-src` governs execution, and there is none here.
+
+(First draft of the probe reported "no violation" for both cases for the wrong
+reason: the violation listener was itself an inline `<script>` and was the thing
+being blocked. It was moved into an isolated world before the result was
+believed. Worth recording — a security check that silently fails open looks
+exactly like a security check that passes.)
+
+**So the decision is: JSON-LD, and the CSP header is not touched.** No hash, no
+nonce, no relaxation, nothing per-response. An early version of this round did
+splice a hash in; it was removed once the measurement came in, because rewriting
+a security header on every HTML response is a real cost and it was buying
+nothing.
+
+What ships:
+
+- Every indexable page carries one `<script type="application/ld+json">` in its
+  `<head>`, holding a `@graph`.
+- Every graph opens with the same two nodes — `WebSite` and the owner `Person`,
+  wired to each other by `@id` — so a crawler that only ever fetches one URL
+  still learns who published it.
+- Then the page's own node: `CollectionPage` for `/community`,
+  `DiscussionForumPosting` (author, `datePublished`, `dateModified`, text) for a
+  post, `CreativeWork` (image, `dateCreated`, `keywords`, author) for a project,
+  `ProfilePage` wrapping a `Person` for a public profile.
+- A `BreadcrumbList` on everything below the homepage.
+- **No graph at all on any page the head marks `noindex`** — private areas,
+  unknown paths, a missing row, a profile switched to private, a project
+  unpublished. Structured data is the most machine-readable thing on a page; it
+  has to disappear with the rest of the head, not outlive it.
+- The owner's **email address is deliberately not republished** in the Person
+  node. It is a `mailto:` link in the page already; a typed field in structured
+  data is a different thing, and this does not need it. `sameAs` carries the
+  `https://` profile links only.
+
+**Escaping is load-bearing here in a way it was not for the meta tags.** Post
+titles, bodies, display names and bios go inside the script element, and `<` is
+the one character that can end it early — a bio containing `</script>` would
+close it and the rest would be parsed as HTML. `encodeJsonLd` escapes
+`& < >` (and U+2028/2029) as `\uXXXX`, which leaves the JSON identical to a
+parser and inert to the HTML tokenizer. **CSP is no backstop for this**, which
+is precisely the point of the measurement above: the data block that CSP does
+not check is also the data block that CSP will not save.
+
+`injectSeo` strips any existing `ld+json` before splicing, the same way it
+strips the managed meta tags, so a re-render replaces the graph instead of
+stacking a second one.
+
+Verification added: 16 cases in `tests/unit/seo.spec.js`, 5 in
+`tests/api/contract.spec.js` (including one asserting the CSP header is
+byte-identical between two pages with different graphs — if that ever fails,
+someone has started mutating the policy again), 4 in
+`tests/api/contract.db.spec.js` (a real post's author, a real profile, and both
+a profile going private and a project going hidden taking their graphs with
+them).
+
+Still open after this round: no per-post share image, and the `<noscript>` body
+is still plain text rather than a rendered page.

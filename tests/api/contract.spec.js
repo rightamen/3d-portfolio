@@ -831,6 +831,66 @@ test.describe('per-route HTML head', () => {
     expect(body).toContain('<loc>https://mrright.blog/projects/creature-accessories</loc>')
   })
 
+  // JSON-LD, and the CSP question that kept it out of round twenty-three. A
+  // script element whose type is not a JavaScript type is a data block: it is
+  // never prepared for execution, so script-src never gets a say. Measured in
+  // real Chromium (round twenty-five) rather than assumed.
+  const graphOf = (body) => {
+    const script = body.match(
+      /<script type="application\/ld\+json">([\s\S]*?)<\/script>/,
+    )?.[1]
+    return script ? JSON.parse(script) : null
+  }
+
+  test('the graph says what the homepage is and who publishes it', async () => {
+    const graph = graphOf((await getHtml('/')).body)
+
+    expect(graph['@context']).toBe('https://schema.org')
+    expect(graph['@graph'].map((node) => node['@type'])).toEqual(['WebSite', 'Person'])
+  })
+
+  test('a project page describes the work and the trail to it', async () => {
+    const graph = graphOf((await getHtml('/projects/fire-extinguisher-next-gen')).body)
+    const types = graph['@graph'].map((node) => node['@type'])
+
+    expect(types).toContain('CreativeWork')
+    expect(types).toContain('BreadcrumbList')
+    expect(graph['@graph'].find((node) => node['@type'] === 'CreativeWork')).toMatchObject({
+      name: 'Next-Gen Fire Extinguisher',
+      url: 'https://mrright.blog/projects/fire-extinguisher-next-gen',
+    })
+  })
+
+  // The graph rides along on the policy the site already has. Nothing about the
+  // CSP header changes per response -- no hash, no nonce, and above all no
+  // 'unsafe-inline' bought to make room for it. If this assertion ever fails,
+  // read the JSON-LD comment in server/seo.js before loosening anything.
+  test('the policy is untouched: no per-page hash, no inline allowance', async () => {
+    const { body, response } = await getHtml('/')
+    const csp = response.headers.get('content-security-policy')
+
+    const other = await getHtml('/community')
+
+    expect(body).toContain('application/ld+json')
+    // Two pages with two different graphs, one identical policy.
+    expect(csp).toBe(other.response.headers.get('content-security-policy'))
+    expect(csp).not.toContain('sha256-')
+    expect(csp).not.toContain('nonce-')
+    // 'self' is what loads the application bundle; it has to survive.
+    expect(csp).toMatch(/script-src [^;]*'self'/)
+    expect(csp).toMatch(/script-src [^;]*'wasm-unsafe-eval'/)
+    expect(csp).not.toMatch(/script-src [^;]*'unsafe-inline'/)
+    expect(csp).toContain('report-uri /api/csp-report')
+  })
+
+  test('a page that is not indexed gets no graph', async () => {
+    for (const path of ['/account', '/admin', '/no-such-page']) {
+      const { body } = await getHtml(path)
+
+      expect(body, path).not.toContain('ld+json')
+    }
+  })
+
   test('the built script tag survives the head rewrite', async () => {
     const { body } = await getHtml('/community')
 

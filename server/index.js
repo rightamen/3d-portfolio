@@ -4212,6 +4212,10 @@ app.get(/.*/, async (request, response) => {
 
   return response.type('html').send(
     renderSeoHtml({
+      // The site owner, for the Person/author nodes in the JSON-LD graph. Named
+      // `owner` here because `profile` in this file is that same static record,
+      // while `data.profile` is a visitor's public profile.
+      owner: profile,
       post: data.post || null,
       posts: data.posts || [],
       profile: data.profile || null,

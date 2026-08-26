@@ -264,8 +264,9 @@ That last one is worth spelling out, because it is the one place the server
 renders something other than JSON. The client is single-page, so the built
 `dist/index.html` is the same file for every URL. `server/seo.js` rewrites its
 head per path before it is sent — title, description, canonical, Open Graph,
-Twitter card, `noindex` on the private areas — and appends a `<noscript>` body
-for crawlers that run no JavaScript. It is not React SSR and deliberately so;
+Twitter card, `noindex` on the private areas — appends a JSON-LD `@graph`
+describing what the page is, and a `<noscript>` body for crawlers that run no
+JavaScript. It is not React SSR and deliberately so;
 see `docs/adr/ADR_WEB_SEO_RENDERING_STRATEGY.md`. Visibility is enforced there
 as well as in the API: a profile that is private or admin-disabled, and a
 project whose `is_public` is false, never reaches the HTML.

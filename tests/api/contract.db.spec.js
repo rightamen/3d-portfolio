@@ -1741,6 +1741,66 @@ test.describe('per-route HTML head, from real rows', () => {
     }
   })
 
+  const graphOf = (body) => {
+    const script = body.match(
+      /<script type="application\/ld\+json">([\s\S]*?)<\/script>/,
+    )?.[1]
+    return script ? JSON.parse(script)['@graph'] : null
+  }
+
+  test('a post page claims to be a forum posting by its real author', async () => {
+    const { body, response } = await getHtml(`/community/${seededPostId}`)
+    const posting = graphOf(body).find((node) => node['@type'] === 'DiscussionForumPosting')
+
+    expect(posting).toMatchObject({
+      author: { '@type': 'Person', name: 'Contract Test Visitor A' },
+      headline: 'Contract test post',
+      url: `https://mrright.blog/community/${seededPostId}`,
+    })
+    expect(posting.datePublished).toEqual(expect.any(String))
+    expect(response.status).toBe(200)
+  })
+
+  test('a public profile claims to be a profile page about a person', async () => {
+    const page = graphOf((await getHtml(`/u/${seoHandle}`)).body).find(
+      (node) => node['@type'] === 'ProfilePage',
+    )
+
+    expect(page.mainEntity).toMatchObject({
+      '@type': 'Person',
+      alternateName: `@${seoHandle}`,
+      description: 'Environment artist, mostly props.',
+      name: 'Contract Test Visitor A',
+    })
+  })
+
+  // The head and the graph have to go together. A profile switched off that
+  // kept its structured data would still be handing a crawler the display name
+  // and bio in the most machine-readable form on the page.
+  test('a profile switched to private takes its structured data with it', async () => {
+    await setProfileVisibility(false)
+
+    try {
+      const { body } = await getHtml(`/u/${seoHandle}`)
+
+      expect(body).not.toContain('ld+json')
+    } finally {
+      await setProfileVisibility(true)
+    }
+  })
+
+  test('a hidden project takes its structured data with it too', async () => {
+    await setProjectVisibility(false)
+
+    try {
+      const { body } = await getHtml(`/projects/${seoProjectSlug}`)
+
+      expect(body).not.toContain('ld+json')
+    } finally {
+      await setProjectVisibility(true)
+    }
+  })
+
   test('the sitemap lists the seeded post with a last-modified date', async () => {
     const body = await (await fetch(`${baseURL}/sitemap.xml`)).text()
 

@@ -261,6 +261,247 @@ export const buildPageMeta = ({
   return base
 }
 
+// --- JSON-LD -----------------------------------------------------------------
+//
+// The tags above tell a scraper what to put on a card. This tells a search
+// engine what the page *is*: a forum post with an author and a date, a person's
+// profile, a piece of work with a picture and a creator. It is the difference
+// between a blue link and a rich result.
+//
+// Round twenty-three left it out on the belief that CSP would block it -- this
+// site's script-src is `'self' 'wasm-unsafe-eval'` with no inline allowance, and
+// `ld+json` looks like an inline script. **That belief was wrong**, and it was
+// measured rather than argued (round twenty-five, real Chromium, a CSP header
+// with and without a matching sha256): a script element whose type is not a
+// JavaScript type is a *data block*. The HTML parser never prepares it for
+// execution, so the CSP check it would fail is never reached. No violation, no
+// console error, contents readable either way.
+//
+// So there is no hash and no nonce here, and the CSP header is not touched. If
+// a `script-src` violation report naming an inline script ever shows up at
+// /api/csp-report, this is the paragraph to come back to.
+
+// `<` is the one character that can end the script element early: a bio
+// containing `</script>` would close it and everything after it would be parsed
+// as HTML. Escaping it as \u003c keeps the JSON identical to a parser and inert
+// to the HTML tokenizer. U+2028/2029 are legal JSON but not legal JavaScript
+// string content, and cost nothing to escape.
+const JSON_LD_ESCAPES = {
+  '&': '\\u0026',
+  '<': '\\u003c',
+  '>': '\\u003e',
+  '\u2028': '\\u2028',
+  '\u2029': '\\u2029',
+}
+
+export const encodeJsonLd = (value) =>
+  JSON.stringify(value).replace(
+    /[&<>\u2028\u2029]/g,
+    (character) => JSON_LD_ESCAPES[character],
+  )
+
+// Undefined and empty values are dropped rather than emitted as null: a
+// structured-data node with `"image": null` is worse than one without an image.
+const node = (fields) =>
+  Object.fromEntries(
+    Object.entries(fields).filter(([, value]) => {
+      if (value === undefined || value === null || value === '') return false
+      if (Array.isArray(value) && value.length === 0) return false
+      return true
+    }),
+  )
+
+const breadcrumb = (site, trail) =>
+  node({
+    '@type': 'BreadcrumbList',
+    itemListElement: trail.map((entry, index) =>
+      node({
+        '@type': 'ListItem',
+        position: index + 1,
+        name: entry.name,
+        item: `${site}${entry.path}`,
+      }),
+    ),
+  })
+
+// The site itself and the person behind it, repeated on every page that gets a
+// graph at all. Repeating them is what lets each page stand on its own: a
+// crawler that only ever fetches one URL still learns who published it.
+const siteNodes = (site, owner) => {
+  const websiteId = `${site}/#website`
+  const personId = `${site}/#person`
+
+  return [
+    node({
+      '@type': 'WebSite',
+      '@id': websiteId,
+      name: SITE_NAME,
+      url: `${site}/`,
+      description: DEFAULT_DESCRIPTION,
+      inLanguage: 'en',
+      publisher: owner ? { '@id': personId } : undefined,
+    }),
+    owner
+      ? node({
+          '@type': 'Person',
+          '@id': personId,
+          name: collapseWhitespace(owner.name),
+          url: `${site}/`,
+          jobTitle: collapseWhitespace(owner.titleEn || owner.title),
+          // Profile links only. The mailto: in `socials` is deliberately not
+          // republished here -- it is a personal address, and structured data
+          // is the most machine-harvestable place on the page.
+          sameAs: (owner.socials || [])
+            .map((social) => String(social?.href || ''))
+            .filter((href) => /^https:\/\//i.test(href)),
+        })
+      : null,
+  ].filter(Boolean)
+}
+
+// The graph for one page, or null when there is nothing worth saying. Callers
+// pass the same data they pass buildPageMeta, plus the site owner.
+export const buildJsonLd = ({
+  meta,
+  owner = null,
+  post = null,
+  profile = null,
+  project = null,
+  route,
+  siteUrl,
+} = {}) => {
+  const site = normalizeSiteUrl(siteUrl)
+  const kind = route?.kind || 'unknown'
+
+  // Nothing structured for a page we are asking not to be indexed -- private
+  // areas, unknown paths, and rows that turned out not to exist.
+  if (!meta || meta.noindex || !meta.canonical) return null
+
+  const websiteId = `${site}/#website`
+  const personId = `${site}/#person`
+  const base = siteNodes(site, owner)
+
+  if (kind === 'home') return base
+
+  if (kind === 'community') {
+    return [
+      ...base,
+      node({
+        '@type': 'CollectionPage',
+        '@id': `${meta.canonical}#page`,
+        name: `${SITE_NAME} community`,
+        url: meta.canonical,
+        description: meta.description,
+        inLanguage: 'en',
+        isPartOf: { '@id': websiteId },
+      }),
+      breadcrumb(site, [
+        { name: SITE_NAME, path: '/' },
+        { name: 'Community', path: '/community' },
+      ]),
+    ]
+  }
+
+  if (kind === 'post' && post) {
+    const author = authorName(post)
+    const handle = collapseWhitespace(post?.user?.handle)
+
+    return [
+      ...base,
+      node({
+        // Google's forum type. A community post is a thread with an author and
+        // replies, not an article by the site owner.
+        '@type': 'DiscussionForumPosting',
+        '@id': `${meta.canonical}#post`,
+        headline: postTitle(post),
+        text: collapseWhitespace(post.message),
+        url: meta.canonical,
+        datePublished: post.createdAt || undefined,
+        dateModified: post.updatedAt || undefined,
+        inLanguage: 'en',
+        isPartOf: { '@id': websiteId },
+        author: author
+          ? node({
+              '@type': 'Person',
+              name: author,
+              url: handle ? `${site}/u/${handle}` : undefined,
+            })
+          : undefined,
+      }),
+      breadcrumb(site, [
+        { name: SITE_NAME, path: '/' },
+        { name: 'Community', path: '/community' },
+        { name: postTitle(post), path: route.canonicalPath },
+      ]),
+    ]
+  }
+
+  if (kind === 'project' && project) {
+    const title = projectTitle(project)
+
+    return [
+      ...base,
+      node({
+        '@type': 'CreativeWork',
+        '@id': `${meta.canonical}#work`,
+        name: title,
+        description: englishField(project, 'summary') || meta.description,
+        url: meta.canonical,
+        image: meta.image,
+        dateCreated: project.year ? String(project.year) : undefined,
+        keywords: (project.stack || []).map((item) => collapseWhitespace(item)).filter(Boolean),
+        inLanguage: 'en',
+        isPartOf: { '@id': websiteId },
+        author: owner ? { '@id': personId } : undefined,
+      }),
+      breadcrumb(site, [
+        { name: SITE_NAME, path: '/' },
+        { name: title, path: route.canonicalPath },
+      ]),
+    ]
+  }
+
+  if (kind === 'profile' && profile) {
+    const name = profileName(profile)
+    const handle = collapseWhitespace(profile.handle)
+
+    return [
+      ...base,
+      node({
+        '@type': 'ProfilePage',
+        '@id': `${meta.canonical}#profile`,
+        url: meta.canonical,
+        inLanguage: 'en',
+        isPartOf: { '@id': websiteId },
+        dateCreated: profile.joinedAt || undefined,
+        mainEntity: node({
+          '@type': 'Person',
+          name,
+          alternateName: handle ? `@${handle}` : undefined,
+          description: collapseWhitespace(profile.bio),
+          image: profile.avatarUrl ? absoluteUrl(site, profile.avatarUrl) : undefined,
+          url: meta.canonical,
+        }),
+      }),
+      breadcrumb(site, [
+        { name: SITE_NAME, path: '/' },
+        { name, path: route.canonicalPath },
+      ]),
+    ]
+  }
+
+  return base
+}
+
+export const renderJsonLdScript = (graph) => {
+  if (!graph || graph.length === 0) return ''
+
+  return `    <script type="application/ld+json">${encodeJsonLd({
+    '@context': 'https://schema.org',
+    '@graph': graph,
+  })}</script>`
+}
+
 const metaTag = (attribute, key, value) =>
   `    <meta ${attribute}="${escapeHtml(key)}" content="${escapeHtml(value)}" />`
 
@@ -404,9 +645,15 @@ const metaKeyOf = (tag) => {
   return match ? match[1].trim().toLowerCase() : ''
 }
 
-export const injectSeo = (template, { head, noscript = '' }) => {
+export const injectSeo = (template, { head, jsonLd = '', noscript = '' }) => {
   let html = String(template)
     .replace(/[ \t]*<title>[\s\S]*?<\/title>\s*\n?/i, '')
+    // Owned by this module like the managed meta tags: stripping it first is
+    // what keeps a re-render from stacking a second graph onto the page.
+    .replace(
+      /[ \t]*<script\b[^>]*type\s*=\s*["']application\/ld\+json["'][^>]*>[\s\S]*?<\/script>\s*\n?/gi,
+      '',
+    )
     .replace(/[ \t]*<meta\b[^>]*>\s*\n?/gi, (tag) =>
       MANAGED_META_KEYS.has(metaKeyOf(tag)) ? '' : tag,
     )
@@ -415,9 +662,13 @@ export const injectSeo = (template, { head, noscript = '' }) => {
   // Function replacements throughout: the generated head carries user-written
   // text, and `$&` or `$1` in a post title would otherwise be expanded by
   // String.prototype.replace.
+  // The graph goes in with the head, so one splice covers both and the hash in
+  // the CSP header describes something that is actually on the page.
+  const headBlock = jsonLd ? `${head}\n${jsonLd}` : head
+
   html = /<\/head>/i.test(html)
-    ? html.replace(/([ \t]*)<\/head>/i, (_match, indent) => `${head}\n${indent}</head>`)
-    : `${head}\n${html}`
+    ? html.replace(/([ \t]*)<\/head>/i, (_match, indent) => `${headBlock}\n${indent}</head>`)
+    : `${headBlock}\n${html}`
 
   if (noscript) {
     html = /<\/body>/i.test(html)
@@ -429,11 +680,14 @@ export const injectSeo = (template, { head, noscript = '' }) => {
 }
 
 // Convenience wrapper: everything above in one call, for the server route.
-export const renderSeoHtml = ({ post, posts, profile, project, route, siteUrl, template }) => {
+export const renderSeoHtml = ({ owner, post, posts, profile, project, route, siteUrl, template }) => {
   const meta = buildPageMeta({ post, profile, project, route, siteUrl })
 
   return injectSeo(template, {
     head: renderHead(meta),
+    jsonLd: renderJsonLdScript(
+      buildJsonLd({ meta, owner, post, profile, project, route, siteUrl }),
+    ),
     noscript: renderNoscript({ post, posts, profile, project, route }),
   })
 }

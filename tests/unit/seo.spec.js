@@ -4,11 +4,14 @@ import {
   DEFAULT_DESCRIPTION,
   DEFAULT_TITLE,
   absoluteUrl,
+  buildJsonLd,
   buildPageMeta,
   collapseWhitespace,
   escapeHtml,
   injectSeo,
+  encodeJsonLd,
   renderHead,
+  renderJsonLdScript,
   renderNoscript,
   renderSeoHtml,
   resolveRoute,
@@ -69,7 +72,30 @@ const profile = {
   profilePublic: true,
 }
 
+// The static site owner, as server/content.js has it.
+const owner = {
+  name: 'Right',
+  socials: [
+    { href: 'https://github.com/rightamen', label: 'GitHub' },
+    { href: 'mailto:someone@example.com', label: 'Email' },
+  ],
+  title: '三维模型与游戏美术资产创作者',
+  titleEn: '3D model and game art asset creator',
+}
+
 const headFor = (route, data = {}) => renderHead(buildPageMeta({ route, siteUrl, ...data }))
+
+const graphFor = (route, data = {}) =>
+  buildJsonLd({
+    meta: buildPageMeta({ route, siteUrl, ...data }),
+    owner,
+    route,
+    siteUrl,
+    ...data,
+  })
+
+const typesIn = (graph) => (graph || []).map((entry) => entry['@type'])
+const nodeOfType = (graph, type) => (graph || []).find((entry) => entry['@type'] === type)
 
 describe('text helpers', () => {
   it('escapes the characters that would break out of an attribute', () => {
@@ -421,6 +447,174 @@ describe('renderNoscript', () => {
   })
 })
 
+// JSON-LD is the one thing on the page that a search engine reads as a claim
+// about what the page *is*. Two things are under test: does each route make the
+// right claim, and can visitor-written text get out of the script element.
+describe('buildJsonLd', () => {
+  it('gives the homepage the site and the person behind it', () => {
+    const graph = graphFor(resolveRoute('/'))
+
+    expect(typesIn(graph)).toEqual(['WebSite', 'Person'])
+    expect(nodeOfType(graph, 'WebSite')).toMatchObject({
+      '@id': 'https://mrright.blog/#website',
+      name: 'mrright.blog',
+      publisher: { '@id': 'https://mrright.blog/#person' },
+      url: 'https://mrright.blog/',
+    })
+    expect(nodeOfType(graph, 'Person')).toMatchObject({
+      '@id': 'https://mrright.blog/#person',
+      jobTitle: '3D model and game art asset creator',
+      name: 'Right',
+    })
+  })
+
+  // Structured data is the most machine-harvestable place on a page. The
+  // address is already a mailto: link in the footer; republishing it here as a
+  // typed field is a different thing, and not one this needs.
+  it('publishes profile links but never the email address', () => {
+    const person = nodeOfType(graphFor(resolveRoute('/')), 'Person')
+
+    expect(person.sameAs).toEqual(['https://github.com/rightamen'])
+    expect(JSON.stringify(person)).not.toContain('mailto:')
+  })
+
+  it('describes a project as a creative work with a trail back to the homepage', () => {
+    const route = resolveRoute(`/projects/${project.slug}`)
+    const graph = graphFor(route, { project: { ...project, stack: ['3ds Max', 'GLB'], year: '2026' } })
+    const work = nodeOfType(graph, 'CreativeWork')
+
+    expect(work).toMatchObject({
+      '@id': `https://mrright.blog/projects/${project.slug}#work`,
+      author: { '@id': 'https://mrright.blog/#person' },
+      dateCreated: '2026',
+      description: project.summaryEn,
+      image: 'https://mrright.blog/uploads/images/altar.png',
+      keywords: ['3ds Max', 'GLB'],
+      name: 'Shadow Altar Candle Shrine',
+      url: `https://mrright.blog/projects/${project.slug}`,
+    })
+    expect(nodeOfType(graph, 'BreadcrumbList').itemListElement).toEqual([
+      { '@type': 'ListItem', item: 'https://mrright.blog/', name: 'mrright.blog', position: 1 },
+      {
+        '@type': 'ListItem',
+        item: `https://mrright.blog/projects/${project.slug}`,
+        name: 'Shadow Altar Candle Shrine',
+        position: 2,
+      },
+    ])
+  })
+
+  it('describes a post as a forum posting with its author and dates', () => {
+    const route = resolveRoute(`/community/${post.id}`)
+    const posting = nodeOfType(graphFor(route, { post }), 'DiscussionForumPosting')
+
+    expect(posting).toMatchObject({
+      author: { '@type': 'Person', name: 'Rin Sato', url: 'https://mrright.blog/u/rin-sato' },
+      datePublished: post.createdAt,
+      dateModified: post.updatedAt,
+      headline: 'Baking normals',
+      text: post.message,
+      url: `https://mrright.blog/community/${post.id}`,
+    })
+  })
+
+  it('describes a public profile as a profile page about a person', () => {
+    const graph = graphFor(resolveRoute('/u/rin-sato'), { profile })
+    const page = nodeOfType(graph, 'ProfilePage')
+
+    expect(page.mainEntity).toMatchObject({
+      '@type': 'Person',
+      alternateName: '@rin-sato',
+      description: profile.bio,
+      image: 'https://mrright.blog/uploads/avatars/rin.png',
+      name: 'Rin Sato',
+    })
+  })
+
+  it('leaves out what it does not have rather than emitting empty fields', () => {
+    const graph = graphFor(resolveRoute('/u/rin-sato'), {
+      profile: { ...profile, avatarUrl: '', bio: '' },
+    })
+    const person = nodeOfType(graph, 'ProfilePage').mainEntity
+
+    expect(person).not.toHaveProperty('image')
+    expect(person).not.toHaveProperty('description')
+    expect(person.name).toBe('Rin Sato')
+  })
+
+  it('says nothing structured about a page it is asking not to be indexed', () => {
+    // Private areas, unknown paths, and rows that turned out not to exist: if
+    // the head says noindex, there is nothing to make claims about.
+    expect(graphFor(resolveRoute('/account'))).toBeNull()
+    expect(graphFor(resolveRoute('/no-such-page'))).toBeNull()
+    expect(graphFor(resolveRoute('/community/gone'), { post: null })).toBeNull()
+    expect(graphFor(resolveRoute('/projects/gone'), { project: null })).toBeNull()
+    expect(
+      graphFor(resolveRoute('/u/rin-sato'), { profile: { ...profile, profilePublic: false } }),
+    ).toBeNull()
+  })
+
+  it('still describes the site when there is no owner record to draw on', () => {
+    const graph = buildJsonLd({
+      meta: buildPageMeta({ route: resolveRoute('/'), siteUrl }),
+      route: resolveRoute('/'),
+      siteUrl,
+    })
+
+    expect(typesIn(graph)).toEqual(['WebSite'])
+    expect(nodeOfType(graph, 'WebSite')).not.toHaveProperty('publisher')
+  })
+})
+
+describe('renderJsonLdScript', () => {
+  // The one character that can end the script element early. A bio containing
+  // </script> would otherwise close it, and everything after it would be parsed
+  // as HTML by the browser. CSP is no help here -- a data block is never
+  // checked against script-src (see the module comment) -- so this escaping is
+  // the only thing standing between a visitor's bio and an injected element.
+  it('cannot be broken out of by visitor-written text', () => {
+    const script = renderJsonLdScript(
+      graphFor(resolveRoute('/u/rin-sato'), {
+        profile: { ...profile, bio: '</script><img src=x onerror=alert(1)>' },
+      }),
+    )
+
+    expect(script).not.toContain('</script><img')
+    expect(script.match(/<\/script>/g)).toHaveLength(1)
+    expect(script).toContain('\\u003c/script\\u003e')
+  })
+
+  it('still parses back to the text that went in', () => {
+    const encoded = encodeJsonLd({ bio: '</script> & <b>bold</b>' })
+
+    expect(JSON.parse(encoded)).toEqual({ bio: '</script> & <b>bold</b>' })
+  })
+
+  it('has nothing to render for a page with no graph', () => {
+    expect(renderJsonLdScript(null)).toBe('')
+    expect(renderJsonLdScript([])).toBe('')
+  })
+})
+
+describe('renderSeoHtml puts the graph on the page', () => {
+  it('emits one graph, inside the head', () => {
+    const html = renderSeoHtml({ owner, route: resolveRoute('/'), siteUrl, template })
+
+    expect(html.match(/application\/ld\+json/g)).toHaveLength(1)
+    expect(html.indexOf('application/ld+json')).toBeLessThan(html.indexOf('</head>'))
+    expect(JSON.parse(html.match(/ld\+json">([\s\S]*?)<\/script>/)[1])['@context']).toBe(
+      'https://schema.org',
+    )
+  })
+
+  it('leaves the page without one when the page is not indexed', () => {
+    const html = renderSeoHtml({ owner, route: resolveRoute('/account'), siteUrl, template })
+
+    expect(html).not.toContain('ld+json')
+    expect(html).toContain('name="robots"')
+  })
+})
+
 describe('injectSeo', () => {
   it('replaces the template head rather than adding a second one', () => {
     const html = renderSeoHtml({ post, route: resolveRoute(`/community/${post.id}`), siteUrl, template })
@@ -485,5 +679,17 @@ describe('injectSeo is idempotent', () => {
 
     expect(twice.match(/<title>/g)).toHaveLength(1)
     expect(twice).toContain(`<title>${DEFAULT_TITLE}</title>`)
+  })
+
+  // The graph is owned by this module too, so a second pass replaces it rather
+  // than leaving two graphs on the page for a crawler to reconcile.
+  it('does not stack a second json-ld graph', () => {
+    const once = renderSeoHtml({ owner, route: resolveRoute('/community'), siteUrl, template })
+    expect(once.match(/application\/ld\+json/g)).toHaveLength(1)
+
+    const twice = injectSeo(once, { head: '', jsonLd: '    <script type="application/ld+json">{}</script>' })
+
+    expect(twice.match(/application\/ld\+json/g)).toHaveLength(1)
+    expect(twice).toContain('>{}</script>')
   })
 })
