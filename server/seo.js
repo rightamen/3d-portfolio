@@ -76,6 +76,11 @@ const COMMUNITY_DESCRIPTION =
 const POST_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/
 // Kept in step with handlePattern in server/index.js.
 const HANDLE_PATTERN = /^[a-z0-9_-]{3,30}$/
+// Same job as POST_ID_PATTERN: keep /projects/<junk> from costing a catalogue
+// read per request. Deliberately looser than slugPattern in server/index.js
+// (which validates slugs on the way in) so that a wrong-but-plausible slug
+// reaches the lookup and gets an honest 404 instead of a soft one.
+const PROJECT_SLUG_PATTERN = /^[A-Za-z0-9_-]{1,80}$/
 const PRIVATE_PREFIX_PATTERN = /^\/(?:admin|account|login)(?:\/|$)/
 
 const decodeSegment = (value) => {
@@ -110,6 +115,21 @@ export const resolveRoute = (pathname) => {
     return { canonicalPath: `/community/${postId}`, kind: 'post', postId }
   }
 
+  // /projects is not a page of its own -- the catalogue lives on the homepage,
+  // and the router renders the homepage here -- so it points its canonical at
+  // `/` rather than becoming a second URL for the same content.
+  if (path === '/projects') return { canonicalPath: '/', kind: 'home' }
+
+  // Anchored, unlike the post and profile matches above: a project detail has
+  // no tabs, so /projects/<slug>/anything is not a project page -- the client
+  // router renders the plain homepage there, and this must agree with it.
+  const projectMatch = path.match(/^\/projects\/([^/]+)$/)
+  if (projectMatch) {
+    const slug = decodeSegment(projectMatch[1])
+    if (!PROJECT_SLUG_PATTERN.test(slug)) return { canonicalPath: null, kind: 'unknown' }
+    return { canonicalPath: `/projects/${slug}`, kind: 'project', slug }
+  }
+
   const profileMatch = path.match(/^\/u\/([^/]+)/)
   if (profileMatch) {
     const handle = decodeSegment(profileMatch[1]).trim().toLowerCase().replace(/^@+/, '')
@@ -126,6 +146,15 @@ export const resolveRoute = (pathname) => {
   return { canonicalPath: null, kind: 'unknown' }
 }
 
+// Projects carry four columns per field (base, Zh, En, Ja) and the head is one
+// language for everybody -- English, like the rest of this file and the
+// lang="en" on the template. The base column is the fallback because a custom
+// project created without translations only fills that one.
+const englishField = (item, field) =>
+  collapseWhitespace(item?.[`${field}En`]) || collapseWhitespace(item?.[field])
+
+const projectTitle = (project) => englishField(project, 'title') || 'Project'
+
 const postTitle = (post) => collapseWhitespace(post?.title) || 'Community post'
 
 const authorName = (post) => collapseWhitespace(post?.user?.displayName)
@@ -135,7 +164,13 @@ const profileName = (profile) =>
 
 // One page's worth of head data. Rendering happens in renderHead so the shape
 // stays assertable in tests without parsing HTML.
-export const buildPageMeta = ({ post = null, profile = null, route, siteUrl } = {}) => {
+export const buildPageMeta = ({
+  post = null,
+  profile = null,
+  project = null,
+  route,
+  siteUrl,
+} = {}) => {
   const site = normalizeSiteUrl(siteUrl)
   const kind = route?.kind || 'unknown'
   const canonical = route?.canonicalPath ? `${site}${route.canonicalPath}` : ''
@@ -176,6 +211,27 @@ export const buildPageMeta = ({ post = null, profile = null, route, siteUrl } = 
       ogType: 'article',
       properties,
       title: `${postTitle(post)} | ${SITE_NAME} Community`,
+    }
+  }
+
+  if (kind === 'project') {
+    // No project means the slug named nothing, or the catalogue could not be
+    // read. Same rule as posts: nothing to advertise, so keep the generic head
+    // and stay out of the index.
+    if (!project) return { ...base, noindex: true }
+
+    const title = projectTitle(project)
+
+    return {
+      ...base,
+      description:
+        truncateText(englishField(project, 'summary')) ||
+        `${title} — a game art asset on ${SITE_NAME}.`,
+      // The one page type on this site that reliably has its own picture. Every
+      // project has a render; this is what finally puts something other than
+      // the fire extinguisher on a share card.
+      image: project.image ? absoluteUrl(site, project.image) : base.image,
+      title: `${title} | ${SITE_NAME}`,
     }
   }
 
@@ -244,8 +300,32 @@ export const renderHead = (meta) => {
 // Text for the crawlers that never run a script. Google does render the SPA, so
 // this is not for Google -- it is for everything else, and it doubles as the
 // only way /community's post list is discoverable without JavaScript.
-export const renderNoscript = ({ post = null, posts = [], profile = null, route } = {}) => {
+export const renderNoscript = ({
+  post = null,
+  posts = [],
+  profile = null,
+  project = null,
+  route,
+} = {}) => {
   const kind = route?.kind || 'unknown'
+
+  if (kind === 'project' && project) {
+    const summary = englishField(project, 'summary')
+    const format = englishField(project, 'format')
+
+    return [
+      '    <noscript>',
+      '      <article>',
+      `        <h1>${escapeHtml(projectTitle(project))}</h1>`,
+      format ? `        <p>${escapeHtml(format)}</p>` : '',
+      summary ? `        <p>${escapeHtml(summary)}</p>` : '',
+      '        <p><a href="/">Back to the mrright.blog portfolio</a></p>',
+      '      </article>',
+      '    </noscript>',
+    ]
+      .filter(Boolean)
+      .join('\n')
+  }
 
   if (kind === 'post' && post) {
     const author = authorName(post)
@@ -349,11 +429,11 @@ export const injectSeo = (template, { head, noscript = '' }) => {
 }
 
 // Convenience wrapper: everything above in one call, for the server route.
-export const renderSeoHtml = ({ post, posts, profile, route, siteUrl, template }) => {
-  const meta = buildPageMeta({ post, profile, route, siteUrl })
+export const renderSeoHtml = ({ post, posts, profile, project, route, siteUrl, template }) => {
+  const meta = buildPageMeta({ post, profile, project, route, siteUrl })
 
   return injectSeo(template, {
     head: renderHead(meta),
-    noscript: renderNoscript({ post, posts, profile, route }),
+    noscript: renderNoscript({ post, posts, profile, project, route }),
   })
 }

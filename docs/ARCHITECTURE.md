@@ -24,7 +24,7 @@ VPS: systemd service + nginx
 Current major product areas:
 
 - Public portfolio pages.
-- Project listing and project detail.
+- Project listing on the homepage, project detail at `/projects/:slug`.
 - 3D model preview.
 - Visitor account registration, login, verification, profile, downloads, comments.
 - Public user profiles at `/u/:handle`.
@@ -266,9 +266,14 @@ renders something other than JSON. The client is single-page, so the built
 head per path before it is sent — title, description, canonical, Open Graph,
 Twitter card, `noindex` on the private areas — and appends a `<noscript>` body
 for crawlers that run no JavaScript. It is not React SSR and deliberately so;
-see `docs/adr/ADR_WEB_SEO_RENDERING_STRATEGY.md`. Public profile visibility is
-enforced there as well as in the API: a profile that is private or
-admin-disabled never reaches the HTML.
+see `docs/adr/ADR_WEB_SEO_RENDERING_STRATEGY.md`. Visibility is enforced there
+as well as in the API: a profile that is private or admin-disabled, and a
+project whose `is_public` is false, never reaches the HTML.
+
+`server/seo.js` keeps its own route table (`resolveRoute`), which has to stay in
+step with the `<Routes>` in `src/App.jsx`. A public route added on one side and
+not the other still renders — it just gets the generic head and a `noindex`,
+silently.
 
 Future server improvements should focus on response helpers, error code normalization, and asset normalization before large feature additions.
 

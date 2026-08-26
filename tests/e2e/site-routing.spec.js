@@ -78,6 +78,14 @@ const payloadFor = (pathname) => {
 
   if (pathname.startsWith('/api/community/posts/')) return { comments: [] }
 
+  const projectMatch = pathname.match(/^\/api\/projects\/([^/]+)(\/.*)?$/)
+  if (projectMatch) {
+    const project = projects.find((item) => item.slug === decodeURIComponent(projectMatch[1]))
+    if (!project) return null
+    if (projectMatch[2] === '/interactions') return { comments: [], likeCount: 0 }
+    return { project }
+  }
+
   const userMatch = pathname.match(/^\/api\/users\/([^/]+)(\/.*)?$/)
   if (userMatch) {
     if (decodeURIComponent(userMatch[1]) !== knownHandle) return null
@@ -181,6 +189,75 @@ test('Back walks the history the router pushed', async ({ page }) => {
   await page.goBack()
   await expect(page.locator('#home')).toBeVisible()
   expect(await documentSurvived(page)).toBe(true)
+})
+
+// Round twenty-four gave projects a URL. The detail used to be component
+// state, so the panel a visitor was reading had no address: it could not be
+// linked to, Back could not close it, and a scraper had nothing to fetch.
+test('a project card links into its own url and opens the detail there', async ({ page }) => {
+  await openSite(page, '/')
+  const card = page.locator('#projects .grid article').first()
+  await expect(card).toBeVisible()
+  await markDocument(page)
+
+  await card.scrollIntoViewIfNeeded()
+  await card.locator(`a[href="/projects/${projects[0].slug}"]`).click()
+
+  await expect(page).toHaveURL(new RegExp(`/projects/${projects[0].slug}$`))
+  await expect(page.locator('.detail-overlay')).toBeVisible()
+  await expect(page.locator('#project-detail-title')).toHaveText(projects[0].title)
+  expect(await documentSurvived(page)).toBe(true)
+  // The overlay is on top of the homepage, so the homepage must not have been
+  // yanked to the top underneath it -- closing would drop the visitor at the
+  // top of the site instead of back at the card they clicked. Asserted as "not
+  // zero" rather than an exact offset: focusing the dialog and the sections
+  // still settling below nudge it by a few hundred pixels, while the thing this
+  // guards against (ScrollToTop firing on this PUSH) lands on exactly 0.
+  expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(0)
+})
+
+test('closing a project detail goes back to the homepage without reloading', async ({ page }) => {
+  await openSite(page, '/')
+  await markDocument(page)
+
+  await page.locator(`#projects a[href="/projects/${projects[0].slug}"]`).click()
+  await expect(page.locator('.detail-overlay')).toBeVisible()
+
+  await page.locator('.detail-header button').click()
+
+  await expect(page).toHaveURL(/\/$/)
+  await expect(page.locator('.detail-overlay')).toHaveCount(0)
+  await expect(page.locator('#home')).toBeVisible()
+  expect(await documentSurvived(page)).toBe(true)
+})
+
+test('Back closes a project detail too', async ({ page }) => {
+  await openSite(page, '/')
+  await markDocument(page)
+
+  await page.locator(`#projects a[href="/projects/${projects[0].slug}"]`).click()
+  await expect(page.locator('.detail-overlay')).toBeVisible()
+
+  await page.goBack()
+
+  await expect(page.locator('.detail-overlay')).toHaveCount(0)
+  expect(await documentSurvived(page)).toBe(true)
+})
+
+// The point of the route: someone who was sent the link, and never touched the
+// grid, lands on the same panel.
+test('a project url opens the detail on a cold load', async ({ page }) => {
+  await openSite(page, `/projects/${projects[1].slug}`)
+
+  await expect(page.locator('.detail-overlay')).toBeVisible()
+  await expect(page.locator('#project-detail-title')).toHaveText(projects[1].title)
+})
+
+test('a project slug nobody owns says so instead of hanging', async ({ page }) => {
+  await openSite(page, '/projects/no-such-project-slug')
+
+  await expect(page.locator('.detail-overlay')).toBeVisible()
+  await expect(page.locator('.detail-panel .text-coral')).toBeVisible()
 })
 
 test('the sign-in page switches modes through the query string, in place', async ({ page }) => {

@@ -1,5 +1,6 @@
 import { motion as Motion } from 'motion/react'
 import { lazy, Suspense, useMemo, useState } from 'react'
+import { Link, useLocation, useMatch, useNavigate } from 'react-router-dom'
 import { assetCategoryProfiles, getAssetCategoryProfile } from '../lib/assetCategories'
 import { pickLocalized, translateKnownLabel } from '../lib/i18n'
 
@@ -8,8 +9,25 @@ const ProjectDetail = lazy(() => import('../components/ProjectDetail'))
 
 const Projects = ({ authToken, copy, language, projects = [], visitorUser }) => {
   const [previewProject, setPreviewProject] = useState(null)
-  const [detailSlug, setDetailSlug] = useState(null)
   const [activeCategory, setActiveCategory] = useState('all')
+  const location = useLocation()
+  const navigate = useNavigate()
+  // The open detail is the URL, not component state. That is the whole point of
+  // giving projects a route: the panel a visitor is looking at is now something
+  // they can link to, and something a crawler can be handed a title and a
+  // picture for. The model preview above is still local state -- it is a viewer
+  // for the same project, not a different page.
+  const detailMatch = useMatch('/projects/:slug')
+  const detailSlug = detailMatch?.params?.slug || null
+
+  const closeDetail = () => {
+    // Opened from the grid: step back, so closing does not pile a second entry
+    // onto history and Back still means back. Arrived from outside (a shared
+    // link) there is nothing behind this URL, so go to the homepage.
+    if (location.state?.fromCatalogue) navigate(-1)
+    else navigate('/')
+  }
+
   const categoryCounts = useMemo(() => {
     const counts = new Map(assetCategoryProfiles.map((category) => [category.value, 0]))
 
@@ -162,13 +180,16 @@ const Projects = ({ authToken, copy, language, projects = [], visitorUser }) => 
                   {copy.openModelPreview}
                 </button>
               )}
-              <button
-                type="button"
+              {/* A real link, not a button: this is what lets a crawler walk
+                  from the homepage into each project, and what lets a visitor
+                  copy the address of the one they are looking at. */}
+              <Link
                 className="primary-action w-full"
-                onClick={() => setDetailSlug(project.slug)}
+                state={{ fromCatalogue: true, preserveScroll: true }}
+                to={`/projects/${encodeURIComponent(project.slug)}`}
               >
                 {copy.viewDetails}
-              </button>
+              </Link>
             </div>
           </Motion.article>
           )
@@ -196,7 +217,7 @@ const Projects = ({ authToken, copy, language, projects = [], visitorUser }) => 
             visitorUser={visitorUser}
             language={language}
             copy={copy}
-            onClose={() => setDetailSlug(null)}
+            onClose={closeDetail}
           />
         </Suspense>
       )}

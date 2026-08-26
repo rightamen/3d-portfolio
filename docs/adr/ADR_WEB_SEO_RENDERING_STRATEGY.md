@@ -105,3 +105,47 @@ long-form articles, documentation — full SSR for those routes only becomes wor
 the cost. The router is already declarative, which is the hard prerequisite. The
 homepage should stay client-rendered regardless; there is nothing in a 3D scene
 for an index to read.
+
+## 7. Amendment, 2026-08-26: projects have a route
+
+The original decision left one gap open, and §1 named it: the sitemap's four
+`/?project=<slug>` entries were removed because nothing read that parameter, and
+the projects themselves were left covered by `/` alone. So the four pieces of
+work this site exists to show could not be linked to, shared, or indexed
+separately — the detail panel was React state with no address.
+
+They now have one: `/projects/:slug`.
+
+- `src/App.jsx` renders the **same** `homePage` element for `/` and
+  `/projects/:slug`. The detail is an overlay on the homepage, not a separate
+  page, and rendering the same element keeps `HomePage` — and the 3D scene
+  inside it — mounted across the navigation.
+- `src/sections/Projects.jsx` reads the open project from the URL
+  (`useMatch('/projects/:slug')`) instead of holding it in state, and the card's
+  "view details" control is a real `<Link>`. That link is also what lets a
+  crawler walk from the homepage into each project.
+- `resolveRoute` matches `/projects/:slug` **anchored**, unlike the post and
+  profile routes: a project detail has no tabs, so `/projects/<slug>/anything`
+  is not a project page, and the client router agrees — it renders the plain
+  homepage there.
+- `/projects` is not a page. It renders the homepage and points its canonical at
+  `/`, rather than becoming a second URL for the same content.
+- A slug that names nothing answers 404, exactly like a missing post. So does a
+  project whose `is_public` is false: `projectStore.listProjects` drops those
+  rows, so a hidden project is indistinguishable from a missing one here, which
+  is the behaviour we want — unpublishing has to take the head off the page.
+- Project text is read in English (`titleEn`/`summaryEn`, falling back to the
+  base column), like the rest of the head and the template's `lang="en"`.
+- Projects are the first pages on this site with a **picture of their own**:
+  `og:image` is the project's render instead of the site-wide fire extinguisher.
+- `sitemap.xml` lists every public project under its own URL.
+
+Verification added: 14 cases in `tests/unit/seo.spec.js`, 6 in
+`tests/api/contract.spec.js` (projects come from the bundled content file, so
+the DB-free suite reaches them), 5 in `tests/api/contract.db.spec.js` (a real
+admin-created project, including hiding it), and 5 in
+`tests/e2e/site-routing.spec.js` (link, cold load, close, Back, unknown slug).
+
+What this amendment does **not** change: still no SSR, still no JSON-LD, and a
+project's share card is its existing render — there is no per-project social
+image.

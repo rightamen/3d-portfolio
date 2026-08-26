@@ -40,14 +40,19 @@ const SectionFallback = ({ title, copy }) => (
 // navigation does not, so do it here -- but only for PUSH. On POP the browser
 // restores the previous offset, which is what a Back button should do, and
 // scrolling to the top would undo it.
+//
+// One PUSH is exempt: opening a project detail. That navigation only puts an
+// overlay on top of the homepage, so yanking the page underneath it to the top
+// would lose the visitor's place in the grid the moment they close it again.
 const ScrollToTop = () => {
-  const { pathname } = useLocation()
+  const { pathname, state } = useLocation()
   const navigationType = useNavigationType()
 
   useEffect(() => {
     if (navigationType !== 'PUSH') return
+    if (state?.preserveScroll) return
     window.scrollTo(0, 0)
-  }, [navigationType, pathname])
+  }, [navigationType, pathname, state])
 
   return null
 }
@@ -411,6 +416,11 @@ const App = () => {
           }
         />
         <Route path="/" element={homePage} />
+        {/* A project detail is an overlay on the homepage, not a page of its
+            own, so it renders the same element. Same element type in the same
+            position means React keeps HomePage -- and the 3D scene inside it --
+            mounted across the navigation. */}
+        <Route path="/projects/:slug" element={homePage} />
         <Route path="/community" element={communityPage} />
         <Route path="/community/:postId/*" element={communityPage} />
         {/* The trailing splats keep the prefix semantics the pathname checks

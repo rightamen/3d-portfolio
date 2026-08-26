@@ -49,6 +49,17 @@ const post = {
   user: { displayName: 'Rin Sato', handle: 'rin-sato' },
 }
 
+const project = {
+  format: '手绘风场景道具模型',
+  formatEn: 'Hand-painted environment prop model',
+  image: '/uploads/images/altar.png',
+  slug: 'shadow-altar-candle-shrine',
+  summary: '一款手绘风格的幻想祭坛壁饰模型。',
+  summaryEn: 'A hand-painted fantasy altar prop featuring a stone arch and blue magical gems.',
+  title: '暗影祭坛烛台',
+  titleEn: 'Shadow Altar Candle Shrine',
+}
+
 const profile = {
   avatarUrl: '/uploads/avatars/rin.png',
   bio: 'Environment artist, mostly props.',
@@ -119,6 +130,22 @@ describe('resolveRoute', () => {
       handle: 'rin-sato',
       kind: 'profile',
     })
+    expect(resolveRoute(`/projects/${project.slug}`)).toMatchObject({
+      canonicalPath: `/projects/${project.slug}`,
+      kind: 'project',
+      slug: project.slug,
+    })
+  })
+
+  it('points /projects at the homepage instead of making it a second url for it', () => {
+    expect(resolveRoute('/projects')).toMatchObject({ canonicalPath: '/', kind: 'home' })
+  })
+
+  it('does not collapse a path below a project onto the project', () => {
+    // Unlike posts and profiles, a project detail has no tabs. The client
+    // router renders the plain homepage for /projects/<slug>/anything, so this
+    // has to agree rather than serve that path a project's head.
+    expect(resolveRoute(`/projects/${project.slug}/extra`).kind).toBe('unknown')
   })
 
   it('collapses a route with tabs below it onto one canonical url', () => {
@@ -146,6 +173,8 @@ describe('resolveRoute', () => {
     expect(resolveRoute('/u/' + 'a'.repeat(40)).kind).toBe('unknown')
     expect(resolveRoute('/community/' + 'a'.repeat(200)).kind).toBe('unknown')
     expect(resolveRoute('/community/../../etc/passwd').kind).toBe('unknown')
+    expect(resolveRoute('/projects/' + 'a'.repeat(200)).kind).toBe('unknown')
+    expect(resolveRoute('/projects/what is this').kind).toBe('unknown')
   })
 
   it('survives a malformed percent escape instead of throwing', () => {
@@ -192,6 +221,47 @@ describe('buildPageMeta', () => {
 
     expect(meta.noindex).toBe(true)
     expect(meta.title).toBe('Community | mrright.blog')
+  })
+
+  it('titles a project with its own title and gives it its own render as the card image', () => {
+    const meta = buildPageMeta({ project, route: resolveRoute(`/projects/${project.slug}`), siteUrl })
+
+    expect(meta.title).toBe('Shadow Altar Candle Shrine | mrright.blog')
+    expect(meta.description).toBe(project.summaryEn)
+    expect(meta.image).toBe('https://mrright.blog/uploads/images/altar.png')
+    expect(meta.canonical).toBe(`https://mrright.blog/projects/${project.slug}`)
+    expect(meta.noindex).toBe(false)
+  })
+
+  it('reads a project in English, the language the rest of the head is in', () => {
+    const meta = buildPageMeta({ project, route: resolveRoute(`/projects/${project.slug}`), siteUrl })
+
+    expect(meta.title).not.toContain(project.title)
+    expect(meta.description).not.toContain(project.summary)
+  })
+
+  it('falls back to the untranslated columns of a project that has no English', () => {
+    // A project created in the admin console without translations only has the
+    // base title/summary filled in.
+    const meta = buildPageMeta({
+      project: { slug: 'bare', summary: 'Just the one column.', title: 'Bare project' },
+      route: resolveRoute('/projects/bare'),
+      siteUrl,
+    })
+
+    expect(meta.title).toBe('Bare project | mrright.blog')
+    expect(meta.description).toBe('Just the one column.')
+    expect(meta.image).toBe('https://mrright.blog/assets/projects/fire-extinguisher.png')
+  })
+
+  it('keeps a project that is missing or hidden out of the index', () => {
+    // The store drops is_public = false rows, so a hidden project arrives here
+    // as null exactly like a slug that names nothing.
+    const meta = buildPageMeta({ project: null, route: resolveRoute('/projects/gone'), siteUrl })
+
+    expect(meta.noindex).toBe(true)
+    expect(meta.title).toBe(DEFAULT_TITLE)
+    expect(meta.description).toBe(DEFAULT_DESCRIPTION)
   })
 
   it('names a profile by display name and handle, and uses the avatar as the card image', () => {
@@ -304,6 +374,19 @@ describe('renderNoscript', () => {
     expect(noscript).toContain('<a href="/community/b-2">Baking normals</a>')
   })
 
+  it('writes the project out, with a way back to the portfolio', () => {
+    const noscript = renderNoscript({ project, route: resolveRoute(`/projects/${project.slug}`) })
+
+    expect(noscript).toContain('<h1>Shadow Altar Candle Shrine</h1>')
+    expect(noscript).toContain(project.summaryEn)
+    expect(noscript).toContain(project.formatEn)
+    expect(noscript).toContain('<a href="/">')
+  })
+
+  it('says nothing about a project that could not be loaded', () => {
+    expect(renderNoscript({ project: null, route: resolveRoute('/projects/gone') })).toBe('')
+  })
+
   it('says nothing at all about a hidden profile', () => {
     expect(
       renderNoscript({
@@ -321,6 +404,16 @@ describe('renderNoscript', () => {
 
     expect(noscript).not.toContain('<img')
     expect(noscript).toContain('&lt;img src=x onerror=alert(1)&gt;')
+  })
+
+  it('escapes an admin-written project title too', () => {
+    const noscript = renderNoscript({
+      project: { ...project, titleEn: 'Sword "Ash" & <b>rune</b>' },
+      route: resolveRoute(`/projects/${project.slug}`),
+    })
+
+    expect(noscript).not.toContain('<b>')
+    expect(noscript).toContain('Sword &quot;Ash&quot; &amp; &lt;b&gt;rune&lt;/b&gt;')
   })
 
   it('has nothing to add to the homepage', () => {

@@ -1557,8 +1557,108 @@ test.describe('per-route HTML head, from real rows', () => {
     expect(updated.response.status).toBe(200)
   }
 
+  // A project of this suite's own, so hiding it cannot disturb the catalogue
+  // the other tests read. Created public, flipped hidden and back inside the
+  // one test that needs it, and removed afterwards.
+  const seoProjectSlug = 'contract-seo-project'
+  const seoProjectPayload = {
+    image: '/assets/projects/fire-extinguisher.png',
+    slug: seoProjectSlug,
+    summary: 'Base column summary.',
+    summaryEn: 'A contract-test asset with an English summary of its own.',
+    title: '合同测试资源',
+    titleEn: 'Contract Test Asset',
+    year: '2026',
+  }
+  let adminSessionToken
+
+  const setProjectVisibility = async (isPublic) => {
+    const updated = await sendJson(
+      'PATCH',
+      `/api/admin/projects/${seoProjectSlug}`,
+      { ...seoProjectPayload, isPublic },
+      adminSessionToken,
+    )
+    expect(updated.response.status).toBe(200)
+  }
+
   test.beforeAll(async () => {
     await setProfileVisibility(true)
+
+    const issued = await sendJson('POST', '/api/admin/session', {}, adminToken)
+    expect(issued.response.status).toBe(201)
+    adminSessionToken = issued.payload.data.session.token
+
+    const created = await sendJson(
+      'POST',
+      '/api/admin/projects',
+      seoProjectPayload,
+      adminSessionToken,
+    )
+    expect(created.response.status).toBe(201)
+  })
+
+  test.afterAll(async () => {
+    if (!adminSessionToken) return
+    await sendJson('DELETE', `/api/admin/projects/${seoProjectSlug}`, {}, adminSessionToken)
+    await sendJson('DELETE', '/api/admin/session', {}, adminSessionToken)
+  })
+
+  test('a project page carries its own title, summary and render', async () => {
+    const { body, response } = await getHtml(`/projects/${seoProjectSlug}`)
+
+    expect(response.status).toBe(200)
+    expect(body).toContain('<title>Contract Test Asset | mrright.blog</title>')
+    expect(body).toContain('A contract-test asset with an English summary of its own.')
+    expect(body).toContain(
+      '<meta property="og:image" ' +
+        'content="https://mrright.blog/assets/projects/fire-extinguisher.png" />',
+    )
+    expect(body).toContain(
+      `<link rel="canonical" href="https://mrright.blog/projects/${seoProjectSlug}" />`,
+    )
+    expect(body).not.toContain('name="robots"')
+  })
+
+  test('a project page is crawlable without javascript', async () => {
+    const { body } = await getHtml(`/projects/${seoProjectSlug}`)
+    const noscript = body.match(/<noscript>[\s\S]*?<\/noscript>/)?.[0] || ''
+
+    expect(noscript).toContain('<h1>Contract Test Asset</h1>')
+    expect(noscript).toContain('A contract-test asset with an English summary of its own.')
+  })
+
+  test('a project slug nobody owns answers 404 rather than a soft 404', async () => {
+    const { body, response } = await getHtml('/projects/no-such-project-slug')
+
+    expect(response.status).toBe(404)
+    expect(body).toContain('<meta name="robots" content="noindex, follow" />')
+    expect(body).not.toContain('rel="canonical"')
+  })
+
+  // The mirror of the private-profile case: a project the admin unpublished
+  // must stop being served to scrapers, not merely disappear from the grid.
+  test('a project switched to hidden stops advertising itself', async () => {
+    await setProjectVisibility(false)
+
+    try {
+      const { body, response } = await getHtml(`/projects/${seoProjectSlug}`)
+
+      expect(response.status).toBe(404)
+      expect(body).toContain('<meta name="robots" content="noindex, follow" />')
+      expect(body).not.toContain('Contract Test Asset')
+      expect(body).not.toContain('A contract-test asset with an English summary of its own.')
+    } finally {
+      await setProjectVisibility(true)
+    }
+  })
+
+  test('/projects is not a second url for the homepage', async () => {
+    const { body, response } = await getHtml('/projects')
+
+    expect(response.status).toBe(200)
+    expect(body).toContain('<link rel="canonical" href="https://mrright.blog/" />')
+    expect(body).toContain('<title>mrright.blog | 3D Portfolio</title>')
   })
 
   test('a post page carries the post title, body and author', async () => {
@@ -1646,6 +1746,9 @@ test.describe('per-route HTML head, from real rows', () => {
 
     expect(body).toContain(`<loc>https://mrright.blog/community/${seededPostId}</loc>`)
     expect(body).toContain('<lastmod>')
+    // The project listing goes through real SQL here, not the bundled fallback
+    // store the DB-free suite exercises.
+    expect(body).toContain('<loc>https://mrright.blog/projects/fire-extinguisher-next-gen</loc>')
     // Still no user enumeration, even though profiles now have real heads.
     expect(body).not.toContain('/u/')
   })

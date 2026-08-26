@@ -771,6 +771,66 @@ test.describe('per-route HTML head', () => {
     expect(body).toContain('<link rel="canonical" href="https://mrright.blog/community" />')
   })
 
+  // Projects come from the bundled content file, so this suite reaches them
+  // even without a database. content.js fills `title`/`summary` in English and
+  // adds only Zh/Ja translations, which is also the fallback path in seo.js.
+  test('a project page carries its own title and render, not the homepage one', async () => {
+    const { body, response } = await getHtml('/projects/fire-extinguisher-next-gen')
+
+    expect(response.status).toBe(200)
+    expect(body).toContain('<title>Next-Gen Fire Extinguisher | mrright.blog</title>')
+    expect(body).toContain(
+      '<link rel="canonical" ' +
+        'href="https://mrright.blog/projects/fire-extinguisher-next-gen" />',
+    )
+    expect(body).toContain(
+      '<meta property="og:image" ' +
+        'content="https://mrright.blog/assets/projects/fire-extinguisher.png" />',
+    )
+    expect(body).not.toContain('name="robots"')
+  })
+
+  test('a project page is crawlable without javascript', async () => {
+    const { body } = await getHtml('/projects/fire-extinguisher-next-gen')
+    const noscript = body.match(/<noscript>[\s\S]*?<\/noscript>/)?.[0] || ''
+
+    expect(noscript).toContain('<h1>Next-Gen Fire Extinguisher</h1>')
+    expect(noscript).toContain('<a href="/">')
+  })
+
+  test('a project slug nobody owns answers 404', async () => {
+    const { body, response } = await getHtml('/projects/no-such-project-slug')
+
+    expect(response.status).toBe(404)
+    expect(body).toContain('<meta name="robots" content="noindex, follow" />')
+  })
+
+  test('/projects points its canonical at the homepage it renders', async () => {
+    const { body, response } = await getHtml('/projects')
+
+    expect(response.status).toBe(200)
+    expect(body).toContain('<title>mrright.blog | 3D Portfolio</title>')
+    expect(body).toContain('<link rel="canonical" href="https://mrright.blog/" />')
+  })
+
+  // The client router has no route below a project detail, so neither does the
+  // head: this path renders the plain homepage and must not claim to be the
+  // project.
+  test('a path below a project is not the project', async () => {
+    const { body, response } = await getHtml('/projects/fire-extinguisher-next-gen/extra')
+
+    expect(response.status).toBe(200)
+    expect(body).toContain('<meta name="robots" content="noindex, follow" />')
+    expect(body).not.toContain('<title>Next-Gen Fire Extinguisher | mrright.blog</title>')
+  })
+
+  test('the sitemap lists every project under its own route', async () => {
+    const body = await (await fetch(`${baseURL}/sitemap.xml`)).text()
+
+    expect(body).toContain('<loc>https://mrright.blog/projects/fire-extinguisher-next-gen</loc>')
+    expect(body).toContain('<loc>https://mrright.blog/projects/creature-accessories</loc>')
+  })
+
   test('the built script tag survives the head rewrite', async () => {
     const { body } = await getHtml('/community')
 

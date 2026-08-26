@@ -4045,10 +4045,10 @@ app.get('/robots.txt', (_request, response) => {
   )
 })
 
-// Community posts are listed one URL each -- they are the only public pages
-// this site has that a crawler cannot reach from the homepage without running
-// JavaScript. Cached briefly because a sitemap fetch is a full post listing and
-// crawlers do not coordinate with each other.
+// Projects and community posts are listed one URL each -- the pages a crawler
+// cannot enumerate from the homepage without running JavaScript. Cached briefly
+// because a sitemap fetch is a full catalogue read plus a full post listing,
+// and crawlers do not coordinate with each other.
 const sitemapCacheMs = 5 * 60 * 1000
 let sitemapCache = { body: '', expiresAt: 0 }
 
@@ -4062,15 +4062,27 @@ app.get('/sitemap.xml', async (_request, response) => {
     { changefreq: 'daily', loc: '/community', priority: '0.8' },
   ]
 
-  // Projects used to be listed here as `/?project=<slug>`, which was wrong:
-  // nothing reads that query parameter, so all four URLs served the homepage
-  // and the sitemap was advertising four duplicates of `/`. They are covered by
-  // the `/` entry until projects get a route of their own.
+  // Projects were listed here as `/?project=<slug>` until 2026-08-26, which was
+  // wrong: nothing read that query parameter, so all four URLs served the
+  // homepage. They now have a route of their own and are listed under it.
   //
   // Public profiles are deliberately absent: listing them would enumerate
   // registered users, which the /api/users/:handle responses go out of their
   // way to prevent. They stay indexable when linked to -- see the SEO handler
   // below, which serves them with a canonical URL.
+  try {
+    const projects = (await projectStore?.listProjects(staticProjects)) || []
+    for (const project of projects) {
+      entries.push({
+        changefreq: 'monthly',
+        loc: `/projects/${encodeURIComponent(project.slug)}`,
+        priority: '0.7',
+      })
+    }
+  } catch (error) {
+    console.error('Sitemap project listing failed:', error.message)
+  }
+
   try {
     const posts = (await communityStore?.listPosts()) || []
     for (const post of posts) {
@@ -4152,6 +4164,15 @@ const loadSeoData = async (route) => {
     return post ? { post } : { missing: true }
   }
 
+  if (route.kind === 'project') {
+    if (!projectStore) return {}
+    // listProjects (and so getProject) drops is_public = false by default, so a
+    // hidden project is "missing" here on purpose -- it must not be indexed and
+    // must not answer 200.
+    const project = await projectStore.getProject(staticProjects, route.slug)
+    return project ? { project } : { missing: true }
+  }
+
   if (route.kind === 'profile') {
     if (!authStore) return {}
     // Named to stay clear of the static `profile` imported from content.js.
@@ -4194,6 +4215,7 @@ app.get(/.*/, async (request, response) => {
       post: data.post || null,
       posts: data.posts || [],
       profile: data.profile || null,
+      project: data.project || null,
       route,
       siteUrl: publicSiteUrl,
       template,
