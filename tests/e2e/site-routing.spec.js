@@ -253,6 +253,40 @@ test('a project url opens the detail on a cold load', async ({ page }) => {
   await expect(page.locator('#project-detail-title')).toHaveText(projects[1].title)
 })
 
+// Round twenty-seven: on a cold load of a shared project link, the 3D engine
+// must not be fetched before the panel the link was shared for. Measured on
+// production, letting three.js compete costs about 3 seconds of median and
+// turns a 1.3s spread into a 10s one (scripts/measure-project-link.mjs).
+//
+// This asserts the ordering, not a duration -- a timing assertion here would be
+// a flake generator, and the ordering is the property the code actually
+// guarantees.
+test('a cold project link does not fetch the 3D engine before the panel', async ({ page }) => {
+  const requested = []
+  await page.route('**/assets/*.js', async (route) => {
+    requested.push(new URL(route.request().url()).pathname)
+    await route.continue()
+  })
+
+  await openSite(page, `/projects/${projects[0].slug}`)
+  await expect(page.locator('.detail-overlay')).toBeVisible()
+
+  const indexOf = (needle) => requested.findIndex((path) => path.includes(needle))
+  expect(indexOf('ProjectDetail'), 'the panel chunk was never requested').toBeGreaterThan(-1)
+
+  const three = indexOf('three-core')
+  // Not requested yet at all is the best outcome and also a pass.
+  if (three > -1) expect(three).toBeGreaterThan(indexOf('ProjectDetail'))
+})
+
+// The other half of the same rule: the hero is deferred, not dropped.
+test('the deferred hero still arrives behind the panel', async ({ page }) => {
+  await openSite(page, `/projects/${projects[0].slug}`)
+  await expect(page.locator('.detail-overlay')).toBeVisible()
+
+  await expect(page.locator('#home canvas').first()).toBeAttached({ timeout: 30000 })
+})
+
 test('a project slug nobody owns says so instead of hanging', async ({ page }) => {
   await openSite(page, '/projects/no-such-project-slug')
 

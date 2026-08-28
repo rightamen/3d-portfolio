@@ -7,7 +7,7 @@ import { pickLocalized, translateKnownLabel } from '../lib/i18n'
 const ModelPreview = lazy(() => import('../components/ModelPreview'))
 const ProjectDetail = lazy(() => import('../components/ProjectDetail'))
 
-const Projects = ({ authToken, copy, language, projects = [], visitorUser }) => {
+const Projects = ({ authToken, copy, language, onDetailReady, projects = [], visitorUser }) => {
   const [previewProject, setPreviewProject] = useState(null)
   const [activeCategory, setActiveCategory] = useState('all')
   const location = useLocation()
@@ -218,6 +218,9 @@ const Projects = ({ authToken, copy, language, projects = [], visitorUser }) => 
             language={language}
             copy={copy}
             onClose={closeDetail}
+            // Tells the homepage the panel is up, so the 3D hero behind it can
+            // stop holding back and load. See useDeferredHero in App.jsx.
+            onReady={onDetailReady}
           />
         </Suspense>
       )}

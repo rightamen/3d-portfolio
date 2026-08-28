@@ -1,5 +1,12 @@
-import { Suspense, lazy, useEffect, useState } from 'react'
-import { BrowserRouter, Route, Routes, useLocation, useNavigationType } from 'react-router-dom'
+import { Suspense, lazy, useCallback, useEffect, useState } from 'react'
+import {
+  BrowserRouter,
+  Route,
+  Routes,
+  useLocation,
+  useMatch,
+  useNavigationType,
+} from 'react-router-dom'
 import {
   getCurrentVisitor,
   getExperience,
@@ -57,6 +64,47 @@ const ScrollToTop = () => {
   return null
 }
 
+// A shared project link opens the detail panel on top of the homepage. The
+// panel is 9 KB of chunk; the 3D hero behind it pulls 971 KB of three.js, and
+// on HTTP/2 those requests are multiplexed -- the engine nobody is looking at
+// takes bandwidth from the thing the link was shared for.
+//
+// Measured against production with scripts/measure-project-link.mjs, five
+// interleaved pairs: 10.1s median normally, 7.2s with three.js held back, and
+// the spread collapses from 7.4-17.7s to 6.7-8.0s.
+//
+// So on a *cold load* of a project URL the hero waits until the panel it sits
+// behind has actually rendered. Only a cold load: arriving from the grid means
+// the hero is already mounted, and unmounting it there would tear down the 3D
+// scene that round twenty-four kept alive on purpose.
+//
+// The signal comes up from ProjectDetail rather than from a page-level event,
+// and that is the part worth keeping. Round twenty-six tried requestIdleCallback
+// and measured nothing; the first attempt at this round tried `document
+// .readyState` and the window load event, and also deferred nothing -- because
+// React's first render is scheduled, so by the time HomePage mounts the load
+// event has usually already fired. The only thing that reliably means "the
+// panel is up" is the panel saying so.
+const useDeferredHero = () => {
+  const projectRoute = useMatch('/projects/:slug')
+  const [ready, setReady] = useState(() => !projectRoute)
+  // Stable, so the effect that calls it in ProjectDetail runs once.
+  const release = useCallback(() => setReady(true), [])
+
+  useEffect(() => {
+    // One-way: once the hero is in, it stays in.
+    if (ready) return undefined
+
+    // Ceiling. The hero is part of the page, not an optional extra, and must
+    // not wait on a panel that never arrives (a slug nobody owns renders an
+    // error card, and a dead network renders nothing at all).
+    const timer = window.setTimeout(release, 6000)
+    return () => window.clearTimeout(timer)
+  }, [ready, release])
+
+  return [ready, release]
+}
+
 // The homepage owns its own data. It used to live in App behind a
 // `pathname !== '/'` guard, which existed only because every route shared one
 // component; now the fetch simply does not mount anywhere else.
@@ -78,6 +126,7 @@ const HomePage = ({
     experience: [],
   })
   const [status, setStatus] = useState('loading')
+  const [heroReady, releaseHero] = useDeferredHero()
 
   useEffect(() => {
     let isMounted = true
@@ -115,9 +164,15 @@ const HomePage = ({
         onVisitorRegister={onVisitorRegister}
         visitorUser={visitorUser}
       />
-      <Suspense fallback={<SectionFallback title="Hero" copy={copy} />}>
-        <Hero profile={siteData.profile} status={status} language={language} copy={copy} />
-      </Suspense>
+      {heroReady ? (
+        <Suspense fallback={<SectionFallback title="Hero" copy={copy} />}>
+          <Hero profile={siteData.profile} status={status} language={language} copy={copy} />
+        </Suspense>
+      ) : (
+        // The same placeholder the Suspense boundary uses, so the deferred case
+        // holds the same space rather than the page jumping when it arrives.
+        <SectionFallback title="Hero" copy={copy} />
+      )}
       <main className="relative z-10 mx-auto max-w-7xl">
         <Suspense fallback={<SectionFallback title="About" copy={copy} />}>
           <About
@@ -132,6 +187,7 @@ const HomePage = ({
             authToken={visitorToken}
             copy={copy}
             language={language}
+            onDetailReady={releaseHero}
             projects={siteData.projects}
             visitorUser={visitorUser}
           />

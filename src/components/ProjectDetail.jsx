@@ -37,7 +37,7 @@ const getPolicyAccessLevel = (policy = '') => {
 const canAccess = (visitorUser, requiredAccessLevel) =>
   accessOrder.indexOf(visitorUser?.accessLevel || 'guest') >= accessOrder.indexOf(requiredAccessLevel)
 
-const ProjectDetail = ({ authToken, slug, onClose, language, copy, visitorUser }) => {
+const ProjectDetail = ({ authToken, slug, onClose, onReady, language, copy, visitorUser }) => {
   const [project, setProject] = useState(null)
   const [interactions, setInteractions] = useState({ comments: [], likeCount: 0 })
   const [commentForm, setCommentForm] = useState({ author: '', message: '' })
@@ -51,6 +51,14 @@ const ProjectDetail = ({ authToken, slug, onClose, language, copy, visitorUser }
   const [hasApprovedDownload, setHasApprovedDownload] = useState(false)
   const dialogRef = useRef(null)
   const closeButtonRef = useRef(null)
+
+  // The panel is on screen from this point -- the dialog renders its own
+  // loading state, so mounting is what the visitor sees, not the fetch below.
+  // On a cold load of /projects/:slug this is what releases the deferred 3D
+  // hero; everywhere else nobody is listening.
+  useEffect(() => {
+    onReady?.()
+  }, [onReady])
 
   useEffect(() => {
     let isMounted = true
