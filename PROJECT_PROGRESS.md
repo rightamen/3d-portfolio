@@ -1,8 +1,53 @@
 # mrright.blog 项目进度记录
 
-## 下次从这里继续（截至 2026-08-26 第二十五轮收工）
+## 下次从这里继续（截至 2026-08-28 第二十六轮收工）
 
-### 2026-08-26（第二十五轮）：每个页面都说清自己是什么，而 CSP 根本不用动
+### 2026-08-28（第二十六轮）：全站不再预加载 971 KB 的 three.js
+
+**做的是未完项第 9 条**（分享出去的项目链接要等 20～35 秒），
+**但根因不在项目详情，也不在服务端 —— 在构建的分包上。**
+
+| | 第二十六轮 |
+|---|---|
+| 做的事 | 入口不再静态依赖 three.js；Tailwind 扫描范围收进 `src/` |
+| 未完项 | 第 10 条 ✅ 关闭；**第 9 条只关掉一半**，见下 |
+| 前端源码 | **一行没动**（改的是 `vite.config.js` 和 `src/index.css` 顶部的 import） |
+| 服务端 | 一行没动 |
+| 数据库 | 无变更，本轮没有跑过任何数据库写语句 |
+| 部署 | ✅ `cc52af3`，2026-08-28 05:11 UTC |
+| 回滚点 | `/opt/mrright-portfolio.backup-20260828-051131` |
+
+⚠️ **根因是 vite 的 `preload-helper` 被 rollup 分进了 `three-fiber` chunk。**
+那个 helper 不是任何人的依赖，rollup 可以随便放；而**入口自己要用它**做懒加载，
+于是入口就静态 import 了 `three-fiber` → `three-core`，
+vite 顺理成章地在 `index.html` 里给这两个挂了 `<link rel="modulepreload">`。
+**每一个页面**（包括 `/account`、`/login` 这种根本没有 3D 的页面）
+都在最高优先级预载 971 KB 的 three.js。
+修法是一行：把 helper 钉到 `react-vendor`（它本来就是入口的静态依赖）。
+
+⚠️ **别把 `manualChunks` 里那条 `preload-helper` 规则删掉。**
+`tests/api/contract.spec.js` 里有一条断言盯着「任何页面都不得 modulepreload `three-*`」——
+它红了先去看 `vite.config.js` 的分包，再怀疑是不是哪个组件真的 import 了 three。
+
+⚠️ **第 9 条只解决了一半，另一半还开着。**
+`/account`、`/login`、`/community` 这些没有 3D 的页面现在**一个字节的 three.js 都不下**
+（线上实测 0 KB，原来是预载 971 KB）。
+但**首页和项目详情仍然会并行拉 three.js** —— 因为 Hero 一挂载就 import 它。
+分享链接的收件人依然要和 971 KB 抢带宽。详见未完项第 9 条。
+
+⚠️ **本轮一度写了「冷启动进项目页时延迟挂载 Hero」，量完删掉了。**
+在可复现的 1.6 Mbit/s 节流下，加不加它都是 5.5s（不加反而更稳），
+所以它没有留下来。**这不代表那个方向是错的** ——
+只代表节流环境没有复现出真实链路上的带宽争抢，需要更好的度量办法才能定论。
+
+**2026-08-28 收工**：当天只做了这一轮，代码已 push、已部署、已逐项验证。
+工作树干净、本地与线上同码、本机没有任何服务在跑。
+未完项从 10 条降到 **9 条**（第 10 条关闭，第 9 条改写后仍开着）。
+「待你决策」仍然是 2 条。
+
+---
+
+### 2026-08-26（第二十五轮，前一天）：JSON-LD，而 CSP 根本不用动
 
 **做的是第二十三轮衍生清单里的 JSON-LD**，但真正的收获是**推翻了那一轮写下的一个前提**。
 
@@ -200,7 +245,14 @@ CI 两个 job 全绿（`api-db` 那个 job 本轮加了 build 步骤，新增用
 
 ---
 
-**线上运行 `847701a`（2026-08-26 14:17 UTC 部署，已逐项验证）。**
+**线上运行 `cc52af3`（2026-08-28 05:11 UTC 部署，已逐项验证）。**
+第二十六轮**只改了构建**：`vite.config.js` 的分包和 `src/index.css` 顶部那行 import，
+`src/` 的组件代码和 `server/` 都一行没动。
+回滚到第二十六轮之前：`/opt/mrright-portfolio.backup-20260828-051131`。
+
+（上一轮：第二十五轮 `847701a`，2026-08-26 14:17 UTC 部署。）
+
+**第二十五轮线上是 `847701a`（已逐项验证）。**
 第二十五轮**只有服务端改动**（`src/` 一行没动），
 每个可索引页面的 head 里多了一份 JSON-LD，**CSP 头一个字没改**。
 **API 接口仍然一个都没动**，数据库自第十二轮起仍然无变更。
@@ -261,14 +313,15 @@ express-rate-limit，只有这六个）；前端的东西全部属于 `devDepend
 `/opt` 上实际存在的是：
 
 ```text
-/opt/mrright-portfolio.backup-20260826-141745   ← 没用：这是重复部署产生的，里面就是第二十五轮
-/opt/mrright-portfolio.backup-20260826-141025   第二十五轮之前 ← 要回滚就用这个
-/opt/mrright-portfolio.backup-20260826-025716   第二十四轮之前
+/opt/mrright-portfolio.backup-20260828-051131   第二十六轮之前 ← 要回滚就用这个
+/opt/mrright-portfolio.backup-20260826-141745   （第二十五轮那次多余的重复部署留下的，里面就是第二十五轮）
+/opt/mrright-portfolio.backup-20260826-141025   第二十五轮之前
 ```
 
-（2026-08-26 14:2x UTC 在 VPS 上 `ls -dt` 实际看到的，并且逐个 `grep ld+json`
-确认过哪一份在第二十五轮之前。第二十三轮那份 `...-20260822-034955`
-被本轮那次多余的重复部署挤掉了，来龙去脉见上面第二十五轮那一节。）
+（2026-08-28 05:1x UTC 部署输出里实际写的。第二十四轮那份 `...-20260826-025716`
+已被本轮部署按 3 份保留策略自动清掉。
+⚠️ 第二十五轮那次重复部署的后遗症还在：中间那份是废的，
+真要回退两轮得用最下面那份。）
 
 要回滚先 `ls -dt /opt/mrright-portfolio.backup-*` 确认实际有什么，别照抄旧记录。
 
@@ -511,35 +564,38 @@ Publish / Mark Spam 就在 Delete 旁边**。
 且没有新增未完项。**第二十三、二十四轮都既没关也没开新的**
 （两轮 SEO 衍生出来的都属于「可以做得更好」，进的是路线图不是这张单子；
 第二十四轮撞见的那条中文标题错是数据不是代码，进的是「待你决策」）。
-**第二十五轮没关掉任何一条，但开了两条新的（第 9、10 条）** ——
-两条都是本轮验证时量出来的，不是本轮改出来的。现在开着的是：
+**第二十五轮没关掉任何一条，但开了两条新的（第 9、10 条）**。
+**第二十六轮关掉了第 10 条，并且把第 9 条解决了一半**（改写在下面）。
+现在开着的是：
 
-9. **分享一条项目链接，冷启动要 21～35 秒才看得到那个面板**（第二十五轮量的）。
-   实测：本机冷缓存打开线上 `/projects/md-leimu`，到 `.detail-overlay` 可见
-   三次分别是 21.6s / 34.9s / 30.9s；同样条件下 `/community` 是 5.5～9.6s。
-   原因不是服务端 —— 是**面板出现之前要先下 16 个 JS 文件、约 1489 KB**，
-   其中 `three-core` 703 KB + `three-fiber` 268 KB **合计 971 KB 是那个面板根本用不到的**
-   （面板自己只有 9 KB）。第二十四轮给项目做 URL 就是为了让人分享，
-   而**被分享的人要等整个首页 3D 场景加载完**才看得到分享的东西。
-   要修就是让 `/projects/:slug` 不必先把首页那套 three.js 拉完
-   （例如详情打开时不挂载 Hero，或给这条路由一个不含 3D 的外壳）。
-   ⚠️ **这不是第二十五轮引入的**：本轮 `src/` 一行没动，第二十四轮部署时就是这样，
-   只是那天的链路快到刚好没触发测试超时。
-   **这也是那 4 条线上 e2e 失败的原因**（断言超时 10s，实际要 20s+），
-   不是功能坏了 —— 手工给足时间面板是正常出现的。
+9. **分享一条项目链接仍然要和 971 KB 的 three.js 抢带宽**
+   （第二十五轮开的，**第二十六轮解决了一半**）。
+   原来的问题是：面板出现前要下 16 个 JS、约 1489 KB，其中 971 KB 是它用不到的 three.js，
+   线上实测 21.6s / 34.9s / 30.9s。
+   **已经解决的一半**：那 971 KB 原来是被 `index.html` 里的 `modulepreload`
+   在**每一个页面**上以最高优先级预载的（根因见第二十六轮那一节）。
+   现在没有 3D 的页面一个字节都不下 —— 线上实测 `/account` 475 KB、
+   `/login` 444 KB、`/community` 453 KB，**three.js 全是 0 KB**。
+   可复现节流（1.6 Mbit/s）下项目详情：**9.6s / 1489 KB → 5.5s / 518 KB**。
+   **还开着的一半**：首页和项目详情**仍然会并行拉 three.js**，
+   因为 Hero 一挂载就 import 它。线上实测项目页三次 8.8s / 10.3s / 35.0s ——
+   中位数比之前好很多，但方差极大，说明带宽争抢还在。
+   要收尾就是让**冷启动进项目页时 Hero 晚一点挂载**。
+   ⚠️ **第二十六轮试过这条路并且删掉了**：在 1.6 Mbit/s 节流下加不加都是 5.5s。
+   **不是说方向错，是节流环境没复现出真实链路的争抢** ——
+   再做这条之前，先想清楚怎么可靠地度量它，否则又是一次没有依据的改动。
+   ⚠️ 这也是线上跑 e2e 时那 4 条项目详情用例偶尔超时的原因（断言超时 10s），
+   不是功能坏了。
 
-10. **文档里的一句话会往生产 CSS 里加规则**（第二十五轮撞见）。
-   本轮 `src/` 一行没动，构建产物的 hash 却变了：CSS 从 `index-DKM1MyBH.css`
-   变成 `index-C1pDSQKD.css`，两份 diff 下来**只差一条 `.inline-flex` 规则**，
-   而 JS 因为要引用 CSS 文件名也跟着换了 hash。
-   根因是 **Tailwind v4 的自动内容检测会扫描仓库里所有没被 gitignore 的文件，
-   `.md` 也在内**：第二十四轮的收工文档里写了「`.primary-action` 本来就是 inline-flex」
-   这句话，Tailwind 把它当成了用到的工具类。
-   （`git log -S` 确认：这个字面量是 `f440935` 那次**文档**提交带进仓库的。）
-   **后果不是那 27 个字节，是缓存**：以后每一轮只要文档里出现新的工具类名，
-   下次部署就会换掉 CSS 和主 JS 的 hash，所有访客的缓存一起失效。
-   修法是一行：在 `src/index.css` 里用 `@source` 把扫描范围限死在 `src/`。
-   没顺手改，是因为它会动前端构建产物，而本轮是纯服务端轮次、已经部署完了。
+10. ~~**文档里的一句话会往生产 CSS 里加规则**~~ —— **2026-08-28 第二十六轮修掉了。**
+   根因是 Tailwind v4 的自动内容检测从 git 根开始扫所有没被 gitignore 的文件，`.md` 也算：
+   第二十四轮收工文档里写了一个工具类名，那个类就进了生产样式表，
+   连带 CSS 和主 JS 的 hash 一起变、所有访客缓存失效。
+   修法就是 `src/index.css` 顶部改成 `@import "tailwindcss" source("../src");`。
+   样式表因此小了 1.4 KB（除了那条，测试文件里的类名也一并不再进来）。
+   ⚠️ **根目录的 `index.html` 里没有任何 class**（改之前确认过），
+   所以把扫描范围收进 `src/` 不会漏掉模板里的样式。
+   以后**新增 `src/` 以外需要被扫描的模板，要记得加 `@source`**。
 
 1. **模型「能加载」和「能渲染」仍然是两件事。**
    Content Health 现在能确认文件可服务、是真 GLB、所需扩展有解码器，
@@ -968,6 +1024,127 @@ CSP 这件事能做完，就是因为 playwright 回来了。
 - ~~演练遗留的临时库~~ —— 用户已确认，`mrright_restore_drill` 已 `dropdb`（2026-08-11）。
   删除后复查：`mrright_portfolio` 仍在、17 张表、`visitor_users=1`/`project_comments=2`、
   `/api/health` 200，生产库未受影响。
+
+## 2026-08-28（第二十六轮）：全站不再预加载 971 KB 的 three.js
+
+未完项第 9 条。**前端组件和服务端都一行没动，改的是构建。**
+
+### 找根因的过程
+
+第二十五轮量到的是「面板出现前要下 1489 KB，其中 971 KB 是 three.js」。
+直觉的修法是**冷启动进项目页时别挂载 Hero**（Hero 是首页唯一的 3D 消费者），
+本轮先照这个直觉写了：`useDeferredHero`，用 `requestIdleCallback` 推迟挂载。
+
+**量下来几乎没变：1489 KB → 1437 KB。** 少掉的 51 KB 正好是 Hero 自己那个 chunk，
+**971 KB 的 three.js 一个字节没少**。所以拉 three.js 的不是 Hero。
+
+去翻构建产物才看清：
+
+```text
+index.html:  <link rel="modulepreload" href="/assets/three-core-….js">
+             <link rel="modulepreload" href="/assets/three-fiber-….js">
+index-….js:  import"./three-core-OedqFwLA.js";      ← 入口的静态 import
+```
+
+**入口静态依赖 three。** 再往下查是分包的锅：`three-fiber` 这个手工 chunk 里
+除了 fiber/drei，还混进了 **vite 的 `preload-helper`**。
+那个 helper 不是任何模块的依赖，rollup 爱放哪放哪；
+而**入口自己要用它**来做懒加载 —— 于是入口只能静态 import `three-fiber`，
+`three-fiber` 又静态 import `three-core`，
+vite 再顺理成章地给这两个挂上 `modulepreload`。
+
+**每一个页面**都在最高优先级预载 971 KB 的 3D 引擎，
+`/account`、`/login` 这种一个 canvas 都没有的页面也不例外。
+
+### 修法（一行）
+
+```js
+if (normalizedId.includes('vite/preload-helper')) return 'react-vendor'
+```
+
+`react-vendor` 本来就是入口的静态依赖，helper 放那里不增加任何成本；
+three.js 则回到了它该在的位置 —— **Hero 或模型预览真的挂载时才去取**。
+
+改完 `index.html` 里只剩 `react-vendor` 一条 modulepreload。
+
+### 数字
+
+可复现节流（1.6 Mbit/s / 150ms RTT，本机 express，各跑三次取一致值）：
+
+| | 之前 | 之后 |
+|---|---|---|
+| `/projects/:slug` → 面板可见 | 9.6s / 1489 KB（three.js 971 KB） | **5.5s / 518 KB（three.js 0 KB）** |
+| `/` → `#projects` 可见 | 9.1s / 1427 KB | **5.0s / 456 KB** |
+
+线上（同一台机器、同一条链路，可与第二十五轮的 21.6/34.9/30.9s 对比）：
+
+```text
+/account            475 KB JS   three.js 0 KB
+/login?mode=login   444 KB JS   three.js 0 KB
+/community          453 KB JS   three.js 0 KB
+/projects/md-leimu  8.8s / 10.3s / 35.0s      ← 中位数好很多，但方差还很大
+/                   6.7s / 6.2s / 7.0s
+```
+
+⚠️ **线上那个字节数别照着读**：脚本统计的是「选择器可见之前」收到的 JS，
+而首页和项目页的 Hero 仍然会并行拉 three.js，快链路上它往往赶在面板之前到达，
+所以线上项目页仍然记成 1488 KB。**真正确定的是 `modulepreload` 没有了**，
+以及没有 3D 的页面确实一个字节都不下。
+这一半没解决的部分留在未完项第 9 条里。
+
+### 那段被删掉的改动
+
+`useDeferredHero`（冷启动进项目页时用 `requestIdleCallback` 推迟挂载 Hero）
+写完、量完、**删掉了**：分包修好之后，加它 6.1s/7.5s，不加 5.5s ——
+不但没有增益，还多一个 hook、一个占位分支和一处单向状态。
+**删掉不代表这个方向错**，只代表节流环境没有复现出真实链路上的带宽争抢；
+要再做得先有可靠的度量办法。（和第二十五轮那套 CSP hash 一样：写了、量了、删了。）
+
+### 顺手关掉的未完项第 10 条
+
+`src/index.css` 顶部：
+
+```css
+@import "tailwindcss" source("../src");
+```
+
+Tailwind v4 的自动内容检测从 git 根开始扫所有没被 gitignore 的文件，`.md` 也算 ——
+第二十四轮收工文档里写了一个工具类名，那个类就进了生产样式表。
+钉住扫描范围后样式表小了 1.4 KB。
+**改之前确认过根目录 `index.html` 里没有任何 class**，不会漏掉模板里的样式。
+
+### 验证
+
+| 项 | 结果 |
+|---|---|
+| `npm run lint` | 通过 |
+| `npm run test:unit` | 166 通过 |
+| `npm run build` | 通过 |
+| `npm run test:api` | 58 通过 / 13 skipped（新增 1 条：任何页面都不得 modulepreload `three-*`） |
+| `npm run test:api:db` | 86 通过 / 0 失败 |
+| `npm run test:openapi` | 通过 |
+| `npm run test:deploy-backup` / `test:deploy-script` | 通过 |
+| `npm run test:admin-totp` / `test:content-health` / `verify:visitor-studio` | 通过 |
+| `git diff --check` | 通过 |
+| 本机 express + `site-routing.spec.js` | 13 通过 |
+| 本机真实浏览器 | 首页 Hero canvas 在、模型预览 canvas 在、`/admin` 正常，报错 0 |
+| 440px / 1280px 截图 | 排版无变化，横向溢出 0（Tailwind 收窄扫描范围后复查） |
+| 部署前 env 检查 | `DATABASE_URL` / `ADMIN_TOKEN` 均为 `[set]`（未输出 value） |
+| 部署前备份 | `/opt/mrright-portfolio.backup-20260828-051131` |
+| VPS 部署 | 成功，服务重启成功 |
+| 线上 | 七条路由全 200，四条路由的 modulepreload 只剩 `react-vendor`，JSON-LD 图谱仍在 |
+
+⚠️ **本轮部署输出是用 `tee` 一次抓全的**，没有为了补看一行而重跑部署
+（第二十五轮的教训）。
+
+### 改动的文件
+
+- `vite.config.js`
+- `src/index.css`（只有顶部那行 import）
+- `tests/api/contract.spec.js`
+
+commit：`cc52af3`（代码）+ 本次文档提交
+回滚点：`/opt/mrright-portfolio.backup-20260828-051131`
 
 ## 2026-08-26（第二十五轮）：JSON-LD，以及被推翻的那个 CSP 前提
 
