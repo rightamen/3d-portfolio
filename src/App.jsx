@@ -95,10 +95,14 @@ const useDeferredHero = () => {
     // One-way: once the hero is in, it stays in.
     if (ready) return undefined
 
-    // Ceiling. The hero is part of the page, not an optional extra, and must
-    // not wait on a panel that never arrives (a slug nobody owns renders an
-    // error card, and a dead network renders nothing at all).
-    const timer = window.setTimeout(release, 6000)
+    // Ceiling, for the case where the panel never arrives at all. It is
+    // deliberately long: the first version used 6s and a production waterfall
+    // caught it firing at 11.3s on a slow link while the panel landed at 12.9s
+    // -- releasing the hero into the middle of the fetch it was supposed to
+    // stay out of, on exactly the connection where that costs most. The slower
+    // the link, the longer the hero should wait, so this only exists to stop
+    // the deferral from being permanent.
+    const timer = window.setTimeout(release, 15000)
     return () => window.clearTimeout(timer)
   }, [ready, release])
 

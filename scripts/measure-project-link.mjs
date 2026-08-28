@@ -112,3 +112,15 @@ if (Number.isFinite(gap)) {
     `\nHeadroom from keeping the 3D engine off the critical path: ${gap.toFixed(1)}s median.`,
   )
 }
+
+// Read the KB column first. Wall-clock from a home connection swings by 3-10x
+// between sessions -- round twenty-seven watched the same 217 KB entry bundle
+// take 1.8s in the morning and 9.3s in the afternoon -- so a few seconds of
+// difference in the timings above can easily be the link rather than the page.
+// Bytes-before-the-panel does not move with the weather: it is a property of
+// the build, and it is what tells you whether the 3D engine is on the critical
+// path at all.
+console.log(
+  '\nThe KB column is the reliable number. Timings from a home link carry more\n' +
+    'noise than the effect being measured; bytes before the panel do not.',
+)
