@@ -891,6 +891,24 @@ test.describe('per-route HTML head', () => {
     }
   })
 
+  // 971 KB of three.js used to be preloaded on every page, /account and /login
+  // included, because vite's dynamic-import preload helper had been parked in
+  // the `three-fiber` manual chunk -- which made the entry import it
+  // statically. Nothing on a first paint needs the 3D engine; the hero and the
+  // model viewer fetch it when they mount. If this fails, check manualChunks in
+  // vite.config.js before assuming a component started importing three.
+  test('no page preloads the 3D engine before anything needs it', async () => {
+    for (const path of ['/', '/community', '/account']) {
+      const { body } = await getHtml(path)
+      const preloaded = [...body.matchAll(/rel="modulepreload"[^>]*href="([^"]+)"/g)].map(
+        (match) => match[1],
+      )
+
+      expect(preloaded.length, path).toBeGreaterThan(0)
+      expect(preloaded.filter((href) => href.includes('three-')), path).toEqual([])
+    }
+  })
+
   test('the built script tag survives the head rewrite', async () => {
     const { body } = await getHtml('/community')
 

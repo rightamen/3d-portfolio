@@ -57,6 +57,16 @@ const getPackageName = (id) => {
 const getManualChunk = (id) => {
   const normalizedId = id.replace(/\\/g, '/')
 
+  // Vite's dynamic-import preload helper is not a dependency of anything in
+  // particular, so rollup is free to park it in whichever chunk it likes -- and
+  // it parked it in `three-fiber`. The entry needs the helper for its own lazy
+  // imports, so the entry then had to import three-fiber statically, which
+  // imports three-core, which put a modulepreload for 971 KB of three.js in
+  // index.html for *every* page. Pinning the helper to react-vendor (already a
+  // static import of the entry) puts three.js back where it belongs: fetched
+  // when something 3D is actually rendered.
+  if (normalizedId.includes('vite/preload-helper')) return 'react-vendor'
+
   if (!normalizedId.includes('/node_modules/')) return undefined
 
   if (normalizedId.includes('/node_modules/three/examples/')) return 'three-examples'

@@ -1,5 +1,12 @@
 @import url("https://fonts.googleapis.com/css2?family=Funnel+Display:wght@300;800&display=swap");
-@import "tailwindcss";
+/* source("../src") pins Tailwind's automatic content detection to the app.
+   Without it, detection starts at the git root and scans every file that is not
+   gitignored -- Markdown included. A sentence in PROJECT_PROGRESS.md naming a
+   utility class put that class into the production stylesheet, which changed
+   the CSS hash, which changed the JS hash that references it, which invalidated
+   every visitor's cache on the next deploy. Prose should not be able to do
+   that. (Found in round twenty-five; the class it added was inline-flex.) */
+@import "tailwindcss" source("../src");
 
 /* ===== Custom Scrollbar ===== */
 
