@@ -166,6 +166,7 @@ const profileName = (profile) =>
 // stays assertable in tests without parsing HTML.
 export const buildPageMeta = ({
   post = null,
+  preload = [],
   profile = null,
   project = null,
   route,
@@ -181,6 +182,7 @@ export const buildPageMeta = ({
     image: absoluteUrl(site, DEFAULT_IMAGE),
     noindex: !canonical,
     ogType: 'website',
+    preload,
     properties: [],
     title: DEFAULT_TITLE,
   }
@@ -508,6 +510,16 @@ const metaTag = (attribute, key, value) =>
 export const renderHead = (meta) => {
   const lines = [`    <title>${escapeHtml(meta.title)}</title>`]
 
+  // Chunk hints, before the meta tags: a preload scanner reads top-down, and
+  // these are the only lines in the head with a network cost attached. The
+  // data-seo-preload marker is what lets injectSeo strip its own hints on a
+  // re-render without touching the ones vite put in the template.
+  for (const href of meta.preload || []) {
+    lines.push(
+      `    <link rel="modulepreload" crossorigin data-seo-preload href="${escapeHtml(href)}" />`,
+    )
+  }
+
   lines.push(metaTag('name', 'description', meta.description))
   // rel=canonical and noindex together are a contradiction -- the canonical
   // says "index this URL instead of its variants", the robots tag says "index
@@ -654,6 +666,9 @@ export const injectSeo = (template, { head, jsonLd = '', noscript = '' }) => {
       /[ \t]*<script\b[^>]*type\s*=\s*["']application\/ld\+json["'][^>]*>[\s\S]*?<\/script>\s*\n?/gi,
       '',
     )
+    // Only the hints this module added: vite's own modulepreload for the entry
+    // graph carries no such marker and has to survive.
+    .replace(/[ \t]*<link\b[^>]*\bdata-seo-preload\b[^>]*>\s*\n?/gi, '')
     .replace(/[ \t]*<meta\b[^>]*>\s*\n?/gi, (tag) =>
       MANAGED_META_KEYS.has(metaKeyOf(tag)) ? '' : tag,
     )
@@ -680,8 +695,18 @@ export const injectSeo = (template, { head, jsonLd = '', noscript = '' }) => {
 }
 
 // Convenience wrapper: everything above in one call, for the server route.
-export const renderSeoHtml = ({ owner, post, posts, profile, project, route, siteUrl, template }) => {
-  const meta = buildPageMeta({ post, profile, project, route, siteUrl })
+export const renderSeoHtml = ({
+  owner,
+  post,
+  posts,
+  preload,
+  profile,
+  project,
+  route,
+  siteUrl,
+  template,
+}) => {
+  const meta = buildPageMeta({ post, preload, profile, project, route, siteUrl })
 
   return injectSeo(template, {
     head: renderHead(meta),

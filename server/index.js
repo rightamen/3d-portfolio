@@ -4138,6 +4138,64 @@ const readIndexTemplate = async () => {
   return html
 }
 
+// Which chunks a project detail needs, so the HTML can announce them.
+//
+// Round twenty-seven left the payload problem solved and a different one
+// standing: five chunks had to finish downloading before the browser even
+// *asked* for the panel's chunk, because it cannot know it needs
+// ProjectDetail until it has parsed Projects, and it cannot know it needs
+// Projects until it has parsed the entry. Depth, not weight -- and the server
+// already knows which route this is, so it can say up front.
+//
+// Static imports only. ModelPreview is a dynamic import of ProjectDetail and
+// belongs exactly where it is: fetched when someone opens the viewer.
+const distManifestPath = path.join(distDir, '.vite', 'manifest.json')
+let preloadCache = { hrefs: [], mtimeMs: 0 }
+
+const collectChunkFiles = (manifest, key, seen = new Set()) => {
+  const entry = manifest[key]
+  if (!entry || seen.has(key)) return []
+  seen.add(key)
+
+  return [
+    entry.file,
+    ...(entry.imports || []).flatMap((imported) => collectChunkFiles(manifest, imported, seen)),
+  ].filter(Boolean)
+}
+
+const readProjectPreloads = async () => {
+  let mtimeMs = 0
+  try {
+    ;({ mtimeMs } = await stat(distManifestPath))
+  } catch {
+    // No manifest (an older build, or a dist that was never built here). The
+    // page still works; it just discovers its chunks the slow way.
+    return []
+  }
+
+  if (preloadCache.mtimeMs === mtimeMs) return preloadCache.hrefs
+
+  try {
+    const manifest = JSON.parse(await readFile(distManifestPath, 'utf8'))
+    const files = new Set([
+      ...collectChunkFiles(manifest, 'src/sections/Projects.jsx'),
+      ...collectChunkFiles(manifest, 'src/components/ProjectDetail.jsx'),
+    ])
+    // The entry and its own static imports are already announced by vite in the
+    // template; repeating them would be noise in every response.
+    const entryFiles = new Set(collectChunkFiles(manifest, 'index.html'))
+    const hrefs = [...files]
+      .filter((file) => !entryFiles.has(file))
+      .map((file) => `/${file}`)
+
+    preloadCache = { hrefs, mtimeMs }
+    return hrefs
+  } catch (error) {
+    console.error('Reading the build manifest failed:', error.message)
+    return []
+  }
+}
+
 // The /community post list, for the <noscript> index. Same reasoning as the
 // sitemap cache: it is one query serving anonymous, identical output.
 const communityListCacheMs = 60 * 1000
@@ -4216,6 +4274,9 @@ app.get(/.*/, async (request, response) => {
       // `owner` here because `profile` in this file is that same static record,
       // while `data.profile` is a visitor's public profile.
       owner: profile,
+      // Only where the panel is the point of the page. On every other route
+      // these chunks are not needed, and a preload nobody uses is waste.
+      preload: route.kind === 'project' && !data.missing ? await readProjectPreloads() : [],
       post: data.post || null,
       posts: data.posts || [],
       profile: data.profile || null,

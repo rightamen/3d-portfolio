@@ -84,6 +84,12 @@ export default defineConfig({
 
   build: {
     chunkSizeWarningLimit: 800,
+    // The server reads dist/.vite/manifest.json to find the hashed filenames of
+    // the chunks a project detail needs, so it can announce them in the HTML.
+    // Without it the browser only learns about the panel's chunk after
+    // downloading and parsing two others. See buildPreloadIndex in
+    // server/index.js.
+    manifest: true,
     rollupOptions: {
       output: {
         manualChunks: getManualChunk,

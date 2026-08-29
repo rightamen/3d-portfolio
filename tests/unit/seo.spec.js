@@ -596,6 +596,56 @@ describe('renderJsonLdScript', () => {
   })
 })
 
+describe('chunk preload hints', () => {
+  it('announces the panel chunks it is given, marked as its own', () => {
+    const head = renderHead(
+      buildPageMeta({
+        preload: ['/assets/ProjectDetail-abc.js'],
+        project,
+        route: resolveRoute(`/projects/${project.slug}`),
+        siteUrl,
+      }),
+    )
+
+    expect(head).toContain(
+      '<link rel="modulepreload" crossorigin data-seo-preload ' +
+        'href="/assets/ProjectDetail-abc.js" />',
+    )
+  })
+
+  it('says nothing when there is nothing to announce', () => {
+    expect(headFor(resolveRoute('/'))).not.toContain('modulepreload')
+  })
+
+  // The template's own modulepreload is vite's, for the entry graph. Stripping
+  // that would cost every page the thing this feature is trying to buy.
+  it('replaces its own hints on a re-render and leaves vite\'s alone', () => {
+    const withPreload = [
+      '<html><head>',
+      '    <link rel="modulepreload" crossorigin href="/assets/react-vendor-x.js">',
+      '  </head><body></body></html>',
+    ].join('\n')
+
+    const once = renderSeoHtml({
+      preload: ['/assets/ProjectDetail-abc.js'],
+      project,
+      route: resolveRoute(`/projects/${project.slug}`),
+      siteUrl,
+      template: withPreload,
+    })
+    const twice = injectSeo(once, {
+      head: renderHead(
+        buildPageMeta({ preload: ['/assets/ProjectDetail-def.js'], route: resolveRoute('/'), siteUrl }),
+      ),
+    })
+
+    expect(twice).toContain('href="/assets/react-vendor-x.js"')
+    expect(twice).toContain('href="/assets/ProjectDetail-def.js"')
+    expect(twice).not.toContain('ProjectDetail-abc')
+    expect(twice.match(/data-seo-preload/g)).toHaveLength(1)
+  })
+})
+
 describe('renderSeoHtml puts the graph on the page', () => {
   it('emits one graph, inside the head', () => {
     const html = renderSeoHtml({ owner, route: resolveRoute('/'), siteUrl, template })

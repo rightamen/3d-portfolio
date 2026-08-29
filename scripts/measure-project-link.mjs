@@ -36,6 +36,14 @@ const runs = Number(argOf('--runs', '5'))
 const selector = argOf('--selector', '.detail-overlay')
 const holdMs = Number(argOf('--hold-ms', '20000'))
 const timeoutMs = Number(argOf('--timeout-ms', '60000'))
+// --chain answers a different question from the two arms below: not "how long"
+// but "how many rounds of discovery". Round twenty-seven established that the
+// remaining cost of a shared link is not payload -- it is that the browser
+// cannot know it needs the panel's chunk until it has downloaded and parsed
+// two other chunks first. That depth is a property of the build and the HTML,
+// so unlike a duration it is worth asserting on.
+const chainMode = args.includes('--chain')
+const chainTarget = argOf('--chain-chunk', 'ProjectDetail')
 
 const median = (values) =>
   values.length ? [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)] : null
@@ -74,7 +82,56 @@ const once = async (browser, deferThree) => {
   return { kb: bytes / 1024, seconds }
 }
 
+const measureChain = async (browser) => {
+  const context = await browser.newContext()
+  const page = await context.newPage()
+  const started = Date.now()
+  const events = []
+
+  const note = (kind) => (subject) => {
+    const path = new URL(subject.url()).pathname
+    if (path.endsWith('.js')) {
+      events.push({ at: Date.now() - started, kind, name: path.split('/').pop() })
+    }
+  }
+  page.on('request', note('start'))
+  page.on('response', note('done'))
+
+  await page.goto(url, { timeout: timeoutMs, waitUntil: 'commit' })
+  await page.locator(selector).waitFor({ state: 'visible', timeout: timeoutMs })
+
+  const panelStart = events.find((e) => e.kind === 'start' && e.name.includes(chainTarget))
+  const before = events.filter((e) => e.kind === 'done' && e.at < (panelStart?.at ?? Infinity))
+
+  console.log('timeline (js only, ms from navigation):')
+  for (const event of events) {
+    const mark = event.name.includes(chainTarget) ? ' <-- the panel' : ''
+    console.log(`  ${String(event.at).padStart(6)}  ${event.kind.padEnd(5)}  ${event.name}${mark}`)
+  }
+
+  console.log(
+    `\nChunks that had to finish downloading before the browser even asked for` +
+      ` ${chainTarget}: ${before.length}`,
+  )
+  console.log(before.map((event) => `  ${event.name}`).join('\n') || '  (none)')
+  console.log(
+    '\nEvery one of those is a round trip the visitor waits through before the\n' +
+      'panel is even requested. A <link rel="modulepreload"> in the HTML for the\n' +
+      "panel's chunks removes them: the browser learns what it needs from the\n" +
+      'first response instead of the fourth.',
+  )
+
+  await context.close()
+}
+
 const browser = await chromium.launch()
+
+if (chainMode) {
+  await measureChain(browser)
+  await browser.close()
+  process.exit(0)
+}
+
 const arms = { deferred: [], normal: [] }
 
 console.log(`${url}\n${runs} interleaved pairs, waiting for ${selector}\n`)

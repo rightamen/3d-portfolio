@@ -909,6 +909,30 @@ test.describe('per-route HTML head', () => {
     }
   })
 
+  // Depth, not weight. Before this, five chunks had to finish downloading
+  // before the browser even asked for the panel's chunk -- it cannot know it
+  // needs ProjectDetail until it has parsed Projects, and cannot know it needs
+  // Projects until it has parsed the entry. The server knows the route from the
+  // URL, so it says so in the first response.
+  test('a project page announces the chunks its panel needs', async () => {
+    const { body } = await getHtml('/projects/fire-extinguisher-next-gen')
+    const hinted = [...body.matchAll(/data-seo-preload href="([^"]+)"/g)].map((match) => match[1])
+
+    expect(hinted.some((href) => href.includes('ProjectDetail'))).toBe(true)
+    expect(hinted.some((href) => href.includes('Projects-'))).toBe(true)
+    // The 3D engine is emphatically not in this list: round twenty-seven spent
+    // itself getting three.js off this path.
+    expect(hinted.filter((href) => href.includes('three-'))).toEqual([])
+  })
+
+  test('no other route carries those hints', async () => {
+    for (const path of ['/', '/community', '/account', '/projects/no-such-project-slug']) {
+      const { body } = await getHtml(path)
+
+      expect(body, path).not.toContain('data-seo-preload')
+    }
+  })
+
   test('the built script tag survives the head rewrite', async () => {
     const { body } = await getHtml('/community')
 
