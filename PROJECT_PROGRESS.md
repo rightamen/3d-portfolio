@@ -1,8 +1,50 @@
 # mrright.blog 项目进度记录
 
-## 下次从这里继续（截至 2026-08-28 第二十七轮收工）
+## 下次从这里继续（截至 2026-08-29 第二十八轮收工）
 
-### 2026-08-28（第二十七轮）：先解决度量，再动代码 —— 3D 引擎退出分享链接的关键路径
+### 2026-08-29（第二十八轮）：服务端在第一份响应里就说清楚要什么
+
+**做的是未完项第 11 条**（第二十七轮量出来的：耗时已经不由体积决定，而由**请求链深度**决定）。
+
+| | 第二十八轮 |
+|---|---|
+| 做的事 | 项目路由的 HTML 里给面板那几个分块加 `modulepreload` |
+| 未完项 | 第 11 条**关闭** |
+| 指标 | **面板分块被请求前必须下完的 chunk 数：5 → 0** |
+| 前端 | 一行没动（只在 `vite.config.js` 打开了 `build.manifest`） |
+| 服务端 | `server/seo.js` 会发 hints，`server/index.js` 读 manifest |
+| 数据库 | 无变更，本轮没有跑过任何数据库写语句 |
+| 部署 | ✅ `2512a57`，2026-08-29 15:51 UTC |
+| 回滚点 | `/opt/mrright-portfolio.backup-20260829-155129` |
+
+⚠️ **判定标准是链深，不是耗时**（这是第二十七轮定下的规矩）。
+链深是构建和 HTML 的性质，和链路无关，所以可以拿来写断言；
+耗时在我这条链路上噪声比效应大。
+量的办法：`node scripts/measure-project-link.mjs --chain`。
+（顺带一提，线上耗时中位数从上一轮的 8.4～9.9s 变成 6.4s，最好一次 4.3s，
+但那**不是**本轮的判定依据。）
+
+⚠️ **hints 只发给存在的项目页。** 其他路由不需要这些分块，
+发了就是浪费；404 更不能发。
+
+⚠️ **只跟静态 import。** `ModelPreview` 是面板的动态 import，
+它就该等到有人真的打开查看器时再取；three.js 更不在名单里 ——
+第二十七轮整轮就是在把它赶出这条路径。
+
+⚠️ **`data-seo-preload` 这个标记不能去掉。** `injectSeo` 靠它只清理自己发的 hints，
+而**保留 vite 给入口图谱发的那条**（`react-vendor`）—— 后者是承重的。
+
+⚠️ **`dist/.vite/manifest.json` 必须跟着部署包一起上去。**
+manifest 丢了服务端会**静默降级**（页面照常，只是退回慢的发现方式，不报错）。
+本轮部署前实测过打包确实带上了它。**以后动打包脚本的排除规则要想起这条。**
+
+**2026-08-29 收工**：当天只做了这一轮，代码已 push、已部署、已逐项验证。
+工作树干净、本地与线上同码、本机没有任何服务在跑。
+未完项从 9 条降到 **8 条**。「待你决策」仍然是 2 条。
+
+---
+
+### 2026-08-28（第二十七轮，前一天）：先解决度量，再动代码
 
 **做的是未完项第 9 条剩下的那一半**，而且是按上一轮定的规矩来的：
 **先解决怎么度量，再决定要不要改。**
@@ -309,8 +351,14 @@ CI 两个 job 全绿（`api-db` 那个 job 本轮加了 build 步骤，新增用
 
 ---
 
-**线上运行 `4f1af12`（2026-08-28 15:46 UTC 部署，已逐项验证）。**
-第二十七轮**只改前端**（`App.jsx` / `Projects.jsx` / `ProjectDetail.jsx`），
+**线上运行 `2512a57`（2026-08-29 15:51 UTC 部署，已逐项验证）。**
+第二十八轮**只改服务端和构建**（`server/seo.js` 发 hints、`server/index.js` 读 manifest、
+`vite.config.js` 打开 `build.manifest`），`src/` 一行没动。
+回滚到第二十八轮之前：`/opt/mrright-portfolio.backup-20260829-155129`。
+
+（上一轮：第二十七轮 `4f1af12`，2026-08-28 15:46 UTC 部署。）
+
+**第二十七轮只改前端**（`App.jsx` / `Projects.jsx` / `ProjectDetail.jsx`），
 `server/` 一行没动。
 回滚到第二十七轮之前：`/opt/mrright-portfolio.backup-20260828-154600`。
 ⚠️ 当天部署了两次（`c0c4d6b` 15:16、`4f1af12` 15:46），
@@ -381,9 +429,9 @@ express-rate-limit，只有这六个）；前端的东西全部属于 `devDepend
 `/opt` 上实际存在的是：
 
 ```text
+/opt/mrright-portfolio.backup-20260829-155129   第二十八轮之前 ← 要回滚就用这个
 /opt/mrright-portfolio.backup-20260828-154600   第二十七轮第二次部署之前（= 第二十七轮第一版）
-/opt/mrright-portfolio.backup-20260828-151631   ← 要回到第二十七轮之前，用这个（= 第二十六轮的代码）
-/opt/mrright-portfolio.backup-20260828-051131   第二十六轮之前
+/opt/mrright-portfolio.backup-20260828-151631   第二十七轮之前（= 第二十六轮的代码）
 ```
 
 ⚠️ **最新那份不是回滚点**：当天部署了两次，第二次备份的是第一次的产物。
@@ -452,12 +500,12 @@ Members 详情在窄屏下不再把整页撑宽（一行 CSS）。
 第 3、3b、3c、4、5、6 条都已划掉，路线图上排最前的是**第 7 条 C++ SDK**。
 第二十三轮衍生的四条里，项目路由（第二十四轮）和 JSON-LD（第二十五轮）都做掉了，
 还剩帖子配图和 `<noscript>`。
-未完项第 9、10 条都已关闭（第二十六、二十七轮）。
-**现在最具体的是新开的第 11 条**：分享链接的耗时已经不由体积决定，
-而是四层串行的依赖发现 —— 服务端在项目路由的 HTML 里给面板那几个分块补
-`modulepreload` 就能砍掉两层，而且服务端本来就知道是哪条路由。
-⚠️ **动手前先定好怎么验证**（量请求轮数，别量墙钟）。
-其他可选：帖子配图，或者路线图第 7 条 C++ SDK。
+未完项第 9、10、11 条都已关闭（第二十六至二十八轮）——
+**分享链接那条线到此告一段落**：体积、预加载、请求链深度三样都处理过了。
+下一轮可选：**帖子配图**（第二十三轮衍生、SEO 那条线上还剩的一条），
+`<noscript>` 仍是纯文本（真要解决那才轮到 SSR），
+或者路线图**第 7 条 C++ SDK**（体量最大，和网站关系最远）。
+⚠️ 无论做哪条，**先定怎么验证**——这三轮的教训都在这上面。
 **「待你决策」里那条还在**（17 个没人渲染的翻译 key 删不删）——
 第二十三轮也没有替你删，理由不变：那是产品文案。
 
@@ -639,9 +687,9 @@ Publish / Mark Spam 就在 Delete 旁边**。
 （两轮 SEO 衍生出来的都属于「可以做得更好」，进的是路线图不是这张单子；
 第二十四轮撞见的那条中文标题错是数据不是代码，进的是「待你决策」）。
 **第二十五轮没关掉任何一条，但开了两条新的（第 9、10 条）**。
-**第二十六轮关掉了第 10 条**（Tailwind 扫文档），**第二十七轮关掉了第 9 条**，
-同时开了第 11 条（请求链深度）。**编号不复用**：第 10 条就是那条已关闭的 Tailwind，
-以免旧记录里的「第 10 条」指向别的东西。现在开着的是：
+**第二十六轮关掉了第 10 条**（Tailwind 扫文档），**第二十七轮关掉了第 9 条**
+并开了第 11 条（请求链深度），**第二十八轮把第 11 条也关掉了**。
+**编号不复用**，以免旧记录里的编号指向别的东西。现在开着的是：
 
 9. ~~**分享一条项目链接要和 971 KB 的 three.js 抢带宽**~~ ——
    **2026-08-28 第二十六 + 二十七轮做完了。**
@@ -653,16 +701,12 @@ Publish / Mark Spam 就在 Delete 旁边**。
    同一个 217 KB 的 bundle 上午 1.8s、下午 9.3s。以后量这件事**看 KB 那一列**，
    用 `scripts/measure-project-link.mjs`。
 
-11. **分享链接的耗时现在由请求链深度决定，不是体积**（第二十七轮量出来的，新开）。
-   线上 waterfall：HTML 0.4s 到手 → 入口 bundle 要到 5.0s 才下完 →
-   这时才开始请求 `Projects` 分块 → 5.8s 才开始请求 `ProjectDetail` 分块 →
-   面板 12.9s 出现。**四层串行的依赖发现**，每一层都要等上一层解析完才知道要什么。
-   体积已经不是杠杆了（467 KB），**下一个杠杆是让服务端提前告诉浏览器要什么**：
-   项目路由的 HTML 里给面板那几个分块加上 `<link rel="modulepreload">`。
-   服务端本来就知道当前是哪条路由（`server/seo.js` 的 `resolveRoute`），
-   而 `dist/.vite/manifest.json` 里有 chunk 名 —— 两边接起来就行。
-   ⚠️ **动手前先想清楚怎么验证**：耗时在本机链路上没有分辨率，
-   要么量「面板出现前的请求轮数」，要么在 CI 里量，别再拿墙钟时间下结论。
+11. ~~**分享链接的耗时由请求链深度决定，不是体积**~~ ——
+   **2026-08-29 第二十八轮做完了。** 服务端在项目路由的 HTML 里给面板那几个分块
+   补 `modulepreload`（分块名来自 `dist/.vite/manifest.json`）。
+   **面板分块被请求前必须下完的 chunk 数：5 → 0。**
+   量法固化在 `scripts/measure-project-link.mjs --chain`。
+   ⚠️ 判定用的是链深不是耗时；耗时在本机链路上噪声比效应大。
 
 10. ~~**文档里的一句话会往生产 CSS 里加规则**~~ —— **2026-08-28 第二十六轮修掉了。**
    根因是 Tailwind v4 的自动内容检测从 git 根开始扫所有没被 gitignore 的文件，`.md` 也算：
@@ -1101,6 +1145,96 @@ CSP 这件事能做完，就是因为 playwright 回来了。
 - ~~演练遗留的临时库~~ —— 用户已确认，`mrright_restore_drill` 已 `dropdb`（2026-08-11）。
   删除后复查：`mrright_portfolio` 仍在、17 张表、`visitor_users=1`/`project_comments=2`、
   `/api/health` 200，生产库未受影响。
+
+## 2026-08-29（第二十八轮）：服务端在第一份响应里就说清楚要什么
+
+未完项第 11 条。**`src/` 一行没动。**
+
+### 问题：深度，不是重量
+
+第二十七轮把 three.js 赶出关键路径之后，面板出现前只剩 467 KB，
+但耗时几乎没动 —— 因为瓶颈换成了**串行的依赖发现**：
+
+```text
+浏览器拿到 HTML  →  只知道要入口 bundle
+入口下完、解析完  →  才知道要 Projects
+Projects 下完、解析完  →  才知道要 ProjectDetail
+```
+
+为了一个 9 KB 的文件，先排四轮往返。
+
+### 先把指标定下来
+
+`scripts/measure-project-link.mjs` 加了 `--chain`：
+**「浏览器开口要面板那个 chunk 之前，有几个 chunk 必须先下载完」**。
+
+选它而不是耗时，是因为它是**构建和 HTML 的性质，和链路无关** ——
+可以写进断言，也可以隔天复跑对比。耗时在我这条链路上噪声比效应大
+（第二十七轮量到同一个 bundle 上午 1.8s、下午 9.3s）。
+
+线上基线：**5**（`react-vendor`、`index`、`About`、`assetCategories`、`Projects`）。
+
+### 做法
+
+服务端本来就知道当前是哪条路由 —— `server/seo.js` 存在的理由就是这个。
+所以项目路由的 head 里直接写上面板需要的分块：
+
+```html
+<link rel="modulepreload" crossorigin data-seo-preload href="/assets/Projects-….js" />
+<link rel="modulepreload" crossorigin data-seo-preload href="/assets/assetCategories-….js" />
+<link rel="modulepreload" crossorigin data-seo-preload href="/assets/ProjectDetail-….js" />
+<link rel="modulepreload" crossorigin data-seo-preload href="/assets/useDialogAccessibility-….js" />
+```
+
+分块名从 `dist/.vite/manifest.json` 来（本轮在 `vite.config.js` 打开了 `build.manifest`），
+按 mtime 缓存，和 index.html 模板一个路子。
+
+**线上结果：5 → 0。** 面板的 chunk 现在在第一波就被请求。
+
+### 四个刻意的边界
+
+1. **只跟静态 import。** `ModelPreview` 是面板的动态 import，
+   它就该等到有人真的打开查看器；three.js 更不在名单里 ——
+   上一轮整轮就是在把它赶出去，这一轮不能又把它请回来。
+   （测试里专门有一条断言 hints 里不含 `three-`。）
+2. **只发给存在的项目页。** 别的路由不需要这些分块，发了是浪费；
+   404 也不发。
+3. **`data-seo-preload` 标记。** `injectSeo` 靠它只清理自己发的 hints，
+   **保留 vite 给入口图谱发的那条**（`react-vendor`）——后者是承重的，
+   清掉它等于把这轮买到的东西又还回去。单测里锁住了这个行为。
+4. **manifest 缺失时静默降级。** 老构建、或者 dist 不是这里构建的，
+   页面照常，只是退回慢的发现方式。
+   ⚠️ **代价是它不会报错** —— 所以部署前实测了打包确实带上
+   `dist/.vite/manifest.json`（`tar` 默认会带目录里的点文件）。
+   **以后动打包脚本的排除规则，要想起这条。**
+
+### 验证
+
+| 项 | 结果 |
+|---|---|
+| `npm run lint` | 通过 |
+| `npm run test:unit` | 169 通过（新增 3 条：hints 的发/不发/重渲染不叠加） |
+| `npm run build` | 通过 |
+| `npm run test:api` | 60 通过 / 13 skipped（新增 2 条：项目页有 hints、别的路由没有） |
+| `npm run test:api:db` | 86 通过 / 0 失败 |
+| `npm run test:openapi` / `deploy-backup` / `deploy-script` / `admin-totp` / `content-health` / `verify:visitor-studio` | 全部通过 |
+| `git diff --check` | 通过 |
+| 本机 express + `site-routing.spec.js` | 15 通过 |
+| 打包内容 | 实测 `dist/.vite/manifest.json` 在归档里 |
+| 线上 | 七条路由全 200，项目页有 4 条 hints，首页 0 条 |
+| **线上链深** | **5 → 0** |
+| 线上耗时（仅参考） | 中位 6.4s（4.3–19.7s），上一轮是 8.4～9.9s |
+
+### 改动的文件
+
+- `server/seo.js`（`renderHead` 发 hints，`injectSeo` 清理自己的）
+- `server/index.js`（读 manifest、按 mtime 缓存、只在项目路由发）
+- `vite.config.js`（`build.manifest: true`）
+- `scripts/measure-project-link.mjs`（`--chain`）
+- `tests/unit/seo.spec.js`、`tests/api/contract.spec.js`
+
+commit：`2512a57`（代码）+ 本次文档提交
+回滚点：`/opt/mrright-portfolio.backup-20260829-155129`
 
 ## 2026-08-28（第二十七轮）：先解决度量，再动代码
 
