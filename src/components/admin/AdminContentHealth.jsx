@@ -24,11 +24,17 @@ const severityLabelKey = {
 // for its code and in the server's English when there is not. The severity
 // step exists for `upload-missing-file`, which says two different things at
 // two different severities.
+// The server sends a finished English sentence *and*, where the sentence has a
+// path or a byte count in it, the raw values behind it. A dictionary entry can
+// only be written for the second kind, so the values are handed to the
+// translator and the English sentence stays as the fallback.
 const findingText = (t, finding, field) => {
-  const bySeverity = t(`finding.${finding.code}.${finding.severity}.${field}`)
+  const values = finding.values || {}
+
+  const bySeverity = t(`finding.${finding.code}.${finding.severity}.${field}`, values)
   if (!bySeverity.startsWith('finding.')) return bySeverity
 
-  const byCode = t(`finding.${finding.code}.${field}`)
+  const byCode = t(`finding.${finding.code}.${field}`, values)
   if (!byCode.startsWith('finding.')) return byCode
 
   return finding[field] || ''

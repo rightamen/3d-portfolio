@@ -3907,6 +3907,28 @@ body {
   @apply mt-1 block text-xs leading-relaxed text-neutral-500;
 }
 
+/* The keyboard route into the 3D operations map. Off-screen rather than
+   display:none or visibility:hidden -- both of those take an element out of the
+   focus order, which is the entire problem being solved. It returns to the
+   corner of the stage as soon as anything inside it has focus. */
+.admin-galaxy-focus-layer {
+  @apply absolute z-20 flex flex-col gap-1;
+  left: -10000px;
+  top: auto;
+}
+
+.admin-galaxy-focus-layer:focus-within {
+  @apply left-3 top-3 rounded-xl border border-white/15 bg-midnight/95 p-2 shadow-lg;
+}
+
+.admin-galaxy-focus-layer button {
+  @apply rounded-lg px-3 py-2 text-left text-xs text-neutral-200;
+}
+
+.admin-galaxy-focus-layer button:focus-visible {
+  @apply bg-white/10 outline outline-2 outline-offset-2 outline-aqua;
+}
+
 .admin-galaxy-stage {
   @apply relative overflow-hidden rounded-lg border border-white/8;
   background:

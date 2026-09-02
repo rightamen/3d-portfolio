@@ -194,17 +194,21 @@ const payloads = {
   '/api/admin/diagnostics': {
     diagnostics: { forwardedFor: '203.0.113.24, 10.0.0.3', forwardedProto: 'https', protocol: 'http', resolvedIp: '203.0.113.24', trustProxyHops: 2 },
   },
+  // The codes here are the ones server/contentHealth.js actually emits, and the
+  // interpolated ones carry `values`. They used to be invented names, which
+  // meant the trilingual screenshots below rendered the English fallback and
+  // proved nothing about the finding dictionary.
   '/api/admin/content-health': {
     health: {
       checkedAt: iso(0.01),
       communityUploads: [
         { file: { bytes: 48234496, exists: true, kind: 'zip' }, fileType: 'zip', id: 'up-1', issues: [], status: 'pending', title: 'Sci-fi crate pack', url: '/uploads/files/crates.zip' },
-        { file: { exists: false }, fileType: 'glb', id: 'up-2', issues: [{ code: 'missing', hint: 'Re-upload or remove the row.', message: 'The stored file is gone from disk.', severity: 'critical' }], status: 'approved', title: 'Hand-painted mage', url: '/uploads/files/mage.glb' },
+        { file: { exists: false }, fileType: 'glb', id: 'up-2', issues: [{ code: 'upload-missing-file', hint: 'Nothing resolves at /uploads/files/mage.glb. The row outlived its file.', message: 'The approved resource has a download link that 404s.', severity: 'critical', values: { url: '/uploads/files/mage.glb' } }], status: 'approved', title: 'Hand-painted mage', url: '/uploads/files/mage.glb' },
       ],
       counts: { critical: 1, note: 2, warning: 1 },
       projects: [
-        { glb: null, image: { bytes: 284672, exists: true, kind: 'jpeg', root: 'dist', url: '/assets/projects/a.jpg' }, isPublic: true, issues: [{ code: 'no-model', hint: 'Attach a GLB to enable the viewer.', message: 'No 3D preview attached.', severity: 'note' }], model: null, slug: 'stylised-tavern', title: 'Stylised Tavern', translations: { complete: true, missing: {} } },
-        { glb: { extensionsRequired: ['KHR_draco_mesh_compression'], images: 4, materials: 3, meshes: 6, version: '2.0' }, image: { bytes: 194560, exists: true, kind: 'jpeg', root: 'dist', url: '/assets/projects/b.jpg' }, isPublic: false, issues: [{ code: 'model-missing', hint: 'The file is referenced but not built.', message: 'The model URL does not resolve in dist/.', severity: 'critical' }], model: { exists: false, url: '/models/x.glb' }, slug: 'desert-outpost', title: 'Desert Outpost', translations: { complete: false, missing: { Ja: ['title', 'summary'] } } },
+        { glb: null, image: { bytes: 284672, exists: true, kind: 'jpeg', root: 'dist', url: '/assets/projects/a.jpg' }, isPublic: true, issues: [{ code: 'model-absent', hint: 'Optional. Projects without a model simply show the still image.', message: 'The project has no 3D preview attached.', severity: 'note' }], model: null, slug: 'stylised-tavern', title: 'Stylised Tavern', translations: { complete: true, missing: {} } },
+        { glb: { extensionsRequired: ['KHR_draco_mesh_compression'], images: 4, materials: 3, meshes: 6, version: '2.0' }, image: { bytes: 194560, exists: true, kind: 'jpeg', root: 'dist', url: '/assets/projects/b.jpg' }, isPublic: false, issues: [{ code: 'model-missing-file', hint: 'Nothing resolves at /models/x.glb. Re-upload the model or fix the path.', message: 'The 3D model 404s, so the preview never opens.', severity: 'critical', values: { url: '/models/x.glb' } }], model: { exists: false, url: '/models/x.glb' }, slug: 'desert-outpost', title: 'Desert Outpost', translations: { complete: false, missing: { Ja: ['title', 'summary'] } } },
       ],
       siteAssets: [
         { bytes: 1048576, expected: 'exr', found: 'exr', issue: null, label: 'Studio environment', url: '/assets/environments/studio.exr' },
@@ -363,6 +367,79 @@ test('flat map and reduced motion', async ({ page }) => {
 
 
   await page.locator('.admin-galaxy-dot').nth(1).click()
+  await page.waitForTimeout(500)
+  await expect(page.locator('.admin-section-header h2')).toBeVisible()
+
+  expect(consoleErrors, consoleErrors.join('\n')).toEqual([])
+})
+
+// Open item 6c: objects inside a canvas are not in the focus order, so in 3D
+// mode the operations map used to be unreachable by keyboard entirely. The
+// assertion is that a keyboard user can reach a node and activate it -- not how
+// the layer looks.
+// Open item 6b: findings whose sentences have a path or a size baked into them
+// stayed English while the console around them was translated. They are a
+// template plus values now, so the Chinese console has to render Chinese *with*
+// the path still in it.
+test('a finding with a value in it reads in Chinese', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem('mrright-admin-token', 'local-review-token')
+    window.localStorage.setItem('mrright-admin-language', 'zh')
+  })
+  await routeAdmin(page)
+
+  await page.setViewportSize({ height: 950, width: 1440 })
+  await page.goto('/admin', { waitUntil: 'domcontentloaded' })
+  await page.locator('.admin-nav-item', { hasText: '内容体检' }).first().click()
+
+  const finding = page
+    .locator('.admin-findings li', { hasText: '/models/x.glb' })
+    .first()
+  await expect(finding).toBeVisible({ timeout: 15000 })
+
+  // Chinese sentence, and the value the server sent still inside it.
+  await expect(finding).toContainText('重新上传模型')
+  await expect(finding).toContainText('/models/x.glb')
+  // No leftover placeholder, and no English fallback.
+  await expect(finding).not.toContainText('{url}')
+  await expect(finding).not.toContainText('Nothing resolves at')
+})
+
+test('the 3D map is reachable by keyboard', async ({ page }) => {
+  const consoleErrors = []
+  page.on('console', (message) => {
+    if (message.type() === 'error') consoleErrors.push(message.text())
+  })
+  page.on('pageerror', (error) => consoleErrors.push(`pageerror: ${error.message}`))
+
+  await page.addInitScript(() => {
+    window.localStorage.setItem('mrright-admin-token', 'local-review-token')
+    window.localStorage.setItem('mrright-admin-language', 'zh')
+    // 3D, explicitly: the flat map already has real buttons, and it is the 3D
+    // mode that had the gap.
+    window.localStorage.setItem('mrright-admin-galaxy-mode', '3d')
+  })
+  await routeAdmin(page)
+
+  await page.setViewportSize({ height: 950, width: 1440 })
+  await page.goto('/admin', { waitUntil: 'domcontentloaded' })
+  await expect(page.locator('.admin-galaxy')).toBeVisible({ timeout: 15000 })
+
+  const focusLayer = page.locator('.admin-galaxy-focus-layer button')
+  await expect(focusLayer.first()).toBeAttached({ timeout: 15000 })
+
+  // Focused, not clicked: a click would pass even if the element were outside
+  // the focus order, which is the exact bug.
+  await focusLayer.first().focus()
+  await expect(focusLayer.first()).toBeFocused()
+
+  // And it comes back on screen while focused, so a sighted keyboard user is
+  // not navigating something invisible.
+  const box = await focusLayer.first().boundingBox()
+  expect(box, 'the focused node has no box').not.toBeNull()
+  expect(box.x, 'the focused node is still off-screen').toBeGreaterThan(0)
+
+  await page.keyboard.press('Enter')
   await page.waitForTimeout(500)
   await expect(page.locator('.admin-section-header h2')).toBeVisible()
 

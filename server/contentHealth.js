@@ -240,6 +240,14 @@ export const createContentHealthChecker = ({ rootDir }) => {
   // checker, so the expectation is derived per URL rather than assumed.
   const expectedRootFor = (url) => (isUpload(url) ? 'public' : 'dist')
 
+  // `values` on a finding is what makes it translatable. The English `message`
+  // and `hint` are still built here -- they are what the CLI verifier prints
+  // and the fallback when a locale has no entry -- but a sentence with a path
+  // or a byte count baked into it cannot be looked up in a dictionary. The
+  // admin console renders `finding.<code>.<field>` with these values
+  // interpolated instead. Adding a new interpolated finding means adding
+  // `values` here and a dictionary entry; tests/unit/content-health-i18n
+  // .spec.js fails if the two drift apart.
   const wrongRootIssue = (asset, kind) => {
     const expected = expectedRootFor(asset.url)
     if (asset.root === expected) return null
@@ -300,6 +308,7 @@ export const createContentHealthChecker = ({ rootDir }) => {
         code: 'image-missing-file',
         hint: `Nothing resolves at ${project.image}. Re-upload the image or fix the path.`,
         message: 'The preview image 404s, so the project card renders a broken image.',
+        values: { url: project.image },
         severity: 'critical',
       })
     } else {
@@ -310,6 +319,7 @@ export const createContentHealthChecker = ({ rootDir }) => {
         issues.push({
           code: 'image-wrong-format',
           hint: `The file header says "${image.kind}". Re-export it as PNG, JPEG, or WebP.`,
+          values: { kind: image.kind },
           message: 'The preview image is not an image file, whatever its extension claims.',
           severity: 'critical',
         })
@@ -330,6 +340,7 @@ export const createContentHealthChecker = ({ rootDir }) => {
         code: 'model-missing-file',
         hint: `Nothing resolves at ${project.modelUrl}. Re-upload the model or fix the path.`,
         message: 'The 3D model 404s, so the preview never opens.',
+        values: { url: project.modelUrl },
         severity: 'critical',
       })
     } else {
@@ -340,6 +351,7 @@ export const createContentHealthChecker = ({ rootDir }) => {
         issues.push({
           code: 'model-wrong-format',
           hint: `The file header says "${model.kind}". The viewer only reads binary glTF (.glb).`,
+          values: { kind: model.kind },
           message: 'The model file is not a GLB, whatever its extension claims.',
           severity: 'critical',
         })
@@ -350,6 +362,7 @@ export const createContentHealthChecker = ({ rootDir }) => {
           issues.push({
             code: 'model-unreadable',
             hint: `Parsing the glTF header failed: ${glb.error}. Re-export the model.`,
+            values: { error: glb.error },
             message: 'The model has a GLB header but its contents cannot be read.',
             severity: 'critical',
           })
@@ -370,6 +383,7 @@ export const createContentHealthChecker = ({ rootDir }) => {
             hint: 'Run scripts/optimize-model.mjs to produce a smaller variant.',
             message: `The model is ${(model.bytes / 1024 / 1024).toFixed(1)} MB, which is heavy for a phone.`,
             severity: 'warning',
+            values: { mb: (model.bytes / 1024 / 1024).toFixed(1) },
           })
         }
       }
@@ -381,6 +395,7 @@ export const createContentHealthChecker = ({ rootDir }) => {
       issues.push({
         code: 'content-missing',
         hint: `Empty: ${translations.baseGaps.join(', ')}.`,
+        values: { fields: translations.baseGaps.join(', ') },
         message: 'Core copy is empty, so the project page renders a blank section in every language.',
         severity: 'critical',
       })
@@ -391,6 +406,7 @@ export const createContentHealthChecker = ({ rootDir }) => {
       issues.push({
         code: `translation-missing-${suffix}`,
         hint: `Missing: ${fields.join(', ')}.`,
+        values: { fields: fields.join(', ') },
         message: `${locale?.label || suffix} readers silently get the English copy on this project.`,
         severity: 'warning',
       })
@@ -495,6 +511,7 @@ export const createContentHealthChecker = ({ rootDir }) => {
         issues.push({
           code: 'upload-missing-file',
           hint: `Nothing resolves at ${upload.fileUrl}. The row outlived its file.`,
+          values: { url: upload.fileUrl },
           message: isPublic
             ? 'The download link on this approved upload 404s.'
             : 'The file behind this upload is gone, so approving it would publish a dead link.',
@@ -508,6 +525,7 @@ export const createContentHealthChecker = ({ rootDir }) => {
           issues.push({
             code: 'upload-wrong-format',
             hint: `The file header says "${file.kind}", which does not match ${extension || 'its extension'}.`,
+            values: { extension: extension || 'its extension', kind: file.kind },
             message: 'The stored bytes do not match the extension this upload was saved under.',
             severity: 'warning',
           })
@@ -519,6 +537,7 @@ export const createContentHealthChecker = ({ rootDir }) => {
           issues.push({
             code: 'upload-size-drift',
             hint: `The row says ${upload.fileSize} bytes; the file is ${file.bytes}.`,
+            values: { actual: file.bytes, recorded: upload.fileSize },
             message: 'The file on disk is not the size it was stored at.',
             severity: 'warning',
           })

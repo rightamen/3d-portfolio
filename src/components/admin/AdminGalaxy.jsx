@@ -128,6 +128,24 @@ const AdminGalaxy = ({ days = 30, nodes = [], onNavigate, total = 0 }) => {
         </div>
 
         {showScene ? (
+          // Objects inside a canvas are not in the focus order, so in 3D mode
+          // the whole map used to be unreachable by keyboard -- the operator had
+          // to know to switch to the flat view, or use the sidebar or the
+          // command palette (open item 6c). This is the same map as real
+          // buttons, off-screen until one takes focus, at which point it comes
+          // back into view so a sighted keyboard user can see where they are.
+          <ul className="admin-galaxy-focus-layer">
+            {nodes.map((node) => (
+              <li key={node.key}>
+                <button onClick={() => select(node)} type="button">
+                  {node.label} — {node.pending ? busyLabel(node) : idleLabel(node)}
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+
+        {showScene ? (
           // The boundary is the one that wraps the public model viewer: a lost
           // WebGL context throws from inside the canvas tree, where nothing
           // else in this page can catch it, and the flat map is a working
