@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run lint)",
+      "Bash(npm run test:unit)",
+      "Bash(npm run test:api)",
+      "Bash(npm run test:api:db)",
+      "Bash(npm run test:openapi)",
+      "Bash(npm run test:admin-totp)",
+      "Bash(npm run test:content-health)",
+      "Bash(npm run test:deploy-backup)",
+      "Bash(npm run test:deploy-script)",
+      "Bash(npm run verify:visitor-studio)",
+      "mcp__playwright__browser_navigate",
+      "mcp__playwright__browser_take_screenshot",
+      "mcp__playwright__browser_snapshot",
+      "mcp__playwright__browser_console_messages",
+      "mcp__playwright__browser_network_requests",
+      "mcp__playwright__browser_find"
+    ]
+  }
+}
