@@ -354,6 +354,20 @@ export const uploadCommunityResource = (token, payload, file, onProgress) => {
   })
 }
 
+// A post's cover image. Separate from uploadCommunityResource on purpose: that
+// one publishes a resource into the library, this one just parks a file and
+// hands back its URL for the post to claim.
+export const uploadCommunityPostImage = (token, file) => {
+  const formData = new FormData()
+  formData.append('file', file)
+
+  return request('/api/community/post-images', {
+    method: 'POST',
+    headers: authHeaders(token),
+    body: formData,
+  })
+}
+
 export const createCommunityPost = (token, payload) =>
   request('/api/community/posts', {
     method: 'POST',

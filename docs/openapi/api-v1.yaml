@@ -1064,6 +1064,61 @@ paths:
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
 
+  /community/post-images:
+    post:
+      operationId: uploadCommunityPostImage
+      tags: [Community]
+      summary: Store a cover image for a community post and return its URL.
+      description: |
+        Deliberately distinct from `/community/uploads`: an upload is a resource
+        published into the library, with a row and a moderation state. This
+        stores a file and returns its URL, which a post then claims through
+        `imageUrl` on `POST /community/posts`. Nothing is attached to a post
+        here.
+      x-cpp-sdk: true
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: "JPG, PNG, WebP or GIF only, max 16 MiB."
+      responses:
+        "201":
+          description: Image stored.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ResponseEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          imageUrl:
+                            type: string
+                            example: /uploads/images/1780998862555-cover.png
+        "400":
+          description: Missing file, not an image extension, or INVALID_FILE_TYPE.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+        "401":
+          $ref: "#/components/responses/AuthRequired"
+        "413":
+          description: Image exceeds 16 MiB.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+
   /community/posts:
     get:
       operationId: listCommunityPosts
@@ -1106,6 +1161,12 @@ paths:
                 title: { type: string, maxLength: 160 }
                 message: { type: string, maxLength: 1800 }
                 topic: { $ref: "#/components/schemas/CommunityTopic" }
+                imageUrl:
+                  type: string
+                  description: |
+                    A path returned by `POST /community/post-images`. Rejected
+                    with VALIDATION_ERROR if it is not a `/uploads/images/…`
+                    path, or if no such file exists.
       responses:
         "201":
           description: Post created.
@@ -2122,6 +2183,13 @@ components:
         id: { type: string }
         title: { type: string }
         message: { type: string }
+        imageUrl:
+          type: string
+          description: |
+            Cover image path, or an empty string. Always a `/uploads/images/…`
+            path this server stores: the value ends up in `og:image`, so it is
+            validated on write and never taken as an arbitrary URL.
+          example: /uploads/images/1780998862555-cover.png
         topic: { $ref: "#/components/schemas/CommunityTopic" }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }

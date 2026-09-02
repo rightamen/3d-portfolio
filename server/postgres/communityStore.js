@@ -107,6 +107,7 @@ export const createCommunityStore = ({ pool }) => ({
         community_posts.topic,
         community_posts.title,
         community_posts.message,
+        community_posts.image_url,
         community_posts.created_at,
         community_posts.updated_at,
         visitor_users.id AS user_id,
@@ -129,6 +130,7 @@ export const createCommunityStore = ({ pool }) => ({
           community_posts.topic,
           community_posts.title,
           community_posts.message,
+        community_posts.image_url,
           community_posts.created_at,
           community_posts.updated_at,
           visitor_users.id AS user_id,
@@ -333,6 +335,7 @@ export const createCommunityStore = ({ pool }) => ({
           community_posts.topic,
           community_posts.title,
           community_posts.message,
+        community_posts.image_url,
           community_posts.created_at,
           community_posts.updated_at,
           visitor_users.id AS user_id,
@@ -390,6 +393,7 @@ export const createCommunityStore = ({ pool }) => ({
           community_posts.topic,
           community_posts.title,
           community_posts.message,
+        community_posts.image_url,
           community_posts.created_at,
           community_posts.updated_at,
           visitor_users.id AS user_id,
@@ -490,11 +494,11 @@ export const createCommunityStore = ({ pool }) => ({
   createPost: async (post) => {
     const result = await pool.query(
       `
-        INSERT INTO community_posts (id, user_id, topic, title, message)
-        VALUES ($1, $2, $3, $4, $5)
-        RETURNING id, user_id, topic, title, message, created_at, updated_at
+        INSERT INTO community_posts (id, user_id, topic, title, message, image_url)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING id, user_id, topic, title, message, image_url, created_at, updated_at
       `,
-      [post.id, post.userId, post.topic, post.title, post.message],
+      [post.id, post.userId, post.topic, post.title, post.message, post.imageUrl || null],
     )
 
     return toCommunityPost({

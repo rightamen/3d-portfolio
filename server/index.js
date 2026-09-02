@@ -1471,6 +1471,27 @@ app.get('/api/community/posts', async (_request, response) => {
   sendData(response, { posts: await communityStore.listPosts() })
 })
 
+// What a post may claim as its picture. The value goes into og:image, which is
+// fetched and cached by every link-preview scraper on the internet, so it is
+// not somewhere a caller gets to put an arbitrary URL: only a path this server
+// stores images at, only a plain filename, and only one that actually exists --
+// a dangling og:image is a broken card in every client that ever saw it.
+const postImagePattern = /^\/uploads\/images\/[A-Za-z0-9][A-Za-z0-9._-]{0,199}$/
+
+const normalizePostImageUrl = async (value) => {
+  const imageUrl = String(value ?? '').trim()
+  if (!imageUrl) return { imageUrl: '' }
+  if (!postImagePattern.test(imageUrl)) return { error: 'That is not an uploaded image path.' }
+
+  try {
+    await access(path.join(uploadRoot, 'images', path.basename(imageUrl)))
+  } catch {
+    return { error: 'That image is no longer available.' }
+  }
+
+  return { imageUrl }
+}
+
 app.post('/api/community/posts', requireAuthStore, async (request, response) => {
   if (!communityStore) {
     return sendError(
@@ -1493,8 +1514,14 @@ app.post('/api/community/posts', requireAuthStore, async (request, response) => 
     return sendError(response, API_ERROR_CODES.VALIDATION_ERROR, 'Title and message are required.', 400)
   }
 
+  const image = await normalizePostImageUrl(request.body?.imageUrl)
+  if (image.error) {
+    return sendError(response, API_ERROR_CODES.VALIDATION_ERROR, image.error, 400)
+  }
+
   const post = await communityStore.createPost({
     id: createId(),
+    imageUrl: image.imageUrl,
     message,
     title,
     topic: normalizeCommunityTopic(request.body?.topic),
@@ -2369,6 +2396,57 @@ app.post(
 
   return sendData(response, { upload: uploadRecord }, 201)
 })
+
+// A post's own picture. Deliberately not the same thing as a community upload:
+// an upload is a resource the author is publishing for other people to
+// download, and it gets a row, a moderation state and a listing. A cover image
+// is page furniture. Sharing the upload endpoint would have put every cover
+// into the resource library.
+//
+// It stores the file and returns its URL; nothing is attached to a post until
+// the post is created with that URL. An image nobody references is a stray
+// file, which is the same thing an abandoned upload form already produces.
+app.post(
+  '/api/community/post-images',
+  requireVisitor,
+  enforceUploadQuota,
+  upload.single('file'),
+  async (request, response) => {
+    if (!request.file) {
+      return sendError(response, API_ERROR_CODES.VALIDATION_ERROR, 'Upload file is required.', 400)
+    }
+
+    if (await rejectOnSignatureMismatch(request, response)) return
+
+    const extension = path.extname(request.file.originalname).toLowerCase()
+
+    // Images only. The shared multer instance caps everything at the 120MB a
+    // model may need, so without this a "cover image" could be a 120MB GLB.
+    if (!imageExtensions.has(extension)) {
+      unlink(request.file.path).catch((error) => console.error(error))
+
+      return sendError(
+        response,
+        API_ERROR_CODES.VALIDATION_ERROR,
+        'A post image must be a JPG, PNG, WebP or GIF.',
+        400,
+      )
+    }
+
+    if (request.file.size > imageUploadLimit) {
+      unlink(request.file.path).catch((error) => console.error(error))
+
+      return sendError(
+        response,
+        API_ERROR_CODES.VALIDATION_ERROR,
+        'Image uploads must be 16MB or smaller.',
+        413,
+      )
+    }
+
+    return sendData(response, { imageUrl: `/uploads/images/${request.file.filename}` }, 201)
+  },
+)
 
 // The identity a like is recorded against is derived on the server.
 //

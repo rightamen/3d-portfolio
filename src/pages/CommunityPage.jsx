@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom'
 import { assetCategoryProfiles, getAssetCategoryProfile } from '../lib/assetCategories'
 import {
   createCommunityPost,
+  uploadCommunityPostImage,
   getCommunityPost,
   getCommunityPosts,
   getCommunityUploads,
@@ -121,6 +122,9 @@ const PostDetail = ({ authToken, copy, language, postId, visitorUser }) => {
           <small>{new Date(post.createdAt).toLocaleString(dateLocale)}</small>
         </div>
         <h1 className="community-detail-title">{post.title}</h1>
+        {post.imageUrl && (
+          <img className="community-post-image" src={post.imageUrl} alt={post.title} />
+        )}
         <p className="community-detail-message">{post.message}</p>
         <small className="community-detail-author">
           {post.user?.displayName || copy.accountGuest}
@@ -148,6 +152,9 @@ const PostList = ({ authToken, copy, language, visitorUser }) => {
   const [postForm, setPostForm] = useState(emptyPostForm)
   const [submitState, setSubmitState] = useState({ phase: 'idle', progress: 0, message: '' })
   const [postState, setPostState] = useState({ phase: 'idle', message: '' })
+  // The chosen file, and a local object URL so the author sees what they picked
+  // before anything is uploaded. Nothing leaves the browser until they post.
+  const [postImage, setPostImage] = useState({ file: null, preview: '' })
   const dateLocale = language === 'zh' ? 'zh-CN' : language === 'ja' ? 'ja-JP' : 'en-US'
 
   const categories = useMemo(
@@ -201,15 +208,33 @@ const PostList = ({ authToken, copy, language, visitorUser }) => {
     }
   }
 
+  const choosePostImage = (file) => {
+    setPostImage((current) => {
+      // Object URLs are a leak if you keep making them and never let go.
+      if (current.preview) URL.revokeObjectURL(current.preview)
+      return file ? { file, preview: URL.createObjectURL(file) } : { file: null, preview: '' }
+    })
+  }
+
   const submitPost = async (event) => {
     event.preventDefault()
     if (!authToken) return
 
     setPostState({ phase: 'saving', message: copy.saving })
     try {
-      const payload = await createCommunityPost(authToken, postForm)
+      // Two steps on purpose: the image is stored first and the post claims it
+      // by URL. A failed upload therefore fails the post, rather than
+      // publishing a post whose picture silently never arrived.
+      let imageUrl = ''
+      if (postImage.file) {
+        const uploaded = await uploadCommunityPostImage(authToken, postImage.file)
+        imageUrl = uploaded.imageUrl
+      }
+
+      const payload = await createCommunityPost(authToken, { ...postForm, imageUrl })
       setPosts((current) => [payload.post, ...current])
       setPostForm(emptyPostForm)
+      choosePostImage(null)
       setPostState({ phase: 'done', message: copy.communityPostSubmitted })
     } catch (error) {
       setPostState({
@@ -287,6 +312,39 @@ const PostList = ({ authToken, copy, language, visitorUser }) => {
                 required
               />
             </label>
+            <label className="field-label md:col-span-2">
+              {copy.communityPostImage}
+              {/* Same control as the resource upload below, rather than a bare
+                  file input: the native one renders its own English label and
+                  would be the only untranslated string on the page. */}
+              <span
+                className={`asset-upload-control ${
+                  postImage.file ? 'asset-upload-control-done' : ''
+                }`}
+              >
+                {postImage.file
+                  ? `${postImage.file.name} · ${formatFileSize(postImage.file.size)}`
+                  : copy.communityChooseImage}
+                <input
+                  type="file"
+                  accept=".jpg,.jpeg,.png,.webp,.gif"
+                  onChange={(event) => choosePostImage(event.target.files?.[0] || null)}
+                />
+              </span>
+              <small className="text-xs text-neutral-500">{copy.communityPostImageHint}</small>
+            </label>
+            {postImage.preview && (
+              <div className="community-post-image-preview md:col-span-2">
+                <img src={postImage.preview} alt={copy.communityPostImage} />
+                <button
+                  type="button"
+                  className="secondary-action"
+                  onClick={() => choosePostImage(null)}
+                >
+                  {copy.communityPostImageRemove}
+                </button>
+              </div>
+            )}
             <button
               type="submit"
               className="primary-action md:col-span-2"
@@ -326,6 +384,14 @@ const PostList = ({ authToken, copy, language, visitorUser }) => {
                 <small>{new Date(post.createdAt).toLocaleDateString(dateLocale)}</small>
               </div>
               <h4>{post.title}</h4>
+              {post.imageUrl && (
+                <img
+                  className="community-post-image"
+                  src={post.imageUrl}
+                  alt={post.title}
+                  loading="lazy"
+                />
+              )}
               <p>{post.message}</p>
               <small>{post.user?.displayName || copy.accountGuest}</small>
               <span className="community-post-open">{copy.communityViewPost} →</span>

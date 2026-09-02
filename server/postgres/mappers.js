@@ -190,6 +190,7 @@ export const toCommunityUpload = (row, options) => ({
 export const toCommunityPost = (row, options) => ({
   createdAt: row.created_at.toISOString(),
   id: row.id,
+  imageUrl: row.image_url || '',
   message: row.message,
   title: row.title,
   topic: row.topic,

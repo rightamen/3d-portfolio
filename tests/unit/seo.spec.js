@@ -242,6 +242,22 @@ describe('buildPageMeta', () => {
     )
   })
 
+  it('uses the post\'s own picture as the card image when it has one', () => {
+    const meta = buildPageMeta({
+      post: { ...post, imageUrl: '/uploads/images/cover.png' },
+      route: resolveRoute(`/community/${post.id}`),
+      siteUrl,
+    })
+
+    expect(meta.image).toBe('https://mrright.blog/uploads/images/cover.png')
+  })
+
+  it('falls back to the site image for a post with no picture', () => {
+    const meta = buildPageMeta({ post, route: resolveRoute(`/community/${post.id}`), siteUrl })
+
+    expect(meta.image).toBe('https://mrright.blog/assets/projects/fire-extinguisher.png')
+  })
+
   it('keeps a post that could not be loaded out of the index', () => {
     const meta = buildPageMeta({ post: null, route: resolveRoute('/community/gone'), siteUrl })
 
@@ -387,6 +403,15 @@ describe('renderNoscript', () => {
     expect(noscript).toContain(post.message)
   })
 
+  it('shows the post picture to a crawler that runs no javascript', () => {
+    const noscript = renderNoscript({
+      post: { ...post, imageUrl: '/uploads/images/cover.png' },
+      route: resolveRoute(`/community/${post.id}`),
+    })
+
+    expect(noscript).toContain('<img src="/uploads/images/cover.png"')
+  })
+
   it('makes the community list crawlable without javascript', () => {
     const noscript = renderNoscript({
       posts: [
@@ -502,6 +527,16 @@ describe('buildJsonLd', () => {
         position: 2,
       },
     ])
+  })
+
+  it('puts the post picture in the graph as well as the card', () => {
+    const route = resolveRoute(`/community/${post.id}`)
+    const posting = nodeOfType(
+      graphFor(route, { post: { ...post, imageUrl: '/uploads/images/cover.png' } }),
+      'DiscussionForumPosting',
+    )
+
+    expect(posting.image).toBe('https://mrright.blog/uploads/images/cover.png')
   })
 
   it('describes a post as a forum posting with its author and dates', () => {

@@ -392,6 +392,7 @@ export const createAdminStore = ({ pool, projectStore }) => {
           community_posts.topic,
           community_posts.title,
           community_posts.message,
+        community_posts.image_url,
           community_posts.created_at,
           community_posts.updated_at,
           visitor_users.id AS user_id,

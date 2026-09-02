@@ -1529,6 +1529,131 @@ test.describe('operational endpoints', () => {
 // post, and a profile's head is allowed to exist only while the profile is
 // public. The DB-free cases (homepage, community index, noindex on the private
 // areas, the sitemap shape) live in contract.spec.js.
+// A post's own picture, end to end: the thing this round exists for is that a
+// link shared into Twitter or WeChat stops showing the same fire extinguisher
+// for every post on the site.
+test.describe('community post cover images', () => {
+  const onePixelPng = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+    'base64',
+  )
+
+  const uploadCover = async (name = 'cover.png') => {
+    const form = new FormData()
+    form.append('file', new Blob([onePixelPng], { type: 'image/png' }), name)
+    return postForm('/api/community/post-images', form, visitorA.sessionToken)
+  }
+
+  test('storing a cover returns a path, and no upload row is created', async () => {
+    const before = await getJson('/api/community/uploads')
+    const { payload, response } = await uploadCover()
+
+    expect(response.status).toBe(201)
+    // sendData mirrors the data keys at the top level for the legacy clients,
+    // so imageUrl is expected there too.
+    expectContractShape(payload, { legacyKeys: ['imageUrl'] })
+    expect(payload.data.imageUrl).toMatch(/^\/uploads\/images\/.+\.png$/)
+
+    // The whole reason this is not /community/uploads: a cover must not land in
+    // the resource library.
+    const after = await getJson('/api/community/uploads')
+    expect(after.payload.data.uploads.length).toBe(before.payload.data.uploads.length)
+  })
+
+  test('a post carries its cover through to the html a scraper sees', async () => {
+    const { payload: uploaded } = await uploadCover()
+    const imageUrl = uploaded.data.imageUrl
+
+    const created = await sendJson(
+      'POST',
+      '/api/community/posts',
+      { imageUrl, message: 'With a picture of its own.', title: 'Cover image post' },
+      visitorA.sessionToken,
+    )
+    expect(created.response.status).toBe(201)
+    expect(created.payload.data.post.imageUrl).toBe(imageUrl)
+
+    const html = await (await fetch(`${baseURL}/community/${created.payload.data.post.id}`)).text()
+    expect(html).toContain(`<meta property="og:image" content="https://mrright.blog${imageUrl}" />`)
+    expect(html).not.toContain('fire-extinguisher.png')
+
+    const graph = JSON.parse(
+      html.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/)[1],
+    )['@graph']
+    expect(graph.find((node) => node['@type'] === 'DiscussionForumPosting').image).toBe(
+      `https://mrright.blog${imageUrl}`,
+    )
+  })
+
+  test('a post with no cover still gets the site image', async () => {
+    const created = await sendJson(
+      'POST',
+      '/api/community/posts',
+      { message: 'No picture here.', title: 'Plain post' },
+      visitorA.sessionToken,
+    )
+    expect(created.response.status).toBe(201)
+    expect(created.payload.data.post.imageUrl).toBe('')
+
+    const html = await (await fetch(`${baseURL}/community/${created.payload.data.post.id}`)).text()
+    expect(html).toContain('fire-extinguisher.png')
+  })
+
+  // og:image is fetched and cached by every link-preview scraper there is, so
+  // the field is not somewhere a caller gets to put an arbitrary URL.
+  test('an imageUrl the server did not issue is refused', async () => {
+    for (const imageUrl of [
+      'https://evil.example/tracker.png',
+      '//evil.example/tracker.png',
+      '/uploads/models/something.glb',
+      '/uploads/images/../../../etc/passwd',
+      '/uploads/images/does-not-exist.png',
+    ]) {
+      const created = await sendJson(
+        'POST',
+        '/api/community/posts',
+        { imageUrl, message: 'Trying it on.', title: 'Bad cover' },
+        visitorA.sessionToken,
+      )
+
+      expect(created.response.status, imageUrl).toBe(400)
+      expect(created.payload.error.code, imageUrl).toBe('VALIDATION_ERROR')
+    }
+  })
+
+  // Two different gates, and the test says which is which. The shared multer
+  // filter turns away anything outside the allowed extensions; an .obj is
+  // allowed there (it is a legitimate community upload) and has to be turned
+  // away by this endpoint instead, because a cover image has to be an image.
+  test('a cover must actually be an image', async () => {
+    const glb = new FormData()
+    glb.append('file', new Blob(['GLB?'], { type: 'model/gltf-binary' }), 'model.glb')
+    const rejectedByFilter = await postForm(
+      '/api/community/post-images',
+      glb,
+      visitorA.sessionToken,
+    )
+    expect(rejectedByFilter.response.status).toBe(400)
+    expect(rejectedByFilter.payload.error.code).toBe('INVALID_FILE_TYPE')
+
+    const obj = new FormData()
+    obj.append('file', new Blob(['v 0 0 0\n'], { type: 'text/plain' }), 'mesh.obj')
+    const rejectedHere = await postForm('/api/community/post-images', obj, visitorA.sessionToken)
+
+    expect(rejectedHere.response.status).toBe(400)
+    expectContractShape(rejectedHere.payload)
+    expect(rejectedHere.payload.error.code).toBe('VALIDATION_ERROR')
+  })
+
+  test('storing a cover needs a signed-in visitor', async () => {
+    const form = new FormData()
+    form.append('file', new Blob([onePixelPng], { type: 'image/png' }), 'cover.png')
+
+    const { response } = await postForm('/api/community/post-images', form)
+    expect(response.status).toBe(401)
+  })
+})
+
 test.describe('per-route HTML head, from real rows', () => {
   const distIndex = path.join(repoRoot, 'dist', 'index.html')
   const seoHandle = 'contract-visitor-a'

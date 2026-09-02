@@ -210,6 +210,10 @@ export const buildPageMeta = ({
       description:
         truncateText(post.message) ||
         `A post in the ${SITE_NAME} community${author ? ` by ${author}` : ''}.`,
+      // The post's own picture when it has one. Until round twenty-nine every
+      // post shared into Twitter, Discord or WeChat carried the same photo of a
+      // fire extinguisher, whatever the post was about.
+      image: post.imageUrl ? absoluteUrl(site, post.imageUrl) : base.image,
       ogType: 'article',
       properties,
       title: `${postTitle(post)} | ${SITE_NAME} Community`,
@@ -420,6 +424,7 @@ export const buildJsonLd = ({
         url: meta.canonical,
         datePublished: post.createdAt || undefined,
         dateModified: post.updatedAt || undefined,
+        image: post.imageUrl ? absoluteUrl(site, post.imageUrl) : undefined,
         inLanguage: 'en',
         isPartOf: { '@id': websiteId },
         author: author
@@ -587,6 +592,9 @@ export const renderNoscript = ({
       '      <article>',
       `        <h1>${escapeHtml(postTitle(post))}</h1>`,
       author ? `        <p>Posted by ${escapeHtml(author)}</p>` : '',
+      post.imageUrl
+        ? `        <img src="${escapeHtml(post.imageUrl)}" alt="${escapeHtml(postTitle(post))}" />`
+        : '',
       `        <p>${escapeHtml(collapseWhitespace(post.message))}</p>`,
       '        <p><a href="/community">Back to the mrright.blog community</a></p>',
       '      </article>',

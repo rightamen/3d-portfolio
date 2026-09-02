@@ -825,6 +825,20 @@ html {
   @apply grid gap-3;
 }
 
+/* A post's cover image, in the list card and in the detail. max-height keeps a
+   tall portrait shot from pushing the text out of the card entirely. */
+.community-post-image {
+  @apply mt-3 max-h-72 w-full rounded-xl border border-white/10 object-cover;
+}
+
+.community-post-image-preview {
+  @apply mt-2 flex flex-col gap-3 rounded-xl border border-white/10 bg-white/5 p-3 sm:flex-row sm:items-start;
+}
+
+.community-post-image-preview img {
+  @apply max-h-48 w-full rounded-lg object-cover sm:w-64;
+}
+
 .community-post-card {
   @apply rounded-lg border border-white/10 bg-black/20 p-4;
 }

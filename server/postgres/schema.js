@@ -304,6 +304,12 @@ export const ensureSchema = async (pool) => {
     ALTER TABLE project_overrides
       ADD COLUMN IF NOT EXISTS asset_category text;
 
+    -- A post's own picture, for the page and for the card a shared link
+    -- produces. Nullable and additive: older code ignores it, and a rollback
+    -- leaves the column sitting harmlessly unread.
+    ALTER TABLE community_posts
+      ADD COLUMN IF NOT EXISTS image_url text;
+
     ALTER TABLE custom_projects
       ADD COLUMN IF NOT EXISTS asset_category text;
 
