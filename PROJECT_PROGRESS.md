@@ -1,8 +1,53 @@
 # mrright.blog 项目进度记录
 
-## 下次从这里继续（截至 2026-09-02 第三十轮收工）
+## 下次从这里继续（截至 2026-09-03 第三十一轮收工）
 
-### 2026-09-02（第三十轮）：后台最后两处没做完的，收掉了
+### 2026-09-03（第三十一轮）：一行修复，一次反证
+
+**做的是未完项第 13 条** —— 第三十轮撞见的那个死掉的 Tailwind token。
+
+| | 第三十一轮 |
+|---|---|
+| 做的事 | `bg-black-100/70` → `bg-midnight/70`（`src/main.jsx` 的 chunk 加载失败卡片） |
+| 未完项 | 第 13 条**关闭** |
+| 前端 | 一行 |
+| 服务端 | 一行没动 |
+| 数据库 | 无变更，本轮没有跑过任何数据库写语句 |
+| 部署 | ✅ `fc71d47`，2026-09-03 14:22 UTC |
+| 回滚点 | `/opt/mrright-portfolio.backup-20260903-142205` |
+
+⚠️ **验证用的是反证，不是硬造一次真实的 chunk 加载失败。**
+`ChunkReloadBoundary` 只在 React 渲染期间抛出的错误上触发
+（`componentDidCatch` / `getDerivedStateFromError`），
+而动态 import 失败是一个 unhandled rejection，走的是另一条监听器（直接刷新页面），
+够不着这张卡片的渲染路径。硬造一次真实崩溃对一行 CSS 的修复不成比例。
+改用的验证是：**先照旧 token 构建一次，grep 编译产物确认 `black-100` 没有生成任何规则
+（0 条）；再用正确的 token 构建，确认真的生成了带背景色的规则**
+（`background-color:#06091fb3`）。这就是「这个背景色从来没生效过」的直接证据，
+不是推断。
+
+⚠️ **顺手做了一次系统性扫描**：拿 `@theme` 里的真实 token 名 + Tailwind 默认调色板，
+比对 `src/**/*.jsx` 里所有 `bg-`/`text-`/`border-`/`ring-`/... 类名，
+确认**仓库里没有第二个这种「JSX 里的死类名」**。
+
+**2026-09-03 当天收工（这一天只做了第三十一轮这一轮）：**
+
+- 提交：`fc71d47`（代码）+ 本次文档提交，**全部已 push**，`main` 与 `origin/main` 一致
+- 线上跑的就是 `fc71d47`（14:22 UTC 部署），**本地与线上同码**
+  （线上 `index-BuJP7uZh.js` 与本地 dist 已核对；线上 CSS 里那条 `bg-midnight/70`
+  规则也已核对存在），`/api/health` 200
+- 本机没有任何服务在跑，没有残留的临时脚本
+- **本轮没有跑过任何数据库写语句**；只用一次性管理会话验了 admin_summary（用完即撤销）
+- 未完项从 9 条降到 **8 条**（第 13 条关闭，本轮没开新的）
+- 「待你决策」仍然是 2 条（17 个翻译 key、`crimson-rune-greatsword` 的中文文案串了）
+- 没有半途而废的改动挂在本机
+
+**下次开工**：先读这一节。剩下能挑的：路线图第 7 条 C++ SDK（体量最大），
+或者未完项第 12 条（配图清扫任务）。⚠️ 先定怎么验证。
+
+---
+
+### 2026-09-02（第三十轮，上一轮）：后台最后两处没做完的，收掉了
 
 **做的是未完项 6b 和 6c** —— 第二十轮把后台做成三语时留下的两个角落。
 
@@ -464,7 +509,13 @@ CI 两个 job 全绿（`api-db` 那个 job 本轮加了 build 步骤，新增用
 
 ---
 
-**线上运行 `e4a19c7`（2026-09-02 15:32 UTC 部署，已逐项验证）。**
+**线上运行 `fc71d47`（2026-09-03 14:22 UTC 部署，已逐项验证）。**
+第三十一轮只改了一行（`src/main.jsx` 的一个 Tailwind 类名），`server/` 一行没动。
+回滚到第三十一轮之前：`/opt/mrright-portfolio.backup-20260903-142205`。
+
+（上一轮：第三十轮 `e4a19c7`，2026-09-02 15:32 UTC 部署。）
+
+**第三十轮线上是 `e4a19c7`（已逐项验证）。**
 第三十轮只改后台（`server/contentHealth.js` 多发 `values`，前端多一个焦点层与 14 条词条），
 公开站点一行没动。
 回滚到第三十轮之前：`/opt/mrright-portfolio.backup-20260902-153200`。
@@ -556,9 +607,9 @@ express-rate-limit，只有这六个）；前端的东西全部属于 `devDepend
 `/opt` 上实际存在的是：
 
 ```text
-/opt/mrright-portfolio.backup-20260902-153200   第三十轮之前 ← 要回滚就用这个
+/opt/mrright-portfolio.backup-20260903-142205   第三十一轮之前 ← 要回滚就用这个
+/opt/mrright-portfolio.backup-20260902-153200   第三十轮之前
 /opt/mrright-portfolio.backup-20260902-141551   第二十九轮之前（回到这里 = 回到没有帖子配图）
-/opt/mrright-portfolio.backup-20260829-155129   第二十八轮之前
 ```
 
 ⚠️ **回滚过第二十九轮的话，`community_posts.image_url` 那一列会留在库里。**
@@ -632,12 +683,13 @@ Members 详情在窄屏下不再把整页撑宽（一行 CSS）。
 还剩帖子配图和 `<noscript>`。
 SEO 那条线（第二十三轮开的）到此只剩 `<noscript>` 一条，
 而那条真要解决就是 SSR（ADR 里明写了不划算）。
-后台那两处（6b、6c）也在第三十轮收掉了。
+后台那两处（6b、6c）在第三十轮收掉了，第 13 条那个死 token 在第三十一轮收掉了。
 **所以下一轮基本是换方向**：路线图**第 7 条 C++ SDK**（体量最大，和网站关系最远），
-或者未完项里剩下的小件（第 12 条配图清扫、第 13 条死样式 token）。
-⚠️ 无论做哪条，**先定怎么验证**——第二十六到三十轮的教训都在这上面：
+或者未完项里剩下的第 12 条（配图清扫）。
+⚠️ 无论做哪条，**先定怎么验证**——第二十六到三十一轮的教训都在这上面：
 第三十轮那条防漂移测试是做了变异验证才敢信的，
-而后台 e2e 的 fixture 用假 code 空转了很久都没人发现。
+后台 e2e 的 fixture 用假 code 空转了很久都没人发现，
+第三十一轮则是找不到能验证的手段时**改用反证**，而不是硬造一次不成比例的真实崩溃。
 **「待你决策」里那条还在**（17 个没人渲染的翻译 key 删不删）——
 第二十三轮也没有替你删，理由不变：那是产品文案。
 
@@ -824,16 +876,12 @@ Publish / Mark Spam 就在 Delete 旁边**。
 **第二十九轮开了第 12 条**（没人认领的配图文件），
 **第三十轮关掉了 6b 和 6c，并开了第 13 条**（一个死掉的样式 token）。
 
-13. **`bg-black-100` 这个工具类根本不存在**（第三十轮撞见）。
-   `@theme` 里没有 `--color-black-100`，所以 `@apply bg-black-100/95` 会让构建**直接失败**
-   （本轮就是这么发现的），而**写在 JSX 的 className 里则是静默失效** ——
-   Tailwind 只对 `@apply` 未知工具类报错，对模板里的未知类名不报。
-   实际后果：`src/main.jsx` 里那张「分块加载失败」的错误卡片
-   （`bg-black-100/70`）**从来就没有背景色**，一直是透明的。
-   修法是一行：换成 `bg-midnight/70`（`--color-midnight` 是真实存在的）。
-   没顺手改，是因为它会动到一个已部署轮次之外的视觉，值得单独一次构建+部署。
-   ⚠️ **顺带一提，这类「JSX 里的死类名」不会有任何测试发现** ——
-   要系统性排查，得拿 `@theme` 里的 token 名去比对源码里所有 `bg-`/`text-`/`border-` 类。
+13. ~~**`bg-black-100` 这个工具类根本不存在**~~ —— **2026-09-03 第三十一轮修掉了。**
+   `src/main.jsx` 里那张「分块加载失败」的错误卡片换成了 `bg-midnight/70`。
+   验证用的是反证：先照旧 token 构建一次，编译产物里 `black-100` 出现 0 次
+   （证实「从来没生效过」不是推断）；再用新 token 构建，确认真的生成了
+   带背景色的规则。顺手对全仓 `src/**/*.jsx` 做了一次系统性扫描，
+   确认没有第二个这种死类名。
 **编号不复用**，以免旧记录里的编号指向别的东西。现在开着的是：
 
 12. **没人认领的配图文件没有清理**（第二十九轮开的）。
@@ -1311,6 +1359,74 @@ CSP 这件事能做完，就是因为 playwright 回来了。
 - ~~演练遗留的临时库~~ —— 用户已确认，`mrright_restore_drill` 已 `dropdb`（2026-08-11）。
   删除后复查：`mrright_portfolio` 仍在、17 张表、`visitor_users=1`/`project_comments=2`、
   `/api/health` 200，生产库未受影响。
+
+## 2026-09-03（第三十一轮）：一行修复，一次反证
+
+未完项第 13 条。**一行改动，`server/` 一行没动。**
+
+### 修的什么
+
+`src/main.jsx` 里 `ChunkReloadBoundary` 的错误卡片，用的是
+`bg-black-100/70`。`@theme` 里没有 `--color-black-100`，Tailwind 对着一个
+不存在的 token 什么都不会生成——那张卡片从写下来那天起就没有背景色。
+
+```diff
+- <section className="max-w-md rounded-2xl border border-white/10 bg-black-100/70 p-8">
++ <section className="max-w-md rounded-2xl border border-white/10 bg-midnight/70 p-8">
+```
+
+### 怎么验证的
+
+这类 bug 的麻烦在于它**静默**：Tailwind 只在 `@apply` 里对未知类报错
+（第三十轮的构建失败就是这么撞上的），写在 JSX className 里则是悄悄不生成
+任何规则，页面照样渲染，只是没有背景。想在浏览器里"眼见为实"地复现它，
+得先让 `ChunkReloadBoundary` 真的捕获一次错误——但它只在 React **渲染期间**
+抛出的错误上触发（`componentDidCatch` / `getDerivedStateFromError`），
+而一次真实的动态 import 失败是 unhandled rejection，走的是另一条监听器
+（直接刷新页面），根本到不了这张卡片的渲染路径。硬造一次真实崩溃，
+对一行 CSS 类名的修复不成比例。
+
+改用**反证**：
+
+1. 先照旧 token（`bg-black-100/70`）构建一次，grep 编译产物 ——
+   `black-100` 出现 **0 次**。这不是推断，是直接证据：
+   那张卡片从来没有、也不可能有背景色。
+2. 换成 `bg-midnight/70` 再构建一次，编译产物里确实多出一条规则：
+   `.bg-midnight\/70{background-color:#06091fb3}`。
+
+两次构建的产物对照，比截一张"背景是深色"的图更能说明问题——
+后者证明不了"以前不是"，前者可以。
+
+### 顺手做的一次排查
+
+拿 `@theme` 里的真实 token 名（`primary` / `midnight` / `navy` / `indigo` /
+`storm` / `aqua` / `mint` / `mint-dark` / `royal` / `lavender` / `fuchsia` /
+`orange` / `sand` / `coral`）加上 Tailwind 默认调色板，
+比对 `src/**/*.jsx` 里所有 `bg-`/`text-`/`border-`/`ring-`/`from-`/`to-`/`via-`/...
+类名。**仓库里没有第二个这种死类名**——这次撞见的是唯一一处。
+
+### 验证
+
+| 项 | 结果 |
+|---|---|
+| `npm run lint` | 通过 |
+| `npm run test:unit` | 177 通过 |
+| `npm run build`（不重定向到 /dev/null） | 通过 |
+| `npm run test:api` | 60 通过 / 13 skipped |
+| `npm run test:api:db` | 92 通过 |
+| `npm run test:openapi` 等全部 verifier | 通过 |
+| `git diff --check` | 通过 |
+| 本机 `site-routing.spec.js` + `admin-console.spec.js` | **23 通过**（15 + 8） |
+| 编译产物反证 | 旧 token：0 条规则；新 token：`background-color:#06091fb3` |
+| 部署前备份 | `/opt/mrright-portfolio.backup-20260903-142205` |
+| 线上 | 七条路由 200；bundle 与本地一致；线上 CSS 里那条规则确实存在；日志 0 error |
+
+### 改动的文件
+
+- `src/main.jsx`（一行）
+
+commit：`fc71d47`（代码）+ 本次文档提交
+回滚点：`/opt/mrright-portfolio.backup-20260903-142205`
 
 ## 2026-09-02（第三十轮）：后台最后两处没做完的
 
