@@ -1,8 +1,71 @@
 # mrright.blog 项目进度记录
 
-## 下次从这里继续（截至 2026-09-03 第三十一轮收工）
+## 下次从这里继续（截至 2026-09-03 第三十二轮收工）
 
-### 2026-09-03（第三十一轮）：一行修复，一次反证
+### 2026-09-03（第三十二轮）：第一次用多窗口并行——两条互不相关的轨
+
+**这一轮第一次用了并行 agent（各自独立 git worktree）同时干两件互不相关的事**，
+而不是像前 31 轮那样一件一件顺序做。两条轨完全不碰同一批文件，
+所以能真正并行，而不是抢同一份工作树。
+
+| | 轨道 A：C++ SDK 契约测试 | 轨道 B：孤儿上传文件检测 |
+|---|---|---|
+| 做的事 | 给 `cpp-app` 的 SDK 补契约测试 | 只读检测报告，**不删除任何文件** |
+| 对应清单 | 路线图第 7 条（在 Asset Model 冻结前能做的那部分） | 未完项第 12 条 |
+| 改动范围 | `cpp-app/tests/unit/sdk_contract_tests.cpp` 一个文件 | 新增 3 个文件（`server/`、`scripts/`、`tests/unit/`） |
+| 部署 | **不需要**——`cpp-app` 从不部署到 VPS | **不需要**——脚本没有接入 `npm run` / CI / 后台，纯手动工具 |
+| 数据库 | 只读查询，**没有写语句** | 只读查询，**没有写语句** |
+
+⚠️ **两个 agent 都被明确禁止 push、部署、改 `PROJECT_PROGRESS.md`**——
+只在各自的 worktree 分支上 commit，合并、复核、部署决策全部留给主线程。
+这是刻意的：并行加速的是"写代码"，不是"决定要不要上线"。
+
+⚠️ **两边我都自己动手复核了一遍，没有只信 agent 的汇报**：
+分别读了完整 diff、自己重新跑了一遍构建+测试、自己做了一次独立的变异验证
+（改坏一处断言确认测试真的会红，再改回去确认变绿）。
+这不是走流程——轨道 B 的汇报里就有一个我必须自己核实的细节：
+它说"按地图里列的表查了"，但我给它的地图其实**漏了一张表**
+（`visitor_users.avatar_url`/`banner_url`），是它自己在读 schema 时发现并修正的。
+这恰好证明了"复核"不是形式主义。
+
+⚠️ **合并时选了 rebase 不是 merge**——这个仓库 31 轮以来的历史全是直线，
+第一次 `git merge --no-ff` 出现了一个 merge commit，观感不对，
+立刻 `reset --hard` + `rebase` 改回直线历史。**以后合并并行分支优先 rebase**，
+除非内容真的冲突。
+
+⚠️ **轨道 B 的孤儿文件检测跑出了真实结果**：线上 `public/uploads/` 里
+**24 个文件、共 231.8 MB** 没有任何数据库行指向。
+但**其中至少一个不能当废件处理**——`1781017698552-tl-miehuoqi.glb`
+（40.7 MB）被 `server/content.js` 里的代码注释点名为次世代灭火器模型的
+**源文件**（优化产物 `fire-extinguisher-4k.3fa834b2.glb` 就是从它生成的），
+留着是为了将来能重新生成不同分辨率版本，不是没用的旧文件。
+**这也是为什么这一轮只做检测不做删除**——原始清单只查三张表都会漏东西，
+真要清理，人工过一遍这份报告都不能跳过。详见「待你决策」。
+
+**2026-09-03 当天收工（这一天做了两轮：第三十一轮和第三十二轮，第三十二轮不需要部署）：**
+
+- 提交：`fc71d47`（第三十一轮代码）、`007b7f9`（文档）、
+  `ecaf6b1`（轨道 A）、`2c0f8b1`（轨道 B）+ 本次文档提交，**全部已 push**
+- **线上仍是 `fc71d47`**（第三十一轮部署的那份）——本轮两条轨都不影响运行中的网站，
+  没有理由也没有必要重新部署
+- 本机没有任何服务在跑；两个 agent worktree 已清理（目录、分支都删了）
+- **本轮没有跑过任何数据库写语句**；轨道 B 对线上库和线上 `public/uploads/` 做过
+  一次只读复核（详见下面那一节），复核完已清理掉临时用的 `/root/orphan-check-dryrun/`
+  （在 `/opt` 之外，没有碰任何已部署文件）
+- 未完项仍然是 8 条（本轮没关也没新开——第 12 条改写了但保持开着，见下）
+- 「待你决策」从 2 条变成 **3 条**（新增：231.8 MB 孤儿文件，删不删、怎么删）
+
+**下次开工**：先读这一节。这一轮把手边"能独立验证、不需要等谁拍板"的活基本做完了——
+路线图第 7 条卡在 Asset Model 没冻结（服务端设计都还没开始，不是我能单方面推进的），
+第 12 条卡在等你看那份孤儿文件名单。**候选**：
+路线图第 9 条（CSP `style-src` 收紧掉 `unsafe-inline`，非小改动）、
+第 8 条（灾备演练，`docs/OPERATIONS_BACKUP.md` 要求 2026-11 前一次），
+或者 C++ SDK README「Next Steps」里排第二的 OpenAPI 生成客户端 spike
+（同样不碰 Asset Model，纯对比用途）。
+
+---
+
+### 2026-09-03（第三十一轮，上一轮）：一行修复，一次反证
 
 **做的是未完项第 13 条** —— 第三十轮撞见的那个死掉的 Tailwind token。
 
@@ -884,17 +947,21 @@ Publish / Mark Spam 就在 Delete 旁边**。
    确认没有第二个这种死类名。
 **编号不复用**，以免旧记录里的编号指向别的东西。现在开着的是：
 
-12. **没人认领的配图文件没有清理**（第二十九轮开的）。
-   `POST /api/community/post-images` 存下文件就返回 URL，
-   帖子发出去才算认领。**填了表、选了图、然后关掉页面**，
-   那个文件就留在 `public/uploads/images/` 里，没有任何行指向它。
-   ⚠️ 这不是本轮引入的新行为 —— 资源上传表单放弃填写时也一样，
-   但配图这条路更容易走到（选图比填完标题+说明+分类容易得多）。
-   要做就是一个「删除超过 N 天且没有任何行引用的图片」的清扫任务，
-   ⚠️ **而它必须同时检查 `community_posts.image_url`、`community_uploads`
-   和 `project_overrides`/`custom_projects` 的 image** ——
-   少查一张表就会删掉正在用的图。
-   现在的量级是可以忽略的（线上 1 条帖子），所以没有急着做。
+12. **没人认领的配图文件，现在有工具能测量了，但删不删是你的决定**
+   （第二十九轮开的，第三十二轮做了检测那一半）。
+   `node scripts/find-orphaned-uploads.mjs` ——只读，不删除任何东西，
+   查了 5 张表 / 9 个列（比这条最早写下时想到的 3 张表要多：
+   `community_posts.image_url`、`community_uploads.file_url`/`preview_url`、
+   `visitor_users.avatar_url`/`banner_url`、项目的 `image`/`model_url`，
+   外加 `projects/<slug>-source.zip` 按 slug 是否还存在来判断）。
+   **线上跑了一次**：24 个文件、231.8 MB。**其中至少一个不是废件**——
+   见「待你决策」里的具体说明。
+   ⚠️ **没有做成自动清理任务，是故意的**：`CLAUDE.md` 明确写着不能删除上传文件，
+   而这份报告本身就证明了"按表查"这件事很容易漏（本轮的地图最初就漏了
+   `visitor_users` 那两列，是 agent 自己读 schema 时发现并修正的）。
+   真要清理，人工过一遍名单是省不掉的一步。
+   工具已经在，命令是 `node scripts/find-orphaned-uploads.mjs`（可加 `--json`），
+   什么时候想看当前数字，直接跑就行。
 
 9. ~~**分享一条项目链接要和 971 KB 的 three.js 抢带宽**~~ ——
    **2026-08-28 第二十六 + 二十七轮做完了。**
@@ -1078,6 +1145,23 @@ CSP 这件事能做完，就是因为 playwright 回来了。
 
 ### 待你决策的（我没有权限或不该替你决定）
 
+- **线上 `public/uploads/` 里有 231.8 MB（24 个文件）没有任何数据库行引用**
+  （2026-09-03 第三十二轮用 `scripts/find-orphaned-uploads.mjs` 测出来的，只读，
+  没有删任何东西）。名单按最旧排序，大头是两类：
+  - 一批 `md-leimu`（`.obj`/`.glb`）和 `2b.png`，92 天前，看着像是同一个作品
+    反复上传/替换时留下的历史版本（每次替换只更新数据库指向最新那份，
+    旧文件从此没有任何行再指向它）。
+  - 五个 `tl-miehuoqi.glb`，40～40.7 MB 一个，86 天前，共约 202 MB，占了这批的大头。
+    ⚠️ **这五个里至少有一个不是废件**：`1781017698552-tl-miehuoqi.glb`
+    被 `server/content.js` 的代码注释点名为线上那个次世代灭火器模型
+    （`/models/fire-extinguisher-4k.3fa834b2.glb`）的**源文件**，
+    留着是为了将来要出别的分辨率版本时重新生成，不是传错了忘记删。
+    **另外四个是不是同一回事，我没有查**——这需要你（或者知道当时上传经过的人）
+    来确认，而不是我照文件名猜。
+  - 没有替你删任何一个：这就是为什么这一轮做的是「测量」不是「清理」。
+    想看当前数字，跑 `node scripts/find-orphaned-uploads.mjs`
+    （只读，随时能重跑，数字会随新上传变化）。
+
 - **`crimson-rune-greatsword` 的中文标题和中文简介是另一个项目的**
   （2026-08-26 第二十四轮截图时撞见，**不是本轮改出来的，是数据本身**）。
   线上 `/api/projects` 里它的 `titleZh` 是「暗影祭坛烛台」、
@@ -1215,7 +1299,13 @@ CSP 这件事能做完，就是因为 playwright 回来了。
      没配图的帖子仍回落到站点图。详见「2026-09-02（第二十九轮）」。
    - **`<noscript>` 里是纯文本，不是真页面**。不跑 JS 的爬虫看到的是标题+正文，
      不是排版。真要让版面本身参与排名，那才轮到 SSR。
-7. Asset Model（checksum / visibility / downloadPolicy）稳定后再回到 C++ SDK
+7. Asset Model（checksum / visibility / downloadPolicy）稳定后再回到 C++ SDK ——
+   **2026-09-03 第三十二轮做了这条禁令之内还能做的部分**：给 `CommunityClient`
+   （之前零覆盖）、`ProjectClient`、`AuthClient::me/logout`、
+   `EnvelopeParser` 的 `pagination` 缺失场景补了 14 条契约测试，
+   **`Asset.hpp`/`AssetClient.hpp` 一行没碰**。详见「2026-09-03（第三十二轮）」。
+   Asset Model 本身仍未冻结（`docs/API_V1_GAPS.md` §3 仍是 ❌），
+   这条边界没有变。
 8. 下次恢复演练建议在 2026-11 之前（`docs/OPERATIONS_BACKUP.md` 要求每季度一次）
 9. CSP 还可以再紧一格：`style-src` 现在带 `'unsafe-inline'`（Tailwind 与 three.js 的内联样式），
    要去掉得先上 nonce 或 hash，不是小改动，暂不动。
@@ -1359,6 +1449,129 @@ CSP 这件事能做完，就是因为 playwright 回来了。
 - ~~演练遗留的临时库~~ —— 用户已确认，`mrright_restore_drill` 已 `dropdb`（2026-08-11）。
   删除后复查：`mrright_portfolio` 仍在、17 张表、`visitor_users=1`/`project_comments=2`、
   `/api/health` 200，生产库未受影响。
+
+## 2026-09-03（第三十二轮）：多窗口并行，两条互不相关的轨
+
+第一次用并行 agent（各自独立 git worktree）同时做两件事，而不是顺序做完一件再开下一件。
+选这两件事做并行实验的理由：**互不相关**——一个在 `cpp-app/`（C++，从不部署），
+一个在 `server/`+`scripts/`+`tests/unit/`（Node，但不接入任何运行时路径）。
+不会抢同一批文件，也都不需要碰生产。
+
+### 派活之前先自己摸底，不是甩给 agent 猜
+
+派两个 agent 之前，自己先查了两件事，避免写出"自己想清楚"和"让 agent 编"混在一起的提示词：
+
+1. **C++ SDK 现在到哪了**：读了 `cpp-app/README.md`、`cpp-app/sdk/models/Asset.hpp`、
+   `docs/API_V1_GAPS.md` §3、`docs/API_V1_FREEZE_PLAN.md` 的检查表——
+   确认 Asset Model **依然没有冻结**（"no endpoint today returns the frozen target
+   Asset Model shape"，检查表第 6、7 项仍是 ❌），`PROJECT_PROGRESS.md` 早先写下的
+   "Asset Model 稳定后再回到 C++ SDK" 这条禁令**依然成立**。
+   于是能做的只剩 README「Next Steps」里不依赖 Asset Model 的第 1 条：
+   扩充契约测试。
+2. **孤儿上传文件真正涉及哪些表**：读 `server/postgres/schema.js` 全文，
+   发现最早写下未完项第 12 条时想到的"3 张表"是不完整的——
+   实际是 **5 张表、9 个列**（漏了 `visitor_users.avatar_url`/`banner_url`），
+   外加 `public/uploads/projects/<slug>-source.zip` 这种**没有任何 URL 列**、
+   靠 slug 是否还存在来判断是否在用的特殊情况。
+   把这份完整地图直接写进了给 agent 的提示词，而不是让它自己去猜、
+   猜漏了也不知道。
+
+### 轨道 A：C++ SDK 契约测试
+
+给 `CommunityClient`（之前零覆盖）、`ProjectClient::getProject`/`createComment`、
+`AuthClient::me`/`logout`、`EnvelopeParser` 的 `pagination` 完全缺失场景，
+补了 14 条契约测试，全部照着现有 `MockHttpClient` + `expect()` 的写法来，
+没有引入新的测试框架。每条 fixture 都对着 `docs/openapi/api-v1.yaml`
+或 `server/postgres/mappers.js` 核对过真实字段名，不是编的。
+
+**明确划了界**：`Asset.hpp`/`AssetClient.hpp` 一行没碰，也没有新增任何 Asset
+相关的测试——这条边界写进了给 agent 的提示词里，agent 也确认自己没有越界。
+
+顺手记下一处**没有修**的既有小缺口（任务范围是加测试，不是修 bug）：
+`AuthClient::decodeUser` 没有读服务端其实会发的 `accessLevel` 字段，
+新加的 `me()` 测试只断言了真正会被解码的字段，如实记录现状而不是断言"应该"的行为。
+
+### 轨道 B：孤儿上传文件检测（只读）
+
+新增 `server/orphanedUploads.js`（纯函数 `findOrphanedFiles`，无 I/O）+
+`scripts/find-orphaned-uploads.mjs`（CLI：查数据库、走文件系统、调用纯函数、打报告）+
+`tests/unit/orphaned-uploads.spec.js`（12 条）。
+
+**每一条 SQL 都是 SELECT**，脚本里没有一处调用 `fs.unlink`/`fs.rm`。
+项目图片/模型的引用没有直接查 `project_overrides`/`custom_projects` 两张表，
+而是复用 `server/postgres/projectStore.js` 自己的 `listProjects`
+（`includeHidden: true`）——这是刻意的：那份合并逻辑（基础目录 + 覆盖 + 自定义
+− 已删除）已经存在且是唯一权威版本，重新拼一遍反而更容易和站点本身对不上。
+
+### 我自己复核了什么，不是只信汇报
+
+两条轨都：读了完整 diff（不是摘要）、自己重新跑了一遍构建/测试、
+自己单独做了一次变异验证（不是重放 agent 报告里的验证）：
+
+- **轨道 A**：把 `parentId == "comment-1"` 改成错误值，重新编译，
+  确认真的输出 `FAIL: reply comment decodes parentId`，改回去后重新确认全绿。
+- **轨道 B**：把 `!referenced.has(normalized)` 改成 `referenced.has(normalized)`
+  （取反），12 条里 8 条立刻变红，改回去后重新确认全绿。
+
+**轨道 B 的汇报里有一处必须自己核实的细节**：它说按地图查了 5 张表，
+但地图本身（我写的）其实建议它去查 `project_overrides`/`custom_projects` 的
+原始列，而它实际选择了复用 `projectStore.listProjects()`——
+这是它自己的判断，不是照抄我的地图，所以我去读了它给出的理由
+（避免和站点本身的合并逻辑不一致），确认这个偏离是对的，而不是想当然地接受。
+
+### 合并
+
+两个分支都基于同一个 base（`007b7f9`）、互不重叠，`git merge --ff-only`
+一次成功一次失败（第二次已经不是 fast-forward）。第一次尝试用了
+`git merge --no-ff`，产生了一个 merge commit——**这个仓库 31 轮以来的历史
+全是直线**，一出现分叉立刻不对劲，于是 `git reset --hard` 撤掉，
+改成 `git rebase`，历史保持直线。
+
+合并后**在主线程里重新跑了一遍完整验证**（不只是分别在各自 worktree 里跑过）：
+`lint` / 189 个 unit 测试（177 原有 + 12 新增）/ `build` / 60 api / 92 api-db /
+`test:openapi` 等全部 verifier / `git diff --check` / 23 个 e2e（15 site-routing +
+8 admin-console）——确认两条轨合在一起之后彼此没有踩到对方。
+
+### 线上验证（只读，没有部署）
+
+轨道 B 的 CLI 需要真实数据才有意义，而这份数据只在生产库里。做法：
+SSH 到 VPS，在 `/root/orphan-check-dryrun/`（**在 `/opt` 之外**）搭了一个最小场景——
+从已部署的 `/opt/mrright-portfolio` 复制两个只读依赖文件
+（`server/content.js`、`server/postgres/{projectStore,mappers}.js`），
+`node_modules` 和 `public` 用符号链接指回 `/opt/mrright-portfolio`（不复制，不写入），
+跑完立刻 `rm -rf` 整个临时目录。**全程没有在 `/opt` 里创建、修改或删除任何文件**，
+数据库那边也全是 SELECT。
+
+结果：**24 个文件、231.8 MB**（详见「待你决策」）。跑完确认 `/opt` 与线上应用
+未受影响，`/root/orphan-check-dryrun/` 已清理。
+
+### 验证
+
+| 项 | 结果 |
+|---|---|
+| 轨道 A：本机 CTest（temporary-JSON fallback） | 5/5 通过（`smoke`/`sdk_tests`/`tokenstore`/`auth_session` 通过，`secure_tokenstore` 按预期 skip——无 D-Bus） |
+| 轨道 A：变异验证 | 改坏一条断言 → `FAIL:` 输出正确出现；改回 → 全绿 |
+| 轨道 B：`npm run lint` | 通过 |
+| 轨道 B：`npx vitest run tests/unit/orphaned-uploads.spec.js` | 12/12 通过 |
+| 轨道 B：变异验证 | 取反匹配逻辑 → 8/12 变红；改回 → 全绿 |
+| 合并后：`npm run lint` | 通过 |
+| 合并后：`npm run test:unit` | **189 通过**（9 个测试文件） |
+| 合并后：`npm run build` | 通过 |
+| 合并后：`npm run test:api` / `test:api:db` | 60 / 92 通过 |
+| 合并后：`test:openapi` 等全部 verifier | 通过 |
+| 合并后：`git diff --check` | 通过 |
+| 合并后：本机 e2e（`site-routing` + `admin-console`） | **23 通过** |
+| 线上只读复核 | 24 个孤儿文件 / 231.8 MB；`/opt` 与线上应用未受影响 |
+
+### 改动的文件
+
+- `cpp-app/tests/unit/sdk_contract_tests.cpp`（+413 行，14 条新用例）
+- `server/orphanedUploads.js`（新）
+- `scripts/find-orphaned-uploads.mjs`（新）
+- `tests/unit/orphaned-uploads.spec.js`（新，12 条）
+
+commit：`ecaf6b1`（轨道 A）、`2c0f8b1`（轨道 B）+ 本次文档提交
+**无需部署**——两条轨都不影响运行中的网站；线上仍是第三十一轮的 `fc71d47`。
 
 ## 2026-09-03（第三十一轮）：一行修复，一次反证
 
