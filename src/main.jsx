@@ -66,7 +66,7 @@ class ChunkReloadBoundary extends Component {
 
     return (
       <main className="flex min-h-screen items-center justify-center bg-primary px-6 text-center text-white">
-        <section className="max-w-md rounded-2xl border border-white/10 bg-black-100/70 p-8">
+        <section className="max-w-md rounded-2xl border border-white/10 bg-midnight/70 p-8">
           <p className="section-kicker">mrright.blog</p>
           <h1 className="mt-3 text-3xl font-bold">{copy.chunkErrorTitle}</h1>
           <p className="mt-4 text-neutral-400">
