@@ -1297,7 +1297,9 @@ test.describe('the dashboard never waits on the content-health sweep', () => {
     // no badge and is none the worse for it.
     expect(
       cold.payload.data.overview.contentHealth,
-      'the overview waited for a filesystem sweep instead of answering cold',
+      'either the overview waited for a filesystem sweep instead of answering ' +
+        'cold, or something called /api/admin/overview before this group and ' +
+        'warmed the cache -- see the note above about ordering',
     ).toBeUndefined()
 
     // ...and the read it did not wait for was still started. Polling rather
