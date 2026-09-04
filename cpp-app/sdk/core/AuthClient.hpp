@@ -123,11 +123,24 @@ class AuthClient : public ApiClient {
     return {{"Authorization", "Bearer " + visitorToken}};
   }
 
+  // docs/openapi/api-v1.yaml components.schemas.AccessLevel is
+  // [guest, member, approved]; server/index.js normalizeAccessLevel keeps the
+  // visitor_users.access_level column to that same lowercase set. Anything else
+  // is a level this SDK build predates, so it must stay Unknown rather than
+  // silently collapsing to the least-privileged Guest.
+  static models::AccessLevel decodeAccessLevel(const std::string& value) {
+    if (value == "guest") return models::AccessLevel::Guest;
+    if (value == "member") return models::AccessLevel::Member;
+    if (value == "approved") return models::AccessLevel::Approved;
+    return models::AccessLevel::Unknown;
+  }
+
   static models::User decodeUser(const JsonValue& value) {
     models::User user;
     user.id = jsonString(value, "id").value_or("");
     user.email = jsonString(value, "email").value_or("");
     user.displayName = jsonString(value, "displayName").value_or("");
+    user.accessLevel = decodeAccessLevel(jsonString(value, "accessLevel").value_or(""));
     user.handle = jsonString(value, "handle").value_or("");
     user.avatarUrl = jsonString(value, "avatarUrl").value_or("");
     user.bannerUrl = jsonString(value, "bannerUrl").value_or("");

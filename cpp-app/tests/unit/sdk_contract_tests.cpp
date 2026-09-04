@@ -21,6 +21,7 @@ using mrright::sdk::core::CommunityClient;
 using mrright::sdk::core::JsonValue;
 using mrright::sdk::core::parseResponseEnvelope;
 using mrright::sdk::core::ProjectClient;
+using mrright::sdk::models::AccessLevel;
 using mrright::sdk::models::ApiErrorCode;
 using mrright::sdk::models::CommunityTopic;
 using mrright::sdk::network::HttpResponse;
@@ -71,6 +72,9 @@ std::string projectEnvelope() {
   })json";
 }
 
+// POST /auth/login answers with server/postgres/mappers.js
+// toAccountUserRecord (via authStore.getAccountProfile), so the session user
+// carries accessLevel exactly like the GET /auth/me user does.
 std::string loginEnvelope() {
   return R"json({
     "data": {
@@ -79,6 +83,7 @@ std::string loginEnvelope() {
         "id": "user-1",
         "email": "visitor@example.test",
         "displayName": "Visitor",
+        "accessLevel": "approved",
         "handle": "visitor",
         "emailVerified": true,
         "profilePublic": true,
@@ -123,6 +128,51 @@ std::string authMeEnvelope() {
 std::string authMeUnauthenticatedEnvelope() {
   return R"json({
     "data": {"user": null},
+    "pagination": {},
+    "error": null
+  })json";
+}
+
+// Same GET /auth/me user shape as authMeEnvelope, with the one field under
+// test substituted. docs/openapi/api-v1.yaml components.schemas.AccessLevel is
+// [guest, member, approved] and server/index.js normalizeAccessLevel holds
+// visitor_users.access_level to that set, so those three plus a level this SDK
+// build does not know are the whole input space.
+std::string authMeEnvelopeWithAccessLevel(const std::string& accessLevel) {
+  return R"json({
+    "data": {
+      "user": {
+        "id": "user-1",
+        "email": "visitor@example.test",
+        "displayName": "Visitor",
+        "accessLevel": ")json" + accessLevel + R"json(",
+        "emailVerified": true,
+        "handle": "visitor",
+        "profilePublic": true,
+        "activityPublic": false,
+        "profileAdminDisabled": false,
+        "createdAt": "2026-01-01T00:00:00Z"
+      }
+    },
+    "pagination": {},
+    "error": null
+  })json";
+}
+
+// accessLevel absent entirely: not a shape the current server emits, but the
+// decoder must not read it as Guest if a future response ever drops it.
+std::string authMeEnvelopeWithoutAccessLevel() {
+  return R"json({
+    "data": {
+      "user": {
+        "id": "user-1",
+        "email": "visitor@example.test",
+        "displayName": "Visitor",
+        "emailVerified": true,
+        "handle": "visitor",
+        "createdAt": "2026-01-01T00:00:00Z"
+      }
+    },
     "pagination": {},
     "error": null
   })json";
@@ -520,6 +570,7 @@ void testAuthMeDecodesUser() {
   expect(result.value()->handle == "visitor", "AuthClient::me decodes handle");
   expect(result.value()->avatarUrl == "/uploads/avatar.png", "AuthClient::me decodes avatarUrl");
   expect(result.value()->bio == "Hello", "AuthClient::me decodes bio");
+  expect(result.value()->accessLevel == AccessLevel::Member, "AuthClient::me decodes accessLevel");
   expect(request.has_value() && request->path == "/api/v1/auth/me", "AuthClient::me uses /api/v1/auth/me path");
   expect(request->headers.at("Authorization") == "Bearer visitor-token", "AuthClient::me sends bearer token");
 }
@@ -533,6 +584,69 @@ void testAuthMeUnauthenticatedReturnsDefaultUser() {
 
   expect(result.isOk(), "AuthClient::me with data.user null still decodes as ok");
   expect(result.value()->id.empty(), "AuthClient::me returns a default-constructed User when unauthenticated");
+  expect(result.value()->accessLevel == AccessLevel::Unknown, "an unauthenticated User keeps accessLevel Unknown, not Guest");
+}
+
+void testAuthMeDecodesEveryAccessLevel() {
+  const struct {
+    const char* wire;
+    AccessLevel expected;
+    const char* label;
+  } cases[] = {
+    {"guest", AccessLevel::Guest, "guest"},
+    {"member", AccessLevel::Member, "member"},
+    {"approved", AccessLevel::Approved, "approved"},
+  };
+
+  for (const auto& testCase : cases) {
+    auto mock = std::make_shared<MockHttpClient>();
+    mock->enqueue({200, {}, authMeEnvelopeWithAccessLevel(testCase.wire)});
+
+    AuthClient client(mock);
+    const auto result = client.me("visitor-token");
+
+    expect(result.isOk(), std::string("AuthClient::me decodes the ") + testCase.label + " user");
+    expect(
+      result.isOk() && result.value()->accessLevel == testCase.expected,
+      std::string("AuthClient::me maps accessLevel \"") + testCase.wire + "\" to its enum value"
+    );
+  }
+}
+
+void testAuthMeUnknownAccessLevelFallsBackToUnknown() {
+  auto mock = std::make_shared<MockHttpClient>();
+  mock->enqueue({200, {}, authMeEnvelopeWithAccessLevel("curator")});
+
+  AuthClient client(mock);
+  const auto result = client.me("visitor-token");
+
+  expect(result.isOk(), "an unrecognised accessLevel still decodes the rest of the user");
+  expect(result.value()->id == "user-1", "an unrecognised accessLevel does not abort user decoding");
+  expect(result.value()->accessLevel == AccessLevel::Unknown, "a server-side level this SDK does not know maps to Unknown");
+  expect(result.value()->accessLevel != AccessLevel::Guest, "an unrecognised accessLevel must not silently become Guest");
+}
+
+void testAuthMeMissingAccessLevelFallsBackToUnknown() {
+  auto mock = std::make_shared<MockHttpClient>();
+  mock->enqueue({200, {}, authMeEnvelopeWithoutAccessLevel()});
+
+  AuthClient client(mock);
+  const auto result = client.me("visitor-token");
+
+  expect(result.isOk(), "a user object without accessLevel still decodes as ok");
+  expect(result.value()->handle == "visitor", "a missing accessLevel does not disturb the other fields");
+  expect(result.value()->accessLevel == AccessLevel::Unknown, "a missing accessLevel maps to Unknown, not Guest");
+}
+
+void testAuthLoginDecodesAccessLevel() {
+  auto mock = std::make_shared<MockHttpClient>();
+  mock->enqueue({200, {}, loginEnvelope()});
+
+  AuthClient client(mock);
+  const auto result = client.login({"visitor@example.test", "password"});
+
+  expect(result.isOk(), "AuthClient::login decodes the session user");
+  expect(result.value()->user.accessLevel == AccessLevel::Approved, "AuthClient::login decodes accessLevel on the session user");
 }
 
 void testAuthLogoutRequest() {
@@ -693,6 +807,10 @@ int main() {
   testProjectClientCreateComment();
   testAuthMeDecodesUser();
   testAuthMeUnauthenticatedReturnsDefaultUser();
+  testAuthMeDecodesEveryAccessLevel();
+  testAuthMeUnknownAccessLevelFallsBackToUnknown();
+  testAuthMeMissingAccessLevelFallsBackToUnknown();
+  testAuthLoginDecodesAccessLevel();
   testAuthLogoutRequest();
   testCommunityClientListPosts();
   testCommunityClientListPostsEmpty();
