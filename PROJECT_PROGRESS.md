@@ -1397,7 +1397,18 @@ CSP 这件事能做完，就是因为 playwright 回来了。
    **`Asset.hpp`/`AssetClient.hpp` 一行没碰**。详见「2026-09-03（第三十二轮）」。
    Asset Model 本身仍未冻结（`docs/API_V1_GAPS.md` §3 仍是 ❌），
    这条边界没有变。
-8. 下次恢复演练建议在 2026-11 之前（`docs/OPERATIONS_BACKUP.md` 要求每季度一次）
+8. 下次恢复演练建议在 2026-11 之前（`docs/OPERATIONS_BACKUP.md` 要求每季度一次）。
+   ⚠️ **顺手加一条证书检查**（2026-09-04 那次事故之后加的建议）：
+
+   ```sh
+   echo | openssl s_client -servername mrright.blog -connect mrright.blog:443 2>/dev/null \
+     | openssl x509 -noout -dates
+   certbot renew --dry-run    # 定时器走的就是这条路径
+   ```
+
+   证书过期不会报错、不会进应用日志、健康检查也照样 200（那是从 VPS 内部打的），
+   它只会某天早上让全站在所有访客眼里变红。2026-09-04 就是这么过了 4 小时 23 分钟
+   才被一个做别的事的 agent 顺手撞见的。详见顶部那一节。
 9. ~~CSP 还可以再紧一格：`style-src` 现在带 `'unsafe-inline'`……要去掉得先上 nonce 或 hash~~
    —— **2026-09-04 第三十三轮调研完毕，这条的前提是错的。**
    **既不需要 nonce 也不需要 hash**：CSP 不管 CSSOM，而 React /`motion/react`/
