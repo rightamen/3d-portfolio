@@ -1,8 +1,82 @@
 # mrright.blog 项目进度记录
 
-## 下次从这里继续（截至 2026-09-03 第三十二轮收工）
+## 下次从这里继续（截至 2026-09-04 第三十三轮收工）
 
-### 2026-09-03（第三十二轮）：第一次用多窗口并行——两条互不相关的轨
+### ⚠️ 2026-09-04：线上 TLS 证书过期了 4.5 小时（已修复，根因已堵）
+
+**这是本轮最重要的一件事，而且不是计划内的工作——是并行做 CSP 调研的 agent
+顺手撞见并上报的。** 如果那一轮没派出去，这件事可能要到有人访问网站抱怨才发现。
+
+- **现象**：证书 `notAfter=Sep 4 10:49:57 2026 GMT`，发现时是 15:12 UTC，
+  **全站已向每个访客弹了 4 小时 23 分钟的浏览器安全警告**。
+- **根因**：`/etc/letsencrypt/renewal/mrright.blog.conf` 里
+  `authenticator = standalone`——certbot 要自己占用 80 端口做 HTTP-01 验证，
+  但 nginx 一直占着 80，于是**每一次自动续期都失败**。
+  定时器是好的（`certbot.timer` enabled + active，当天 10:58 确实跑过），
+  失败的是验证方式。日志原话：
+  `Could not bind TCP port 80 because it is already in use by another process`。
+- **第二个坑（同样致命，且当时还没爆）**：`/etc/letsencrypt/renewal-hooks/deploy/`
+  **是空的**——就算续期成功，nginx 也不会重新加载证书，仍然拿旧的服务，
+  直到旧的过期再炸一次。
+- **修法**：
+  1. 验证方式改成 webroot：`certbot certonly --webroot -w /var/www/acme -d mrright.blog -d www.mrright.blog`。
+     nginx 的 80 端口 server 块**本来就有** `location ^~ /.well-known/acme-challenge/`
+     指向 `/var/www/acme`，基础设施是齐的，只有 certbot 的配置写错了。
+  2. 补上 deploy hook `/etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh`
+     （`nginx -t && systemctl reload nginx`）。
+- **验证**：新证书 `Sep 4 14:20 → Dec 3`；不带 `-k` 的严格 TLS 校验通过；
+  七条路由全 200；`certbot renew --dry-run`（定时器走的同一条路径）成功；
+  hook 手动执行通过。
+
+⚠️ **动 443 之前查过那条记忆，是对的**：443 由网站和机场节点共用，
+靠 nginx stream 的 SNI 分流（`mrright.blog → 9444`，`default → 9443` 的 sui）。
+**所以续期必须走 80 端口的 HTTP-01，绝不能用 TLS-ALPN**（那条路要经过分流器）。
+修完复查：9443 仍由 `sui` 持有，9444 仍是 nginx，**机场节点全程没有被打断**。
+
+⚠️ **以后每季度那次灾备演练（路线图第 8 条）应该顺手加一条**：
+`echo | openssl s_client -connect mrright.blog:443 | openssl x509 -noout -dates`。
+证书这类东西不会报错，只会某天突然全站变红。
+
+---
+
+### 2026-09-04（第三十三轮）：三个窗口并行
+
+上一轮两条轨，这一轮三条。同样是各自独立 worktree、文件互不重叠。
+
+| | 轨 1 | 轨 2 | 轨 3 |
+|---|---|---|---|
+| 做的事 | 仪表盘内容健康角标 + 缓存 | CSP `style-src` 调研 → ADR | C++ SDK `accessLevel` 解码 |
+| 对应清单 | 未完项第 4 条 ✅ 关闭 | 路线图第 9 条（**结论推翻了原假设**） | 上一轮衍生的真 bug |
+| 改动 | `server/` + `src/Admin.jsx` + i18n + 测试 | 只加一个 ADR 文件 | 只在 `cpp-app/` |
+| 部署 | ✅ `1b599ee`，15:32 UTC | 不需要 | 不需要 |
+
+⚠️ **路线图第 9 条的假设是错的，而且是被实测推翻的**：
+原话说"要去掉 `unsafe-inline` 得先上 nonce 或 hash"。实际上**两条都不需要**——
+**CSP 根本不管 CSSOM**。React、`motion/react`、drei 的 `<Html>` 全都是通过
+`element.style.x = v` / `setProperty` / `cssText` 写样式的，浏览器从不解析、
+因此从不检查。全站 `setAttribute("style"` 在 26 个构建 chunk 里**出现 0 次**
+（我自己复核过这一条）。实测六条路由、深度交互七个检查点：**违规数全是 0**。
+详见 `docs/adr/ADR_WEB_CSP_STYLE_SRC.md`。
+⚠️ **但 header 本身这一轮没有改**——ADR 第 7 节列了三个还没走过的面
+（登录态后台、有内容的社区列表、非 Chromium 引擎），落地前应该先补上。
+
+⚠️ **hash 方案不是"成本高"，是"不可能"**：单页十秒内就有 441 个**互不相同**的
+style 属性值（大多是每帧的 transform）。这一条值得记住，免得以后又有人提"加个 hash 就行"。
+
+**2026-09-04 收工：**
+
+- 提交：`39fbad5`（轨 3）、`eb78897`（轨 1）、`ae62ffb`（我补的断言措辞）、
+  `1b599ee`（轨 2 ADR）+ 本次文档提交，**全部已 push**
+- 线上是 `1b599ee`（15:32 UTC 部署），本地与线上同码（`index-BvRMrZEh.js` 已核对）
+- **证书已修复并验证**，下次到期 2026-12-03，自动续期路径已实测可用
+- 本机无服务在跑，三个 agent worktree 与分支全部清理
+- **本轮没有跑过任何数据库写语句**
+- 未完项 8 → **7 条**（第 4 条关闭）；「待你决策」仍然是 3 条
+
+---
+
+### 2026-09-03（第三十二轮，上一轮）：第一次用多窗口并行
+
 
 **这一轮第一次用了并行 agent（各自独立 git worktree）同时干两件互不相关的事**，
 而不是像前 31 轮那样一件一件顺序做。两条轨完全不碰同一批文件，
@@ -572,7 +646,15 @@ CI 两个 job 全绿（`api-db` 那个 job 本轮加了 build 步骤，新增用
 
 ---
 
-**线上运行 `fc71d47`（2026-09-03 14:22 UTC 部署，已逐项验证）。**
+**线上运行 `1b599ee`（2026-09-04 15:32 UTC 部署，已逐项验证）。**
+第三十三轮上线的是仪表盘内容健康角标（服务端缓存 + 前端角标）；
+同日还修复了一次线上 TLS 证书过期事故，详见顶部那一节。
+回滚到第三十三轮之前：`/opt/mrright-portfolio.backup-20260904-153159`。
+
+（上一轮：第三十一轮 `fc71d47`，2026-09-03 14:22 UTC 部署；
+第三十二轮不需要部署。）
+
+**第三十一轮线上是 `fc71d47`（已逐项验证）。**
 第三十一轮只改了一行（`src/main.jsx` 的一个 Tailwind 类名），`server/` 一行没动。
 回滚到第三十一轮之前：`/opt/mrright-portfolio.backup-20260903-142205`。
 
@@ -670,9 +752,9 @@ express-rate-limit，只有这六个）；前端的东西全部属于 `devDepend
 `/opt` 上实际存在的是：
 
 ```text
-/opt/mrright-portfolio.backup-20260903-142205   第三十一轮之前 ← 要回滚就用这个
+/opt/mrright-portfolio.backup-20260904-153159   第三十三轮之前 ← 要回滚就用这个
+/opt/mrright-portfolio.backup-20260903-142205   第三十一轮之前
 /opt/mrright-portfolio.backup-20260902-153200   第三十轮之前
-/opt/mrright-portfolio.backup-20260902-141551   第二十九轮之前（回到这里 = 回到没有帖子配图）
 ```
 
 ⚠️ **回滚过第二十九轮的话，`community_posts.image_url` 那一列会留在库里。**
@@ -1004,9 +1086,18 @@ Publish / Mark Spam 就在 Delete 旁边**。
 3. 4K 基础色 + 法线在移动端显存占用不小；真有人反馈卡，重跑
    `scripts/optimize-model.mjs` 出 2K 版（2.12 MB）即可。
 
-4. **仪表盘故意没接内容健康的信号** —— 那个检查要读文件，
-   而仪表盘是每次打开都拉的。想改成有 critical 时在侧边栏出角标的话，
-   需要给它加缓存，别直接在 overview 里同步跑。
+4. ~~**仪表盘故意没接内容健康的信号**~~ —— **2026-09-04 第三十三轮做完了。**
+   `server/contentHealthHeadline.js`：TTL 缓存（5 分钟）+ 单飞，
+   `read()` **是同步的，冷缓存返回 null 并在后台开始刷新**——
+   仪表盘永远不等文件 I/O，角标下次加载再出现。
+   字段是**缺席**而不是 0，这样前端能区分"一切正常"和"还没人看过"。
+   ⚠️ 角标只数 critical：warning 和 note 值得读但不值得打断，
+   而一个总是亮着的角标就不再是角标了。
+   ⚠️ 详情端点和角标现在共用同一个 `runContentHealth()`，
+   所以角标数的和详情列的**不可能是两批文件**。
+   ⚠️ `tests/api/contract.db.spec.js` 里那组测试**必须是整个 api 套件中第一个调
+   `/api/admin/overview` 的**——它断言的是"每个服务进程只冷一次"的缓存。
+   违反了会**大声报错**（不是静默通过），断言文案里写了两种可能原因。
 
 5. `H:\HDRIs\` 里还有三张 4K HDRI（photostudio / citrus orchard / qwantani dusk）。
    想做「按项目切换环境光」时可以复用第十四轮那套转换流程，**先降到 2K 再转**。
@@ -1307,8 +1398,18 @@ CSP 这件事能做完，就是因为 playwright 回来了。
    Asset Model 本身仍未冻结（`docs/API_V1_GAPS.md` §3 仍是 ❌），
    这条边界没有变。
 8. 下次恢复演练建议在 2026-11 之前（`docs/OPERATIONS_BACKUP.md` 要求每季度一次）
-9. CSP 还可以再紧一格：`style-src` 现在带 `'unsafe-inline'`（Tailwind 与 three.js 的内联样式），
-   要去掉得先上 nonce 或 hash，不是小改动，暂不动。
+9. ~~CSP 还可以再紧一格：`style-src` 现在带 `'unsafe-inline'`……要去掉得先上 nonce 或 hash~~
+   —— **2026-09-04 第三十三轮调研完毕，这条的前提是错的。**
+   **既不需要 nonce 也不需要 hash**：CSP 不管 CSSOM，而 React /`motion/react`/
+   drei 的 `<Html>` 全是通过 `element.style` 写的，浏览器从不解析因此从不检查。
+   实测六条路由 + 深度交互七个检查点，`style-src-elem` / `style-src-attr` 违规**全为 0**；
+   全仓构建产物里 `setAttribute("style"` **0 次**。
+   顺带钉死一件事：**hash 方案不是贵，是不可能**——单页十秒 441 个互不相同的
+   style 属性值。完整证据、探针自证方法、以及踩过的两个坑见
+   `docs/adr/ADR_WEB_CSP_STYLE_SRC.md`。
+   ⚠️ **header 还没改**：ADR 第 7 节列了三个没走过的面（登录态后台、
+   有内容的社区列表、非 Chromium 引擎），落地前先补。这是一次安全策略变更，
+   值得单独一轮 + 单独一次人工复核。
 
 ### 环境事实，省得下次重查
 
