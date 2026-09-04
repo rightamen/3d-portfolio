@@ -9,6 +9,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createContactMessagesStore } from './contactMessagesStore.js'
 import { createContentHealthChecker } from './contentHealth.js'
+import { createContentHealthHeadline } from './contentHealthHeadline.js'
 import { experience, profile, projects as staticProjects, skills } from './content.js'
 import { createDownloadRequestsStore } from './downloadRequestsStore.js'
 import { hasValidFileSignature } from './fileSignatures.js'
@@ -3393,6 +3394,49 @@ app.get('/api/admin/summary', requireAdmin, async (_request, response) => {
   sendData(response, { summary: await adminStore.getSummary() })
 })
 
+// The full content-health sweep, shared by the endpoint that serves the report
+// and the cache that feeds the sidebar badge -- so the badge can never end up
+// counting a different set of files than the detail view lists.
+//
+// It reads the same project list the admin table shows -- database overrides
+// applied on top of the static catalogue -- because checking the source file
+// would happily bless a project whose live model URL was overridden to
+// something that does not exist.
+const runContentHealth = async () => {
+  const projects = await adminStore.listProjects(staticProjects)
+  // Community uploads are checked from the same place, but they are optional:
+  // the store is absent when the database is not configured, and a missing
+  // method means an older deployment. Neither should take the whole report down.
+  const uploads =
+    typeof communityStore?.listUploadsForHealth === 'function'
+      ? await communityStore.listUploadsForHealth()
+      : []
+
+  return contentHealth.run(projects, uploads)
+}
+
+// Counts only -- the findings themselves stay on /api/admin/content-health,
+// which is where the detail view reads them. All this has to answer is "is
+// there a red number to draw next to Content Health".
+//
+// Read the header of server/contentHealthHeadline.js before changing this: the
+// whole point is that the overview never waits on the filesystem, so a cold
+// cache answers null and the badge simply does not appear until the next load.
+const contentHealthHeadline = createContentHealthHeadline({
+  collect: async () => {
+    // No admin store means no project list to check against, so there is
+    // nothing to count -- and nothing to cache either. The overview is a 503
+    // in that state anyway.
+    if (typeof adminStore?.listProjects !== 'function') return null
+
+    const { checkedAt, counts } = await runContentHealth()
+    return { checkedAt, counts }
+  },
+  onError: (error) => {
+    console.error('Content health headline refresh failed:', error.message)
+  },
+})
+
 // The dashboard's single data source. Everything it draws comes from here, so
 // the view has one loading state and one failure mode instead of eleven.
 //
@@ -3416,10 +3460,16 @@ app.get('/api/admin/overview', requireAdmin, async (request, response) => {
   const startedAt = Date.now()
   const overview = await adminStore.getOverview({ days })
   const memory = process.memoryUsage()
+  // Synchronous, and null on a cold cache -- it kicks off its own refresh in
+  // the background and this request does not wait for it. The field is then
+  // absent rather than zeroed, so the console can tell "nothing is wrong yet"
+  // apart from "nobody has looked yet" and draw no badge for the latter.
+  const contentHealthCounts = contentHealthHeadline.read()
 
   return sendData(response, {
     overview: {
       ...overview,
+      ...(contentHealthCounts ? { contentHealth: contentHealthCounts } : {}),
       system: {
         // Round trip for the whole aggregate, not a synthetic ping: it is the
         // number that degrades first when the database is in trouble.
@@ -3507,22 +3557,10 @@ app.get('/api/admin/projects', requireAdmin, async (_request, response) => {
 // Deliberately not folded into /api/admin/overview: that one is a handful of
 // aggregate queries and is fetched on every dashboard load, while this does
 // filesystem work per project and is only worth paying for when someone asks.
-//
-// It reads the same project list the admin table shows -- database overrides
-// applied on top of the static catalogue -- because checking the source file
-// would happily bless a project whose live model URL was overridden to
-// something that does not exist.
+// The overview carries the counts alone, from a cache, and never runs this --
+// see createContentHealthHeadline above.
 app.get('/api/admin/content-health', requireAdmin, async (_request, response) => {
-  const projects = await adminStore.listProjects(staticProjects)
-  // Community uploads are checked from the same place, but they are optional:
-  // the store is absent when the database is not configured, and a missing
-  // method means an older deployment. Neither should take the whole report down.
-  const uploads =
-    typeof communityStore?.listUploadsForHealth === 'function'
-      ? await communityStore.listUploadsForHealth()
-      : []
-
-  sendData(response, { health: await contentHealth.run(projects, uploads) })
+  sendData(response, { health: await runContentHealth() })
 })
 
 app.get('/api/admin/visitors', requireAdmin, async (request, response) => {

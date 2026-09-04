@@ -1278,6 +1278,54 @@ test.describe('content health covers community uploads', () => {
   })
 })
 
+// Open item 4, closed: the dashboard now gets the content-health counts, but
+// only from a cache, and never by waiting for one to be built.
+//
+// This group MUST be the first thing in the API suites to call
+// /api/admin/overview -- it asserts on a cache that is cold exactly once per
+// server process, and an earlier caller would warm it and make the first
+// assertion here vacuous. Nothing else in tests/api touches that route today.
+test.describe('the dashboard never waits on the content-health sweep', () => {
+  test('the first overview omits the counts and a later one carries them', async () => {
+    const cold = await getJson('/api/admin/overview?days=7', adminToken)
+
+    expect(cold.response.status).toBe(200)
+    expect(cold.payload.data.overview.metrics, 'the overview itself did not answer').toBeTruthy()
+    // The load-bearing assertion. If the counts were computed in the request
+    // path they would be here on the very first call -- their absence is the
+    // proof that this response did not open a single file. The console draws
+    // no badge and is none the worse for it.
+    expect(
+      cold.payload.data.overview.contentHealth,
+      'the overview waited for a filesystem sweep instead of answering cold',
+    ).toBeUndefined()
+
+    // ...and the read it did not wait for was still started. Polling rather
+    // than sleeping a fixed time: how long the sweep takes depends on how much
+    // of dist/ exists on the machine running this.
+    let warm = null
+    for (let attempt = 0; attempt < 50 && !warm; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 200))
+      const next = await getJson('/api/admin/overview?days=7', adminToken)
+      warm = next.payload.data.overview.contentHealth || null
+    }
+
+    expect(warm, 'the cache never populated in the background').toBeTruthy()
+    expect(typeof warm.counts.critical).toBe('number')
+    expect(typeof warm.counts.warning).toBe('number')
+    expect(typeof warm.counts.note).toBe('number')
+    expect(Date.parse(warm.checkedAt)).not.toBeNaN()
+
+    // Counts only. The findings stay on the detail endpoint, and the two agree
+    // because they come from the same sweep.
+    expect(Object.keys(warm).sort()).toEqual(['checkedAt', 'counts'])
+    const report = await getJson('/api/admin/content-health', adminToken)
+    expect(Object.keys(report.payload.data.health.counts).sort()).toEqual(
+      Object.keys(warm.counts).sort(),
+    )
+  })
+})
+
 // Like identity: see the signed-cookie group below, which supersedes an
 // earlier version of this test. That version asserted the same property
 // against an IP+user-agent fingerprint; the fingerprint had to be replaced

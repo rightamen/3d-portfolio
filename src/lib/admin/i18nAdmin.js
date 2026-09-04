@@ -144,6 +144,7 @@ const zh = {
   'section.security': '安全',
   'section.system': '系统',
   'nav.waiting': '待处理',
+  'nav.critical': '严重问题',
 
   'palette.placeholder': '跳转到分区，或执行一个动作…',
   'palette.foot': '↑↓ 移动 · Enter 执行 · Esc 关闭',
@@ -151,6 +152,7 @@ const zh = {
   'palette.label': '后台命令面板',
   'palette.goTo': '前往 {label}',
   'palette.waitingHint': '{count} 项待处理',
+  'palette.criticalHint': '{count} 项严重问题',
   'palette.newProject': '新建作品',
   'palette.newProjectHint': '打开作品编辑器并留空 slug',
   'palette.refresh': '刷新全部数据',
@@ -668,6 +670,7 @@ const en = {
   'section.security': 'Security',
   'section.system': 'System',
   'nav.waiting': 'waiting',
+  'nav.critical': 'critical',
 
   'palette.placeholder': 'Jump to a section or run an action…',
   'palette.foot': '↑↓ to move · Enter to run · Esc to close',
@@ -675,6 +678,7 @@ const en = {
   'palette.label': 'Admin command palette',
   'palette.goTo': 'Go to {label}',
   'palette.waitingHint': '{count} waiting',
+  'palette.criticalHint': '{count} critical',
   'palette.newProject': 'New project',
   'palette.newProjectHint': 'Opens the project editor with a blank slug',
   'palette.refresh': 'Refresh all data',
@@ -1191,6 +1195,7 @@ const ja = {
   'section.security': 'セキュリティ',
   'section.system': 'システム',
   'nav.waiting': '未処理',
+  'nav.critical': '重大',
 
   'palette.placeholder': 'セクションへ移動、または操作を実行…',
   'palette.foot': '↑↓ で移動 · Enter で実行 · Esc で閉じる',
@@ -1198,6 +1203,7 @@ const ja = {
   'palette.label': '管理コマンドパレット',
   'palette.goTo': '{label} へ移動',
   'palette.waitingHint': '未処理 {count} 件',
+  'palette.criticalHint': '重大 {count} 件',
   'palette.newProject': '新規プロジェクト',
   'palette.newProjectHint': 'slug が空のままエディタを開きます',
   'palette.refresh': 'すべてのデータを更新',

@@ -1017,11 +1017,26 @@ const Admin = () => {
   const navBadges = {
     comments: queueCounts.pendingComments || 0,
     community: queueCounts.pendingUploads || 0,
+    // Criticals only. Warnings and notes are worth reading, not worth
+    // interrupting for, and a badge that is always lit stops being a badge.
+    // The field is absent until the server has the counts cached -- see
+    // server/contentHealthHeadline.js -- so the badge appears on a later load
+    // rather than making this one wait for a filesystem sweep.
+    'content-health': overview?.contentHealth?.counts?.critical || 0,
     downloads: queueCounts.pendingRequests || 0,
     messages: queueCounts.recentMessages || 0,
     security: overview?.catalogue?.adminsWithoutTotp || 0,
     visitors: queueCounts.unverifiedMembers || 0,
   }
+
+  // Every other badge counts things waiting on a decision. This one counts
+  // things already broken for visitors, so it gets its own word -- in the
+  // screen-reader text and in the palette hint both, since "Content Health 2
+  // waiting" would describe the wrong situation entirely.
+  const badgeWording = (key) =>
+    key === 'content-health'
+      ? { hint: 'palette.criticalHint', label: 'nav.critical' }
+      : { hint: 'palette.waitingHint', label: 'nav.waiting' }
 
   const paletteCommands = [
     ...sections.map((section) => {
@@ -1031,7 +1046,7 @@ const Admin = () => {
         group: groupLabel,
         hint: `${groupLabel}${
           navBadges[section.key]
-            ? ` · ${t('palette.waitingHint', { count: navBadges[section.key] })}`
+            ? ` · ${t(badgeWording(section.key).hint, { count: navBadges[section.key] })}`
             : ''
         }`,
         key: `go-${section.key}`,
@@ -1106,7 +1121,7 @@ const Admin = () => {
                       <em className="admin-nav-badge">{navBadges[section.key]}</em>
                       {/* Without this the button announces as "Community 2",
                           which is a number with no unit. */}
-                      <span className="sr-only">{t('nav.waiting')}</span>
+                      <span className="sr-only">{t(badgeWording(section.key).label)}</span>
                     </>
                   ) : null}
                 </button>

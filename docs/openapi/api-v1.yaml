@@ -1641,12 +1641,21 @@ paths:
                             type: object
                             description: |
                               range/metrics/series/queues/topProjects/activity/
-                              catalogue/system. metrics maps each counter to
+                              catalogue/system, plus contentHealth when it is
+                              available. metrics maps each counter to
                               {total,current,prior} where current and prior are
                               equal-length windows. series is one row per UTC
                               day. system reports process and database health
                               only - it carries no configuration values.
-                              See server/postgresStores.js getOverview.
+                              contentHealth is {checkedAt, counts} - the
+                              severity totals from /admin/content-health and
+                              nothing else, served from a cache so this route
+                              never does filesystem work. It is ABSENT, not
+                              zeroed, until that cache has been populated in
+                              the background, so clients must treat a missing
+                              field as "not known yet" rather than "clean".
+                              See server/postgresStores.js getOverview and
+                              server/contentHealthHeadline.js.
         "401":
           $ref: "#/components/responses/AdminAuthRequired"
         "503":

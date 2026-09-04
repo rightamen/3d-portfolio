@@ -58,6 +58,11 @@ const overview = {
     uploadBytes: 1181116006,
     verifiedMembers: 41,
   },
+  // Counts only, and only the counts -- this is what the server caches for the
+  // sidebar badge. The numbers match the /api/admin/content-health fixture
+  // below on purpose: the badge and the detail view read the same sweep, so a
+  // fixture where they disagreed would be testing a state that cannot happen.
+  contentHealth: { checkedAt: iso(0.01), counts: { critical: 1, note: 2, warning: 1 } },
   metrics: {
     comments: metric(64, 51, 412),
     communityComments: metric(23, 30, 188),
@@ -218,13 +223,17 @@ const payloads = {
   },
 }
 
-const routeAdmin = async (page) => {
+// `overviewOverride` exists for the badge tests: the content-health counts are
+// the one part of the overview the server may legitimately leave out, so the
+// console has to be driven through a payload that omits them as well as one
+// that carries them.
+const routeAdmin = async (page, overviewOverride = overview) => {
   await page.route('**/api/admin/**', async (route) => {
     const url = new URL(route.request().url())
     const path = url.pathname
     let payload = payloads[path]
 
-    if (!payload && path === '/api/admin/overview') payload = { overview }
+    if (!payload && path === '/api/admin/overview') payload = { overview: overviewOverride }
     if (!payload && path === '/api/admin/visitors') {
       payload = {
         pagination: { hasNext: true, hasPrevious: false, limit: 20, page: 1, pages: 2, total: 12 },
@@ -403,6 +412,65 @@ test('a finding with a value in it reads in Chinese', async ({ page }) => {
   // No leftover placeholder, and no English fallback.
   await expect(finding).not.toContainText('{url}')
   await expect(finding).not.toContainText('Nothing resolves at')
+})
+
+// Open item 4: Content Health had no badge, because the check reads files and
+// the overview is fetched on every dashboard load. It has one now, off counts
+// the server caches -- so there are three states to see rendered, and the
+// interesting one is the third.
+test.describe('the Content Health badge', () => {
+  const navItem = (page) => page.locator('.admin-nav-item', { hasText: 'Content Health' })
+
+  const openConsole = async (page, overviewPayload) => {
+    await page.addInitScript(() => {
+      window.localStorage.setItem('mrright-admin-token', 'local-review-token')
+      window.localStorage.setItem('mrright-admin-language', 'en')
+    })
+    await routeAdmin(page, overviewPayload)
+    await page.setViewportSize({ height: 950, width: 1440 })
+    await page.goto('/admin', { waitUntil: 'domcontentloaded' })
+    await expect(page.locator('.admin-console')).toBeVisible({ timeout: 15000 })
+  }
+
+  test('shows the critical count, and says what the number means', async ({ page }) => {
+    await openConsole(page, overview)
+
+    // One critical in the fixture: the approved upload whose file is gone
+    // (upload-missing-file) — warnings and notes are deliberately not counted.
+    await expect(navItem(page).locator('.admin-nav-badge')).toHaveText('1')
+    // "Content Health 1" is a number with no unit, and "1 waiting" would be the
+    // wrong unit: nothing is waiting, something is already broken.
+    await expect(navItem(page).locator('.sr-only')).toHaveText('critical')
+  })
+
+  test('draws nothing when the counts are clean', async ({ page }) => {
+    await openConsole(page, {
+      ...overview,
+      contentHealth: { checkedAt: iso(0.01), counts: { critical: 0, note: 2, warning: 3 } },
+    })
+
+    await expect(navItem(page)).toBeVisible()
+    await expect(navItem(page).locator('.admin-nav-badge')).toHaveCount(0)
+  })
+
+  test('draws nothing while the server cache is still cold', async ({ page }) => {
+    // The cold-cache response: the server answers the overview without waiting
+    // on the filesystem, so `contentHealth` is simply absent. The console must
+    // render exactly as it did before this feature existed rather than showing
+    // a placeholder, a zero, or an error.
+    const cold = Object.fromEntries(
+      Object.entries(overview).filter(([key]) => key !== 'contentHealth'),
+    )
+    await openConsole(page, cold)
+
+    await expect(navItem(page)).toBeVisible()
+    await expect(navItem(page).locator('.admin-nav-badge')).toHaveCount(0)
+    // The rest of the badges are unaffected: this is a missing field, not a
+    // missing payload.
+    await expect(
+      page.locator('.admin-nav-item', { hasText: 'Comments' }).locator('.admin-nav-badge'),
+    ).toHaveText('3')
+  })
 })
 
 test('the 3D map is reachable by keyboard', async ({ page }) => {
