@@ -83,31 +83,18 @@ describe('site dictionary keys referenced from the code', () => {
 // Every key is written three times, once per dictionary. Anything appearing
 // only those three times is a string nothing renders.
 //
-// All seventeen below were written alongside a feature and never wired to a
-// component -- checked with `git log -S` across src/pages, src/components and
-// src/sections, which finds no commit where any of them was referenced. They
-// are kept, not deleted, because they are translated product copy and that is
-// the maintainer's call; the point of pinning the list is that the eighteenth
-// one fails this test on the day it is added.
-const knownUnusedKeys = [
-  'accountCenterIntro',
-  'accountCenterTitle',
-  'accountDeleteTitle',
-  'accountOverviewIntro',
-  'accountOverviewTitle',
-  'accountReloginAction',
-  'accountSessionExpired',
-  'accountSessionExpiredTitle',
-  'accountStudioKicker',
-  'accountStudioOpen',
-  'accountStudioUploadNow',
-  'authFlowReset',
-  'authHaveAccount',
-  'authNeedAccount',
-  'authResetSuccess',
-  'commentStatusPending',
-  'commentStatusSpam',
-]
+// This list is empty, and keeping it that way is the point. Seventeen such
+// keys accumulated up to round twenty-two -- all written alongside a feature
+// and never wired to a component, confirmed with `git log -S` across
+// src/pages, src/components and src/sections. They were pinned rather than
+// deleted because translated product copy is the maintainer's call, and on
+// 2026-09-06 the maintainer made it: delete them. Their 51 strings are gone
+// from src/lib/i18n.js.
+//
+// So the assertion below now says something stronger than it used to: the
+// dictionary contains no unrendered keys at all, and the next one to appear
+// fails this test the day it is added.
+const knownUnusedKeys = []
 
 describe('dictionary keys nothing renders', () => {
   const countOccurrences = (key) => (corpus.match(new RegExp(`\\b${key}\\b`, 'g')) || []).length
@@ -119,13 +106,5 @@ describe('dictionary keys nothing renders', () => {
 
   it('matches the pinned list exactly', () => {
     expect(unused).toEqual(knownUnusedKeys)
-  })
-
-  it('still defines each pinned key in all three languages', () => {
-    for (const key of knownUnusedKeys) {
-      for (const code of ['zh', 'en', 'ja']) {
-        expect(getCopy(code)[key], `${code}.${key}`).toBeTruthy()
-      }
-    }
   })
 })
