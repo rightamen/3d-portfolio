@@ -2033,6 +2033,17 @@ app.delete('/api/account', requireAuthStore, async (request, response) => {
     return sendError(response, API_ERROR_CODES.VISITOR_NOT_FOUND, 'Account not found.', 404)
   }
 
+  // Published works block deletion rather than disappearing with the account:
+  // other people may have bought them, and buyers keep what they paid for.
+  if (deleted.blockedByWorks) {
+    return sendError(
+      response,
+      API_ERROR_CODES.ACCOUNT_HAS_WORKS,
+      `This account still owns ${deleted.blockedByWorks} work(s). Delete or transfer them first.`,
+      409,
+    )
+  }
+
   // Files are removed after the transaction committed: a failed unlink must
   // not roll back the deletion, it just leaves an orphan for the operator.
   for (const fileUrl of deleted.fileUrls) {
@@ -3741,6 +3752,15 @@ app.delete('/api/admin/visitors/:id', requireAdmin, async (request, response) =>
 
   if (!deleted) {
     return sendError(response, API_ERROR_CODES.VISITOR_NOT_FOUND, 'Visitor not found.', 404)
+  }
+
+  if (deleted.blockedByWorks) {
+    return sendError(
+      response,
+      API_ERROR_CODES.ACCOUNT_HAS_WORKS,
+      `This member still owns ${deleted.blockedByWorks} work(s). Delete or transfer them first.`,
+      409,
+    )
   }
 
   return sendData(response, { deleted })

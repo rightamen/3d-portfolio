@@ -483,11 +483,35 @@ export const createAuthStore = ({ pool }) => {
     // download_requests.name/email) and the uploaded files, which would sit on
     // disk forever with nothing pointing at them. Both are handled explicitly
     // here. Returns the upload URLs so the caller can unlink the files.
+    //
+    // Works are the exception to all of the above: works.creator_id is
+    // ON DELETE RESTRICT, because a work with no owner is not something the
+    // marketplace can price, sell or pay out on. Rather than letting Postgres
+    // raise a foreign-key error into a 500, the count is checked first and
+    // returned as { blockedByWorks } so the caller can say what to do about it.
     deleteAccount: async (userId) => {
       const client = await pool.connect()
 
       try {
         await client.query('BEGIN')
+
+        const owned = await client.query(
+          'SELECT count(*)::int AS count FROM works WHERE creator_id = $1',
+          [userId],
+        )
+        if (owned.rows[0].count > 0) {
+          await client.query('ROLLBACK')
+          return { blockedByWorks: owned.rows[0].count }
+        }
+
+        await client.query(
+          `
+            UPDATE work_comments
+            SET author = 'Deleted user'
+            WHERE user_id = $1
+          `,
+          [userId],
+        )
 
         const uploads = await client.query(
           'SELECT file_url, preview_url FROM community_uploads WHERE user_id = $1',

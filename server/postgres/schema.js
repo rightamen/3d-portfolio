@@ -422,4 +422,225 @@ export const ensureSchema = async (pool) => {
       ADD COLUMN IF NOT EXISTS download_policy_en text,
       ADD COLUMN IF NOT EXISTS download_policy_ja text;
   `)
+
+  // ---------------------------------------------------------------------
+  // The platform tables. See docs/adr/ADR_PLATFORM_PIVOT.md.
+  //
+  // The site is becoming a marketplace where anyone publishes, so a work
+  // belongs to a creator instead of to the site. These tables are created
+  // empty and nothing reads them yet -- phase 1 is the data model and the
+  // migration, and it deploys without changing a single page.
+  // ---------------------------------------------------------------------
+  await pool.query(`
+    -- A creator is a visitor_users row with more on it, not a separate
+    -- account. handle/bio/avatar_url/banner_url already exist for profiles;
+    -- these are the columns a marketplace adds. creator_enabled_at is what
+    -- distinguishes "has an account" from "publishes here", so the two can
+    -- diverge later (verification, suspension) without a second table.
+    ALTER TABLE visitor_users
+      ADD COLUMN IF NOT EXISTS theme jsonb,
+      ADD COLUMN IF NOT EXISTS creator_enabled_at timestamptz,
+      ADD COLUMN IF NOT EXISTS stripe_account_id text,
+      ADD COLUMN IF NOT EXISTS payout_state text NOT NULL DEFAULT 'none';
+
+    -- The new centre of gravity. It replaces the split between content.js,
+    -- project_overrides, custom_projects and the work-shaped half of
+    -- community_uploads -- but only once phases 2-3 are built; for now the old
+    -- tables keep serving the site untouched.
+    --
+    -- The localized columns mirror custom_projects exactly so the migration of
+    -- the four existing works is lossless: the admin console already edits
+    -- these eighteen fields and none of that work is thrown away.
+    --
+    -- creator_id is ON DELETE RESTRICT, unlike every other reference to
+    -- visitor_users in this file. Those are attribution and may go NULL; this
+    -- one is ownership, and a work with no owner is not a thing the
+    -- marketplace can price, sell or pay out. Deleting an account with works
+    -- has to be an explicit act, so authStore/adminStore check first and
+    -- refuse with a message rather than letting Postgres raise.
+    CREATE TABLE IF NOT EXISTS works (
+      id text PRIMARY KEY,
+      creator_id text NOT NULL REFERENCES visitor_users(id) ON DELETE RESTRICT,
+      slug text NOT NULL,
+      status text NOT NULL DEFAULT 'draft'
+        CHECK (status IN ('draft', 'review', 'published', 'hidden', 'rejected')),
+      title text NOT NULL,
+      title_zh text,
+      title_en text,
+      title_ja text,
+      summary text NOT NULL DEFAULT '',
+      summary_zh text,
+      summary_en text,
+      summary_ja text,
+      workflow text,
+      workflow_zh text,
+      workflow_en text,
+      workflow_ja text,
+      format text,
+      format_zh text,
+      format_en text,
+      format_ja text,
+      model_size text,
+      model_size_zh text,
+      model_size_en text,
+      model_size_ja text,
+      download_policy text,
+      download_policy_zh text,
+      download_policy_en text,
+      download_policy_ja text,
+      year text,
+      asset_category text,
+      image text,
+      model_url text,
+      stack jsonb NOT NULL DEFAULT '[]'::jsonb,
+      viewer_features jsonb NOT NULL DEFAULT '[]'::jsonb,
+      tags jsonb NOT NULL DEFAULT '[]'::jsonb,
+      -- Integers, never floats, and the currency is explicit. price_cents = 0
+      -- means free, which is a price and not a missing value.
+      price_cents integer NOT NULL DEFAULT 0 CHECK (price_cents >= 0),
+      currency text NOT NULL DEFAULT 'usd',
+      license text,
+      -- Where this row came from, so the migration is auditable and can be
+      -- re-run idempotently: 'content' | 'custom_projects' | 'upload'.
+      source text,
+      source_slug text,
+      published_at timestamptz,
+      moderated_at timestamptz,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    );
+
+    -- /w/:handle/:slug, so the slug only has to be unique to its creator.
+    CREATE UNIQUE INDEX IF NOT EXISTS works_creator_slug_unique_idx
+      ON works (creator_id, lower(slug));
+
+    CREATE INDEX IF NOT EXISTS works_status_published_idx
+      ON works (status, published_at DESC);
+
+    CREATE INDEX IF NOT EXISTS works_creator_updated_idx
+      ON works (creator_id, updated_at DESC);
+
+    -- A work is a bundle, which community_uploads never was: one row per file
+    -- from the start, because retrofitting this after rows have money attached
+    -- is a migration nobody wants to run.
+    CREATE TABLE IF NOT EXISTS work_assets (
+      id text PRIMARY KEY,
+      work_id text NOT NULL REFERENCES works(id) ON DELETE CASCADE,
+      kind text NOT NULL
+        CHECK (kind IN ('preview', 'model', 'source', 'texture', 'image')),
+      file_name text NOT NULL,
+      file_type text NOT NULL DEFAULT '',
+      file_url text NOT NULL,
+      file_size bigint NOT NULL DEFAULT 0,
+      checksum text,
+      sort_order integer NOT NULL DEFAULT 0,
+      created_at timestamptz NOT NULL DEFAULT now()
+    );
+
+    CREATE INDEX IF NOT EXISTS work_assets_work_idx
+      ON work_assets (work_id, kind, sort_order);
+
+    -- Shaped on community_comments, which already threads, plus the moderation
+    -- status project_comments learned the hard way and the pin a YouTube-style
+    -- discussion needs. Counts are not stored: project_likes and
+    -- community_comment_likes are both counted live, and a denormalised
+    -- counter that drifts is worse than a join.
+    CREATE TABLE IF NOT EXISTS work_comments (
+      id text PRIMARY KEY,
+      work_id text NOT NULL REFERENCES works(id) ON DELETE CASCADE,
+      parent_id text REFERENCES work_comments(id) ON DELETE CASCADE,
+      user_id text REFERENCES visitor_users(id) ON DELETE SET NULL,
+      author text NOT NULL,
+      message text NOT NULL,
+      status text NOT NULL DEFAULT 'published'
+        CHECK (status IN ('published', 'pending', 'hidden')),
+      pinned_at timestamptz,
+      edited_at timestamptz,
+      moderated_at timestamptz,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    );
+
+    CREATE INDEX IF NOT EXISTS work_comments_work_created_idx
+      ON work_comments (work_id, status, created_at DESC);
+
+    CREATE INDEX IF NOT EXISTS work_comments_parent_idx
+      ON work_comments (parent_id, created_at);
+
+    CREATE TABLE IF NOT EXISTS work_comment_likes (
+      comment_id text NOT NULL REFERENCES work_comments(id) ON DELETE CASCADE,
+      user_id text NOT NULL REFERENCES visitor_users(id) ON DELETE CASCADE,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      PRIMARY KEY (comment_id, user_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS work_likes (
+      work_id text NOT NULL REFERENCES works(id) ON DELETE CASCADE,
+      visitor_id text NOT NULL,
+      user_id text REFERENCES visitor_users(id) ON DELETE SET NULL,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      PRIMARY KEY (work_id, visitor_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS work_likes_work_idx ON work_likes (work_id);
+
+    -- An order grants the right to a download ticket. It does not replace
+    -- download_tickets/download_events, which already exist and already
+    -- expire -- a second authorisation path would be a second place to get
+    -- authorisation wrong.
+    --
+    -- buyer_id goes NULL if the buyer deletes their account: the financial
+    -- record has to survive, the person does not have to. creator_id is
+    -- RESTRICT for the same reason works.creator_id is.
+    CREATE TABLE IF NOT EXISTS orders (
+      id text PRIMARY KEY,
+      buyer_id text REFERENCES visitor_users(id) ON DELETE SET NULL,
+      work_id text NOT NULL REFERENCES works(id) ON DELETE RESTRICT,
+      creator_id text NOT NULL REFERENCES visitor_users(id) ON DELETE RESTRICT,
+      amount_cents integer NOT NULL CHECK (amount_cents >= 0),
+      platform_fee_cents integer NOT NULL DEFAULT 0 CHECK (platform_fee_cents >= 0),
+      currency text NOT NULL,
+      status text NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending', 'paid', 'failed', 'refunded', 'cancelled')),
+      stripe_payment_intent_id text,
+      stripe_checkout_session_id text,
+      purchased_at timestamptz,
+      refunded_at timestamptz,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    );
+
+    -- Webhook idempotency, built in before the first webhook exists. Stripe
+    -- retries, and "charged twice because the retry arrived" is a bug you only
+    -- get to fix after it has taken someone's money.
+    CREATE UNIQUE INDEX IF NOT EXISTS orders_payment_intent_unique_idx
+      ON orders (stripe_payment_intent_id)
+      WHERE stripe_payment_intent_id IS NOT NULL;
+
+    CREATE INDEX IF NOT EXISTS orders_buyer_created_idx
+      ON orders (buyer_id, created_at DESC);
+
+    CREATE INDEX IF NOT EXISTS orders_creator_created_idx
+      ON orders (creator_id, created_at DESC);
+
+    -- One row per transfer Stripe makes to a creator. Stripe is the ledger of
+    -- record; this is the local mirror that lets a creator see their own
+    -- history without an API call on every page load.
+    CREATE TABLE IF NOT EXISTS payouts (
+      id text PRIMARY KEY,
+      creator_id text NOT NULL REFERENCES visitor_users(id) ON DELETE RESTRICT,
+      amount_cents integer NOT NULL,
+      currency text NOT NULL,
+      period_start date,
+      period_end date,
+      status text NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending', 'paid', 'failed')),
+      stripe_transfer_id text,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    );
+
+    CREATE INDEX IF NOT EXISTS payouts_creator_created_idx
+      ON payouts (creator_id, created_at DESC);
+  `)
 }

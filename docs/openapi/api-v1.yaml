@@ -1973,6 +1973,7 @@ components:
         must treat unknown future codes as a generic failure keyed off HTTP
         status, not crash.
       enum:
+        - ACCOUNT_HAS_WORKS
         - ACCOUNT_LOCKED
         - ADMIN_AUTH_REQUIRED
         - ADMIN_TOTP_REQUIRED

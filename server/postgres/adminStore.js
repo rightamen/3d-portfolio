@@ -944,7 +944,17 @@ export const createAdminStore = ({ pool, projectStore }) => {
       return toAccountUserRecord(result.rows[0])
     },
 
+    // works.creator_id is ON DELETE RESTRICT, so an account that has published
+    // cannot simply be dropped -- see authStore.deleteAccount for why. The
+    // count is checked first so the console gets an answer it can act on
+    // instead of a foreign-key error.
     deleteVisitor: async (id) => {
+      const owned = await pool.query(
+        'SELECT count(*)::int AS count FROM works WHERE creator_id = $1',
+        [id],
+      )
+      if (owned.rows[0].count > 0) return { blockedByWorks: owned.rows[0].count }
+
       const result = await pool.query(
         `
           DELETE FROM visitor_users

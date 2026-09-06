@@ -1,6 +1,7 @@
 import { validateResponseShape } from './contracts/responseValidator.js'
 
 export const API_ERROR_CODES = Object.freeze({
+  ACCOUNT_HAS_WORKS: 'ACCOUNT_HAS_WORKS',
   ACCOUNT_LOCKED: 'ACCOUNT_LOCKED',
   ADMIN_AUTH_REQUIRED: 'ADMIN_AUTH_REQUIRED',
   // Distinct from a wrong password on purpose: the client has to know whether

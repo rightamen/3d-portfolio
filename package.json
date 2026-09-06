@@ -31,7 +31,8 @@
     "admin:user": "node scripts/admin-user.mjs",
     "test:e2e:headed": "playwright test --headed",
     "test:e2e:report": "playwright show-report",
-    "verify:visitor-studio": "node scripts/verify-visitor-studio.mjs"
+    "verify:visitor-studio": "node scripts/verify-visitor-studio.mjs",
+    "test:schema-migration": "node scripts/verify-schema-migration.mjs"
   },
   "dependencies": {
     "cors": "^2.8.6",

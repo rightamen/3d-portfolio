@@ -1988,3 +1988,84 @@ test.describe('per-route HTML head, from real rows', () => {
     expect(body).not.toContain('/u/')
   })
 })
+
+// A work belongs to whoever made it, and works.creator_id is ON DELETE
+// RESTRICT because a work with no owner is not something a marketplace can
+// price, sell or pay out on. Both delete paths therefore have to refuse
+// clearly rather than letting Postgres raise a foreign-key error into a 500 --
+// and, more importantly, rather than taking someone's published work with the
+// account. These tests own their fixture row and remove it again, so the rest
+// of the suite still sees the visitors it seeded.
+test.describe('an account that owns works cannot simply be deleted', () => {
+  const workId = 'work-delete-guard-fixture'
+
+  const withWork = async (ownerId, run) => {
+    const { Pool } = (await import('pg')).default
+    const pool = new Pool({ connectionString: databaseUrl })
+    try {
+      await pool.query(
+        `INSERT INTO works (id, creator_id, slug, title, status)
+         VALUES ($1, $2, 'delete-guard-fixture', 'Delete guard fixture', 'published')`,
+        [workId, ownerId],
+      )
+      await run()
+    } finally {
+      await pool.query('DELETE FROM works WHERE id = $1', [workId])
+      await pool.end()
+    }
+  }
+
+  test('the admin console is told why, not handed a 500', async () => {
+    await withWork(visitorB.id, async () => {
+      const { payload, response } = await sendJson(
+        'DELETE',
+        `/api/admin/visitors/${visitorB.id}`,
+        {},
+        adminToken,
+      )
+
+      expect(response.status).toBe(409)
+      expectContractShape(payload)
+      expect(payload.error.code).toBe('ACCOUNT_HAS_WORKS')
+      expect(payload.error.message).toContain('1 work(s)')
+
+      // The account is still there: the guard refused, it did not half-delete.
+      const after = await getJson(`/api/admin/visitors/${visitorB.id}`, adminToken)
+      expect(after.response.status).toBe(200)
+    })
+  })
+
+  test('self-service deletion refuses too, and the account survives', async () => {
+    await withWork(visitorA.id, async () => {
+      const { payload, response } = await sendJson(
+        'DELETE',
+        '/api/account',
+        { confirm: 'DELETE', currentPassword: visitorPassword },
+        visitorA.sessionToken,
+      )
+
+      expect(response.status).toBe(409)
+      expect(payload.error.code).toBe('ACCOUNT_HAS_WORKS')
+
+      const after = await getJson('/api/account/profile', visitorA.sessionToken)
+      expect(after.response.status).toBe(200)
+    })
+  })
+
+  test('with the work gone, deletion is allowed again', async () => {
+    // The counter-proof: without this the two tests above would also pass if
+    // the endpoints simply refused every deletion.
+    const { payload, response } = await sendJson(
+      'DELETE',
+      `/api/admin/visitors/${visitorB.id}`,
+      {},
+      adminToken,
+    )
+
+    expect(response.status).toBe(200)
+    expect(payload.error).toBeNull()
+
+    const after = await getJson(`/api/admin/visitors/${visitorB.id}`, adminToken)
+    expect(after.response.status).toBe(404)
+  })
+})
