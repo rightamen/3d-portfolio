@@ -880,6 +880,21 @@ test.describe('per-route HTML head', () => {
     expect(csp).toMatch(/script-src [^;]*'self'/)
     expect(csp).toMatch(/script-src [^;]*'wasm-unsafe-eval'/)
     expect(csp).not.toMatch(/script-src [^;]*'unsafe-inline'/)
+    // style-src gave up 'unsafe-inline' on 2026-09-06. CSP does not govern the
+    // CSSOM, so every inline style this app writes -- React style props,
+    // motion/react transforms, drei <Html>'s cssText -- was never covered by
+    // the keyword in the first place; measured at zero violations across the
+    // public routes, the signed-in admin console and a populated community
+    // feed. If this fails, read docs/adr/ADR_WEB_CSP_STYLE_SRC.md before adding
+    // it back: a genuine violation means something started emitting a <style>
+    // element, and §5/§8 there say what to do about that.
+    expect(csp).toMatch(/style-src [^;]*'self'/)
+    expect(csp).not.toMatch(/style-src [^;]*'unsafe-inline'/)
+    // ...and no back door to the same place.
+    expect(csp).not.toContain("'unsafe-hashes'")
+    // The font origin is the load-bearing half: dropping it breaks the @import
+    // at src/index.css:1 on every route.
+    expect(csp).toMatch(/style-src [^;]*https:\/\/fonts\.googleapis\.com/)
     expect(csp).toContain('report-uri /api/csp-report')
   })
 

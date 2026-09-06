@@ -1,13 +1,16 @@
 # ADR: Web CSP `style-src` and `'unsafe-inline'`
 
-Date: 2026-09-04
+Date: 2026-09-04 (measurements), 2026-09-06 (§7 closed, header edited)
 
-Status: Accepted. The header edit is a separate commit; §7 lists what has to be
-true before it lands.
+Status: Accepted and **landed**. `server/index.js` now sends `style-src 'self'
+https://fonts.googleapis.com`. The two surfaces §7 gated the edit on were
+measured on 2026-09-06 and are recorded in §7.1; the remaining caveat is
+engines, and it is still open.
 
 ## 1. Background
 
-`server/index.js` sends, on every response:
+`server/index.js` sent, on every response, until this ADR's edit landed on
+2026-09-06:
 
 ```
 style-src 'self' 'unsafe-inline' https://fonts.googleapis.com
@@ -77,7 +80,7 @@ been impossible. That path was never available; it just also was never needed.
 | Leave `'unsafe-inline'` in place | Zero work, zero risk | Keeps the one keyword in the policy that an injected `<style>` can use — for defacement, for CSS-based exfiltration of attribute values, for overlaying the login form. `script-src` gave it up; `style-src` had no reason left to keep it | Rejected |
 | Nonce per response (`'nonce-…'` + `MotionConfig nonce`) | The textbook answer; would also unblock `AnimatePresence mode="popLayout"` (§5) | Makes the CSP header vary per response, which `tests/api/contract.spec.js` asserts it does not; the header would have to be generated in the SEO path and the built `index.html` rewritten per request; and it buys nothing, because nothing today emits a `<style>` element | Rejected |
 | Hash allowlist (`'sha256-…'`, plus `'unsafe-hashes'` for attributes) | None that apply | 441 distinct attribute values on one route, most computed per frame; `'unsafe-hashes'` is itself close to `'unsafe-inline'` in effect | Rejected — and not merely costly, but unimplementable |
-| Drop `'unsafe-inline'`, keep the rest: `style-src 'self' https://fonts.googleapis.com` | One keyword deleted. Measured at zero violations across every route and interaction reachable without credentials, in both the local production build and the deployed site | Two surfaces could not be exercised this round (§7); a future `popLayout` or a hand-written `<style>` would break silently rather than loudly | **Accepted** |
+| Drop `'unsafe-inline'`, keep the rest: `style-src 'self' https://fonts.googleapis.com` | One keyword deleted. Measured at zero violations across every public route and interaction, in both the local production build and the deployed site (§4.2), and then across the signed-in admin console in both galaxy modes and a populated community feed (§7.1) | One engine (§7); a future `popLayout` or a hand-written `<style>` would break silently rather than loudly | **Accepted, landed** |
 | Also drop `https://fonts.googleapis.com` | Shorter policy | Measured: breaks the `@import` at `src/index.css:1` on every route (§4.3). It is the control that proved the probe works, not a candidate | Rejected |
 
 ## 4. The measurements
@@ -257,42 +260,123 @@ cover. The keyword has been carrying no load.
 `https://fonts.googleapis.com` stays, for `src/index.css:1`, and is the one part
 of the directive that is load-bearing.
 
-This ADR does not itself change the header. The one-line edit to
-`server/index.js` ships as its own reviewed commit, once §7 is satisfied.
+The edit is one line in `server/index.js`. It landed on 2026-09-06, after §7.1.
 
-## 7. Before the edit lands
+## 7. The gates, and what is left open
 
-Two surfaces could not be exercised this round, and both should be walked once
-with the tightened header before it is deployed:
+Two surfaces could not be exercised on 2026-09-04, and both were named as
+blockers for the edit:
 
 - **The signed-in admin dashboard.** `AdminGalaxy` — the second 3D canvas, the
   `--dot-size` custom properties, the motion-heavy charts — lives inside
-  `AdminDashboard`, which needs credentials this round did not have. Its `<Html>`
+  `AdminDashboard`, which needs credentials that round did not have. Its `<Html>`
   usage is the same drei code path that §4.2 exercised through `ModelPreview` on
   `/`, and `dist/assets/Admin-*.js` contains no `createElement("style")` and no
-  `setAttribute("style")`, so the static evidence is good — but it is static
+  `setAttribute("style")`, so the static evidence was good — but it was static
   evidence, not a browser pass.
 - **A populated community feed.** The local server ran without `DATABASE_URL`,
   and the deployed `/community` rendered thin during the run. The post detail
   page was measured; the populated list was not.
 
-Two further caveats worth stating rather than burying:
+Both are closed in §7.1. It turned out neither needed credentials or a
+database: the e2e suite already renders both surfaces off `page.route` API
+fixtures, and pointing the CSP probe at that harness reaches the same code with
+the same components mounted.
 
-- **One engine.** Chromium 149 only; Firefox and WebKit are not installed and
-  no dependency was added to get them. The CSSOM exemption is a property of the
-  CSP algorithms, not of Chromium — no engine has ever checked a property write
-  — and Safari, which implements neither `style-src-elem` nor `style-src-attr`,
-  falls back to `style-src` with the same outcome. Still unmeasured.
+Two further caveats. The first is still open:
+
+- **One engine — still unmeasured.** Chromium only; Firefox and WebKit are not
+  installed and no dependency was added to get them, on 2026-09-04 or on
+  2026-09-06. The argument for the other two is a spec argument, not a
+  measurement, and it is worth stating precisely so nobody mistakes it for one.
+  CSP's checks are defined over *parsed* content: the "Should element's inline
+  behavior be blocked by Content Security Policy?" algorithm runs on a `<style>`
+  element's contents and on a `style` **content attribute**, both at parse or
+  attribute-set time. `element.style.foo = …`, `setProperty()` and `cssText` are
+  CSSOM interface operations; no CSP algorithm is invoked on that path, in any
+  engine, and none ever has been — an engine that did check would break every
+  animation library on the web. Safari is a stronger case still, not a weaker
+  one: it implements neither `style-src-elem` nor `style-src-attr`, so both fall
+  back to `style-src`, and it has no additional check to fail. What remains
+  genuinely unverified is not the principle but this app on those engines — a
+  Gecko- or WebKit-only code path that emits a real `<style>` element. §5 says
+  the only candidate in the bundle is `motion`'s `usePopLayout`, which is
+  engine-independent and unreached.
 - **`/api/csp-report` is the safety net.** It already exists and is already in
   the policy, and after this change it is the only thing that would surface a
-  style violation on a code path no browser pass covered. A violation is a
-  broken page now, not a report-only note.
+  style violation on a code path no browser pass covered — including one on an
+  engine nobody ran. A violation is a broken page now, not a report-only note.
+  The admin console's System panel shows the report count, which is where a
+  Firefox-only regression would first appear.
+
+### 7.1 Closing the two gates (2026-09-06)
+
+Same probe design as §4 — the listener installed with `addInitScript`, a
+350–500 ms wait before every read, the style attribute set on a **connected**
+element — but run against the *real* tightened header rather than a rewritten
+one: `server/index.js` was edited first, and the local production build served
+by `PORT=4321 NODE_ENV=test node server/index.js` sent
+
+```
+style-src 'self' https://fonts.googleapis.com
+```
+
+on every response. The admin fixtures are the ones from
+`tests/e2e/admin-console.spec.js` (a `localStorage` admin token plus a
+`**/api/admin/**` route handler), the community fixtures the ones from
+`tests/e2e/site-routing.spec.js` (two real posts with an author, a topic and a
+detail view).
+
+`[style]` and `<style>` are DOM counts at that checkpoint, as in §4.2.
+
+| Checkpoint | `style-src-elem` | `style-src-attr` | any directive | canvases | `[style]` | `<style>` |
+| --- | --- | --- | --- | --- | --- | --- |
+| **admin, 3D galaxy** — console loaded, map settled | 0 | 0 | 0 | 1 | 144 | 0 |
+| admin, 3D — all 11 nav sections clicked through | 0 | 0 | 0 | 0 | 22 | 0 |
+| admin, 3D — command palette open, query typed | 0 | 0 | 0 | 0 | 23 | 0 |
+| admin, 3D — back on the overview, map running | 0 | 0 | 0 | 1 | 144 | 0 |
+| **admin, flat galaxy** — console loaded | 0 | 0 | 0 | 0 | 139 | 0 |
+| admin, flat — dot clicked, Members list, member detail | 0 | 0 | 0 | 0 | 18 | 0 |
+| **`/community`** — populated list, scrolled top to bottom | 0 | 0 | 0 | 0 | 0 | 0 |
+| `/community/post-routing-1` — post detail | 0 | 0 | 0 | 0 | 0 | 0 |
+| `/community` again, client-side back | 0 | 0 | 0 | 0 | 0 | 0 |
+
+**Zero across all nine checkpoints**, and the admin numbers are the interesting
+ones: 144 elements are wearing an inline `style` attribute on the loaded
+dashboard — the `--dot-size` and `--stagger-index` custom properties among them
+— with the second WebGL canvas up and the charts animating, and not one of them
+is checked. `<style>` is 0 everywhere here too, so nothing in `Admin-*.js`
+injects one at runtime, which is now a browser fact and not just a grep.
+
+The community feed's `[style]` count is 0, which is not a probe failure: the
+page is Tailwind classes end to end and animates nothing that needs a style
+attribute at the sampled instants. Its value as a gate is that the populated
+list and a real post detail render, which §4.2 could not show.
+
+**Proof the probe can see a violation.** Every run above ends with the two
+deliberate triggers, and the run is only counted if the listener reports both:
+
+| Trigger | Expected | admin 3D | admin flat | community |
+| --- | --- | --- | --- | --- |
+| `<style>` element with text | `style-src-elem` | 1 | 1 | 1 |
+| `setAttribute('style','color: rebeccapurple')` on a connected element | `style-src-attr` | 1 | 1 | 1 |
+| computed colour of that element afterwards | unchanged | `rgb(255,255,255)` | ” | ” |
+
+And the control, which is what makes the zeros mean something: the identical run
+with Playwright rewriting the document header to put `'unsafe-inline'` back
+reports **0 and 0** for those same two triggers on all three surfaces, with the
+computed colour becoming `rgb(102, 51, 153)` — the attribute applied. The probe
+is reading the policy it was served, not a cached or default one.
+
+The probe itself was a throwaway spec, deleted after the run; the numbers above
+and the assertion in `tests/api/contract.spec.js` are what survive it.
 
 The existing assertion in `tests/api/contract.spec.js` — one identical policy
 for every response, no `sha256-`, no `nonce-` — survives this decision unchanged
-and is the reason the nonce option was rejected rather than merely deferred.
-When the edit lands it should gain a `style-src` clause alongside the
-`script-src` ones already there.
+and is the reason the nonce option was rejected rather than merely deferred. It
+gained its `style-src` clauses with this edit: `'self'` present, the font origin
+present, `'unsafe-inline'` absent, and `'unsafe-hashes'` absent anywhere in the
+header.
 
 ## 8. What would change this decision
 

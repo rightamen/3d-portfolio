@@ -213,7 +213,18 @@ app.use(
         // falls back to defaultSrc, which is where the reported violation came
         // from.
         scriptSrc: ["'self'", "'wasm-unsafe-eval'"],
-        styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+        // No 'unsafe-inline', since 2026-09-06. CSP does not govern the CSSOM,
+        // and every inline style this app writes -- React's style={{…}} props,
+        // motion/react's per-frame transforms, drei <Html>'s cssText, the
+        // --dot-size custom properties in AdminGalaxy -- goes through a
+        // property write the algorithms never inspect. Measured at zero
+        // violations on the public routes, the signed-in admin console (both
+        // galaxy modes) and a populated community feed; see
+        // docs/adr/ADR_WEB_CSP_STYLE_SRC.md. The font origin, by contrast, is
+        // load-bearing: dropping it breaks the @import at src/index.css:1 on
+        // every route. A <style> element would now be blocked, which §5 and §8
+        // of the ADR cover.
+        styleSrc: ["'self'", 'https://fonts.googleapis.com'],
         fontSrc: ["'self'", 'data:', 'https://fonts.gstatic.com'],
         // blob: is needed to read back an object URL, not to reach the network.
         connectSrc: ["'self'", 'blob:'],
