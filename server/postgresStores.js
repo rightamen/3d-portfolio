@@ -7,6 +7,7 @@ import { createContactMessagesStore } from './postgres/contactMessagesStore.js'
 import { createDownloadRequestsStore } from './postgres/downloadRequestsStore.js'
 import { createInteractionsStore } from './postgres/interactionsStore.js'
 import { createProjectStore } from './postgres/projectStore.js'
+import { createWorksStore } from './postgres/worksStore.js'
 
 const { Pool } = pg
 
@@ -36,5 +37,6 @@ export const createPostgresStores = async (databaseUrl) => {
     downloadRequestsStore: createDownloadRequestsStore({ pool }),
     interactionsStore: createInteractionsStore({ pool }),
     projectStore,
+    worksStore: createWorksStore({ pool }),
   }
 }

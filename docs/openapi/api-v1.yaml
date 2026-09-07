@@ -2010,6 +2010,8 @@ components:
         - UPLOAD_QUOTA_EXCEEDED
         - VALIDATION_ERROR
         - VISITOR_NOT_FOUND
+        - WORK_NOT_FOUND
+        - WORK_SLUG_TAKEN
 
     Pagination:
       type: object

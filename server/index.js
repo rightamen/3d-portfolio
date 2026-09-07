@@ -132,6 +132,10 @@ const stores = process.env.DATABASE_URL
           projects.find((project) => project.slug === slug) || null,
         listProjects: async (projects) => projects.map((project) => ({ ...project, isPublic: true })),
       },
+      // Works are database-only. There is no bundled fallback catalogue for
+      // them the way there is for projects, and inventing an in-memory one
+      // would mean a marketplace that quietly loses everything on restart.
+      worksStore: null,
     }
 
 const {
@@ -142,6 +146,7 @@ const {
   downloadRequestsStore,
   interactionsStore,
   projectStore,
+  worksStore,
 } = stores
 
 const setNoStoreHeaders = (response) => {
@@ -1469,6 +1474,369 @@ app.get('/api/projects/:slug/interactions', async (request, response) => {
     comments: state.comments,
     likeCount: state.likes.length,
   })
+})
+
+// ---------------------------------------------------------------------------
+// Works: the marketplace catalogue. docs/adr/ADR_PLATFORM_PIVOT.md, phase 2.
+//
+// The lifecycle is draft -> review -> published, with hidden and rejected as
+// the two ways out. A creator drives the first half; an admin decides the
+// second. Nothing here serves a file: assets arrive in their own endpoint and
+// a paid download still goes through download_tickets.
+// ---------------------------------------------------------------------------
+
+const WORK_STATUSES = new Set(['draft', 'review', 'published', 'hidden', 'rejected'])
+
+// The statuses a creator may put their own work into. Publishing is not one of
+// them: that is the moderator's call, and letting the author set it would make
+// the review step decorative.
+const CREATOR_STATUSES = new Set(['draft', 'review', 'hidden'])
+
+// Slugs are the second half of /w/:handle/:slug, so they follow the same rule
+// as project slugs (slugPattern above) rather than inventing a second one.
+const slugifyTitle = (title) => {
+  const slug = String(title ?? '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60)
+    .replace(/-+$/g, '')
+
+  // A title with no latin characters at all -- which is most of this site's
+  // catalogue -- slugifies to nothing. A random suffix is better than
+  // rejecting the title: the creator can set a slug by hand afterwards.
+  return slug.length >= 3 ? slug : `work-${randomBytes(4).toString('hex')}`
+}
+
+// Where a work's picture and model may point. An arbitrary URL here would end
+// up in og:image and in a <model-viewer> src, so the same reasoning as
+// postImagePattern applies: only paths this server actually serves.
+const workAssetPathPattern = /^\/(uploads|models|assets)\/[A-Za-z0-9][A-Za-z0-9/._-]{0,239}$/
+
+const LOCALIZED_WORK_FIELDS = [
+  ['title', 160],
+  ['summary', 600],
+  ['workflow', 1200],
+  ['format', 120],
+  ['modelSize', 120],
+  ['downloadPolicy', 400],
+]
+
+const PLAIN_WORK_FIELDS = [
+  ['year', 16],
+  ['assetCategory', 60],
+  ['license', 120],
+  ['currency', 8],
+]
+
+const camelToSnake = (value) => value.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`)
+
+// Reads only the keys the caller actually sent. Absent means "leave it alone",
+// which is what makes PATCH partial; an empty string means "clear it", which
+// is a different intent and has to stay expressible.
+const readWorkFields = (body) => {
+  const fields = {}
+  const errors = []
+
+  const put = (camel, max) => {
+    if (body?.[camel] === undefined) return
+    fields[camelToSnake(camel)] = String(body[camel] ?? '').trim().slice(0, max)
+  }
+
+  for (const [base, max] of LOCALIZED_WORK_FIELDS) {
+    put(base, max)
+    for (const suffix of ['Zh', 'En', 'Ja']) put(`${base}${suffix}`, max)
+  }
+  for (const [name, max] of PLAIN_WORK_FIELDS) put(name, max)
+
+  for (const name of ['image', 'modelUrl']) {
+    if (body?.[name] === undefined) continue
+    const value = String(body[name] ?? '').trim()
+    if (value && !workAssetPathPattern.test(value)) {
+      errors.push(`${name} must be a path this server serves.`)
+      continue
+    }
+    fields[camelToSnake(name)] = value
+  }
+
+  for (const [camel, column] of [
+    ['stack', 'stack'],
+    ['viewerFeatures', 'viewer_features'],
+    ['tags', 'tags'],
+  ]) {
+    if (body?.[camel] === undefined) continue
+    if (!Array.isArray(body[camel])) {
+      errors.push(`${camel} must be an array.`)
+      continue
+    }
+    fields[column] = body[camel]
+      .map((entry) => String(entry ?? '').trim().slice(0, 60))
+      .filter(Boolean)
+      .slice(0, 20)
+  }
+
+  if (body?.priceCents !== undefined) {
+    const priceCents = Number(body.priceCents)
+    // Integer cents only. A float here is how a marketplace ends up charging
+    // 999.9999999 for something, and the CHECK constraint would reject it
+    // anyway -- better a 400 that says why than a 500 from Postgres.
+    if (!Number.isInteger(priceCents) || priceCents < 0 || priceCents > 100_000_000) {
+      errors.push('priceCents must be a whole number of cents, at least 0.')
+    } else {
+      fields.priceCents = priceCents
+    }
+  }
+
+  return { errors, fields }
+}
+
+const requireWorksStore = (_request, response, next) => {
+  if (!worksStore) {
+    return sendError(
+      response,
+      API_ERROR_CODES.SERVICE_UNAVAILABLE,
+      'The works catalogue is not configured.',
+      503,
+    )
+  }
+  return next()
+}
+
+// Loads a work and confirms the caller owns it. Returns null after answering,
+// so every handler that uses it can `if (!work) return`. 404 rather than 403
+// for someone else's work: whether a given id exists is not their business.
+const loadOwnWork = async (request, response) => {
+  const work = await worksStore.getWorkById(request.params.id, { includeProtected: true })
+
+  if (!work || work.creator?.id !== request.visitorUser.id) {
+    sendError(response, API_ERROR_CODES.WORK_NOT_FOUND, 'Work not found.', 404)
+    return null
+  }
+
+  return work
+}
+
+app.get('/api/works', requireWorksStore, async (request, response) => {
+  const { limit, offset, page } = normalizePagination(request.query, 24, 60)
+  const result = await worksStore.listPublishedWorks({
+    category: String(request.query.category ?? '').trim().slice(0, 60),
+    creatorHandle: String(request.query.creator ?? '').trim().replace(/^@/, '').slice(0, 30),
+    limit,
+    offset,
+    query: String(request.query.query ?? '').trim().slice(0, 120),
+  })
+  const payload = toPaginatedPayload(result, page, limit)
+
+  return sendPage(response, { works: payload.items }, payload.pagination)
+})
+
+app.get('/api/works/:handle/:slug', requireWorksStore, async (request, response) => {
+  // The owner may open their own draft at its real address, which is the only
+  // honest way to preview one. Everyone else sees published works or a 404.
+  const viewer = await getOptionalUser(request)
+  const work = await worksStore.getWorkByHandleAndSlug(request.params.handle, request.params.slug, {
+    viewerId: viewer?.id || null,
+  })
+
+  if (!work) {
+    return sendError(response, API_ERROR_CODES.WORK_NOT_FOUND, 'Work not found.', 404)
+  }
+
+  return sendData(response, { work })
+})
+
+app.get('/api/account/works', requireVisitor, requireWorksStore, async (request, response) => {
+  const { limit, offset, page } = normalizePagination(request.query, 50, 100)
+  const result = await worksStore.listWorksByCreator(request.visitorUser.id, { limit, offset })
+  const payload = toPaginatedPayload(result, page, limit)
+
+  return sendPage(response, { works: payload.items }, payload.pagination)
+})
+
+app.post('/api/account/works', requireVisitor, requireWorksStore, async (request, response) => {
+  const user = request.visitorUser
+
+  // The handle is half of every work's URL, so there is nowhere to put a work
+  // belonging to an account that has not chosen one yet.
+  if (!user.handle) {
+    return sendError(
+      response,
+      API_ERROR_CODES.VALIDATION_ERROR,
+      'Choose a handle on your profile before publishing.',
+      400,
+    )
+  }
+
+  const { errors, fields } = readWorkFields(request.body)
+  if (errors.length) {
+    return sendError(response, API_ERROR_CODES.VALIDATION_ERROR, errors[0], 400)
+  }
+  if (!fields.title) {
+    return sendError(response, API_ERROR_CODES.VALIDATION_ERROR, 'A title is required.', 400)
+  }
+
+  const slug = String(request.body?.slug ?? '').trim().toLowerCase() || slugifyTitle(fields.title)
+  if (!slugPattern.test(slug)) {
+    return sendError(
+      response,
+      API_ERROR_CODES.VALIDATION_ERROR,
+      'A slug may only contain lowercase letters, digits and single hyphens.',
+      400,
+    )
+  }
+  if (await worksStore.slugTaken(user.id, slug)) {
+    return sendError(
+      response,
+      API_ERROR_CODES.WORK_SLUG_TAKEN,
+      'You already have a work at that address.',
+      409,
+    )
+  }
+
+  await worksStore.ensureCreatorEnabled(user.id)
+  const work = await worksStore.createWork(user.id, { ...fields, slug })
+
+  return sendData(response, { work }, 201)
+})
+
+app.patch('/api/account/works/:id', requireVisitor, requireWorksStore, async (request, response) => {
+  const existing = await loadOwnWork(request, response)
+  if (!existing) return
+
+  const { errors, fields } = readWorkFields(request.body)
+  if (errors.length) {
+    return sendError(response, API_ERROR_CODES.VALIDATION_ERROR, errors[0], 400)
+  }
+  if (fields.title !== undefined && !fields.title) {
+    return sendError(response, API_ERROR_CODES.VALIDATION_ERROR, 'A title is required.', 400)
+  }
+
+  if (request.body?.slug !== undefined) {
+    const slug = String(request.body.slug).trim().toLowerCase()
+    if (!slugPattern.test(slug)) {
+      return sendError(
+        response,
+        API_ERROR_CODES.VALIDATION_ERROR,
+        'A slug may only contain lowercase letters, digits and single hyphens.',
+        400,
+      )
+    }
+    if (await worksStore.slugTaken(existing.creator.id, slug, { exceptId: existing.id })) {
+      return sendError(
+        response,
+        API_ERROR_CODES.WORK_SLUG_TAKEN,
+        'You already have a work at that address.',
+        409,
+      )
+    }
+    fields.slug = slug
+  }
+
+  return sendData(response, { work: await worksStore.updateWork(existing.id, fields) })
+})
+
+app.patch(
+  '/api/account/works/:id/status',
+  requireVisitor,
+  requireWorksStore,
+  async (request, response) => {
+    const existing = await loadOwnWork(request, response)
+    if (!existing) return
+
+    const status = String(request.body?.status ?? '').trim()
+    if (!CREATOR_STATUSES.has(status)) {
+      return sendError(
+        response,
+        API_ERROR_CODES.VALIDATION_ERROR,
+        'A creator may set draft, review or hidden.',
+        400,
+      )
+    }
+
+    // Submitting for review is a promise that there is something to review.
+    if (status === 'review' && !existing.image && !existing.modelUrl) {
+      return sendError(
+        response,
+        API_ERROR_CODES.VALIDATION_ERROR,
+        'Add a preview image or a model before submitting for review.',
+        400,
+      )
+    }
+
+    // A published work going back to draft would vanish from under anyone
+    // holding its link. Hiding it is the supported way to take it down, and it
+    // keeps the URL answering with a 404 rather than a dangling reference.
+    if (existing.status === 'published' && status === 'draft') {
+      return sendError(
+        response,
+        API_ERROR_CODES.VALIDATION_ERROR,
+        'Hide a published work rather than returning it to draft.',
+        400,
+      )
+    }
+
+    return sendData(response, { work: await worksStore.setWorkStatus(existing.id, status) })
+  },
+)
+
+app.delete('/api/account/works/:id', requireVisitor, requireWorksStore, async (request, response) => {
+  const existing = await loadOwnWork(request, response)
+  if (!existing) return
+
+  // Deleting a published work is not a creator's unilateral call once money
+  // can be involved: someone may have bought it, and a buyer keeps what they
+  // paid for. Hiding it removes it from the catalogue without breaking that.
+  if (existing.status === 'published') {
+    return sendError(
+      response,
+      API_ERROR_CODES.VALIDATION_ERROR,
+      'Hide a published work rather than deleting it.',
+      400,
+    )
+  }
+
+  const deleted = await worksStore.deleteWork(existing.id)
+  if (!deleted) {
+    return sendError(response, API_ERROR_CODES.WORK_NOT_FOUND, 'Work not found.', 404)
+  }
+
+  // After the row is gone, so a failed unlink leaves an orphan rather than
+  // rolling back the delete. scripts/find-orphaned-uploads.mjs finds those.
+  for (const fileUrl of deleted.fileUrls) {
+    const localPath = path.resolve(rootDir, 'public', fileUrl.replace(/^\//, ''))
+    if (localPath.startsWith(uploadRoot)) {
+      unlink(localPath).catch((error) => console.error(error))
+    }
+  }
+
+  return sendData(response, { ok: true })
+})
+
+app.get('/api/admin/works', requireAdmin, requireWorksStore, async (request, response) => {
+  const { limit, offset, page } = normalizePagination(request.query, 20, 100)
+  const status = String(request.query.status ?? '').trim()
+  const result = await worksStore.listWorksForAdmin({
+    limit,
+    offset,
+    status: WORK_STATUSES.has(status) ? status : '',
+  })
+  const payload = toPaginatedPayload(result, page, limit)
+
+  return sendPage(response, { works: payload.items }, payload.pagination)
+})
+
+app.patch('/api/admin/works/:id/status', requireAdmin, requireWorksStore, async (request, response) => {
+  const status = String(request.body?.status ?? '').trim()
+  if (!WORK_STATUSES.has(status)) {
+    return sendError(response, API_ERROR_CODES.VALIDATION_ERROR, 'Unknown work status.', 400)
+  }
+
+  const work = await worksStore.setWorkStatus(request.params.id, status)
+  if (!work) {
+    return sendError(response, API_ERROR_CODES.WORK_NOT_FOUND, 'Work not found.', 404)
+  }
+
+  return sendData(response, { work })
 })
 
 app.get('/api/community/uploads', async (_request, response) => {

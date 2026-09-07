@@ -2069,3 +2069,291 @@ test.describe('an account that owns works cannot simply be deleted', () => {
     expect(after.response.status).toBe(404)
   })
 })
+
+// The publishing lifecycle, end to end: draft -> review -> published, plus the
+// rules that stop it being a free-for-all. These run against real SQL because
+// almost everything worth checking here IS the SQL -- the status filter that
+// keeps drafts private lives in the store's WHERE clause, not in a handler.
+test.describe('works: the publishing lifecycle', () => {
+  let workId
+  let handle
+
+  test('a work needs a handle, because the handle is half of its URL', async () => {
+    // A brand-new account, because visitorA picked up a handle in the profile
+    // tests above. Testing this against an account that already has one would
+    // have quietly asserted nothing.
+    const email = `contract-nohandle-${randomBytes(4).toString('hex')}@example.com`
+    const registered = await registerVisitor('No Handle Yet', email)
+    const verified = await sendJson('POST', '/api/auth/verify-email', {
+      code: registered.devCode,
+      email,
+    })
+    expect(verified.response.status).toBe(200)
+
+    const { payload, response } = await sendJson(
+      'POST',
+      '/api/account/works',
+      { title: 'Nowhere to put this' },
+      verified.payload.data.session.token,
+    )
+
+    expect(response.status).toBe(400)
+    expect(payload.error.code).toBe('VALIDATION_ERROR')
+    expect(payload.error.message).toContain('handle')
+  })
+
+  test('choosing a handle makes publishing possible', async () => {
+    handle = `contract-${randomBytes(4).toString('hex')}`.slice(0, 30)
+    const { response } = await sendJson(
+      'PUT',
+      '/api/account/profile',
+      { displayName: 'Contract Creator', handle },
+      visitorA.sessionToken,
+    )
+    expect(response.status).toBe(200)
+  })
+
+  test('a draft is created, and its slug comes from the title', async () => {
+    const { payload, response } = await sendJson(
+      'POST',
+      '/api/account/works',
+      {
+        assetCategory: 'hand-painted-prop',
+        priceCents: 1200,
+        summary: 'Something to sell.',
+        tags: ['prop', 'stylised'],
+        title: 'A Contract Test Work',
+        titleZh: '契约测试作品',
+      },
+      visitorA.sessionToken,
+    )
+
+    expect(response.status).toBe(201)
+    expectContractShape(payload, { legacyKeys: ['work'] })
+    expect(payload.data.work.slug).toBe('a-contract-test-work')
+    expect(payload.data.work.status).toBe('draft')
+    expect(payload.data.work.priceCents).toBe(1200)
+    expect(payload.data.work.titleZh).toBe('契约测试作品')
+    expect(payload.data.work.tags).toEqual(['prop', 'stylised'])
+    expect(payload.data.work.url).toBe(`/w/${handle}/a-contract-test-work`)
+    workId = payload.data.work.id
+  })
+
+  test('a draft is invisible in the public catalogue', async () => {
+    const { payload } = await getJson(`/api/works?creator=${handle}`)
+    expect(payload.data.works).toEqual([])
+  })
+
+  test('a draft is invisible to a stranger at its own address', async () => {
+    const { response } = await getJson(`/api/works/${handle}/a-contract-test-work`)
+    expect(response.status).toBe(404)
+  })
+
+  test('...but its owner can preview it there', async () => {
+    const { payload, response } = await getJson(
+      `/api/works/${handle}/a-contract-test-work`,
+      visitorA.sessionToken,
+    )
+    expect(response.status).toBe(200)
+    expect(payload.data.work.status).toBe('draft')
+  })
+
+  test('the same slug cannot be used twice by one creator', async () => {
+    const { payload, response } = await sendJson(
+      'POST',
+      '/api/account/works',
+      { slug: 'a-contract-test-work', title: 'Clashing' },
+      visitorA.sessionToken,
+    )
+    expect(response.status).toBe(409)
+    expect(payload.error.code).toBe('WORK_SLUG_TAKEN')
+  })
+
+  test('a price has to be whole cents, not a float', async () => {
+    const { payload, response } = await sendJson(
+      'PATCH',
+      `/api/account/works/${workId}`,
+      { priceCents: 9.99 },
+      visitorA.sessionToken,
+    )
+    expect(response.status).toBe(400)
+    expect(payload.error.code).toBe('VALIDATION_ERROR')
+  })
+
+  test('an image path the server does not serve is refused', async () => {
+    const { response } = await sendJson(
+      'PATCH',
+      `/api/account/works/${workId}`,
+      { image: 'https://example.com/steal-my-og-image.png' },
+      visitorA.sessionToken,
+    )
+    expect(response.status).toBe(400)
+  })
+
+  test('a patch changes only what it names', async () => {
+    const { payload, response } = await sendJson(
+      'PATCH',
+      `/api/account/works/${workId}`,
+      { summary: 'Edited summary.' },
+      visitorA.sessionToken,
+    )
+
+    expect(response.status).toBe(200)
+    expect(payload.data.work.summary).toBe('Edited summary.')
+    // The fields the patch said nothing about are still there. The project
+    // endpoint next door replaces the whole payload and has cleared columns
+    // that way; this is the test that stops works inheriting that.
+    expect(payload.data.work.title).toBe('A Contract Test Work')
+    expect(payload.data.work.titleZh).toBe('契约测试作品')
+    expect(payload.data.work.priceCents).toBe(1200)
+    expect(payload.data.work.tags).toEqual(['prop', 'stylised'])
+  })
+
+  test('nobody else can edit it', async () => {
+    const { response } = await sendJson(
+      'PATCH',
+      `/api/account/works/${workId}`,
+      { title: 'Mine now' },
+      adminToken,
+    )
+    // The admin token is not a visitor session, so this is an ordinary 401 --
+    // the point is that a bearer token that is not the owner's gets nothing.
+    expect([401, 404]).toContain(response.status)
+  })
+
+  test('submitting for review needs something to review', async () => {
+    const { payload, response } = await sendJson(
+      'PATCH',
+      `/api/account/works/${workId}/status`,
+      { status: 'review' },
+      visitorA.sessionToken,
+    )
+    expect(response.status).toBe(400)
+    expect(payload.error.message).toContain('preview image')
+  })
+
+  test('a creator cannot publish their own work', async () => {
+    const { payload, response } = await sendJson(
+      'PATCH',
+      `/api/account/works/${workId}/status`,
+      { status: 'published' },
+      visitorA.sessionToken,
+    )
+    expect(response.status).toBe(400)
+    expect(payload.error.code).toBe('VALIDATION_ERROR')
+    // Still a draft: the refusal did not half-apply.
+    const after = await getJson(`/api/works/${handle}/a-contract-test-work`, visitorA.sessionToken)
+    expect(after.payload.data.work.status).toBe('draft')
+  })
+
+  test('with a preview, it can be submitted', async () => {
+    const patched = await sendJson(
+      'PATCH',
+      `/api/account/works/${workId}`,
+      { image: '/assets/projects/fire-extinguisher.png' },
+      visitorA.sessionToken,
+    )
+    expect(patched.response.status).toBe(200)
+
+    const { payload, response } = await sendJson(
+      'PATCH',
+      `/api/account/works/${workId}/status`,
+      { status: 'review' },
+      visitorA.sessionToken,
+    )
+    expect(response.status).toBe(200)
+    expect(payload.data.work.status).toBe('review')
+  })
+
+  test('the moderation queue shows it', async () => {
+    const { payload, response } = await getJson('/api/admin/works?status=review', adminToken)
+
+    expect(response.status).toBe(200)
+    expectContractShape(payload, { legacyKeys: ['works'] })
+    expectRealPagination(payload.pagination)
+    expect(payload.data.works.map((work) => work.id)).toContain(workId)
+  })
+
+  test('an admin publishes it, and it appears in the catalogue', async () => {
+    const { payload, response } = await sendJson(
+      'PATCH',
+      `/api/admin/works/${workId}/status`,
+      { status: 'published' },
+      adminToken,
+    )
+
+    expect(response.status).toBe(200)
+    expect(payload.data.work.status).toBe('published')
+    expect(payload.data.work.publishedAt).not.toBeNull()
+
+    const listed = await getJson(`/api/works?creator=${handle}`)
+    expect(listed.payload.data.works.map((work) => work.id)).toContain(workId)
+
+    const detail = await getJson(`/api/works/${handle}/a-contract-test-work`)
+    expect(detail.response.status).toBe(200)
+    expect(detail.payload.data.work.title).toBe('A Contract Test Work')
+  })
+
+  test('search finds it by title, in any of its languages', async () => {
+    const english = await getJson('/api/works?query=Contract%20Test')
+    expect(english.payload.data.works.map((work) => work.id)).toContain(workId)
+
+    const chinese = await getJson(`/api/works?query=${encodeURIComponent('契约测试')}`)
+    expect(chinese.payload.data.works.map((work) => work.id)).toContain(workId)
+  })
+
+  test('a published work cannot be deleted or sent back to draft', async () => {
+    const deleted = await sendJson(
+      'DELETE',
+      `/api/account/works/${workId}`,
+      {},
+      visitorA.sessionToken,
+    )
+    expect(deleted.response.status).toBe(400)
+
+    const drafted = await sendJson(
+      'PATCH',
+      `/api/account/works/${workId}/status`,
+      { status: 'draft' },
+      visitorA.sessionToken,
+    )
+    expect(drafted.response.status).toBe(400)
+  })
+
+  test('hiding it is the supported way to take it down', async () => {
+    const { payload, response } = await sendJson(
+      'PATCH',
+      `/api/account/works/${workId}/status`,
+      { status: 'hidden' },
+      visitorA.sessionToken,
+    )
+
+    expect(response.status).toBe(200)
+    expect(payload.data.work.status).toBe('hidden')
+    // publishedAt survives: it is the publication date, not the date of the
+    // most recent status change.
+    expect(payload.data.work.publishedAt).not.toBeNull()
+
+    const listed = await getJson(`/api/works?creator=${handle}`)
+    expect(listed.payload.data.works.map((work) => work.id)).not.toContain(workId)
+  })
+
+  test('the unfiltered catalogue answers with a real pagination envelope', async () => {
+    // This disposable database has no migrated rows in it, so the assertion is
+    // deliberately about the envelope rather than the contents: an endpoint
+    // that 500s or returns {} on an empty catalogue is the failure worth
+    // catching here.
+    const { payload, response } = await getJson('/api/works')
+    expect(response.status).toBe(200)
+    expectContractShape(payload, { legacyKeys: ['works'] })
+    expectRealPagination(payload.pagination)
+  })
+
+  test('the owner sees their own work whatever its status', async () => {
+    const { payload, response } = await getJson('/api/account/works', visitorA.sessionToken)
+
+    expect(response.status).toBe(200)
+    const mine = payload.data.works.find((work) => work.id === workId)
+    expect(mine?.status).toBe('hidden')
+  })
+})

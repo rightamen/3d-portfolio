@@ -323,3 +323,144 @@ export const localizedProjectFields = [
 
 export const getLocalizedProjectValues = (project) =>
   localizedProjectFields.map((field) => project[field] || null)
+
+// ---------------------------------------------------------------------------
+// Works. The marketplace shape, per docs/adr/ADR_PLATFORM_PIVOT.md §3.
+//
+// The localized field names deliberately match the project shape above
+// (titleZh, summaryEn, ...). A work IS what a project was, plus an owner and a
+// price, and keeping the names identical is what lets the existing editing UI
+// and the existing i18n picking logic carry over instead of being rewritten.
+// ---------------------------------------------------------------------------
+
+// A source archive is the thing people pay for. Its URL is not public: access
+// goes through the existing download_requests/download_tickets machinery, and
+// putting the path in a list response would route around all of it. Everything
+// else -- previews, the viewable model, images -- is meant to be seen.
+const PROTECTED_ASSET_KINDS = new Set(['source'])
+
+export const toWorkAsset = (row, { includeProtected = false } = {}) => {
+  const protectedKind = PROTECTED_ASSET_KINDS.has(row.kind)
+
+  return {
+    bytes: Number(row.file_size || 0),
+    fileName: row.file_name,
+    fileType: row.file_type || '',
+    // null, not '' -- a caller that forgets to check gets something that fails
+    // loudly in a URL slot rather than silently resolving to the current page.
+    fileUrl: protectedKind && !includeProtected ? null : row.file_url,
+    id: row.id,
+    kind: row.kind,
+    protected: protectedKind,
+    sortOrder: Number(row.sort_order || 0),
+  }
+}
+
+// The creator, as seen from a work. Same rule as toUserSummary: no email, ever.
+export const toWorkCreator = (row) =>
+  row.creator_id
+    ? {
+        avatarUrl: row.creator_avatar_url || '',
+        displayName: row.creator_display_name || '',
+        handle: row.creator_handle || '',
+        id: row.creator_id,
+      }
+    : null
+
+export const toWork = (row, { assets = null, includeProtected = false } = {}) => ({
+  assetCategory: row.asset_category || '',
+  ...(assets ? { assets: assets.map((asset) => toWorkAsset(asset, { includeProtected })) } : {}),
+  createdAt: row.created_at?.toISOString?.() || row.created_at,
+  creator: toWorkCreator(row),
+  currency: row.currency || 'usd',
+  downloadPolicy: row.download_policy || '',
+  downloadPolicyEn: row.download_policy_en,
+  downloadPolicyJa: row.download_policy_ja,
+  downloadPolicyZh: row.download_policy_zh,
+  format: row.format || '',
+  formatEn: row.format_en,
+  formatJa: row.format_ja,
+  formatZh: row.format_zh,
+  id: row.id,
+  image: row.image || '',
+  license: row.license || '',
+  modelSize: row.model_size || '',
+  modelSizeEn: row.model_size_en,
+  modelSizeJa: row.model_size_ja,
+  modelSizeZh: row.model_size_zh,
+  modelUrl: row.model_url || '',
+  // Integer cents, never a float, and the currency travels with it. A client
+  // that formats money must not have to guess either one.
+  priceCents: Number(row.price_cents || 0),
+  publishedAt: row.published_at?.toISOString?.() || row.published_at || null,
+  slug: row.slug,
+  stack: Array.isArray(row.stack) ? row.stack : [],
+  status: row.status,
+  summary: row.summary || '',
+  summaryEn: row.summary_en,
+  summaryJa: row.summary_ja,
+  summaryZh: row.summary_zh,
+  tags: Array.isArray(row.tags) ? row.tags : [],
+  title: row.title,
+  titleEn: row.title_en,
+  titleJa: row.title_ja,
+  titleZh: row.title_zh,
+  updatedAt: row.updated_at?.toISOString?.() || row.updated_at,
+  // The canonical address, built in one place. Every caller that needs to link
+  // to a work would otherwise reinvent it, and they would not all agree.
+  url: row.creator_handle ? `/w/${row.creator_handle}/${row.slug}` : '',
+  viewerFeatures: Array.isArray(row.viewer_features) ? row.viewer_features : [],
+  workflow: row.workflow || '',
+  workflowEn: row.workflow_en,
+  workflowJa: row.workflow_ja,
+  workflowZh: row.workflow_zh,
+  year: row.year || '',
+})
+
+// The list shape: enough to render a card, without the eighteen localized
+// columns a grid never reads. A browse page pulling full detail for fifty works
+// is the kind of thing that only hurts once the catalogue is real.
+export const toWorkSummary = (row) => ({
+  assetCategory: row.asset_category || '',
+  createdAt: row.created_at?.toISOString?.() || row.created_at,
+  creator: toWorkCreator(row),
+  currency: row.currency || 'usd',
+  id: row.id,
+  image: row.image || '',
+  priceCents: Number(row.price_cents || 0),
+  publishedAt: row.published_at?.toISOString?.() || row.published_at || null,
+  slug: row.slug,
+  status: row.status,
+  summary: row.summary || '',
+  summaryEn: row.summary_en,
+  summaryJa: row.summary_ja,
+  summaryZh: row.summary_zh,
+  tags: Array.isArray(row.tags) ? row.tags : [],
+  title: row.title,
+  titleEn: row.title_en,
+  titleJa: row.title_ja,
+  titleZh: row.title_zh,
+  updatedAt: row.updated_at?.toISOString?.() || row.updated_at,
+  url: row.creator_handle ? `/w/${row.creator_handle}/${row.slug}` : '',
+})
+
+// Every column toWork reads, as one list. Written out because `SELECT *` on a
+// join means a column added to visitor_users later can silently shadow one of
+// works' own, and the failure that produces is very hard to see.
+export const workColumns = `
+  works.id, works.creator_id, works.slug, works.status,
+  works.title, works.title_zh, works.title_en, works.title_ja,
+  works.summary, works.summary_zh, works.summary_en, works.summary_ja,
+  works.workflow, works.workflow_zh, works.workflow_en, works.workflow_ja,
+  works.format, works.format_zh, works.format_en, works.format_ja,
+  works.model_size, works.model_size_zh, works.model_size_en, works.model_size_ja,
+  works.download_policy, works.download_policy_zh, works.download_policy_en,
+  works.download_policy_ja,
+  works.year, works.asset_category, works.image, works.model_url,
+  works.stack, works.viewer_features, works.tags,
+  works.price_cents, works.currency, works.license,
+  works.published_at, works.created_at, works.updated_at,
+  visitor_users.handle AS creator_handle,
+  visitor_users.display_name AS creator_display_name,
+  visitor_users.avatar_url AS creator_avatar_url
+`

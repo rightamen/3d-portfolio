@@ -126,6 +126,40 @@ explicitly lists these as an open decision, not yet written into the
 contract. Do not add `expiresIn`/refresh fields to the spec until that
 checklist item closes.
 
+## 6b. The works endpoints, deliberately not in the frozen spec yet
+
+Added 2026-09-07 with phase 2 of `docs/adr/ADR_PLATFORM_PIVOT.md`:
+
+- `GET /api/works` — public catalogue, paginated, filters: `creator`,
+  `category`, `query`
+- `GET /api/works/{handle}/{slug}` — one work with its assets; the owner also
+  sees their own drafts here
+- `GET /api/account/works` — the caller's own works, every status
+- `POST /api/account/works` — create a draft
+- `PATCH /api/account/works/{id}` — partial update
+- `PATCH /api/account/works/{id}/status` — draft / review / hidden
+- `DELETE /api/account/works/{id}` — drafts and rejected works only
+- `GET /api/admin/works`, `PATCH /api/admin/works/{id}/status` — moderation
+
+These are **wired, tested end-to-end in `contract.db.spec.js`, and
+deliberately absent from `docs/openapi/api-v1.yaml`.** The reason is the
+freeze plan's own logic: a contract is frozen so a compiled client can rely on
+it, and this shape is still moving. Phases 3-7 of the ADR add assets, orders,
+entitlements and payouts, each of which changes what a work object carries.
+Writing it into the frozen surface now would mean either freezing something
+that is about to change, or breaking a promise the spec makes.
+
+**Action**: document and freeze once phase 7 lands and the work shape stops
+moving. Until then the contract tests are the specification, and
+`API_ERROR_CODES` already carries `WORK_NOT_FOUND` and `WORK_SLUG_TAKEN` so
+the error surface stays enumerated even while the payloads do not.
+
+⚠️ Related staleness worth fixing separately: `API_V1_FREEZE_PLAN.md` §7 says
+the frozen error-code set is 26 codes, "`API_ERROR_CODES` in full". It has not
+been in full for several rounds -- the set is now 39. Either the plan's number
+follows the constant, or §7 needs to name the 26 explicitly; right now it
+claims something that is not true.
+
 ## 7. Endpoints intentionally excluded from the C++ SDK surface
 
 Not gaps — deliberate boundaries, listed here so they're not mistaken for
