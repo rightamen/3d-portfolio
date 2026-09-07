@@ -150,12 +150,21 @@ const ExplorePage = ({ copy, language, onLanguageChange }) => {
 
   return (
     <main className="explore-page c-space">
+      {/* The same header PublicProfilePage and CommunityPage use. A standalone
+          page with no way back to the site is a dead end, and the browser Back
+          button is not navigation. */}
+      <header className="auth-nav">
+        <Link className="text-xl font-bold text-neutral-300 hover:text-white" to="/">
+          mrright.blog
+        </Link>
+        <LanguageSwitch copy={copy} language={language} onLanguageChange={onLanguageChange} />
+      </header>
+
       <header className="explore-header">
         <div>
           <h1 className="text-heading">{copy.exploreTitle}</h1>
           <p className="text-neutral-400">{copy.exploreSubtitle}</p>
         </div>
-        <LanguageSwitch copy={copy} language={language} onLanguageChange={onLanguageChange} />
       </header>
 
       <form

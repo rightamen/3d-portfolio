@@ -4142,7 +4142,7 @@ body {
    because that is the width these get reviewed at. */
 .explore-page,
 .work-page {
-  padding-top: 7rem;
+  padding-top: 1.5rem;
   padding-bottom: 5rem;
   min-height: 100vh;
 }
@@ -4200,10 +4200,20 @@ body {
   border: 0;
 }
 
+/* Two columns from about 380px up. The catalogue is reviewed on a narrow
+   viewport, and one 500px-tall card per screen is a browse page you scroll
+   past rather than browse. */
 .explore-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
-  gap: 1rem;
+  grid-template-columns: repeat(auto-fill, minmax(10.5rem, 1fr));
+  gap: 0.75rem;
+}
+
+@media (min-width: 48rem) {
+  .explore-grid {
+    grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+    gap: 1rem;
+  }
 }
 
 .explore-card {
@@ -4233,33 +4243,45 @@ body {
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 0.4rem;
-  padding: 0.85rem;
+  gap: 0.3rem;
+  padding: 0.6rem 0.7rem 0.7rem;
 }
 
+/* Both clamped, so every card in a row is the same height. Without it a
+   one-line title lets its summary run to three lines and the grid looks
+   ragged -- which reads as sloppy long before anyone notices why. */
 .explore-card-body h3 {
-  font-size: 1rem;
+  font-size: 0.92rem;
   line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  min-height: 2.4em;
 }
 
 .explore-card-body p {
   flex: 1;
-  font-size: 0.85rem;
+  font-size: 0.8rem;
   color: rgb(255 255 255 / 62%);
   /* Two lines, so a long summary cannot make one card twice the height of the
      one beside it. */
   display: -webkit-box;
   -webkit-line-clamp: 2;
+  line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  min-height: 2.6em;
 }
 
 .explore-card-meta {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 0.6rem;
-  font-size: 0.8rem;
+  gap: 0.5rem;
+  margin-top: 0.15rem;
+  font-size: 0.74rem;
 }
 
 .explore-card-creator {

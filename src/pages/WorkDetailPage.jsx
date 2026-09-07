@@ -109,12 +109,18 @@ const WorkDetailPage = ({ authToken, copy, language, onLanguageChange, visitorUs
 
   return (
     <main className="work-page c-space">
-      <header className="work-header">
-        <Link className="secondary-action" to="/explore">
-          {copy.workBackToExplore}
+      <header className="auth-nav">
+        <Link className="text-xl font-bold text-neutral-300 hover:text-white" to="/">
+          mrright.blog
         </Link>
         <LanguageSwitch copy={copy} language={language} onLanguageChange={onLanguageChange} />
       </header>
+
+      <div className="work-header">
+        <Link className="secondary-action" to="/explore">
+          {copy.workBackToExplore}
+        </Link>
+      </div>
 
       {/* Only the owner ever reaches a draft here, so the notice explains why
           they can see something nobody else can rather than implying it is
