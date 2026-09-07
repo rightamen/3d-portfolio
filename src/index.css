@@ -4136,3 +4136,255 @@ body {
     transform: none;
   }
 }
+
+/* Explore and work pages. Flat DOM by ADR_PLATFORM_PIVOT §5: the catalogue is
+   a list, the 3D lives one click away on the work itself. Written mobile-first
+   because that is the width these get reviewed at. */
+.explore-page,
+.work-page {
+  padding-top: 7rem;
+  padding-bottom: 5rem;
+  min-height: 100vh;
+}
+
+.explore-header,
+.work-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.explore-header p {
+  margin-top: 0.35rem;
+  font-size: 0.9rem;
+}
+
+.explore-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-bottom: 1.75rem;
+}
+
+.explore-filters input,
+.explore-filters select {
+  flex: 1 1 12rem;
+  min-width: 0;
+  padding: 0.6rem 0.8rem;
+  border-radius: 0.6rem;
+  border: 1px solid rgb(255 255 255 / 12%);
+  background: rgb(255 255 255 / 4%);
+  color: inherit;
+  font-size: 0.9rem;
+}
+
+.explore-filters input:focus-visible,
+.explore-filters select:focus-visible {
+  outline: 2px solid rgb(255 255 255 / 45%);
+  outline-offset: 2px;
+}
+
+/* Visually hidden but still announced: the search box has a placeholder, which
+   is not a label. */
+.explore-search-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.explore-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: 1rem;
+}
+
+.explore-card {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 0.9rem;
+  border: 1px solid rgb(255 255 255 / 10%);
+  background: rgb(255 255 255 / 3%);
+}
+
+.explore-card-media,
+.explore-card-placeholder {
+  display: block;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  background: rgb(255 255 255 / 5%);
+}
+
+.explore-card-media img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.explore-card-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.85rem;
+}
+
+.explore-card-body h3 {
+  font-size: 1rem;
+  line-height: 1.3;
+}
+
+.explore-card-body p {
+  flex: 1;
+  font-size: 0.85rem;
+  color: rgb(255 255 255 / 62%);
+  /* Two lines, so a long summary cannot make one card twice the height of the
+     one beside it. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.explore-card-meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.6rem;
+  font-size: 0.8rem;
+}
+
+.explore-card-creator {
+  color: rgb(255 255 255 / 62%);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.explore-card-price {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.explore-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  margin-top: 2rem;
+  font-size: 0.9rem;
+}
+
+.explore-pagination button {
+  padding: 0.45rem 0.9rem;
+  border-radius: 0.5rem;
+  border: 1px solid rgb(255 255 255 / 14%);
+}
+
+.explore-pagination button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.work-draft-notice {
+  margin-bottom: 1.25rem;
+  padding: 0.65rem 0.9rem;
+  border-radius: 0.6rem;
+  border: 1px solid rgb(255 255 255 / 14%);
+  background: rgb(255 255 255 / 5%);
+  font-size: 0.88rem;
+}
+
+.work-layout {
+  display: grid;
+  gap: 1.75rem;
+}
+
+.work-media img {
+  width: 100%;
+  border-radius: 0.9rem;
+}
+
+.work-media .primary-action {
+  margin-top: 0.9rem;
+}
+
+.work-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.work-creator {
+  font-size: 0.9rem;
+  color: rgb(255 255 255 / 62%);
+}
+
+.work-price {
+  font-size: 1.15rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.work-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  font-size: 0.78rem;
+}
+
+.work-tags li {
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid rgb(255 255 255 / 14%);
+}
+
+.work-files h2 {
+  margin-bottom: 0.5rem;
+  font-size: 0.95rem;
+}
+
+.work-files li {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  padding: 0.45rem 0;
+  border-top: 1px solid rgb(255 255 255 / 8%);
+  font-size: 0.83rem;
+}
+
+.work-file-kind {
+  flex-shrink: 0;
+  min-width: 4.5rem;
+  color: rgb(255 255 255 / 55%);
+}
+
+.work-file-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.work-file-size,
+.work-file-locked {
+  flex-shrink: 0;
+  color: rgb(255 255 255 / 55%);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (min-width: 64rem) {
+  .work-layout {
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+    align-items: start;
+  }
+}

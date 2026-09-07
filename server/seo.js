@@ -130,6 +130,23 @@ export const resolveRoute = (pathname) => {
     return { canonicalPath: `/projects/${slug}`, kind: 'project', slug }
   }
 
+  // The marketplace catalogue. A list page, deliberately -- it has one URL
+  // and its filters live in the query string, which is not part of the
+  // canonical: ?query=sword is the same page, narrowed.
+  if (path === '/explore') return { canonicalPath: '/explore', kind: 'explore' }
+
+  // /w/:handle/:slug. Anchored like the project match and for the same reason:
+  // a work detail has no tabs, so /w/a/b/anything is not a work page.
+  const workMatch = path.match(/^\/w\/([^/]+)\/([^/]+)$/)
+  if (workMatch) {
+    const handle = decodeSegment(workMatch[1]).trim().toLowerCase().replace(/^@+/, '')
+    const slug = decodeSegment(workMatch[2])
+    if (!HANDLE_PATTERN.test(handle) || !PROJECT_SLUG_PATTERN.test(slug)) {
+      return { canonicalPath: null, kind: 'unknown' }
+    }
+    return { canonicalPath: `/w/${handle}/${slug}`, handle, kind: 'work', slug }
+  }
+
   const profileMatch = path.match(/^\/u\/([^/]+)/)
   if (profileMatch) {
     const handle = decodeSegment(profileMatch[1]).trim().toLowerCase().replace(/^@+/, '')
@@ -220,7 +237,20 @@ export const buildPageMeta = ({
     }
   }
 
-  if (kind === 'project') {
+  if (kind === 'explore') {
+    return {
+      ...base,
+      description:
+        'Browse 3D models, scenes and props published by creators on ' +
+        `${SITE_NAME} — search by title, filter by category.`,
+      title: `Explore works | ${SITE_NAME}`,
+    }
+  }
+
+  // A work is a project with an owner, field for field: the works mapper kept
+  // the project field names precisely so the head, the structured data and the
+  // noscript body did not need a second implementation.
+  if (kind === 'project' || kind === 'work') {
     // No project means the slug named nothing, or the catalogue could not be
     // read. Same rule as posts: nothing to advertise, so keep the generic head
     // and stay out of the index.
@@ -443,7 +473,7 @@ export const buildJsonLd = ({
     ]
   }
 
-  if (kind === 'project' && project) {
+  if ((kind === 'project' || kind === 'work') && project) {
     const title = projectTitle(project)
 
     return [
@@ -567,7 +597,7 @@ export const renderNoscript = ({
 } = {}) => {
   const kind = route?.kind || 'unknown'
 
-  if (kind === 'project' && project) {
+  if ((kind === 'project' || kind === 'work') && project) {
     const summary = englishField(project, 'summary')
     const format = englishField(project, 'format')
 

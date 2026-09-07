@@ -245,6 +245,10 @@ test.beforeAll(async () => {
       // Raised above the production default of 30 so the suite's own uploads
       // never trip it, while still being reachable by the quota test at the end.
       UPLOAD_QUOTA_MAX_FILES: '40',
+      // The sitemap is cached for five minutes in production. The suite
+      // publishes and hides a work and then reads it back, which that cache
+      // would hide entirely.
+      SITEMAP_CACHE_MS: '0',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
@@ -2572,5 +2576,146 @@ test.describe('works: assets count against the storage budget', () => {
 
     expect(refused, 'the budget was never enforced').not.toBeNull()
     expect(refused.payload.error.code).toBe('UPLOAD_QUOTA_EXCEEDED')
+  })
+})
+
+// ADR_PLATFORM_PIVOT §5's first requirement: the server keeps rendering the
+// head. A crawler or a link-preview scraper has to get a complete answer about
+// a work without executing a line of WebGL, and a draft must not leak into
+// either the head or the sitemap.
+test.describe('works: the head a crawler sees', () => {
+  let handle
+  let slug
+
+  // Local to this block: the one in the per-route head suite above is scoped
+  // to that describe, and this one returns the status because half of what is
+  // under test here is whether a draft answers 404.
+  const getHtml = async (requestPath) => {
+    const response = await fetch(`${baseURL}${requestPath}`)
+    return { body: await response.text(), status: response.status }
+  }
+
+  test.beforeAll(async () => {
+    handle = `seo-${randomBytes(4).toString('hex')}`.slice(0, 30)
+    const profile = await sendJson(
+      'PUT',
+      '/api/account/profile',
+      { displayName: 'SEO Creator', handle },
+      visitorA.sessionToken,
+    )
+    expect(profile.response.status).toBe(200)
+
+    const created = await sendJson(
+      'POST',
+      '/api/account/works',
+      {
+        image: '/assets/projects/fire-extinguisher.png',
+        summaryEn: 'A crawler should be able to read this without any javascript.',
+        title: 'Head Under Test',
+      },
+      visitorA.sessionToken,
+    )
+    expect(created.response.status).toBe(201)
+    slug = created.payload.data.work.slug
+  })
+
+  test('a draft answers 404 and advertises nothing', async () => {
+    const { body, status } = await getHtml(`/w/${handle}/${slug}`)
+
+    expect(status).toBe(404)
+    expect(body).not.toContain('Head Under Test')
+    expect(body).toContain('noindex')
+  })
+
+  test('a draft is not in the sitemap', async () => {
+    const body = await (await fetch(`${baseURL}/sitemap.xml`)).text()
+    expect(body).not.toContain(`/w/${handle}/${slug}`)
+  })
+
+  test('once published, the head carries the work', async () => {
+    const workId = (await getJson('/api/account/works', visitorA.sessionToken)).payload.data.works.find(
+      (work) => work.slug === slug,
+    ).id
+    const published = await sendJson(
+      'PATCH',
+      `/api/admin/works/${workId}/status`,
+      { status: 'published' },
+      adminToken,
+    )
+    expect(published.response.status).toBe(200)
+
+    const { body, status } = await getHtml(`/w/${handle}/${slug}`)
+
+    expect(status).toBe(200)
+    expect(body).toContain('<title>Head Under Test | mrright.blog</title>')
+    expect(body).toContain(`https://mrright.blog/w/${handle}/${slug}`)
+    expect(body).toContain('A crawler should be able to read this without any javascript.')
+    expect(body).not.toContain('noindex')
+    // Its own picture on the share card, not the site default.
+    expect(body).toContain('/assets/projects/fire-extinguisher.png')
+  })
+
+  test('it is crawlable without javascript', async () => {
+    const { body } = await getHtml(`/w/${handle}/${slug}`)
+    const noscript = body.slice(body.indexOf('<noscript'), body.indexOf('</noscript>'))
+
+    expect(noscript).toContain('Head Under Test')
+  })
+
+  test('it claims to be a creative work in its structured data', async () => {
+    const { body } = await getHtml(`/w/${handle}/${slug}`)
+
+    expect(body).toContain('ld+json')
+    expect(body).toContain('CreativeWork')
+    expect(body).toContain('Head Under Test')
+  })
+
+  test('and now it IS in the sitemap', async () => {
+    const body = await (await fetch(`${baseURL}/sitemap.xml`)).text()
+
+    expect(body).toContain(`<loc>https://mrright.blog/w/${handle}/${slug}</loc>`)
+    expect(body).toContain('<loc>https://mrright.blog/explore</loc>')
+  })
+
+  test('the browse page has a head of its own, not a copy of the homepage', async () => {
+    const { body, status } = await getHtml('/explore')
+
+    expect(status).toBe(200)
+    expect(body).toContain('<title>Explore works | mrright.blog</title>')
+    expect(body).toContain('https://mrright.blog/explore')
+    expect(body).not.toContain('noindex')
+  })
+
+  test('a filtered browse URL canonicalises to the unfiltered one', async () => {
+    // ?query=sword is the same page, narrowed. Two URLs for one page is how a
+    // catalogue splits its own ranking between them.
+    const { body } = await getHtml('/explore?query=sword&category=prop')
+
+    expect(body).toContain('rel="canonical" href="https://mrright.blog/explore"')
+  })
+
+  test('a work URL nobody owns answers 404 rather than a soft 404', async () => {
+    const missing = await getHtml(`/w/${handle}/nothing-here`)
+    expect(missing.status).toBe(404)
+
+    const noSuchCreator = await getHtml(`/w/nobody-at-all/${slug}`)
+    expect(noSuchCreator.status).toBe(404)
+  })
+
+  test('hiding it takes the head and the sitemap entry with it', async () => {
+    const workId = (await getJson('/api/account/works', visitorA.sessionToken)).payload.data.works.find(
+      (work) => work.slug === slug,
+    ).id
+    const hidden = await sendJson(
+      'PATCH',
+      `/api/account/works/${workId}/status`,
+      { status: 'hidden' },
+      visitorA.sessionToken,
+    )
+    expect(hidden.response.status).toBe(200)
+
+    const { body, status } = await getHtml(`/w/${handle}/${slug}`)
+    expect(status).toBe(404)
+    expect(body).not.toContain('Head Under Test')
   })
 })

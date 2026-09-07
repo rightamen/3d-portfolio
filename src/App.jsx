@@ -27,6 +27,8 @@ const AuthPage = lazy(() => import('./pages/AuthPage'))
 const AccountPage = lazy(() => import('./pages/AccountPage'))
 const CommunityPage = lazy(() => import('./pages/CommunityPage'))
 const PublicProfilePage = lazy(() => import('./pages/PublicProfilePage'))
+const ExplorePage = lazy(() => import('./pages/ExplorePage'))
+const WorkDetailPage = lazy(() => import('./pages/WorkDetailPage'))
 const Hero = lazy(() => import('./sections/Hero'))
 const About = lazy(() => import('./sections/About'))
 const Projects = lazy(() => import('./sections/Projects'))
@@ -471,6 +473,35 @@ const App = () => {
                 copy={copy}
                 language={language}
                 onLanguageChange={setLanguage}
+              />
+            </Suspense>
+          }
+        />
+        {/* Browse is a flat list and a work is a page of its own, both by
+            ADR_PLATFORM_PIVOT §5 -- neither is an overlay on the homepage the
+            way /projects/:slug is, so neither keeps the 3D scene mounted. */}
+        <Route
+          path="/explore"
+          element={
+            <Suspense fallback={<SectionFallback title="Explore" copy={copy} />}>
+              <ExplorePage
+                copy={copy}
+                language={language}
+                onLanguageChange={setLanguage}
+              />
+            </Suspense>
+          }
+        />
+        <Route
+          path="/w/:handle/:slug"
+          element={
+            <Suspense fallback={<SectionFallback title="Work" copy={copy} />}>
+              <WorkDetailPage
+                authToken={visitorToken}
+                copy={copy}
+                language={language}
+                onLanguageChange={setLanguage}
+                visitorUser={visitorUser}
               />
             </Suspense>
           }

@@ -152,6 +152,28 @@ export const getProjectInteractions = (slug) =>
   request(`/api/projects/${slug}/interactions`)
 export const getExperience = () => request('/api/experience')
 
+// The marketplace catalogue. Params are optional and only sent when set, so
+// a bare getWorks() asks for the unfiltered first page rather than for
+// `?creator=&category=&query=`, which the server would have to strip anyway.
+export const getWorks = ({ category, creator, limit, page, query } = {}) => {
+  const params = new URLSearchParams()
+  if (creator) params.set('creator', String(creator).replace(/^@/, ''))
+  if (category) params.set('category', category)
+  if (query) params.set('query', query)
+  if (page) params.set('page', String(page))
+  if (limit) params.set('limit', String(limit))
+
+  const search = params.toString()
+  return request(`/api/works${search ? `?${search}` : ''}`)
+}
+
+// The token is optional and only changes one thing: the owner of a draft may
+// read it at its real address. Everyone else gets published works or a 404.
+export const getWork = (handle, slug, token) =>
+  request(`/api/works/${encodeURIComponent(String(handle).replace(/^@/, ''))}/${encodeURIComponent(slug)}`, {
+    headers: token ? authHeaders(token) : undefined,
+  })
+
 export const getCommunityUploads = () => request('/api/community/uploads')
 
 export const getCommunityPosts = () => request('/api/community/posts')

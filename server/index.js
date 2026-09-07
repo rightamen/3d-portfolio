@@ -4733,7 +4733,10 @@ app.get('/robots.txt', (_request, response) => {
 // cannot enumerate from the homepage without running JavaScript. Cached briefly
 // because a sitemap fetch is a full catalogue read plus a full post listing,
 // and crawlers do not coordinate with each other.
-const sitemapCacheMs = 5 * 60 * 1000
+// Configurable so a test can watch the sitemap change as works are published
+// and hidden. Production keeps the five minutes: a sitemap fetch is a full
+// catalogue read plus a full post listing, and crawlers ask repeatedly.
+const sitemapCacheMs = Math.max(0, Number(process.env.SITEMAP_CACHE_MS ?? 5 * 60 * 1000))
 let sitemapCache = { body: '', expiresAt: 0 }
 
 app.get('/sitemap.xml', async (_request, response) => {
@@ -4765,6 +4768,30 @@ app.get('/sitemap.xml', async (_request, response) => {
     }
   } catch (error) {
     console.error('Sitemap project listing failed:', error.message)
+  }
+
+  // Works are the catalogue now. They are listed under their own URLs, and
+  // /explore is listed as the page that leads to them -- unlike public
+  // profiles, a published work is something its creator chose to publish.
+  try {
+    if (worksStore) {
+      entries.push({ changefreq: 'daily', loc: '/explore', priority: '0.8' })
+
+      // One page, not the whole catalogue: a sitemap read should not become an
+      // unbounded scan as the marketplace grows. When it outgrows this, it
+      // wants a paged sitemap index rather than a bigger limit here.
+      const works = await worksStore.listPublishedWorks({ limit: 500 })
+      for (const work of works.items) {
+        entries.push({
+          changefreq: 'weekly',
+          lastmod: work.updatedAt || work.publishedAt || '',
+          loc: `/w/${encodeURIComponent(work.creator?.handle || '')}/${encodeURIComponent(work.slug)}`,
+          priority: '0.7',
+        })
+      }
+    }
+  } catch (error) {
+    console.error('Sitemap works listing failed:', error.message)
   }
 
   try {
@@ -4913,6 +4940,19 @@ const loadSeoData = async (route) => {
     // must not answer 200.
     const project = await projectStore.getProject(staticProjects, route.slug)
     return project ? { project } : { missing: true }
+  }
+
+  if (route.kind === 'work') {
+    if (!worksStore) return {}
+    // No viewerId: this runs for whoever asked, including a crawler, so it
+    // resolves published works only. A draft is "missing" here on purpose --
+    // it must not be indexed and must not answer 200. The owner still sees
+    // their draft, but through the API and their own session, not this head.
+    const work = await worksStore.getWorkByHandleAndSlug(route.handle, route.slug)
+    // Handed to the SEO layer as `project`: a work carries the project field
+    // names, which is what lets the head, JSON-LD and noscript body stay one
+    // implementation instead of two.
+    return work ? { project: work } : { missing: true }
   }
 
   if (route.kind === 'profile') {
