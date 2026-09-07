@@ -140,6 +140,8 @@ Added 2026-09-07 with phase 2 of `docs/adr/ADR_PLATFORM_PIVOT.md`:
 - `PATCH /api/account/works/{id}/status` — draft / review / hidden
 - `DELETE /api/account/works/{id}` — drafts and rejected works only
 - `GET /api/admin/works`, `PATCH /api/admin/works/{id}/status` — moderation
+- `POST /api/account/works/{id}/assets` — multipart, one file per request
+- `DELETE /api/account/works/{id}/assets/{assetId}`
 
 These are **wired, tested end-to-end in `contract.db.spec.js`, and
 deliberately absent from `docs/openapi/api-v1.yaml`.** The reason is the

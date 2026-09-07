@@ -635,7 +635,19 @@ const rejectOnSignatureMismatch = async (request, response) => {
 const enforceUploadQuota = async (request, response, next) => {
   if (typeof communityStore?.getUploadUsage !== 'function') return next()
 
-  const usage = await communityStore.getUploadUsage(request.visitorUser.id, UPLOAD_QUOTA_WINDOW_MS)
+  // Both doors into the same disk. The budget was written when
+  // community_uploads was the only one; a works upload that did not count here
+  // would be an unmetered way around it, which is the whole point of a quota.
+  const [community, works] = await Promise.all([
+    communityStore.getUploadUsage(request.visitorUser.id, UPLOAD_QUOTA_WINDOW_MS),
+    typeof worksStore?.getUploadUsage === 'function'
+      ? worksStore.getUploadUsage(request.visitorUser.id, UPLOAD_QUOTA_WINDOW_MS)
+      : { bytes: 0, count: 0 },
+  ])
+  const usage = {
+    bytes: community.bytes + works.bytes,
+    count: community.count + works.count,
+  }
   const declaredSize = Number(request.get('Content-Length') || 0)
   const windowHours = Math.round(UPLOAD_QUOTA_WINDOW_MS / 3600000)
 
@@ -1811,6 +1823,163 @@ app.delete('/api/account/works/:id', requireVisitor, requireWorksStore, async (r
 
   return sendData(response, { ok: true })
 })
+
+// A work is a bundle, not a file. `kind` says what each file is FOR; the
+// extension allowlist says what it may BE, and the two are independent -- a
+// source archive and a viewable model can both be .glb.
+const WORK_ASSET_KINDS = new Set(['preview', 'model', 'source', 'texture', 'image'])
+
+const WORK_ASSET_LIMIT = 20
+
+// Ownership is checked BEFORE multer, for the same reason enforceUploadQuota
+// is: otherwise a caller who owns nothing still gets to stream 120MB to disk
+// before being told no.
+const requireOwnWorkForUpload = async (request, response, next) => {
+  const work = await worksStore.getWorkById(request.params.id, { includeProtected: true })
+
+  if (!work || work.creator?.id !== request.visitorUser.id) {
+    return sendError(response, API_ERROR_CODES.WORK_NOT_FOUND, 'Work not found.', 404)
+  }
+  if (work.assets.length >= WORK_ASSET_LIMIT) {
+    return sendError(
+      response,
+      API_ERROR_CODES.VALIDATION_ERROR,
+      `A work may hold ${WORK_ASSET_LIMIT} files.`,
+      400,
+    )
+  }
+
+  request.ownWork = work
+  return next()
+}
+
+app.post(
+  '/api/account/works/:id/assets',
+  requireVisitor,
+  requireWorksStore,
+  requireOwnWorkForUpload,
+  enforceUploadQuota,
+  upload.single('file'),
+  async (request, response) => {
+    const work = request.ownWork
+
+    if (!request.file) {
+      return sendError(response, API_ERROR_CODES.VALIDATION_ERROR, 'Upload file is required.', 400)
+    }
+
+    const discard = () => unlink(request.file.path).catch((error) => console.error(error))
+
+    if (await rejectOnSignatureMismatch(request, response)) return
+
+    // multer only populates request.body from text fields that appear BEFORE
+    // the file part, and not every client orders a multipart body that way.
+    // The query string is the escape hatch, so `kind` is readable either way
+    // rather than silently defaulting for a well-formed request.
+    const kind = String(request.body?.kind ?? request.query?.kind ?? '').trim()
+    if (!WORK_ASSET_KINDS.has(kind)) {
+      discard()
+      return sendError(
+        response,
+        API_ERROR_CODES.VALIDATION_ERROR,
+        `kind must be one of: ${[...WORK_ASSET_KINDS].join(', ')}.`,
+        400,
+      )
+    }
+
+    const extension = path.extname(request.file.originalname).toLowerCase()
+    const isImage = imageExtensions.has(extension)
+
+    // The shared multer instance caps everything at the 120MB a model may
+    // need. An image has no business being anywhere near that.
+    if (isImage && request.file.size > imageUploadLimit) {
+      discard()
+      return sendError(
+        response,
+        API_ERROR_CODES.VALIDATION_ERROR,
+        'Image uploads must be 16MB or smaller.',
+        413,
+      )
+    }
+
+    // kind and extension have to agree. Storing a .png as the viewable model
+    // would produce a work whose viewer fails at runtime with nothing in the
+    // data to explain why.
+    if (kind === 'model' && isImage) {
+      discard()
+      return sendError(response, API_ERROR_CODES.VALIDATION_ERROR, 'A model cannot be an image.', 400)
+    }
+    if ((kind === 'preview' || kind === 'image' || kind === 'texture') && !isImage) {
+      discard()
+      return sendError(
+        response,
+        API_ERROR_CODES.VALIDATION_ERROR,
+        `A ${kind} must be an image file.`,
+        400,
+      )
+    }
+
+    const folder = isImage ? 'images' : 'models'
+    const fileUrl = `/uploads/${folder}/${request.file.filename}`
+
+    const asset = await worksStore.addAsset(work.id, {
+      fileName: request.file.originalname,
+      fileSize: request.file.size,
+      fileType: extension.replace(/^\./, ''),
+      fileUrl,
+      kind,
+    })
+
+    // The first preview becomes the cover and the first model becomes the
+    // viewable one, because a creator who uploads a preview and then finds the
+    // work still has no cover has been made to do the same thing twice. Only
+    // when the slot is empty -- replacing a cover is a deliberate edit.
+    const fill = {}
+    if (kind === 'preview' && !work.image) fill.image = fileUrl
+    if (kind === 'model' && !work.modelUrl) fill.model_url = fileUrl
+
+    const updated = Object.keys(fill).length
+      ? await worksStore.updateWork(work.id, fill)
+      : await worksStore.getWorkById(work.id, { includeProtected: true })
+
+    return sendData(response, { asset, work: updated }, 201)
+  },
+)
+
+app.delete(
+  '/api/account/works/:id/assets/:assetId',
+  requireVisitor,
+  requireWorksStore,
+  async (request, response) => {
+    const work = await loadOwnWork(request, response)
+    if (!work) return
+
+    const removed = await worksStore.removeAsset(work.id, request.params.assetId)
+    if (!removed) {
+      return sendError(response, API_ERROR_CODES.WORK_NOT_FOUND, 'Asset not found.', 404)
+    }
+
+    // A work pointing at a file that no longer exists is worse than one with
+    // an empty slot: the first breaks the viewer and the share card, the
+    // second just looks unfinished.
+    const fill = {}
+    if (work.image === removed.fileUrl) fill.image = ''
+    if (work.modelUrl === removed.fileUrl) fill.model_url = ''
+    const updated = Object.keys(fill).length
+      ? await worksStore.updateWork(work.id, fill)
+      : await worksStore.getWorkById(work.id, { includeProtected: true })
+
+    // After the row is gone, so a failed unlink leaves an orphan rather than
+    // an entry pointing at a file the creator thinks they deleted.
+    if (removed.fileUrl?.startsWith('/uploads/')) {
+      const localPath = path.resolve(rootDir, 'public', removed.fileUrl.replace(/^\//, ''))
+      if (localPath.startsWith(uploadRoot)) {
+        unlink(localPath).catch((error) => console.error(error))
+      }
+    }
+
+    return sendData(response, { work: updated })
+  },
+)
 
 app.get('/api/admin/works', requireAdmin, requireWorksStore, async (request, response) => {
   const { limit, offset, page } = normalizePagination(request.query, 20, 100)

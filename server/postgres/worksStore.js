@@ -310,6 +310,26 @@ export const createWorksStore = ({ pool }) => {
       }
     },
 
+    // The same rolling-window question communityStore.getUploadUsage answers,
+    // asked about work assets. It has to exist: the storage budget was written
+    // when community_uploads was the only way to put bytes on the disk, and a
+    // works route that did not report here would be an unmetered second door
+    // into the same 15GB.
+    getUploadUsage: async (creatorId, windowMs) => {
+      const result = await pool.query(
+        `SELECT count(*)::int AS upload_count,
+                coalesce(sum(work_assets.file_size), 0)::bigint AS total_bytes
+         FROM work_assets
+         JOIN works ON works.id = work_assets.work_id
+         WHERE works.creator_id = $1
+           AND work_assets.created_at > now() - ($2::bigint * interval '1 millisecond')`,
+        [creatorId, windowMs],
+      )
+
+      const row = result.rows[0]
+      return { bytes: Number(row?.total_bytes || 0), count: Number(row?.upload_count || 0) }
+    },
+
     addAsset: async (workId, asset) => {
       const id = createId()
       const result = await pool.query(

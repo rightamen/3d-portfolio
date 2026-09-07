@@ -242,6 +242,9 @@ test.beforeAll(async () => {
       LOGIN_LIMIT_PER_WINDOW: '200',
       VERIFY_LIMIT_PER_WINDOW: '200',
       RESEND_LIMIT_PER_HOUR: '30',
+      // Raised above the production default of 30 so the suite's own uploads
+      // never trip it, while still being reachable by the quota test at the end.
+      UPLOAD_QUOTA_MAX_FILES: '40',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
@@ -2355,5 +2358,219 @@ test.describe('works: the publishing lifecycle', () => {
     expect(response.status).toBe(200)
     const mine = payload.data.works.find((work) => work.id === workId)
     expect(mine?.status).toBe('hidden')
+  })
+})
+
+// A work is a bundle. These cover the second door onto the same disk, which is
+// the part worth being careful about: the storage budget was written when
+// community_uploads was the only way to store bytes, and an upload route that
+// did not report into it would be an unmetered way around the quota.
+test.describe('works: assets', () => {
+  let workId
+  let handle
+  let assetId
+
+  // A real 1x1 PNG. The signature check reads the first bytes, so a Blob of
+  // text named .png is a different test (it has one, above) -- this one has to
+  // actually be a PNG or it proves nothing about the happy path.
+  const onePixelPng = () =>
+    Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+      'base64',
+    )
+
+  const uploadAsset = async (kind, { bytes = onePixelPng(), name = 'preview.png', type = 'image/png' } = {}) => {
+    const form = new FormData()
+    form.append('kind', kind)
+    form.append('file', new Blob([bytes], { type }), name)
+    return postForm(`/api/account/works/${workId}/assets`, form, visitorA.sessionToken)
+  }
+
+  test.beforeAll(async () => {
+    handle = `assets-${randomBytes(4).toString('hex')}`.slice(0, 30)
+    const profile = await sendJson(
+      'PUT',
+      '/api/account/profile',
+      { displayName: 'Assets Creator', handle },
+      visitorA.sessionToken,
+    )
+    expect(profile.response.status).toBe(200)
+
+    const created = await sendJson(
+      'POST',
+      '/api/account/works',
+      { title: 'Bundle Under Test' },
+      visitorA.sessionToken,
+    )
+    expect(created.response.status).toBe(201)
+    workId = created.payload.data.work.id
+  })
+
+  test('a preview becomes the cover, because doing it twice is doing it twice', async () => {
+    const { payload, response } = await uploadAsset('preview')
+
+    expect(response.status).toBe(201)
+    expectContractShape(payload, { legacyKeys: ['asset', 'work'] })
+    expect(payload.data.asset.kind).toBe('preview')
+    expect(payload.data.asset.protected).toBe(false)
+    expect(payload.data.work.image).toBe(payload.data.asset.fileUrl)
+    assetId = payload.data.asset.id
+  })
+
+  test('an unknown kind is refused and the file is not kept', async () => {
+    const { payload, response } = await uploadAsset('whatever')
+
+    expect(response.status).toBe(400)
+    expect(payload.error.code).toBe('VALIDATION_ERROR')
+    expect(payload.error.message).toContain('kind must be one of')
+  })
+
+  test('kind and extension have to agree', async () => {
+    const { payload, response } = await uploadAsset('model')
+
+    expect(response.status).toBe(400)
+    expect(payload.error.message).toContain('model cannot be an image')
+  })
+
+  test('bytes that do not match the extension are still rejected here', async () => {
+    const { payload, response } = await uploadAsset('preview', {
+      bytes: Buffer.from('<?php echo 1; ?>'),
+      name: 'lying.png',
+    })
+
+    expect(response.status).toBe(400)
+    expect(payload.error.code).toBe('INVALID_FILE_TYPE')
+  })
+
+  test("nobody can add a file to somebody else's work", async () => {
+    const email = `assets-stranger-${randomBytes(4).toString('hex')}@example.com`
+    const registered = await registerVisitor('Assets Stranger', email)
+    const verified = await sendJson('POST', '/api/auth/verify-email', {
+      code: registered.devCode,
+      email,
+    })
+    expect(verified.response.status).toBe(200)
+
+    const form = new FormData()
+    form.append('kind', 'preview')
+    form.append('file', new Blob([onePixelPng()], { type: 'image/png' }), 'preview.png')
+    const { response } = await postForm(
+      `/api/account/works/${workId}/assets`,
+      form,
+      verified.payload.data.session.token,
+    )
+
+    expect(response.status).toBe(404)
+  })
+
+  test('a source asset keeps its URL out of a public response', async () => {
+    const uploaded = await uploadAsset('source', {
+      // A real ZIP header, so the signature check passes: what is under test
+      // here is who may see the path, not whether the bytes are a zip.
+      bytes: Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.alloc(64)]),
+      name: 'source.zip',
+      type: 'application/zip',
+    })
+    expect(uploaded.response.status).toBe(201)
+    expect(uploaded.payload.data.asset.protected).toBe(true)
+    // The owner's own response does carry it -- they uploaded it.
+    expect(uploaded.payload.data.asset.fileUrl).toContain('/uploads/')
+
+    // Publish it so a stranger can see the work at all, then check what they get.
+    const published = await sendJson(
+      'PATCH',
+      `/api/admin/works/${workId}/status`,
+      { status: 'published' },
+      adminToken,
+    )
+    expect(published.response.status).toBe(200)
+
+    const slug = published.payload.data.work.slug
+    const stranger = await getJson(`/api/works/${handle}/${slug}`)
+    expect(stranger.response.status).toBe(200)
+
+    const source = stranger.payload.data.work.assets.find((asset) => asset.kind === 'source')
+    expect(source).toBeTruthy()
+    expect(source.protected).toBe(true)
+    // The whole point: the path is withheld, not merely undocumented.
+    expect(source.fileUrl).toBeNull()
+
+    // ...while the preview, which is meant to be seen, still has its URL.
+    const preview = stranger.payload.data.work.assets.find((asset) => asset.kind === 'preview')
+    expect(preview.fileUrl).toContain('/uploads/images/')
+
+    // And the owner still sees everything about their own work.
+    const owner = await getJson(`/api/works/${handle}/${slug}`, visitorA.sessionToken)
+    const ownerSource = owner.payload.data.work.assets.find((asset) => asset.kind === 'source')
+    expect(ownerSource.fileUrl).toContain('/uploads/')
+  })
+
+  test('removing the cover clears the slot rather than leaving a dangling path', async () => {
+    const { payload, response } = await sendJson(
+      'DELETE',
+      `/api/account/works/${workId}/assets/${assetId}`,
+      {},
+      visitorA.sessionToken,
+    )
+
+    expect(response.status).toBe(200)
+    expect(payload.data.work.image).toBe('')
+    expect(payload.data.work.assets.some((asset) => asset.id === assetId)).toBe(false)
+  })
+
+  test('an asset id nobody owns answers 404', async () => {
+    const { response } = await sendJson(
+      'DELETE',
+      `/api/account/works/${workId}/assets/does-not-exist`,
+      {},
+      visitorA.sessionToken,
+    )
+    expect(response.status).toBe(404)
+  })
+})
+
+// The quota is the reason works uploads had to be wired into it rather than
+// beside it. Without worksStore.getUploadUsage in enforceUploadQuota, the
+// count comes only from community_uploads -- a handful for the whole suite --
+// and this loop would run to its ceiling without ever being told no.
+//
+// Last in the file on purpose: it deliberately exhausts the account's budget.
+test.describe('works: assets count against the storage budget', () => {
+  test('a creator cannot store unlimited files by routing around community uploads', async () => {
+    const png = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+      'base64',
+    )
+
+    // Spread across several works: a single work caps at WORK_ASSET_LIMIT
+    // files, which is a different rule with a different error, and hitting it
+    // would end this loop before the budget ever had a say.
+    const newWork = async (index) => {
+      const created = await sendJson(
+        'POST',
+        '/api/account/works',
+        { title: `Quota Under Test ${index}` },
+        visitorA.sessionToken,
+      )
+      expect(created.response.status).toBe(201)
+      return created.payload.data.work.id
+    }
+
+    let refused = null
+    let workId = await newWork(0)
+
+    for (let attempt = 0; attempt < 60 && !refused; attempt += 1) {
+      if (attempt > 0 && attempt % 15 === 0) workId = await newWork(attempt)
+
+      const form = new FormData()
+      form.append('kind', 'texture')
+      form.append('file', new Blob([png], { type: 'image/png' }), `texture-${attempt}.png`)
+      const result = await postForm(`/api/account/works/${workId}/assets`, form, visitorA.sessionToken)
+      if (result.response.status === 429) refused = result
+      else expect(result.response.status, `upload ${attempt}`).toBe(201)
+    }
+
+    expect(refused, 'the budget was never enforced').not.toBeNull()
+    expect(refused.payload.error.code).toBe('UPLOAD_QUOTA_EXCEEDED')
   })
 })
