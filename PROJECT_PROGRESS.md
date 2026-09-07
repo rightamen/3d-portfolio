@@ -1,6 +1,101 @@
 # mrright.blog 项目进度记录
 
-## 下次从这里继续（截至 2026-09-07 第三十九轮收工）
+## 下次从这里继续（截至 2026-09-07 第四十轮收工）
+
+### 2026-09-07（第四十轮，当天第四轮）：前端第一次动 —— 发现页与作品页
+
+Phase 3 的前半。两个新页面：`/explore`（浏览、搜索、筛选）和
+`/w/:handle/:slug`（单个作品）。**这是前端第一次真正改动。**
+
+⚠️ **两个页面都是平的 DOM，3D 在一次点击之外。** 这不是妥协，是 ADR §5 的
+分界：结果列表不会因为变成空间浏览而更好用，而查看器不该出现在一个
+"用来读"的页面的首屏。两个页面各自只有 4.1 KB 和 4.5 KB，
+three.js 只在有人点"打开模型查看器"时才拉。
+
+⚠️ **SEO 那一半才是重点。** 作品的字段名和项目**一模一样**——mapper 当初就是
+为这个保的——所以 `<head>`、JSON-LD、`<noscript>` 走的是同一个分支，
+不需要第二套实现（两套会漂）。行为：草稿 404、不进 sitemap、什么都不广告；
+发布后两边都进；隐藏后两边都退出。`/explore` 的 canonical **不带筛选参数**，
+因为 `?query=sword` 是同一个页面被收窄，两个 URL 指一个页面会把排名劈成两半。
+
+- `sitemapCacheMs` 改成可配置（`SITEMAP_CACHE_MS`），好让测试能看着 sitemap
+  随发布/隐藏变化。生产仍是 5 分钟。
+
+⚠️ **i18n 用法测试又立功了。** 它报 `navExplore` 在字典里但没有任何东西渲染
+——因为我加了这个键却忘了在导航里放链接。
+
+⚠️ **440px 下先看到两个真问题，都改了：**
+1. **页面完全没有导航**——一个孤立的 `<main>` 加一个语言切换，
+   浏览器的后退键不算导航。改成用 `PublicProfilePage` / `CommunityPage`
+   同一个 `auth-nav` 头。
+2. **密度不对**：`minmax(15rem)` 在那个宽度下只有一列，4 个作品占 2105px。
+   改成 `minmax(10.5rem)` 后是两列，6 个作品 1128px。标题和摘要**都**钳成两行
+   ——一行标题会让摘要跑到三行，整栅格参差不齐，那种"糙"感在别人想明白
+   原因之前就已经生效了。
+
+⚠️ **迁移进来的资源文件大小全是 0。** 第一版迁移脚本从没 stat 过文件。
+这不只是作品页上一列空白：**`enforceUploadQuota` 是按 `work_assets.file_size`
+求和的**，等于这批资源不占任何人的存储额度。加了记录 + 回填（只针对 0 值、
+幂等），读不到的文件保持 0 并在下次继续报告，而不是编一个数糊过去。
+`stat()` 限制在 `public/` 和 `dist/` 两个根内——路径来自数据库。
+
+⚠️ **为什么要两个根**：`/uploads/...` 在 `public/uploads`，但内容哈希过的
+`/models/fire-extinguisher-4k.3fa834b2.glb` 是构建产物，只存在于 `dist/`。
+只查 `public/` 时它被报成读不到——脚本诚实报告了，所以才发现。
+
+完成内容：
+
+- `src/pages/ExplorePage.jsx`、`src/pages/WorkDetailPage.jsx`（新增）
+- `src/lib/api.js`：`getWorks` / `getWork`
+- `src/lib/i18n.js`：21 个键 × 3 语言
+- `src/App.jsx` 两条路由、`src/sections/Navbar.jsx` 加"发现"
+- `src/index.css`：发现页/作品页样式（移动优先）
+- `server/seo.js`：`explore` 与 `work` 两种路由；作品复用项目分支
+- `server/index.js`：`loadSeoData` 取作品、sitemap 列出 `/explore` 与作品
+- `scripts/migrate-works.mjs`：文件大小记录与回填
+- `scripts/verify-works-migration.mjs`：文件大小断言
+
+commit：
+
+- `47ce6ae` 页面 + SEO
+- `76ee755` 导航与密度
+- 两个迁移修复 commit
+
+验证结果：
+
+- `npm run build`：通过（ExplorePage 4.08 KB、WorkDetailPage 4.51 KB）
+- `npm run lint`：通过
+- `npm run test:unit`：242 通过
+- `npm run test:api:db`：**136 通过**（原 126，新增 10）
+- `npm run test:openapi`：通过
+- `node scripts/verify-works-migration.mjs`：全绿（含文件大小与回填）
+- 变异验证（各跑一次）：草稿泄进 head、sitemap 丢作品、
+  `/explore` canonical 指向首页 —— 三条都精确失败
+- VPS 部署：成功（当天第四次）
+- 接口验证：八个接口全部 200
+- 线上 head 实测：`/explore` 标题与 canonical 正确；
+  作品页有自己的 title、canonical、`CreativeWork` 结构化数据，
+  `<noscript>` 里有真实正文
+- sitemap 实测：`/explore` + 四个 `/w/mrright/...`
+- 440px 截图：无控制台错误，卡片同行等高
+- 生产回填：8/8 资源写入真实大小，合计 24,706,668 字节，零剩余
+
+备份路径：
+
+- `/opt/mrright-portfolio.backup-20260907-150403`（及当天更早三次）
+
+待办事项：
+
+- Phase 3 后半：创作者主页（把作品接进已有的 `/u/:handle`）
+- Phase 4 新界面外壳 + `/projects/:slug` → `/w/:handle/:slug` 的 301
+- Phase 5 评论、Phase 6 主题、Phase 7 支付
+- ⚠️ **`@mrright` 的显示名还是 `111111`，现在它已经出现在公开的作品页上
+  （"by 111111"），建议尽快改**
+- 迁移进来的资源文件名是存储名（如 `1781583817544-tl-jian.glb`）而不是原始名，
+  因为原始名没有留存记录；不影响功能
+- `API_V1_FREEZE_PLAN.md` §7 的错误码数字已过期（26 vs 39）
+- 仍未决：外部 uptime 服务（需要你的账号）
+
 
 ### 2026-09-07（第三十九轮，当天第三轮）：作品是一个包，不是一个文件
 
