@@ -135,6 +135,49 @@ export const createWorksStore = ({ pool }) => {
       })
     },
 
+    // The redirect target for an old /projects/:slug URL, or null.
+    //
+    // Published only: a draft or hidden work is not somewhere to send a
+    // visitor, let alone a crawler being asked to move its index permanently.
+    // Returns the path rather than the row because that is all the caller
+    // wants, and building the URL in two places is how they come to disagree.
+    findWorkBySourceSlug: async (sourceSlug) => {
+      const result = await pool.query(
+        `SELECT works.slug, visitor_users.handle
+         FROM works
+         JOIN visitor_users ON visitor_users.id = works.creator_id
+         WHERE works.source_slug = $1
+           AND works.status = 'published'
+           AND visitor_users.handle IS NOT NULL
+           AND visitor_users.handle <> ''
+         ORDER BY works.published_at ASC
+         LIMIT 1`,
+        [sourceSlug],
+      )
+
+      const row = result.rows[0]
+      return row ? `/w/${row.handle}/${row.slug}` : null
+    },
+
+    // Every published work that came from a project, as source slug -> URL.
+    // One query, because the callers (the projects listing and the sitemap)
+    // each need the whole map and would otherwise ask per row.
+    mapSourceSlugsToUrls: async () => {
+      const result = await pool.query(
+        `SELECT works.slug, works.source_slug, visitor_users.handle
+         FROM works
+         JOIN visitor_users ON visitor_users.id = works.creator_id
+         WHERE works.source_slug IS NOT NULL
+           AND works.status = 'published'
+           AND visitor_users.handle IS NOT NULL
+           AND visitor_users.handle <> ''`,
+      )
+
+      return new Map(
+        result.rows.map((row) => [row.source_slug, `/w/${row.handle}/${row.slug}`]),
+      )
+    },
+
     getWorkById: async (id, { includeProtected = false } = {}) => {
       const result = await pool.query(
         `SELECT ${workColumns} FROM works
@@ -357,6 +400,58 @@ export const createWorksStore = ({ pool }) => {
         ],
       )
       return toWorkAsset(result.rows[0], { includeProtected: true })
+    },
+
+    // Likes on the work itself. Keyed on visitor_id like project_likes, not on
+    // user_id: an anonymous visitor gets a server-derived identity so a like
+    // survives a reload without an account, and user_id rides along when there
+    // is one so the row can be attributed and cleaned up.
+    getWorkLikes: async (workId, visitorId) => {
+      const [count, mine] = await Promise.all([
+        pool.query('SELECT count(*)::int AS count FROM work_likes WHERE work_id = $1', [workId]),
+        visitorId
+          ? pool.query('SELECT visitor_id FROM work_likes WHERE work_id = $1 AND visitor_id = $2', [
+              workId,
+              visitorId,
+            ])
+          : Promise.resolve({ rows: [] }),
+      ])
+
+      return { likeCount: count.rows[0].count, liked: Boolean(mine.rows[0]) }
+    },
+
+    toggleWorkLike: async (workId, visitorId, userId = null) => {
+      const client = await pool.connect()
+
+      try {
+        await client.query('BEGIN')
+        const deleted = await client.query(
+          'DELETE FROM work_likes WHERE work_id = $1 AND visitor_id = $2 RETURNING visitor_id',
+          [workId, visitorId],
+        )
+        const liked = deleted.rowCount === 0
+
+        if (liked) {
+          await client.query(
+            `INSERT INTO work_likes (work_id, visitor_id, user_id) VALUES ($1, $2, $3)
+             ON CONFLICT DO NOTHING`,
+            [workId, visitorId, userId],
+          )
+        }
+
+        const count = await client.query(
+          'SELECT count(*)::int AS count FROM work_likes WHERE work_id = $1',
+          [workId],
+        )
+        await client.query('COMMIT')
+
+        return { likeCount: count.rows[0].count, liked }
+      } catch (error) {
+        await client.query('ROLLBACK')
+        throw error
+      } finally {
+        client.release()
+      }
     },
 
     // ---------------------------------------------------------------

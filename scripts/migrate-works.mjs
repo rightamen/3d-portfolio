@@ -295,6 +295,81 @@ try {
     console.log(`\n${backfilled}/${zeroSized.rows.length} asset size(s) to backfill.`)
   }
 
+  // ------------------------------------------------------------------
+  // Interactions. /projects/:slug is about to 301 to /w/:handle/:slug, and a
+  // redirect that silently drops the likes and comments people left on the
+  // old URL is not a migration, it is a deletion with extra steps.
+  //
+  // Matched on works.source_slug, which is why that column exists. Both
+  // passes are idempotent: a like is keyed on (work_id, visitor_id) and a
+  // comment carries the id it had, so a second run inserts nothing.
+  // ------------------------------------------------------------------
+  const bySourceSlug = new Map(
+    (
+      await pool.query(
+        'SELECT id, source_slug FROM works WHERE creator_id = $1 AND source_slug IS NOT NULL',
+        [creator.id],
+      )
+    ).rows.map((row) => [row.source_slug, row.id]),
+  )
+
+  const likes = await pool.query(
+    `SELECT project_likes.project_slug, project_likes.visitor_id, project_likes.user_id,
+            project_likes.created_at
+     FROM project_likes`,
+  )
+  let likesMoved = 0
+  let likesOrphaned = 0
+  for (const row of likes.rows) {
+    const workId = bySourceSlug.get(row.project_slug)
+    if (!workId) {
+      likesOrphaned += 1
+      continue
+    }
+    if (commit) {
+      await pool.query(
+        `INSERT INTO work_likes (work_id, visitor_id, user_id, created_at)
+         VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING`,
+        [workId, row.visitor_id, row.user_id, row.created_at],
+      )
+    }
+    likesMoved += 1
+  }
+
+  // Only published project comments come across. A pending or spam row was
+  // never public and moving it would publish it, since work_comments has no
+  // pending state -- see the comment routes for why.
+  const comments = await pool.query(
+    `SELECT id, project_slug, user_id, author, message, created_at, status
+     FROM project_comments
+     WHERE status = 'published'`,
+  )
+  let commentsMoved = 0
+  let commentsOrphaned = 0
+  for (const row of comments.rows) {
+    const workId = bySourceSlug.get(row.project_slug)
+    if (!workId) {
+      commentsOrphaned += 1
+      continue
+    }
+    if (commit) {
+      await pool.query(
+        `INSERT INTO work_comments (id, work_id, user_id, author, message, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $6)
+         ON CONFLICT (id) DO NOTHING`,
+        [row.id, workId, row.user_id, row.author, row.message, row.created_at],
+      )
+    }
+    commentsMoved += 1
+  }
+
+  console.log(
+    `\n${likesMoved} like(s) and ${commentsMoved} comment(s) to carry over` +
+      (likesOrphaned || commentsOrphaned
+        ? ` (${likesOrphaned} like(s) and ${commentsOrphaned} comment(s) belong to no migrated work)`
+        : ''),
+  )
+
   console.log(`\n${inserted} to insert, ${updated} to update, ${skipped} skipped.`)
 
   if (commit) {

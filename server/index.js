@@ -1457,7 +1457,17 @@ app.get('/api/profile', (_request, response) => {
 app.get('/api/projects', (_request, response) => {
   projectStore
     .listProjects(staticProjects)
-    .then((projects) => sendData(response, { projects }))
+    // workUrl is where this project now lives, or '' while nothing has been
+    // migrated. The homepage links to it directly rather than to
+    // /projects/:slug, which would only 301 -- an internal link that
+    // redirects is a round trip nobody needs and a URL that looks wrong when
+    // copied.
+    .then(async (projects) => {
+      const urls = (await worksStore?.mapSourceSlugsToUrls?.()) || new Map()
+      return sendData(response, {
+        projects: projects.map((project) => ({ ...project, workUrl: urls.get(project.slug) || '' })),
+      })
+    })
     .catch((error) => {
       console.error(error)
       sendError(response, API_ERROR_CODES.SERVICE_UNAVAILABLE, 'Could not load projects.', 503)
@@ -2072,6 +2082,40 @@ app.post(
     return sendData(response, { comment }, 201)
   },
 )
+
+// Likes on a work. Keyed on the same signed anonymous identity project likes
+// use, so a visitor without an account can still like something and have it
+// survive a reload -- and cannot mint a new identity per request.
+app.get('/api/works/:handle/:slug/likes', requireWorksStore, async (request, response) => {
+  const found = await loadCommentableWork(request, response)
+  if (!found) return
+
+  const likes = await worksStore.getWorkLikes(
+    found.work.id,
+    readLikeIdentity(request, found.viewer),
+  )
+
+  return sendData(response, likes)
+})
+
+app.post('/api/works/:handle/:slug/like', requireWorksStore, async (request, response) => {
+  const found = await loadCommentableWork(request, response)
+  if (!found) return
+
+  if (found.work.status !== 'published') {
+    return sendError(
+      response,
+      API_ERROR_CODES.VALIDATION_ERROR,
+      'This work is not published yet.',
+      400,
+    )
+  }
+
+  const identity = deriveLikeIdentity(request, response, found.viewer)
+  const result = await worksStore.toggleWorkLike(found.work.id, identity, found.viewer?.id || null)
+
+  return sendData(response, result)
+})
 
 // Loads a comment plus who is allowed to act on it. The author may delete
 // their own; the work's creator moderates their own page; an admin may do
@@ -3268,6 +3312,22 @@ const deriveLikeIdentity = (request, response, user) => {
   if (user?.id) return `user:${user.id}`
 
   return `anon:${resolveAnonymousVisitorId(request, response)}`
+}
+
+// The same identity, read-only. A GET must not issue a fresh cookie: every
+// crawler walking the catalogue would be handed one, and the answer for a
+// caller who has never liked anything is the same either way.
+const readLikeIdentity = (request, user) => {
+  if (user?.id) return `user:${user.id}`
+
+  const [id, signature] = readCookie(request, VISITOR_COOKIE).split('.')
+  if (!id || !signature || id.length > 40) return ''
+
+  const provided = Buffer.from(signature)
+  const wanted = Buffer.from(signVisitorId(id))
+  if (provided.length !== wanted.length || !timingSafeEqual(provided, wanted)) return ''
+
+  return `anon:${id}`
 }
 
 app.post('/api/projects/:slug/like', async (request, response) => {
@@ -4939,7 +4999,12 @@ app.get('/sitemap.xml', async (_request, response) => {
   // below, which serves them with a canonical URL.
   try {
     const projects = (await projectStore?.listProjects(staticProjects)) || []
+    // A sitemap that lists a URL which 301s is asking a crawler to do work
+    // twice and telling it two things about one page. Once a project has a
+    // work, the work's own entry below is the one that belongs here.
+    const redirected = (await worksStore?.mapSourceSlugsToUrls?.()) || new Map()
     for (const project of projects) {
+      if (redirected.has(project.slug)) continue
       entries.push({
         changefreq: 'monthly',
         loc: `/projects/${encodeURIComponent(project.slug)}`,
@@ -5145,6 +5210,36 @@ const loadSeoData = async (route) => {
 
   return {}
 }
+
+// /projects/:slug -> /w/:handle/:slug, permanently.
+//
+// Those four URLs are the only SEO this site has: rounds 23-24 gave them
+// per-route titles, canonical URLs, JSON-LD and share cards, and round 28 gave
+// them modulepreload hints. Dropping them to save a redirect would throw all
+// of that away, which is why ADR_PLATFORM_PIVOT §4 calls for a 301.
+//
+// Deliberately conditional. A 301 is permanent and browsers cache it for a
+// long time, so it only fires when there is genuinely somewhere to go: a
+// PUBLISHED work that records this slug as its source. Anything else keeps
+// serving the project page exactly as before, which makes this reversible --
+// delete the works rows and the old pages come back.
+app.get('/projects/:slug', async (request, response, next) => {
+  if (!worksStore) return next()
+
+  try {
+    const target = await worksStore.findWorkBySourceSlug(request.params.slug)
+    if (!target) return next()
+
+    // 301, not 302: search engines have to move their index across, and that
+    // is the entire point of doing this rather than leaving both URLs alive.
+    return response.redirect(301, target)
+  } catch (error) {
+    // A lookup failure must not take the page down with it. Serving the old
+    // page is the safe answer to "I do not know yet".
+    console.error(`Work redirect lookup failed for ${request.params.slug}:`, error.message)
+    return next()
+  }
+})
 
 app.get(/.*/, async (request, response) => {
   setNoStoreHeaders(response)

@@ -183,10 +183,14 @@ const Projects = ({ authToken, copy, language, onDetailReady, projects = [], vis
               {/* A real link, not a button: this is what lets a crawler walk
                   from the homepage into each project, and what lets a visitor
                   copy the address of the one they are looking at. */}
+              {/* workUrl when the project has been migrated: linking to
+                  /projects/:slug would only 301, and an internal link that
+                  redirects is a round trip nobody needs and an address that
+                  looks wrong when copied. */}
               <Link
                 className="primary-action w-full"
                 state={{ fromCatalogue: true, preserveScroll: true }}
-                to={`/projects/${encodeURIComponent(project.slug)}`}
+                to={project.workUrl || `/projects/${encodeURIComponent(project.slug)}`}
               >
                 {copy.viewDetails}
               </Link>

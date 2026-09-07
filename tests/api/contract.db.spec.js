@@ -3097,3 +3097,195 @@ test.describe('works: the discussion', () => {
     expect(response.status).toBe(404)
   })
 })
+
+// The redirect. A 301 is permanent and browsers cache it for a long time, so
+// the rules about WHEN it fires matter more than the redirect itself: it must
+// only ever point at a published work, and it must leave a project with no
+// work alone rather than sending anyone to a 404.
+test.describe('the redirect from the old project urls', () => {
+  let handle
+  let workId
+  let slug
+
+  const rawGet = (path) => fetch(`${baseURL}${path}`, { redirect: 'manual' })
+
+  test.beforeAll(async () => {
+    handle = `moved-${randomBytes(4).toString('hex')}`.slice(0, 30)
+    const profile = await sendJson(
+      'PUT',
+      '/api/account/profile',
+      { displayName: 'Moved Creator', handle },
+      visitorA.sessionToken,
+    )
+    expect(profile.response.status).toBe(200)
+  })
+
+  test('a project with no work is served, not redirected', async () => {
+    const response = await rawGet('/projects/fire-extinguisher-next-gen')
+    expect(response.status).toBe(200)
+  })
+
+  test('a work in draft does not attract the redirect either', async () => {
+    // Created with the source slug that migrate-works.mjs would have set.
+    const { Pool } = (await import('pg')).default
+    const pool = new Pool({ connectionString: databaseUrl })
+    try {
+      const created = await sendJson(
+        'POST',
+        '/api/account/works',
+        { image: '/assets/projects/fire-extinguisher.png', title: 'Moved Work' },
+        visitorA.sessionToken,
+      )
+      expect(created.response.status).toBe(201)
+      workId = created.payload.data.work.id
+      slug = created.payload.data.work.slug
+
+      await pool.query(`UPDATE works SET source_slug = 'fire-extinguisher-next-gen' WHERE id = $1`, [
+        workId,
+      ])
+
+      // Still a draft: sending a crawler here permanently would be sending it
+      // to a 404.
+      const response = await rawGet('/projects/fire-extinguisher-next-gen')
+      expect(response.status).toBe(200)
+    } finally {
+      await pool.end()
+    }
+  })
+
+  test('publishing it turns the old url into a 301', async () => {
+    const published = await sendJson(
+      'PATCH',
+      `/api/admin/works/${workId}/status`,
+      { status: 'published' },
+      adminToken,
+    )
+    expect(published.response.status).toBe(200)
+
+    const response = await rawGet('/projects/fire-extinguisher-next-gen')
+
+    // 301, not 302: the whole point is that an index moves across.
+    expect(response.status).toBe(301)
+    expect(response.headers.get('location')).toBe(`/w/${handle}/${slug}`)
+  })
+
+  test('and the destination actually answers', async () => {
+    // The test that stops this being a redirect into a hole.
+    const response = await fetch(`${baseURL}/w/${handle}/${slug}`)
+    expect(response.status).toBe(200)
+    expect(await response.text()).toContain('Moved Work')
+  })
+
+  test('the sitemap advertises the new url and drops the old one', async () => {
+    const body = await (await fetch(`${baseURL}/sitemap.xml`)).text()
+
+    expect(body).toContain(`<loc>https://mrright.blog/w/${handle}/${slug}</loc>`)
+    // A sitemap listing a URL that 301s tells a crawler two things about one
+    // page and asks it to do the work twice.
+    expect(body).not.toContain('<loc>https://mrright.blog/projects/fire-extinguisher-next-gen</loc>')
+  })
+
+  test('the homepage links to the destination, not through the redirect', async () => {
+    const { payload } = await getJson('/api/projects')
+    const project = payload.data.projects.find((item) => item.slug === 'fire-extinguisher-next-gen')
+
+    expect(project.workUrl).toBe(`/w/${handle}/${slug}`)
+
+    // A project that has not moved carries an empty string, so the client
+    // falls back to the old URL rather than to `undefined`.
+    const unmoved = payload.data.projects.find((item) => item.slug !== 'fire-extinguisher-next-gen')
+    expect(unmoved.workUrl).toBe('')
+  })
+
+  test('hiding the work puts the old url back rather than breaking it', async () => {
+    const hidden = await sendJson(
+      'PATCH',
+      `/api/account/works/${workId}/status`,
+      { status: 'hidden' },
+      visitorA.sessionToken,
+    )
+    expect(hidden.response.status).toBe(200)
+
+    // This is what makes the change reversible: nothing about the 301 is
+    // stored, so removing the reason removes the redirect.
+    const response = await rawGet('/projects/fire-extinguisher-next-gen')
+    expect(response.status).toBe(200)
+  })
+})
+
+// Likes on a work, which /projects/:slug had and the work page did not -- the
+// gap that made the redirect a downgrade until now.
+test.describe('works: likes', () => {
+  let handle
+  let slug
+
+  test.beforeAll(async () => {
+    handle = `liked-${randomBytes(4).toString('hex')}`.slice(0, 30)
+    await sendJson(
+      'PUT',
+      '/api/account/profile',
+      { displayName: 'Liked Creator', handle },
+      visitorA.sessionToken,
+    )
+    const created = await sendJson(
+      'POST',
+      '/api/account/works',
+      { image: '/assets/projects/fire-extinguisher.png', title: 'Something Likeable' },
+      visitorA.sessionToken,
+    )
+    expect(created.response.status).toBe(201)
+    slug = created.payload.data.work.slug
+    await sendJson(
+      'PATCH',
+      `/api/admin/works/${created.payload.data.work.id}/status`,
+      { status: 'published' },
+      adminToken,
+    )
+  })
+
+  test('an anonymous visitor can like, and it sticks to their cookie', async () => {
+    const first = await fetch(`${baseURL}/api/works/${handle}/${slug}/like`, { method: 'POST' })
+    expect(first.status).toBe(200)
+    expect((await first.json()).data).toMatchObject({ likeCount: 1, liked: true })
+
+    // The identity is a signed cookie the server issued, so carrying it back
+    // is what makes the like the same person's.
+    const cookie = first.headers.get('set-cookie')?.split(';')[0]
+    expect(cookie).toBeTruthy()
+
+    const read = await fetch(`${baseURL}/api/works/${handle}/${slug}/likes`, {
+      headers: { cookie },
+    })
+    expect((await read.json()).data).toMatchObject({ likeCount: 1, liked: true })
+
+    const off = await fetch(`${baseURL}/api/works/${handle}/${slug}/like`, {
+      headers: { cookie },
+      method: 'POST',
+    })
+    expect((await off.json()).data).toMatchObject({ likeCount: 0, liked: false })
+  })
+
+  test('reading the count does not hand a cookie to every crawler', async () => {
+    const response = await fetch(`${baseURL}/api/works/${handle}/${slug}/likes`)
+
+    expect(response.status).toBe(200)
+    // A GET that issues an identity would give one to every crawler walking
+    // the catalogue, for an answer that is the same either way.
+    expect(response.headers.get('set-cookie')).toBeNull()
+    expect((await response.json()).data).toMatchObject({ liked: false })
+  })
+
+  test('a signed-in visitor is the same person across devices', async () => {
+    const liked = await sendJson(
+      'POST',
+      `/api/works/${handle}/${slug}/like`,
+      {},
+      visitorA.sessionToken,
+    )
+    expect(liked.payload.data).toMatchObject({ likeCount: 1, liked: true })
+
+    // No cookie carried: the account is the identity.
+    const read = await getJson(`/api/works/${handle}/${slug}/likes`, visitorA.sessionToken)
+    expect(read.payload.data).toMatchObject({ likeCount: 1, liked: true })
+  })
+})

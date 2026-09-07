@@ -193,6 +193,25 @@ export const createWorkComment = (handle, slug, { message, parentId }, token) =>
     method: 'POST',
   })
 
+const workLikesPath = (handle, slug) =>
+  `/api/works/${encodeURIComponent(String(handle).replace(/^@/, ''))}/${encodeURIComponent(slug)}/like`
+
+// The identity behind a like is a signed cookie the server issues, so these
+// two must send credentials -- otherwise every visit looks like a new person.
+export const getWorkLikes = (handle, slug, token) =>
+  request(`${workLikesPath(handle, slug)}s`, {
+    cache: 'no-store',
+    credentials: 'include',
+    headers: token ? authHeaders(token) : undefined,
+  })
+
+export const toggleWorkLike = (handle, slug, token) =>
+  request(workLikesPath(handle, slug), {
+    credentials: 'include',
+    headers: token ? authHeaders(token) : undefined,
+    method: 'POST',
+  })
+
 export const deleteWorkComment = (id, token) =>
   request(`/api/work-comments/${encodeURIComponent(id)}`, {
     headers: authHeaders(token),

@@ -75,6 +75,16 @@ try {
     VALUES ('fire-extinguisher-next-gen', 'Overridden Title', 'Overridden summary.');
 
     INSERT INTO deleted_projects (slug) VALUES ('learning-visual-system');
+
+    -- Interactions on the OLD urls, which the redirect must not drop.
+    INSERT INTO project_likes (project_slug, visitor_id) VALUES
+      ('rehearsal-public', 'anon:one'),
+      ('rehearsal-public', 'anon:two'),
+      ('learning-visual-system', 'anon:orphan');
+
+    INSERT INTO project_comments (id, project_slug, author, message, status) VALUES
+      ('pc-1', 'rehearsal-public', 'Someone', 'This survived the migration.', 'published'),
+      ('pc-2', 'rehearsal-public', 'Spammer', 'This did not.', 'pending');
   `)
 
   log('Creating the creator through the real script...')
@@ -206,17 +216,68 @@ try {
   ).rows[0]
   check(repaired?.size > 0, `a zeroed size is backfilled on a later run (got ${repaired?.size})`)
 
+  // The redirect is about to make /projects/:slug unreachable, so anything
+  // people left there has to come across or it is gone.
+  const carried = (
+    await pool.query(
+      `SELECT count(*)::int AS count FROM work_likes
+       JOIN works ON works.id = work_likes.work_id
+       WHERE works.slug = 'rehearsal-public'`,
+    )
+  ).rows[0].count
+  check(carried === 2, `both likes on the old url came across (got ${carried})`)
+
+  const orphanLikes = (await pool.query('SELECT count(*)::int AS c FROM work_likes')).rows[0].c
+  check(
+    orphanLikes === 2,
+    `a like on a project that was deleted did not resurrect it (total ${orphanLikes})`,
+  )
+
+  const movedComments = (
+    await pool.query(
+      `SELECT work_comments.id, work_comments.message FROM work_comments
+       JOIN works ON works.id = work_comments.work_id
+       WHERE works.slug = 'rehearsal-public'`,
+    )
+  ).rows
+  check(
+    movedComments.length === 1 && movedComments[0].id === 'pc-1',
+    `only the published comment came across (got ${movedComments.length})`,
+  )
+  // work_comments has no pending state, so moving a pending row would publish
+  // something a moderator had held back.
+  check(
+    !movedComments.some((row) => row.message === 'This did not.'),
+    'a comment that was never public did not become public by moving',
+  )
+
+  const sourceLikes = (await pool.query('SELECT count(*)::int AS c FROM project_likes')).rows[0].c
+  const sourceComments = (await pool.query('SELECT count(*)::int AS c FROM project_comments')).rows[0].c
+  check(
+    sourceLikes === 3 && sourceComments === 2,
+    'the old rows are still there -- this is a copy, so the redirect can be rolled back',
+  )
+
   log('Running it a second time...')
   const before = (await pool.query('SELECT count(*)::int AS c FROM works')).rows[0].c
   const beforeAssets = (await pool.query('SELECT count(*)::int AS c FROM work_assets')).rows[0].c
   const again = run('scripts/migrate-works.mjs', ['--creator', HANDLE, '--commit'], { databaseUrl })
   check(again.status === 0, 'the second run exited 0')
+  const beforeLikes = (await pool.query('SELECT count(*)::int AS c FROM work_likes')).rows[0].c
+  const beforeComments = (await pool.query('SELECT count(*)::int AS c FROM work_comments')).rows[0].c
   const after = (await pool.query('SELECT count(*)::int AS c FROM works')).rows[0].c
   const afterAssets = (await pool.query('SELECT count(*)::int AS c FROM work_assets')).rows[0].c
   check(after === before, `a second run did not duplicate works (${before} -> ${after})`)
   check(
     afterAssets === beforeAssets,
     `a second run did not duplicate assets (${beforeAssets} -> ${afterAssets})`,
+  )
+  const afterLikes = (await pool.query('SELECT count(*)::int AS c FROM work_likes')).rows[0].c
+  const afterComments = (await pool.query('SELECT count(*)::int AS c FROM work_comments')).rows[0].c
+  check(afterLikes === beforeLikes, `a second run did not duplicate likes (${beforeLikes} -> ${afterLikes})`)
+  check(
+    afterComments === beforeComments,
+    `a second run did not duplicate comments (${beforeComments} -> ${afterComments})`,
   )
 
   // The source tables are untouched: this is a copy, and /projects/:slug has to

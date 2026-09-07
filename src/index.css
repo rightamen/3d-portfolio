@@ -4570,3 +4570,59 @@ body {
 .work-comment-liked {
   color: rgb(255 138 138);
 }
+
+.work-price-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.work-like {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.35rem 0.85rem;
+  border-radius: 999px;
+  border: 1px solid rgb(255 255 255 / 14%);
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.work-like-active {
+  color: rgb(255 138 138);
+  border-color: rgb(255 138 138 / 45%);
+}
+
+.work-like:disabled {
+  opacity: 0.5;
+}
+
+.work-specs dl {
+  display: grid;
+  gap: 0.4rem;
+  font-size: 0.83rem;
+}
+
+.work-specs h2 {
+  margin-bottom: 0.5rem;
+  font-size: 0.95rem;
+}
+
+.work-specs div {
+  display: flex;
+  gap: 0.6rem;
+  padding-top: 0.4rem;
+  border-top: 1px solid rgb(255 255 255 / 8%);
+}
+
+.work-specs dt {
+  flex-shrink: 0;
+  min-width: 6rem;
+  color: rgb(255 255 255 / 55%);
+}
+
+.work-specs dd {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}

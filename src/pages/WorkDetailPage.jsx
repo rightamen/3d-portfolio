@@ -2,7 +2,7 @@ import { Suspense, lazy, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 
 import WorkComments from '../components/WorkComments'
-import { getWork } from '../lib/api'
+import { getWork, getWorkLikes, toggleWorkLike } from '../lib/api'
 import { getApiErrorMessage, languages } from '../lib/i18n'
 import { formatWorkPrice, localizedWorkField as localized } from '../lib/works'
 
@@ -76,6 +76,25 @@ const WorkDetailPage = ({ authToken, copy, language, onLanguageChange, visitorUs
       isMounted = false
     }
   }, [authToken, copy, handle, slug, requestKey])
+
+  const [likes, setLikes] = useState({ key: '', likeCount: 0, liked: false })
+  const [likeBusy, setLikeBusy] = useState(false)
+
+  useEffect(() => {
+    let isMounted = true
+
+    getWorkLikes(handle, slug, authToken)
+      .then((payload) => {
+        if (isMounted) setLikes({ key: requestKey, likeCount: payload.likeCount, liked: payload.liked })
+      })
+      // A failed like count is not worth an error state: the page is still
+      // readable without it, and zero is what a work with no likes shows.
+      .catch(() => {})
+
+    return () => {
+      isMounted = false
+    }
+  }, [authToken, handle, requestKey, slug])
 
   const status = loaded.key === requestKey ? loaded.status : 'loading'
   const work = status === 'loading' ? null : loaded.work
@@ -155,7 +174,29 @@ const WorkDetailPage = ({ authToken, copy, language, onLanguageChange, visitorUs
               </span>
             ))}
 
-          <p className="work-price">{formatWorkPrice(work, copy)}</p>
+          <div className="work-price-row">
+            <p className="work-price">{formatWorkPrice(work, copy)}</p>
+            {/* Anonymous visitors can like: the server issues a signed cookie
+                so it survives a reload and cannot be minted per request. */}
+            <button
+              className={`work-like${likes.liked ? ' work-like-active' : ''}`}
+              disabled={likeBusy}
+              onClick={() => {
+                if (likeBusy) return
+                setLikeBusy(true)
+                toggleWorkLike(handle, slug, authToken)
+                  .then((payload) =>
+                    setLikes({ key: requestKey, likeCount: payload.likeCount, liked: payload.liked }),
+                  )
+                  .catch(() => {})
+                  .finally(() => setLikeBusy(false))
+              }}
+              type="button"
+            >
+              ♥ {likes.key === requestKey ? likes.likeCount : 0}
+              <span className="explore-search-label">{copy.workLike}</span>
+            </button>
+          </div>
 
           <p>{localized(work, 'summary', language)}</p>
           {localized(work, 'workflow', language) && (
@@ -168,6 +209,44 @@ const WorkDetailPage = ({ authToken, copy, language, onLanguageChange, visitorUs
                 <li key={tag}>{tag}</li>
               ))}
             </ul>
+          )}
+
+          {/* The fields ProjectDetail shows and this page did not. They are
+              already on the work object -- the mapper kept the project field
+              names -- so leaving them out was just an omission. */}
+          {(localized(work, 'format', language) ||
+            localized(work, 'modelSize', language) ||
+            work.stack?.length > 0 ||
+            work.viewerFeatures?.length > 0) && (
+            <section className="work-specs">
+              <h2>{copy.workDetailsTitle}</h2>
+              <dl>
+                {localized(work, 'format', language) && (
+                  <div>
+                    <dt>{copy.workFormat}</dt>
+                    <dd>{localized(work, 'format', language)}</dd>
+                  </div>
+                )}
+                {localized(work, 'modelSize', language) && (
+                  <div>
+                    <dt>{copy.workSize}</dt>
+                    <dd>{localized(work, 'modelSize', language)}</dd>
+                  </div>
+                )}
+                {work.stack?.length > 0 && (
+                  <div>
+                    <dt>{copy.workStack}</dt>
+                    <dd>{work.stack.join(' · ')}</dd>
+                  </div>
+                )}
+                {work.viewerFeatures?.length > 0 && (
+                  <div>
+                    <dt>{copy.workViewerFeatures}</dt>
+                    <dd>{work.viewerFeatures.join(' · ')}</dd>
+                  </div>
+                )}
+              </dl>
+            </section>
           )}
 
           {work.publishedAt && (
