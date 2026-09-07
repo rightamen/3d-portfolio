@@ -4,6 +4,7 @@ import {
   getAssetCategoryProfile,
   inferAssetCategory,
 } from '../../src/lib/assetCategories'
+import { assetCategoryLabel } from '../../src/lib/works'
 
 const values = assetCategoryProfiles.map((profile) => profile.value)
 
@@ -91,5 +92,41 @@ describe('getAssetCategoryProfile', () => {
     expect(profile.label).toBeTruthy()
     expect(profile.shortLabel).toBeTruthy()
     expect(profile.description).toBeTruthy()
+  })
+})
+
+// The work card shows a category, and the stored value is a slug. Every
+// profile has carried a short label in all three languages since long before
+// works existed, so the card should never be showing 'hand-painted-scene' to
+// anybody -- which it was, until this helper.
+describe('assetCategoryLabel', () => {
+  it('translates every category the catalogue can store', () => {
+    const untranslated = []
+
+    for (const profile of assetCategoryProfiles) {
+      for (const language of ['zh', 'en', 'ja']) {
+        const label = assetCategoryLabel(profile.value, language)
+        // The slug coming back means no label was found for it.
+        if (!label || label === profile.value) untranslated.push(`${language}: ${profile.value}`)
+      }
+    }
+
+    expect(untranslated).toEqual([])
+  })
+
+  it('gives each language a different label, rather than English three times', () => {
+    // A guard against the helper silently falling through to the English
+    // branch: that would pass the test above while showing English to
+    // everybody.
+    const sample = assetCategoryProfiles[0].value
+    expect(assetCategoryLabel(sample, 'zh')).not.toBe(assetCategoryLabel(sample, 'en'))
+    expect(assetCategoryLabel(sample, 'ja')).not.toBe(assetCategoryLabel(sample, 'en'))
+  })
+
+  it('falls back to the raw value for a category it does not know', () => {
+    // Better than an empty cell: a slug at least says what the row holds.
+    expect(assetCategoryLabel('not-a-real-category', 'zh')).toBe('not-a-real-category')
+    expect(assetCategoryLabel('', 'zh')).toBe('')
+    expect(assetCategoryLabel(undefined, 'zh')).toBe('')
   })
 })

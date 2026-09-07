@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 
-import { formatWorkPrice, localizedWorkField } from '../lib/works'
+import { assetCategoryLabel, formatWorkPrice, localizedWorkField } from '../lib/works'
 
 // One work, as a card. Shared by /explore and by a creator's profile: the two
 // grids show the same thing and there is no reason for them to drift apart,
@@ -39,7 +39,9 @@ const WorkCard = ({ copy, language, showCreator = true, work }) => (
             </span>
           )
         ) : (
-          <span className="explore-card-creator">{work.assetCategory}</span>
+          <span className="explore-card-creator">
+            {assetCategoryLabel(work.assetCategory, language)}
+          </span>
         )}
         <span className="explore-card-price">{formatWorkPrice(work, copy)}</span>
       </div>

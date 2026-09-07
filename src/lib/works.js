@@ -1,3 +1,5 @@
+import { assetCategoryProfiles } from './assetCategories'
+
 // Shared reading of a work object, kept out of the component files so both
 // pages and the card agree on what a title and a price are.
 
@@ -16,3 +18,11 @@ export const formatWorkPrice = (work, copy) =>
   work.priceCents > 0
     ? `${(work.priceCents / 100).toFixed(2)} ${String(work.currency || 'usd').toUpperCase()}`
     : copy.exploreFree
+
+// The stored value is a slug ('hand-painted-scene'); assetCategoryProfiles has
+// had a short label in all three languages for it since long before works
+// existed. Showing the slug to a visitor is just not having looked.
+export const assetCategoryLabel = (value, language) => {
+  const profile = assetCategoryProfiles.find((item) => item.value === value)
+  return profile?.shortLabels?.[language] || profile?.shortLabels?.en || value || ''
+}
