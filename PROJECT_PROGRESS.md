@@ -1,6 +1,80 @@
 # mrright.blog 项目进度记录
 
-## 下次从这里继续（截至 2026-09-07 第四十轮收工）
+## 下次从这里继续（截至 2026-09-07 第四十一轮收工）
+
+### 2026-09-07（第四十一轮，当天第五轮）：创作者主页 —— Phase 3 完成
+
+`/u/:handle` 长出了「作品」标签页和作品计数，总览页也以作品栅格打头。
+**没有新增 URL**，主页本来就有。
+
+- `WorkCard` 从 `ExplorePage` 抽成两个页面共用的组件，
+  取值与价格助手放进 `src/lib/works.js`。同一个对象两份卡片实现，
+  早晚会漂。
+
+⚠️ **作品用独立的 effect 拉，没有并进主页那条链。**
+`/api/works` 是公开接口、不依赖主页查询成功；并在一起意味着一个失败会
+把另一个也带走。
+
+⚠️ **访客把「动态」设为私密时，作品仍然列出。**
+帖子和评论是动态；**已发布的作品是创作者主动公开的陈列**，
+而且它已经挂在 `/explore` 上带着同一个 handle——只在他自己主页上藏起来
+不叫隐私，叫前后矛盾。
+
+⚠️ **做前端时发现一个真问题:创作者可以把「主页」设为私密，作品照样列出，
+而每张卡片都在链向一个死胡同。**
+（私密主页返回 200 + noindex，客户端显示"此主页私密"；被管理员禁用的才是 404。
+我一开始把这条断言写成 404，是错的，已按真实行为改正。）
+`creator` 现在带 `profilePublic`，两种情况都折进去；为 false 时卡片
+只显示作者名不给链接。把它 stub 成恒 true → 测试失败。
+
+⚠️ **卡片上的分类之前显示的是原始 slug（`hand-painted-scene`）。**
+`assetCategoryProfiles` 早就为 7 个分类各备了三语短标签——这纯粹是没去看。
+配套的第二条测试才是关键：**如果助手对所有语言都落回英文分支，
+"每个分类都有标签"仍会通过，但所有人看到的都是英文**——那条测试专门抓这个。
+
+完成内容：
+
+- `src/components/WorkCard.jsx`、`src/lib/works.js`（新增）
+- `src/pages/PublicProfilePage.jsx`：作品标签页、计数、总览栅格
+- `src/pages/ExplorePage.jsx`、`src/pages/WorkDetailPage.jsx`：改用共享组件
+- `src/lib/i18n.js`：5 个键 × 3 语言
+- `server/postgres/mappers.js`：`creator.profilePublic` + 两个查询列
+- `tests/unit/asset-categories.spec.js`：3 条新测试
+- `tests/api/contract.db.spec.js`：3 条新测试
+
+commit：
+
+- `ecd215b` 创作者主页
+- 分类标签修复
+
+验证结果：
+
+- `npm run build`：通过
+- `npm run lint`：通过
+- `npm run test:unit`：**245 通过**（原 242）
+- `npm run test:api:db`：**139 通过**（原 136）
+- `npm run test:openapi`：通过
+- 变异验证：`profilePublic` 恒 true → 两条测试失败；
+  分类标签恒英文 → "英文三遍"那条失败
+- VPS 部署：成功（当天第五、六次）
+- 接口验证：九个接口全部 200
+- 440px 截图：作品标签页四个作品排两列，无控制台错误
+
+备份路径：
+
+- `/opt/mrright-portfolio.backup-20260907-153142`
+
+**Phase 3 到此完成。** 浏览、搜索、筛选、作品页、创作者主页都在线上跑着。
+
+待办事项：
+
+- Phase 4 新界面外壳 + `/projects/:slug` → `/w/:handle/:slug` 的 301 —— **下一步**
+- Phase 5 评论、Phase 6 主题、Phase 7 支付
+- ⚠️ **`@mrright` 的显示名仍然是 `111111`**，现在它出现在作品卡片、
+  作品页和创作者主页顶部的大标题上
+- `API_V1_FREEZE_PLAN.md` §7 的错误码数字已过期（26 vs 39）
+- 仍未决：外部 uptime 服务（需要你的账号）
+
 
 ### 2026-09-07（第四十轮，当天第四轮）：前端第一次动 —— 发现页与作品页
 
