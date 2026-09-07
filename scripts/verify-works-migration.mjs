@@ -64,8 +64,10 @@ try {
   await pool.query(`
     INSERT INTO custom_projects (slug, title, title_zh, summary, year, image, model_url, asset_category, is_public)
     VALUES
+      -- A path that really exists in public/, so the size backfill has
+      -- something true to measure. The model path deliberately does not.
       ('rehearsal-public', 'Rehearsal Public', '演练公开', 'A public custom project.', '2026',
-       '/uploads/images/rehearsal.png', '/uploads/models/rehearsal.glb', 'hand-painted-scene', true),
+       '/assets/projects/fire-extinguisher.png', '/uploads/models/rehearsal.glb', 'hand-painted-scene', true),
       ('rehearsal-hidden', 'Rehearsal Hidden', '演练隐藏', 'A hidden custom project.', '2026',
        '/uploads/images/hidden.png', null, 'hand-painted-prop', false);
 
@@ -172,6 +174,37 @@ try {
     )
   ).rows[0].count
   check(hiddenAssets === 1, 'a work with no model got one asset row, not an empty one')
+
+  // enforceUploadQuota sums work_assets.file_size, so a migrated asset stored
+  // as 0 bytes is one that does not count against anybody's storage budget.
+  const sizes = (
+    await pool.query(
+      `SELECT kind, file_size::int AS size FROM work_assets
+       JOIN works ON works.id = work_assets.work_id
+       WHERE works.slug = 'rehearsal-public' ORDER BY kind`,
+    )
+  ).rows
+  const preview = sizes.find((row) => row.kind === 'preview')
+  const model = sizes.find((row) => row.kind === 'model')
+  check(preview?.size > 0, `a migrated asset records its real byte count (got ${preview?.size})`)
+  check(
+    model?.size === 0,
+    'an asset whose file is missing stays 0 rather than being given a made-up size',
+  )
+
+  // Zero it and run again: the backfill is what repairs rows the first version
+  // of this script wrote without ever looking at the files.
+  await pool.query(`UPDATE work_assets SET file_size = 0`)
+  const backfill = run('scripts/migrate-works.mjs', ['--creator', HANDLE, '--commit'], { databaseUrl })
+  check(backfill.status === 0, 'the backfill run exited 0')
+  const repaired = (
+    await pool.query(
+      `SELECT file_size::int AS size FROM work_assets
+       JOIN works ON works.id = work_assets.work_id
+       WHERE works.slug = 'rehearsal-public' AND work_assets.kind = 'preview'`,
+    )
+  ).rows[0]
+  check(repaired?.size > 0, `a zeroed size is backfilled on a later run (got ${repaired?.size})`)
 
   log('Running it a second time...')
   const before = (await pool.query('SELECT count(*)::int AS c FROM works')).rows[0].c

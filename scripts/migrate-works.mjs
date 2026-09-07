@@ -20,7 +20,11 @@
 // second run updates the rows it made before instead of duplicating them, and
 // never touches a work whose source is something else (an upload, say).
 
+import { stat } from 'node:fs/promises'
+import path from 'node:path'
 import process from 'node:process'
+import { fileURLToPath } from 'node:url'
+
 import pg from 'pg'
 
 import { projects as staticProjects } from '../server/content.js'
@@ -46,6 +50,30 @@ const databaseUrl = process.env.DATABASE_URL
 if (!databaseUrl) die('DATABASE_URL is not set.')
 
 const createId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+
+const publicDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'public')
+
+// The byte count of a file this server serves, or 0 when it cannot be read.
+//
+// It matters more than the file list it decorates: enforceUploadQuota sums
+// work_assets.file_size, so an asset recorded as 0 bytes is an asset that does
+// not count against anybody's storage budget. Migrated rows had exactly that
+// problem -- the first version of this script inserted them without ever
+// looking at the files.
+const fileSize = async (fileUrl) => {
+  if (typeof fileUrl !== 'string' || !fileUrl.startsWith('/')) return 0
+
+  const localPath = path.resolve(publicDir, fileUrl.replace(/^\//, ''))
+  // Never follow a path out of public/: the URLs come from the database, and
+  // a stat() driven by stored data should not be able to walk the filesystem.
+  if (!localPath.startsWith(publicDir + path.sep)) return 0
+
+  try {
+    return (await stat(localPath)).size
+  } catch {
+    return 0
+  }
+}
 
 // A slug that came from custom_projects exists in that table; anything else is
 // a content.js project, whether or not project_overrides has a row for it.
@@ -207,8 +235,9 @@ try {
 
       for (const [index, asset] of assets.entries()) {
         await pool.query(
-          `INSERT INTO work_assets (id, work_id, kind, file_name, file_type, file_url, sort_order)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          `INSERT INTO work_assets
+             (id, work_id, kind, file_name, file_type, file_url, file_size, sort_order)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
           [
             createId(),
             id,
@@ -216,6 +245,7 @@ try {
             asset.url.split('/').pop() || asset.url,
             asset.url.split('.').pop()?.toLowerCase() || '',
             asset.url,
+            await fileSize(asset.url),
             index,
           ],
         )
@@ -224,6 +254,34 @@ try {
 
     console.log(`insert  ${project.slug} (${status})`)
     inserted += 1
+  }
+
+  // Rows written before this script recorded sizes. Idempotent, and scoped to
+  // the zeros: an asset whose file is genuinely missing stays 0 and shows up
+  // again next run rather than being papered over.
+  const zeroSized = await pool.query(
+    `SELECT work_assets.id, work_assets.file_url
+     FROM work_assets
+     JOIN works ON works.id = work_assets.work_id
+     WHERE works.creator_id = $1 AND work_assets.file_size = 0`,
+    [creator.id],
+  )
+
+  let backfilled = 0
+  for (const row of zeroSized.rows) {
+    const size = await fileSize(row.file_url)
+    if (!size) {
+      console.log(`size?   ${row.file_url} -- not readable from ${publicDir}`)
+      continue
+    }
+    if (commit) {
+      await pool.query('UPDATE work_assets SET file_size = $2 WHERE id = $1', [row.id, size])
+    }
+    backfilled += 1
+  }
+
+  if (zeroSized.rows.length) {
+    console.log(`\n${backfilled}/${zeroSized.rows.length} asset size(s) to backfill.`)
   }
 
   console.log(`\n${inserted} to insert, ${updated} to update, ${skipped} skipped.`)
