@@ -4374,10 +4374,15 @@ body {
   font-size: 0.95rem;
 }
 
+/* Wraps on purpose. Four columns -- kind, name, size, link -- do not fit in
+   440px, and the un-wrapped version pushed the row 12px past the viewport,
+   which scrolls the whole page sideways. The file name takes its own line
+   below the breakpoint and rejoins above it. */
 .work-files li {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
-  gap: 0.6rem;
+  gap: 0.35rem 0.6rem;
   padding: 0.45rem 0;
   border-top: 1px solid rgb(255 255 255 / 8%);
   font-size: 0.83rem;
@@ -4385,16 +4390,24 @@ body {
 
 .work-file-kind {
   flex-shrink: 0;
-  min-width: 4.5rem;
+  min-width: 3.5rem;
   color: rgb(255 255 255 / 55%);
 }
 
 .work-file-name {
-  flex: 1;
+  flex: 1 1 100%;
+  order: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+@media (min-width: 34rem) {
+  .work-file-name {
+    flex: 1 1 auto;
+    order: 0;
+  }
 }
 
 .work-file-size,
@@ -4402,6 +4415,15 @@ body {
   flex-shrink: 0;
   color: rgb(255 255 255 / 55%);
   font-variant-numeric: tabular-nums;
+}
+
+/* The one that was actually pushing the row out: an <a> will not shrink below
+   its text unless it is told it may. */
+.work-files li a {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 @media (min-width: 64rem) {
