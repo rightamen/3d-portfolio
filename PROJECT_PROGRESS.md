@@ -1,6 +1,102 @@
 # mrright.blog 项目进度记录
 
-## 下次从这里继续（截至 2026-09-07 第三十七轮收工）
+## 下次从这里继续（截至 2026-09-07 第三十八轮收工）
+
+### 2026-09-07（第三十八轮，当天第二轮）：作品能被发布、被审核、被看见
+
+Phase 2 的服务端。创作者建草稿 → 提交审核 → 管理员发布，hidden 和 rejected
+是两条退出路径。
+
+完成内容：
+
+- `server/postgres/worksStore.js`（新增）：目录、详情、创作者自己的列表、
+  审核队列、增删改、资源行
+- `server/postgres/mappers.js`：`toWork` / `toWorkSummary` / `toWorkAsset` /
+  `toWorkCreator` / `workColumns`
+- 9 个端点：
+  - `GET /api/works`（公开目录，分页，可按 `creator`/`category`/`query` 筛）
+  - `GET /api/works/:handle/:slug`（详情，含资源）
+  - `GET /api/account/works`、`POST /api/account/works`
+  - `PATCH /api/account/works/:id`、`PATCH /api/account/works/:id/status`
+  - `DELETE /api/account/works/:id`
+  - `GET /api/admin/works`、`PATCH /api/admin/works/:id/status`
+- 新错误码：`WORK_NOT_FOUND`、`WORK_SLUG_TAKEN`
+
+⚠️ **"草稿不公开"这条规则写在 SQL 的 WHERE 里,不在路由处理器里。**
+以后新加的端点忘了过滤也漏不出去。唯一的例外是**作者本人可以在作品的真实
+地址上预览自己的草稿**——靠"先发布再看效果"不叫预览。
+
+⚠️ **PATCH 是真正的局部更新**：没传的字段不动,传空字符串才是清空。
+隔壁 `/api/admin/projects/:slug` 是整份 payload 覆盖,第三十六轮就因为
+这个差点清空字段。把 `readWorkFields` 里那个 undefined 判断去掉 →
+"a patch changes only what it names" 立刻失败。
+
+⚠️ **创作者不能自己发布,也不能删已发布的作品。**
+自己发布会让审核环节变成摆设;删已发布的作品是因为**可能有人买过,
+买家要保住他付过钱的东西**——下架用 hidden。
+
+⚠️ **`source` 类型的资源 URL 永远不进公开响应。**
+那是要付费的东西,走 `download_tickets` 那条有过期时间和审计的路;
+把路径放进列表响应等于绕开全部授权。
+
+⚠️ **works 端点故意没进冻结的 OpenAPI 契约。** 理由写在
+`docs/API_V1_GAPS.md` §6b:契约冻结是为了让编译分发的客户端能依赖它,
+而这个形状还在动——Phase 3–7 会加资源、订单、权益、结算,每一项都改变
+work 对象带什么。现在写进去要么冻结一个即将变的东西,要么毁掉契约的承诺。
+顺带记了一条既有的文档过期:`API_V1_FREEZE_PLAN.md` §7 说冻结错误码是
+26 个"`API_ERROR_CODES` 全量",早就不是了,现在 39 个。
+
+修改文件：
+
+- `server/postgres/worksStore.js`（新增）
+- `server/postgres/mappers.js`、`server/postgresStores.js`
+- `server/index.js`、`server/responses.js`
+- `docs/openapi/api-v1.yaml`（只加错误码）
+- `docs/API_V1_GAPS.md`
+- `tests/api/contract.db.spec.js`
+
+commit：
+
+- `d88fb43`
+
+验证结果：
+
+- `npm run build`：通过
+- `npm run lint`：通过
+- `npm run test:unit`：242 通过
+- `npm run test:api:db`：117 通过（原 96，新增 21）
+- `npm run test:openapi`：通过（39 个错误码）
+- 变异验证：四条不变量**逐条单独**验（套件会级联中止，一次只能验一条）
+  - 去掉目录的 published 过滤 → "a draft is invisible in the public catalogue" 失败
+  - 去掉详情的状态判断 → "a draft is invisible to a stranger" 失败
+  - 允许创作者发布 → "a creator cannot publish their own work" 失败
+  - PATCH 改成整份覆盖 → "a patch changes only what it names" 失败
+- VPS 部署：成功
+- 接口验证：六个必验接口全部 200
+- **线上新端点实测**：`/api/works` 返回迁移的四个作品，
+  `total=4`，URL 形如 `/w/mrright/md-leimu`，详情带创作者和两条资源行
+- 负向验证：不存在的作品/创作者 404、未登录 401、未授权改状态 401、
+  按不存在的创作者筛选 total=0
+
+备份路径：
+
+- `/etc/mrright-portfolio.env.backup-20260907-135159`
+- `/opt/mrright-portfolio.backup-20260907-135159`
+
+⚠️ **前端仍然完全没变。** `/w/:handle/:slug` 目前只有 API，没有页面；
+`/projects/:slug` 照常工作，那条 301 要等 Phase 4 换界面时才做。
+
+待办事项：
+
+- Phase 2 剩下的：多文件上传（`POST /api/account/works/:id/assets`），
+  可复用现有的 magic-byte 校验与配额
+- Phase 3 发现（浏览页、创作者主页）
+- Phase 4 新界面外壳 + `/projects/:slug` → `/w/:handle/:slug` 的 301
+- Phase 5 评论、Phase 6 主题、Phase 7 支付
+- `@mrright` 的显示名还是 `111111`，公开创作者主页前必须改
+- `API_V1_FREEZE_PLAN.md` §7 的错误码数字已过期（26 vs 39）
+- 仍未决：外部 uptime 服务（需要你的账号）
+
 
 ### 2026-09-07（第三十七轮）：平台化转型 Phase 1 —— 作者与作品的数据模型
 
