@@ -1,6 +1,87 @@
 # mrright.blog 项目进度记录
 
-## 下次从这里继续（截至 2026-09-07 第三十八轮收工）
+## 下次从这里继续（截至 2026-09-07 第三十九轮收工）
+
+### 2026-09-07（第三十九轮，当天第三轮）：作品是一个包，不是一个文件
+
+Phase 2 收尾：多文件上传。`POST /api/account/works/:id/assets`（一次一个文件）
+与 `DELETE /api/account/works/:id/assets/:assetId`。
+
+⚠️ **这一轮最要紧的不是上传，是配额。**
+存储预算（`enforceUploadQuota`）是在 `community_uploads` 还是唯一入口时写的，
+只数那一张表。作品资源如果不汇报进去，就是**通往同一块 15GB 磁盘的第二道
+没有计量的门**——配额就白设了。新增 `worksStore.getUploadUsage` 回答同一个
+滚动窗口问题，两者相加。把它 stub 成 `{bytes:0,count:0}` →
+"a creator cannot store unlimited files by routing around community uploads"
+立刻失败。
+
+⚠️ **所有权检查放在 multer 之前**，和配额一样的理由：不然一个什么都不拥有的
+调用者，也能先往磁盘写 120MB 再被告知不行。
+
+⚠️ **kind 和扩展名是两件独立的事，两个都校验。**
+`kind` 说这个文件**是干什么用的**，扩展名白名单说它**可以是什么格式**——
+源码包和可预览模型都可以是 `.glb`，但 `.png` 永远不能当模型。
+存错了会得到一个运行时崩溃、而数据里看不出原因的作品。
+
+⚠️ **`kind` 同时从 body 和 query 读。** multer 只把**排在文件之前**的文本字段
+放进 `request.body`，而不是每个客户端都按那个顺序拼 multipart。
+query 是逃生口，免得一个格式正确的请求被静默地当成缺参数。
+
+⚠️ **第一张 preview 自动成为封面，第一个 model 自动成为可预览模型**，
+但只在槽位是空的时候——换封面是一次有意的编辑。反过来，删掉正被引用的资源
+会把槽位清空，而不是留一个指向已删文件的死链。
+
+完成内容：
+
+- 2 个端点 + `worksStore.getUploadUsage` / `addAsset` / `removeAsset`
+- `enforceUploadQuota` 现在把两种上传相加
+- 每个作品最多 20 个文件（`WORK_ASSET_LIMIT`）
+- 图片仍受 16MB 限制（共享的 multer 上限是模型用的 120MB）
+
+修改文件：
+
+- `server/index.js`、`server/postgres/worksStore.js`
+- `docs/API_V1_GAPS.md`、`tests/api/contract.db.spec.js`
+
+commit：
+
+- `dd274c4`
+
+验证结果：
+
+- `npm run build`：通过
+- `npm run lint`：通过
+- `npm run test:unit`：242 通过
+- `npm run test:api:db`：**126 通过**（原 117，新增 9）
+- `npm run test:openapi`：通过
+- 变异验证：三条**各跑一次**（套件会级联中止）
+  - 配额不计作品资源 → 配额测试失败
+  - `toWorkAsset` 永远吐出 `file_url` → source 遮蔽测试失败
+  - 去掉上传前的所有权判断 → "nobody can add a file to somebody else's work" 失败
+- VPS 部署：成功
+- 接口验证：六个必验接口全部 200，`/api/works` total=4
+- 负向验证：未登录上传 401、未登录删资源 401
+- 线上抽查 `crimson-rune-greatsword`：model 与 preview 两条资源、
+  `protected=false`、URL 正常
+
+备份路径：
+
+- `/etc/mrright-portfolio.env.backup-20260907-141349`
+- `/opt/mrright-portfolio.backup-20260907-141349`
+
+**Phase 2 到此完成。** 服务端已经能：建作品、编辑、传多个文件、提交审核、
+管理员发布/驳回/隐藏，全程有配额和 magic-byte 校验。
+
+待办事项：
+
+- Phase 3 发现（浏览页、创作者主页）——**下一步**
+- Phase 4 新界面外壳 + `/projects/:slug` → `/w/:handle/:slug` 的 301
+- Phase 5 评论、Phase 6 主题、Phase 7 支付（含源码包的付费下载路径）
+- 前端仍然完全没变，`/w/:handle/:slug` 目前只有 API 没有页面
+- `@mrright` 的显示名还是 `111111`，公开创作者主页前必须改
+- `API_V1_FREEZE_PLAN.md` §7 的错误码数字已过期（26 vs 39）
+- 仍未决：外部 uptime 服务（需要你的账号）
+
 
 ### 2026-09-07（第三十八轮，当天第二轮）：作品能被发布、被审核、被看见
 
