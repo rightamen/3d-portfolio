@@ -2719,3 +2719,94 @@ test.describe('works: the head a crawler sees', () => {
     expect(body).not.toContain('Head Under Test')
   })
 })
+
+// Publishing a work is a deliberate public act; hiding your profile is a
+// separate choice about a different object. So a work by a creator with a
+// private profile stays listed -- but the response has to say the profile will
+// not answer, or every card linking to it is a link to a 404.
+test.describe('works by a creator whose profile is private', () => {
+  let handle
+  let slug
+
+  test.beforeAll(async () => {
+    handle = `private-${randomBytes(4).toString('hex')}`.slice(0, 30)
+    const profile = await sendJson(
+      'PUT',
+      '/api/account/profile',
+      { displayName: 'Private Creator', handle },
+      visitorA.sessionToken,
+    )
+    expect(profile.response.status).toBe(200)
+
+    const created = await sendJson(
+      'POST',
+      '/api/account/works',
+      { image: '/assets/projects/fire-extinguisher.png', title: 'Published By A Private Creator' },
+      visitorA.sessionToken,
+    )
+    expect(created.response.status).toBe(201)
+    slug = created.payload.data.work.slug
+
+    const published = await sendJson(
+      'PATCH',
+      `/api/admin/works/${created.payload.data.work.id}/status`,
+      { status: 'published' },
+      adminToken,
+    )
+    expect(published.response.status).toBe(200)
+  })
+
+  test('while the profile is public, the creator is linkable', async () => {
+    const { payload } = await getJson(`/api/works?creator=${handle}`)
+    const work = payload.data.works.find((item) => item.slug === slug)
+
+    expect(work).toBeTruthy()
+    expect(work.creator.profilePublic).toBe(true)
+  })
+
+  test('making the profile private leaves the work listed but not the link', async () => {
+    const hidden = await sendJson(
+      'PUT',
+      '/api/account/profile',
+      { displayName: 'Private Creator', handle, profilePublic: false },
+      visitorA.sessionToken,
+    )
+    expect(hidden.response.status).toBe(200)
+
+    const listed = await getJson(`/api/works?creator=${handle}`)
+    const work = listed.payload.data.works.find((item) => item.slug === slug)
+
+    // Still listed: they published it.
+    expect(work).toBeTruthy()
+    // But the client is told not to link to a page that will 404.
+    expect(work.creator.profilePublic).toBe(false)
+
+    // ...and that is not a guess. A private profile is not a 404 -- only an
+    // admin-disabled one is -- it answers 200 with noindex and the client
+    // renders "this profile is private". Which is still a dead end to send
+    // someone to from a card, hence profilePublic.
+    const profilePage = await fetch(`${baseURL}/u/${handle}`)
+    expect(profilePage.status).toBe(200)
+    const profileHtml = await profilePage.text()
+    expect(profileHtml).toContain('noindex')
+    expect(profileHtml).not.toContain('Private Creator')
+
+    // The work itself is untouched and still reachable at its own address.
+    const detail = await getJson(`/api/works/${handle}/${slug}`)
+    expect(detail.response.status).toBe(200)
+    expect(detail.payload.data.work.creator.profilePublic).toBe(false)
+  })
+
+  test('making it public again restores the link', async () => {
+    const shown = await sendJson(
+      'PUT',
+      '/api/account/profile',
+      { displayName: 'Private Creator', handle, profilePublic: true },
+      visitorA.sessionToken,
+    )
+    expect(shown.response.status).toBe(200)
+
+    const { payload } = await getJson(`/api/works?creator=${handle}`)
+    expect(payload.data.works.find((item) => item.slug === slug).creator.profilePublic).toBe(true)
+  })
+})

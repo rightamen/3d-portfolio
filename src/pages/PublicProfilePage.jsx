@@ -1,23 +1,31 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
+import WorkCard from '../components/WorkCard'
 import {
   getPublicUserActivity,
   getPublicUserPosts,
   getPublicUserProfile,
   getPublicUserResources,
+  getWorks,
 } from '../lib/api'
 import { getApiErrorMessage, languages } from '../lib/i18n'
 
 const publicProfileTabs = [
   { key: 'overview', labelKey: 'publicProfileTabOverview' },
+  { key: 'works', labelKey: 'publicProfileTabWorks' },
   { key: 'resources', labelKey: 'publicProfileTabResources' },
   { key: 'posts', labelKey: 'publicProfileTabPosts' },
   { key: 'comments', labelKey: 'publicProfileTabComments' },
   { key: 'about', labelKey: 'publicProfileTabAbout' },
 ]
 
+// Works stay listed even when a visitor has made their activity private.
+// Posts, comments and uploads are activity; a PUBLISHED work is a listing the
+// creator chose to make public, and it is already on /explore under their
+// handle -- hiding it only here would be incoherent, not private.
 const privateActivityTabs = [
   { key: 'overview', labelKey: 'publicProfileTabOverview' },
+  { key: 'works', labelKey: 'publicProfileTabWorks' },
   { key: 'about', labelKey: 'publicProfileTabAbout' },
 ]
 
@@ -52,6 +60,7 @@ const PublicProfilePage = ({ copy, language, onLanguageChange }) => {
   const [activeTab, setActiveTab] = useState('overview')
   const [profile, setProfile] = useState(null)
   const [activity, setActivity] = useState({ comments: [], posts: [], resources: [] })
+  const [works, setWorks] = useState({ error: '', items: [], loaded: false })
   const [status, setStatus] = useState(() => `loading:${handle}`)
   const [message, setMessage] = useState('')
 
@@ -95,6 +104,25 @@ const PublicProfilePage = ({ copy, language, onLanguageChange }) => {
         if (!isMounted) return
         setStatus(error.code === 'PROFILE_ADMIN_DISABLED' ? 'admin-disabled' : 'error')
         setMessage(error.code ? getApiErrorMessage(error, copy) : copy.publicProfileLoadError)
+      })
+
+    return () => {
+      isMounted = false
+    }
+  }, [copy, handle])
+
+  // Its own effect on purpose. /api/works is public and does not depend on the
+  // profile lookup; folding it into that chain would mean one failure takes
+  // both down, and a private-activity profile would silently lose its works.
+  useEffect(() => {
+    let isMounted = true
+
+    getWorks({ creator: handle, limit: 24 })
+      .then((payload) => {
+        if (isMounted) setWorks({ error: '', items: payload.works || [], loaded: true })
+      })
+      .catch(() => {
+        if (isMounted) setWorks({ error: copy.publicProfileWorksLoadError, items: [], loaded: true })
       })
 
     return () => {
@@ -157,6 +185,24 @@ const PublicProfilePage = ({ copy, language, onLanguageChange }) => {
         renderEmpty(copy.publicProfileNoResourcesTitle, copy.publicProfileNoResourcesBody)}
     </div>
   )
+
+  const renderWorks = () => {
+    if (works.error) return <p className="text-coral">{works.error}</p>
+    if (!works.loaded) return <p className="text-neutral-400">{copy.exploreLoading}</p>
+    if (works.items.length === 0) {
+      return renderEmpty(copy.publicProfileNoWorksTitle, copy.publicProfileNoWorksBody)
+    }
+
+    return (
+      <div className="explore-grid">
+        {works.items.map((work) => (
+          // showCreator off: every card here has the same author, and saying
+          // so once per card is noise on the author's own page.
+          <WorkCard copy={copy} key={work.id} language={language} showCreator={false} work={work} />
+        ))}
+      </div>
+    )
+  }
 
   const renderPosts = () => (
     <div className="admin-table">
@@ -234,6 +280,7 @@ const PublicProfilePage = ({ copy, language, onLanguageChange }) => {
 
   const renderTab = () => {
     if (!activityPublic) {
+      if (activeTab === 'works') return renderWorks()
       if (activeTab === 'about') return renderAbout()
       return (
         <div className="account-section-stack">
@@ -243,10 +290,12 @@ const PublicProfilePage = ({ copy, language, onLanguageChange }) => {
             </div>
             {renderPrivateActivity()}
           </section>
+          <section className="admin-section">{renderWorks()}</section>
         </div>
       )
     }
 
+    if (activeTab === 'works') return renderWorks()
     if (activeTab === 'resources') return renderResources()
     if (activeTab === 'posts') return renderPosts()
     if (activeTab === 'comments') return renderComments()
@@ -258,6 +307,10 @@ const PublicProfilePage = ({ copy, language, onLanguageChange }) => {
             <h2>{copy.publicProfileOverview}</h2>
           </div>
           <div className="account-stat-grid">
+            <article className="account-center-card">
+              <span>{copy.accountStatWorks}</span>
+              <strong>{works.items.length}</strong>
+            </article>
             <article className="account-center-card">
               <span>{copy.accountStatResources}</span>
               <strong>{stats.uploadCount}</strong>
@@ -276,6 +329,9 @@ const PublicProfilePage = ({ copy, language, onLanguageChange }) => {
             </article>
           </div>
         </section>
+        {/* Works first: on a marketplace profile they are what someone came
+            for, and the community resource list is the older, smaller thing. */}
+        <section className="admin-section">{renderWorks()}</section>
         <section className="admin-section">{renderResources()}</section>
       </div>
     )

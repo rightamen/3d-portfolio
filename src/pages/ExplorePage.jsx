@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 
+import WorkCard from '../components/WorkCard'
 import { getWorks } from '../lib/api'
 import { getApiErrorMessage, languages } from '../lib/i18n'
 
@@ -25,49 +26,9 @@ const LanguageSwitch = ({ language, onLanguageChange, copy }) => (
   </div>
 )
 
-// The work carries four columns per field. Which one a visitor reads follows
-// the language they picked, falling back to the base column rather than to an
-// empty string: a missing Japanese title should show the English one, not
-// nothing.
-const localized = (work, field, language) => {
-  const suffix = { en: 'En', ja: 'Ja', zh: 'Zh' }[language]
-  return (suffix && work[`${field}${suffix}`]) || work[field] || ''
-}
-
 // A stable identity for "nothing yet", so a render with no results does not
 // invalidate the memo below.
 const EMPTY_WORKS = []
-
-const formatPrice = (work, copy) =>
-  work.priceCents > 0
-    ? `${(work.priceCents / 100).toFixed(2)} ${String(work.currency || 'usd').toUpperCase()}`
-    : copy.exploreFree
-
-const WorkCard = ({ copy, language, work }) => (
-  <article className="explore-card">
-    <Link className="explore-card-media" to={work.url}>
-      {work.image ? (
-        <img alt="" decoding="async" loading="lazy" src={work.image} />
-      ) : (
-        <span className="explore-card-placeholder" />
-      )}
-    </Link>
-    <div className="explore-card-body">
-      <h3>
-        <Link to={work.url}>{localized(work, 'title', language)}</Link>
-      </h3>
-      <p>{localized(work, 'summary', language)}</p>
-      <div className="explore-card-meta">
-        {work.creator?.handle && (
-          <Link className="explore-card-creator" to={`/u/${work.creator.handle}`}>
-            {copy.exploreBy} {work.creator.displayName || `@${work.creator.handle}`}
-          </Link>
-        )}
-        <span className="explore-card-price">{formatPrice(work, copy)}</span>
-      </div>
-    </div>
-  </article>
-)
 
 const ExplorePage = ({ copy, language, onLanguageChange }) => {
   // The filters live in the URL, not in component state alone: a filtered

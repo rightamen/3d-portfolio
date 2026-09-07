@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom'
 
 import { getWork } from '../lib/api'
 import { getApiErrorMessage, languages } from '../lib/i18n'
+import { formatWorkPrice, localizedWorkField as localized } from '../lib/works'
 
 // One work. This is where 3D earns its place -- the subject IS three
 // dimensional -- but the viewer is still opened deliberately rather than
@@ -26,11 +27,6 @@ const LanguageSwitch = ({ language, onLanguageChange, copy }) => (
     ))}
   </div>
 )
-
-const localized = (work, field, language) => {
-  const suffix = { en: 'En', ja: 'Ja', zh: 'Zh' }[language]
-  return (suffix && work[`${field}${suffix}`]) || work[field] || ''
-}
 
 const formatBytes = (bytes) => {
   if (!bytes) return ''
@@ -147,17 +143,18 @@ const WorkDetailPage = ({ authToken, copy, language, onLanguageChange, visitorUs
 
         <div className="work-info">
           <h1 className="text-heading">{title}</h1>
-          {work.creator?.handle && (
-            <Link className="work-creator" to={`/u/${work.creator.handle}`}>
-              {copy.exploreBy} {work.creator.displayName || `@${work.creator.handle}`}
-            </Link>
-          )}
+          {work.creator?.handle &&
+            (work.creator.profilePublic ? (
+              <Link className="work-creator" to={`/u/${work.creator.handle}`}>
+                {copy.exploreBy} {work.creator.displayName || `@${work.creator.handle}`}
+              </Link>
+            ) : (
+              <span className="work-creator">
+                {copy.exploreBy} {work.creator.displayName || `@${work.creator.handle}`}
+              </span>
+            ))}
 
-          <p className="work-price">
-            {work.priceCents > 0
-              ? `${(work.priceCents / 100).toFixed(2)} ${String(work.currency || 'usd').toUpperCase()}`
-              : copy.exploreFree}
-          </p>
+          <p className="work-price">{formatWorkPrice(work, copy)}</p>
 
           <p>{localized(work, 'summary', language)}</p>
           {localized(work, 'workflow', language) && (

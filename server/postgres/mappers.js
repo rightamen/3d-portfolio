@@ -364,6 +364,13 @@ export const toWorkCreator = (row) =>
         displayName: row.creator_display_name || '',
         handle: row.creator_handle || '',
         id: row.creator_id,
+        // Whether /u/<handle> is worth linking to. Publishing a work is a
+        // deliberate public act and hiding your profile does not retract it,
+        // so the work stays listed -- but a private profile answers with
+        // "this profile is private" and a disabled one 404s, and a card
+        // should not spend a click on either. Only the server knows which.
+        profilePublic:
+          row.creator_profile_public !== false && row.creator_profile_admin_disabled !== true,
       }
     : null
 
@@ -462,5 +469,7 @@ export const workColumns = `
   works.published_at, works.created_at, works.updated_at,
   visitor_users.handle AS creator_handle,
   visitor_users.display_name AS creator_display_name,
-  visitor_users.avatar_url AS creator_avatar_url
+  visitor_users.avatar_url AS creator_avatar_url,
+  visitor_users.profile_public AS creator_profile_public,
+  visitor_users.profile_admin_disabled AS creator_profile_admin_disabled
 `
