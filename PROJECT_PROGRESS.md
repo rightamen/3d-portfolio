@@ -1,6 +1,118 @@
 # mrright.blog 项目进度记录
 
-## 下次从这里继续（截至 2026-09-06 第三十六轮收工）
+## 下次从这里继续（截至 2026-09-07 第三十七轮收工）
+
+### 2026-09-07（第三十七轮）：平台化转型 Phase 1 —— 作者与作品的数据模型
+
+你的指示是把站点从"个人 3D 作品集"改成"人人可上传、可售卖"的平台。
+先记了一份架构决策（ADR），再动第一块地基。
+
+**你当天改过一次口径，ADR 记的是最终版：**
+
+| 决策 | 选项 | 最终 |
+|---|---|---|
+| 售卖做到哪一步 | 外链 / **Stripe Connect** / 只有价格字段 | **Stripe Connect** |
+| 界面多少是 3D | **混合** / 全站 / 可切换沉浸模式 | **混合**（当天从"全站"改回） |
+| 现有四个作品 | **迁到普通创作者名下** / 保留特殊位 / 清掉 | **迁移** |
+
+⚠️ **"不用全站 3D"这个改口是对的，它保住了前面几轮的成果。**
+第 26–28 轮花了整整三轮把 three.js 移出关键路径（分享链接从 1489 KB
+降到 467 KB），第 30 轮才让后台 3D 星图能用键盘操作。全站 3D 会把这些
+全部还回去。ADR §5 把边界写死了：3D 只用在"对象本身是三维的"或
+"空间浏览确实比网格好"的地方——作品详情、画廊、创作者主页、首页 hero；
+浏览/搜索/评论/上传表单/结算/设置/后台一律是快的 DOM。
+
+完成内容：
+
+- `docs/adr/ADR_PLATFORM_PIVOT.md`：转型架构决策记录，含数据模型、URL 迁移
+  （`/projects/:slug` 必须 301，那四个地址已被索引）、钱的部分、七个阶段
+- 新增 7 张表 + `visitor_users` 4 个列（`works` / `work_assets` /
+  `work_comments` / `work_comment_likes` / `work_likes` / `orders` / `payouts`；
+  `theme` / `creator_enabled_at` / `stripe_account_id` / `payout_state`）
+- 把线上四个作品迁进 `works`，归 `@mrright` 名下
+
+⚠️ **`works.creator_id` 用的是 `ON DELETE RESTRICT`，和这个库里其它所有
+外键都不一样。** 别的是"署名"，可以变 NULL；这个是"所有权"，没有主人的
+作品没法定价、售卖、结算。所以两条删号路径都先查作品数，返回
+409 `ACCOUNT_HAS_WORKS`，而不是让 Postgres 抛外键错变成 500。
+
+⚠️ **之前没人测过 ALTER 那一半。** 契约测试只在空集群上跑 `ensureSchema`，
+所以每条 `CREATE TABLE` 都测过了，而生产走的**只有** `ALTER TABLE` 这一半。
+新增 `scripts/verify-schema-migration.mjs`：把一次性数据库从旧版本 schema
+（带真实行）升到工作区 schema，再断言表、列、索引和金额约束。
+变异验证：去掉价格 CHECK、去掉支付意图唯一索引、把 RESTRICT 改成 CASCADE
+→ 精确失败 3 项。
+
+⚠️ **迁移脚本读的是"站点看到的项目"，不是 `content.js` 写的项目。**
+一个项目 = `content.js` 合并 `project_overrides` 加 `custom_projects`
+减 `deleted_projects`，所以只能走 `projectStore.listProjects`。
+直接读 `content.js` 会迁进去没人见过的标题——这个坑这个项目踩过。
+`scripts/verify-works-migration.mjs` 在一次性库上演练，**跑的是真脚本子进程**，
+不是测试里重写一遍。把迁移改成直接读 `content.js` → 12 条断言失败。
+
+⚠️ **"主人没有 visitor_users 账号"这个判断是错的。**
+`adieb623@gmail.com` 一直在库里，显示名是 `111111`，邮箱已验证，只是没
+handle。是 `creator-account.mjs` 的重复检查挡下来才发现的。所以用的是
+`enable` 而不是新建——保留了他原有的密码和全部历史，没有产生第二个账号，
+也不需要代办凭证。
+
+修改文件：
+
+- `docs/adr/ADR_PLATFORM_PIVOT.md`（新增）
+- `server/postgres/schema.js`
+- `server/postgres/authStore.js`、`server/postgres/adminStore.js`
+- `server/index.js`、`server/responses.js`
+- `docs/openapi/api-v1.yaml`
+- `tests/api/contract.db.spec.js`
+- `scripts/lib/disposable-postgres.mjs`（新增，从 run-api-db-tests 抽出）
+- `scripts/run-api-db-tests.mjs`
+- `scripts/verify-schema-migration.mjs`（新增）
+- `scripts/creator-account.mjs`（新增）
+- `scripts/migrate-works.mjs`（新增）
+- `scripts/verify-works-migration.mjs`（新增）
+- `package.json`（`test:schema-migration`）
+
+commit：
+
+- `b612974` ADR
+- `2911959` 数据模型 + 删号守卫 + schema 迁移验证
+- `b838092` 迁移脚本 + 演练
+
+验证结果：
+
+- `npm run build`：通过
+- `npm run lint`：通过
+- `npm run test:unit`：242 通过
+- `npm run test:api:db`：96 通过（原 93，新增 3 条删号守卫）
+- `npm run test:openapi`：通过（37 个错误码）
+- `node scripts/verify-schema-migration.mjs`：全绿，含幂等
+- `node scripts/verify-works-migration.mjs`：全绿
+- VPS 部署：成功
+- 线上表结构：7 张新表 + 4 个新列全部就位
+- 迁移结果：`@mrright` 名下 4 个作品、8 条资源行，标题与线上完全一致
+- 源表未动：`custom_projects=3`、`project_overrides=2`、`deleted_projects=4`
+- 接口验证：`/api/health`、`/`、`/community`、`/admin`、
+  `/login?mode=login`、`/account`、`/projects/md-leimu` 全部 200
+- `/api/projects` 四个项目标题不变
+
+备份路径：
+
+- `/etc/mrright-portfolio.env.backup-20260907-130140`
+- `/opt/mrright-portfolio.backup-20260907-130140`
+
+⚠️ **这一轮线上没有任何可见变化，是故意的。**
+新表建了但没有代码读它，`/projects/:slug` 照常工作。迁移是**复制不是移动**，
+所以万一有问题，代价是一条 `DELETE FROM works`，不是一次故障。
+
+待办事项：
+
+- Phase 2 发布流程（多文件上传、draft→review→published）
+- Phase 3 发现（浏览、搜索、筛选、创作者主页）
+- Phase 4 新界面外壳（按 ADR §5 的 3D 边界）
+- Phase 5 评论、Phase 6 主题、Phase 7 支付
+- `@mrright` 的显示名还是 `111111`，公开主页前要改
+- 仍未决：外部 uptime 服务（需要你的账号）
+
 
 ### 2026-09-06（第三十六轮）：清掉四条决策项
 
