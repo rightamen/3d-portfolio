@@ -2,8 +2,9 @@
 
 Date: 2026-09-06
 
-Status: Accepted. Phase 1 only is in progress; every later phase is listed here
-so the shape is agreed before it is built, not after.
+Status: Accepted, and largely built. Phases 1, 2, 3 and 5 shipped on
+2026-09-07, along with phase 4's redirect. See §7 for what each one actually
+delivered and where the plan was departed from.
 
 ## 1. What is changing
 
@@ -103,6 +104,12 @@ URL**, permanently, and `server/seo.js`'s `resolveRoute` has to keep answering
 for the old shape. Dropping those URLs would throw away the only SEO this site
 has, to save a redirect.
 
+Shipped 2026-09-07. Two details worth keeping: internal links point at the
+destination rather than through the redirect (`/api/projects` carries
+`workUrl`), and the sitemap drops a project once its work is listed — telling
+a crawler two things about one page, and asking it to follow a 301 to find
+that out, is worse than saying it once.
+
 ## 5. Where 3D goes, and where it deliberately does not
 
 The owner first asked for a fully 3D interface, was shown the conflict below,
@@ -180,18 +187,41 @@ to get authorisation wrong.
 Each phase is independently deployable and leaves the site working. That is the
 constraint that makes a pivot this size survivable on a live site.
 
-| # | Phase | Depends on | Ships |
-| --- | --- | --- | --- |
-| 1 | Creator + work data model, migration | — | Schema, stores, migration of the 4 works |
-| 2 | Publishing flow | 1 | Multi-file upload, draft→review→published |
-| 3 | Discovery | 2 | Browse, search, filter, creator pages |
-| 4 | New interface shell | 3 | The rebuilt frontend, 3D per §5's split |
-| 5 | Comments | 2 | Threaded, sorted, moderated |
-| 6 | Themes | 3 | Per-user theme, stored and rendered |
-| 7 | Payments | 2, 6 | Connect onboarding, checkout, entitlement, payouts |
+| # | Phase | Depends on | Ships | State |
+| --- | --- | --- | --- | --- |
+| 1 | Creator + work data model, migration | — | Schema, stores, migration of the 4 works | **Shipped** 2026-09-07 |
+| 2 | Publishing flow | 1 | Multi-file upload, draft→review→published | **Shipped** 2026-09-07 |
+| 3 | Discovery | 2 | Browse, search, filter, creator pages | **Shipped** 2026-09-07 |
+| 4 | New interface shell | 3 | The rebuilt frontend, 3D per §5's split | Redirect shipped; visual rebuild open |
+| 5 | Comments | 2 | Threaded, sorted, moderated | **Shipped** 2026-09-07 |
+| 6 | Themes | 3 | Per-user theme, stored and rendered | Open |
+| 7 | Payments | 2, 6 | Connect onboarding, checkout, entitlement, payouts | Open |
 
 Phase 7 is last on purpose: a marketplace with no content and no audience has
 nothing to sell. Everything before it is useful on its own.
+
+### Where the order was departed from, and why
+
+**Phase 5 was built before phase 4**, because phase 4's redirect turned out to
+depend on it. `/projects/:slug` carried a detail panel, likes, comments and a
+download request; `/w/:handle/:slug` had a summary and a file list. A 301 is
+permanent and browsers cache it for a long time, so redirecting the richer page
+to the thinner one would have been a downgrade nobody could take back. The work
+page got comments, likes and the missing specification fields first.
+
+**The download flow was deliberately NOT rebuilt**, on evidence rather than
+taste. On 2026-09-07 production held zero rows in `download_requests`, zero in
+`download_tickets` and zero in `download_events`: that flow had never been used
+by anyone. Rebuilding it before phase 7's entitlement model exists would mean
+building it twice, so the redirect drops it. `project_likes` and
+`project_comments` were **not** zero — two rows each — so both were migrated,
+because a redirect that silently discards what people left behind is a deletion
+with extra steps.
+
+**The redirect is conditional, which is what makes it reversible.** It fires
+only when a *published* work records that slug as its `source_slug`; everything
+else keeps serving the old page. Nothing about the redirect is stored, so
+hiding the work brings the old URL back — and that is a test, not a hope.
 
 ## 8. What would change this decision
 

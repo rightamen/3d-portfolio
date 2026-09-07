@@ -1,8 +1,15 @@
 # mrright.blog Architecture
 
-Status: architecture direction for API-first platform migration.
+Status: architecture direction for API-first platform migration. Updated
+2026-09-07, when the site stopped being one person's portfolio.
 
 mrright.blog is moving from a Web application into an API-first platform that can support the current Web client and a future C++ native App. The website remains the priority product surface, but the backend API should become the long-lived contract.
+
+⚠️ **The product changed shape on 2026-09-07.** It is no longer a personal 3D
+portfolio with a community area attached; it is a marketplace where anyone
+publishes works and, once phase 7 lands, sells them. The architecture below
+still holds — the change is what the API is *about*, not how it is built. See
+`docs/adr/ADR_PLATFORM_PIVOT.md` for the decisions and their reasoning.
 
 ## Current System
 
@@ -23,15 +30,33 @@ VPS: systemd service + nginx
 
 Current major product areas:
 
-- Public portfolio pages.
-- Project listing on the homepage, project detail at `/projects/:slug`.
-- 3D model preview.
-- Visitor account registration, login, verification, profile, downloads, comments.
+- Public portfolio pages, and the homepage catalogue.
+- **The marketplace**: browse at `/explore`, one work at `/w/:handle/:slug`,
+  a creator's works on their profile. Publishing runs draft → review →
+  published, with multi-file assets, per-account storage quotas and
+  magic-byte validation.
+- **Discussion on a work**: threaded one level, sorted by top or newest,
+  likeable, pinnable by the work's owner.
+- 3D model preview, reached deliberately rather than mounted with the page.
+- Visitor account registration, login, verification, profile, comments.
 - Public user profiles at `/u/:handle`.
 - Community posts, comments, and uploads.
-- Admin dashboard for comments, likes, contact messages, download requests, projects, community, and visitor management.
+- Admin dashboard for comments, likes, contact messages, download requests,
+  projects, works, community, and visitor management.
 - Admin moderation for public profile visibility and profile field cleanup.
 - Audit trail through `admin_user_actions`.
+
+⚠️ **`/projects/:slug` is a redirect, not a page.** Since 2026-09-07 it 301s
+to `/w/:handle/:slug` whenever a published work records that slug as its
+source. It still renders the old page when no such work exists, which is what
+makes the change reversible. Anything new that needs to link to a work must
+use the work URL, not the project URL.
+
+⚠️ **The download-request flow is dormant, not removed.** Production held zero
+rows across `download_requests`, `download_tickets` and `download_events` when
+the redirect shipped, so it was left in place for `/projects/:slug` rather than
+rebuilt on the work page. Phase 7 replaces it: a purchase grants a ticket
+through the same machinery, which is why it was not rebuilt twice.
 
 ## Target Platform Shape
 
@@ -54,7 +79,9 @@ apps/native-cpp
 server
   Express API
   Auth
-  Projects
+  Projects (legacy catalogue, redirecting to Works)
+  Works, work assets, work comments, work likes
+  Creators
   Visitors
   Public profiles
   Community

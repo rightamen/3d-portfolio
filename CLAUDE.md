@@ -30,6 +30,11 @@
    - /admin
    - /login?mode=login
    - /account
+   - /explore（作品目录）
+   - /w/mrright/md-leimu（单个作品）
+   - /u/mrright（创作者主页）
+   - /projects/md-leimu 必须是 **301** 且 Location 指向 /w/mrright/md-leimu
+     （2026-09-07 起。它不是 200——如果返回 200，说明作品没了或被隐藏了）
 10. 数据库写操作前必须先说明 SQL 影响。
 11. 不允许 DROP DATABASE、DROP TABLE、TRUNCATE、DELETE without WHERE。
 12. Playwright 测试可以自动打开网站、登录、点击、截图，但不要把 token 或密码输出到日志。
