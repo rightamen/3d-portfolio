@@ -1,4 +1,11 @@
-import { createId, toWork, toWorkAsset, toWorkSummary, workColumns } from './mappers.js'
+import {
+  createId,
+  toWork,
+  toWorkAsset,
+  toWorkComment,
+  toWorkSummary,
+  workColumns,
+} from './mappers.js'
 
 // Works: the marketplace catalogue. See docs/adr/ADR_PLATFORM_PIVOT.md.
 //
@@ -350,6 +357,200 @@ export const createWorksStore = ({ pool }) => {
         ],
       )
       return toWorkAsset(result.rows[0], { includeProtected: true })
+    },
+
+    // ---------------------------------------------------------------
+    // Comments. The shape people expect from YouTube: threaded one level,
+    // sortable by top or newest, likeable, and pinnable by the work's owner.
+    //
+    // Signing in is required to post, which is why there is no moderation
+    // QUEUE here the way project_comments has one. That queue exists because
+    // anonymous comments published instantly and the only defence was a
+    // per-IP rate limit that cannot work on this host at all (see
+    // docs/OPERATIONS_CLIENT_IP.md). An account is a better answer than a
+    // queue somebody has to read.
+    // ---------------------------------------------------------------
+
+    // Hidden comments are excluded in SQL rather than filtered afterwards, so
+    // a caller that forgets cannot leak one. `includeHidden` is for the
+    // moderator's view and nothing else.
+    listWorkComments: async (workId, { includeHidden = false, sort = 'top', viewerId = null } = {}) => {
+      // Pinned first whatever the sort: a pin is the owner saying "read this
+      // one", and a sort that buries it makes the pin meaningless.
+      const orderBy =
+        sort === 'newest'
+          ? 'work_comments.pinned_at IS NULL, work_comments.created_at DESC'
+          : 'work_comments.pinned_at IS NULL, like_count DESC, work_comments.created_at DESC'
+
+      const result = await pool.query(
+        `SELECT
+           work_comments.id, work_comments.work_id, work_comments.parent_id,
+           work_comments.author, work_comments.message, work_comments.status,
+           work_comments.pinned_at, work_comments.edited_at,
+           work_comments.created_at, work_comments.updated_at,
+           visitor_users.id AS user_id,
+           visitor_users.display_name,
+           visitor_users.access_level,
+           COALESCE(like_counts.count, 0) AS like_count,
+           CASE WHEN viewer_likes.user_id IS NULL THEN false ELSE true END AS liked
+         FROM work_comments
+         LEFT JOIN visitor_users ON visitor_users.id = work_comments.user_id
+         LEFT JOIN (
+           SELECT comment_id, count(*)::int AS count
+           FROM work_comment_likes
+           GROUP BY comment_id
+         ) AS like_counts ON like_counts.comment_id = work_comments.id
+         LEFT JOIN work_comment_likes AS viewer_likes
+           ON viewer_likes.comment_id = work_comments.id AND viewer_likes.user_id = $2
+         WHERE work_comments.work_id = $1
+           AND ($3 OR work_comments.status = 'published')
+         ORDER BY ${orderBy}
+         LIMIT 500`,
+        [workId, viewerId, includeHidden],
+      )
+
+      return result.rows.map(toWorkComment)
+    },
+
+    getWorkComment: async (id) => {
+      const result = await pool.query(
+        `SELECT work_comments.*, works.creator_id AS work_creator_id
+         FROM work_comments
+         JOIN works ON works.id = work_comments.work_id
+         WHERE work_comments.id = $1`,
+        [id],
+      )
+      return result.rows[0] || null
+    },
+
+    createWorkComment: async ({ author, message, parentId, userId, workId }) => {
+      const id = createId()
+
+      // A reply's parent must belong to the same work, and a reply to a reply
+      // is flattened onto its parent. One level is what the shape people
+      // expect actually is; arbitrary nesting is a different, worse UI that
+      // nobody asked for.
+      let resolvedParent = null
+      if (parentId) {
+        const parent = await pool.query(
+          'SELECT id, parent_id, work_id FROM work_comments WHERE id = $1',
+          [parentId],
+        )
+        const row = parent.rows[0]
+        if (!row || row.work_id !== workId) return null
+        resolvedParent = row.parent_id || row.id
+      }
+
+      await pool.query(
+        `INSERT INTO work_comments (id, work_id, parent_id, user_id, author, message)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [id, workId, resolvedParent, userId, author, message],
+      )
+
+      const created = await pool.query(
+        `SELECT
+           work_comments.id, work_comments.work_id, work_comments.parent_id,
+           work_comments.author, work_comments.message, work_comments.status,
+           work_comments.pinned_at, work_comments.edited_at,
+           work_comments.created_at, work_comments.updated_at,
+           visitor_users.id AS user_id,
+           visitor_users.display_name,
+           visitor_users.access_level,
+           0 AS like_count, false AS liked
+         FROM work_comments
+         LEFT JOIN visitor_users ON visitor_users.id = work_comments.user_id
+         WHERE work_comments.id = $1`,
+        [id],
+      )
+
+      return toWorkComment(created.rows[0])
+    },
+
+    deleteWorkComment: async (id) => {
+      const result = await pool.query(
+        'DELETE FROM work_comments WHERE id = $1 RETURNING id',
+        [id],
+      )
+      return result.rows[0] || null
+    },
+
+    setWorkCommentStatus: async (id, status) => {
+      const result = await pool.query(
+        `UPDATE work_comments
+         SET status = $2, moderated_at = now(), updated_at = now()
+         WHERE id = $1 RETURNING id`,
+        [id, status],
+      )
+      return result.rows[0] || null
+    },
+
+    // One pinned comment per work: pinning a second unpins the first, because
+    // "pinned" means "the one the owner wants read first" and a list of them
+    // is just the list again.
+    pinWorkComment: async (workId, commentId, pinned) => {
+      const client = await pool.connect()
+
+      try {
+        await client.query('BEGIN')
+        await client.query(
+          'UPDATE work_comments SET pinned_at = null WHERE work_id = $1 AND pinned_at IS NOT NULL',
+          [workId],
+        )
+        if (pinned) {
+          await client.query(
+            'UPDATE work_comments SET pinned_at = now() WHERE id = $1 AND work_id = $2',
+            [commentId, workId],
+          )
+        }
+        await client.query('COMMIT')
+        return true
+      } catch (error) {
+        await client.query('ROLLBACK')
+        throw error
+      } finally {
+        client.release()
+      }
+    },
+
+    toggleWorkCommentLike: async (commentId, userId) => {
+      const client = await pool.connect()
+
+      try {
+        await client.query('BEGIN')
+        const existing = await client.query('SELECT id FROM work_comments WHERE id = $1', [
+          commentId,
+        ])
+        if (!existing.rows[0]) {
+          await client.query('ROLLBACK')
+          return null
+        }
+
+        const deleted = await client.query(
+          'DELETE FROM work_comment_likes WHERE comment_id = $1 AND user_id = $2 RETURNING comment_id',
+          [commentId, userId],
+        )
+        const liked = deleted.rowCount === 0
+
+        if (liked) {
+          await client.query(
+            'INSERT INTO work_comment_likes (comment_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+            [commentId, userId],
+          )
+        }
+
+        const count = await client.query(
+          'SELECT count(*)::int AS count FROM work_comment_likes WHERE comment_id = $1',
+          [commentId],
+        )
+        await client.query('COMMIT')
+
+        return { likeCount: count.rows[0].count, liked }
+      } catch (error) {
+        await client.query('ROLLBACK')
+        throw error
+      } finally {
+        client.release()
+      }
     },
 
     removeAsset: async (workId, assetId) => {

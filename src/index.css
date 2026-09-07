@@ -4410,3 +4410,163 @@ body {
     align-items: start;
   }
 }
+
+/* The discussion on a work. Flat DOM, like everything else that is meant to be
+   read (ADR_PLATFORM_PIVOT §5). */
+.work-comments {
+  margin-top: 3rem;
+  padding-top: 1.75rem;
+  border-top: 1px solid rgb(255 255 255 / 10%);
+}
+
+.work-comments-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.work-comments-head h2 {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  font-size: 1.05rem;
+}
+
+.work-comments-count {
+  font-size: 0.8rem;
+  color: rgb(255 255 255 / 55%);
+}
+
+.work-comments-sort {
+  display: flex;
+  gap: 0.35rem;
+  font-size: 0.8rem;
+}
+
+.work-comments-sort button {
+  padding: 0.25rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid rgb(255 255 255 / 12%);
+}
+
+.work-comments-sort-active {
+  background: rgb(255 255 255 / 12%);
+}
+
+.work-comment-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.work-comment-form textarea {
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  border-radius: 0.6rem;
+  border: 1px solid rgb(255 255 255 / 12%);
+  background: rgb(255 255 255 / 4%);
+  color: inherit;
+  font: inherit;
+  font-size: 0.88rem;
+  resize: vertical;
+}
+
+.work-comment-form textarea:focus-visible {
+  outline: 2px solid rgb(255 255 255 / 45%);
+  outline-offset: 2px;
+}
+
+.work-comment-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.work-comment {
+  display: flex;
+  gap: 0.7rem;
+  padding: 0.85rem 0;
+  border-top: 1px solid rgb(255 255 255 / 7%);
+}
+
+/* A reply sits under its parent's body, not under the whole thread, so the
+   indent is one step and never compounds -- the server flattens deeper
+   replies onto the same parent for the same reason. */
+.work-comment-reply {
+  margin-top: 0.5rem;
+  padding-bottom: 0;
+  border-top: 0;
+  border-left: 2px solid rgb(255 255 255 / 10%);
+  padding-left: 0.7rem;
+}
+
+.work-comment-avatar {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 8%);
+  font-size: 0.7rem;
+  letter-spacing: 0.02em;
+}
+
+.work-comment-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.work-comment-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.work-comment-head small {
+  color: rgb(255 255 255 / 45%);
+  font-size: 0.72rem;
+}
+
+.work-comment-badge {
+  padding: 0.05rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid rgb(255 255 255 / 16%);
+  font-size: 0.66rem;
+  color: rgb(255 255 255 / 62%);
+}
+
+.work-comment-body p {
+  margin: 0.25rem 0 0.4rem;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.work-comment-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  font-size: 0.76rem;
+  color: rgb(255 255 255 / 55%);
+}
+
+.work-comment-actions button:hover:not(:disabled) {
+  color: rgb(255 255 255 / 90%);
+}
+
+.work-comment-actions button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.work-comment-liked {
+  color: rgb(255 138 138);
+}

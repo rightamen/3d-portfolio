@@ -1981,6 +1981,186 @@ app.delete(
   },
 )
 
+// Comments on a work, in the shape people expect from YouTube: threaded one
+// level, sorted by top or newest, likeable, and pinnable by the work's owner.
+//
+// Signing in is required to post. project_comments has a moderation queue
+// because anonymous comments published instantly and the only defence was a
+// per-IP rate limit that cannot work on this host at all
+// (docs/OPERATIONS_CLIENT_IP.md). An account is a better answer than a queue
+// somebody has to read, so there is no pending state here -- only a hide,
+// used by the work's creator or an admin after the fact.
+
+const WORK_COMMENT_SORTS = new Set(['top', 'newest'])
+
+// Loads the published work a comment route is about. Draft works accept no
+// comments from anyone: there is nothing public to discuss yet, and the owner
+// talking to themselves in a draft is not a feature.
+const loadCommentableWork = async (request, response) => {
+  const viewer = request.visitorUser || (await getOptionalUser(request))
+  const work = await worksStore.getWorkByHandleAndSlug(
+    request.params.handle,
+    request.params.slug,
+    { viewerId: viewer?.id || null },
+  )
+
+  if (!work) {
+    sendError(response, API_ERROR_CODES.WORK_NOT_FOUND, 'Work not found.', 404)
+    return null
+  }
+
+  return { viewer, work }
+}
+
+app.get('/api/works/:handle/:slug/comments', requireWorksStore, async (request, response) => {
+  const found = await loadCommentableWork(request, response)
+  if (!found) return
+
+  const sort = String(request.query.sort ?? 'top')
+  const comments = await worksStore.listWorkComments(found.work.id, {
+    // The owner sees hidden comments on their own work, marked as hidden, so
+    // that hiding one is visibly reversible rather than a disappearance.
+    includeHidden: found.viewer?.id === found.work.creator?.id,
+    sort: WORK_COMMENT_SORTS.has(sort) ? sort : 'top',
+    viewerId: found.viewer?.id || null,
+  })
+
+  return sendData(response, { comments })
+})
+
+app.post(
+  '/api/works/:handle/:slug/comments',
+  requireVisitor,
+  requireWorksStore,
+  async (request, response) => {
+    const found = await loadCommentableWork(request, response)
+    if (!found) return
+
+    if (found.work.status !== 'published') {
+      return sendError(
+        response,
+        API_ERROR_CODES.VALIDATION_ERROR,
+        'This work is not published yet.',
+        400,
+      )
+    }
+
+    const message = String(request.body?.message ?? '').trim().slice(0, 1800)
+    if (!message) {
+      return sendError(response, API_ERROR_CODES.VALIDATION_ERROR, 'A comment is required.', 400)
+    }
+
+    const comment = await worksStore.createWorkComment({
+      author: request.visitorUser.displayName,
+      message,
+      parentId: String(request.body?.parentId ?? '').trim() || null,
+      userId: request.visitorUser.id,
+      workId: found.work.id,
+    })
+
+    // null means the parent belonged to a different work -- a reply that would
+    // have appeared under a thread nobody was reading.
+    if (!comment) {
+      return sendError(
+        response,
+        API_ERROR_CODES.COMMENT_NOT_FOUND,
+        'That comment is not on this work.',
+        404,
+      )
+    }
+
+    return sendData(response, { comment }, 201)
+  },
+)
+
+// Loads a comment plus who is allowed to act on it. The author may delete
+// their own; the work's creator moderates their own page; an admin may do
+// either. Anyone else gets a 404 rather than a 403 -- whether a given comment
+// id exists is not their business.
+const loadOwnOrModeratedComment = async (request, response) => {
+  const comment = await worksStore.getWorkComment(request.params.id)
+  const viewer = request.visitorUser
+
+  if (!comment) {
+    sendError(response, API_ERROR_CODES.COMMENT_NOT_FOUND, 'Comment not found.', 404)
+    return null
+  }
+
+  const isAuthor = comment.user_id && comment.user_id === viewer.id
+  const isWorkCreator = comment.work_creator_id === viewer.id
+
+  if (!isAuthor && !isWorkCreator) {
+    sendError(response, API_ERROR_CODES.COMMENT_NOT_FOUND, 'Comment not found.', 404)
+    return null
+  }
+
+  return { comment, isAuthor, isWorkCreator }
+}
+
+app.delete('/api/work-comments/:id', requireVisitor, requireWorksStore, async (request, response) => {
+  const found = await loadOwnOrModeratedComment(request, response)
+  if (!found) return
+
+  // The work's creator hides rather than deletes: on someone else's words,
+  // reversible moderation is the right power to have, and a delete they cannot
+  // undo is not. The author's own delete is a real delete.
+  if (!found.isAuthor) {
+    await worksStore.setWorkCommentStatus(found.comment.id, 'hidden')
+    return sendData(response, { hidden: true })
+  }
+
+  await worksStore.deleteWorkComment(found.comment.id)
+  return sendData(response, { ok: true })
+})
+
+app.patch(
+  '/api/work-comments/:id/status',
+  requireVisitor,
+  requireWorksStore,
+  async (request, response) => {
+    const found = await loadOwnOrModeratedComment(request, response)
+    if (!found) return
+
+    // Only the work's creator moderates. An author restoring their own hidden
+    // comment would make hiding pointless.
+    if (!found.isWorkCreator) {
+      return sendError(response, API_ERROR_CODES.COMMENT_NOT_FOUND, 'Comment not found.', 404)
+    }
+
+    const status = String(request.body?.status ?? '').trim()
+    if (!['published', 'hidden'].includes(status)) {
+      return sendError(response, API_ERROR_CODES.VALIDATION_ERROR, 'Unknown comment status.', 400)
+    }
+
+    await worksStore.setWorkCommentStatus(found.comment.id, status)
+    return sendData(response, { status })
+  },
+)
+
+app.patch('/api/work-comments/:id/pin', requireVisitor, requireWorksStore, async (request, response) => {
+  const found = await loadOwnOrModeratedComment(request, response)
+  if (!found) return
+
+  if (!found.isWorkCreator) {
+    return sendError(response, API_ERROR_CODES.COMMENT_NOT_FOUND, 'Comment not found.', 404)
+  }
+
+  const pinned = request.body?.pinned !== false
+  await worksStore.pinWorkComment(found.comment.work_id, found.comment.id, pinned)
+
+  return sendData(response, { pinned })
+})
+
+app.post('/api/work-comments/:id/like', requireVisitor, requireWorksStore, async (request, response) => {
+  const result = await worksStore.toggleWorkCommentLike(request.params.id, request.visitorUser.id)
+
+  if (!result) {
+    return sendError(response, API_ERROR_CODES.COMMENT_NOT_FOUND, 'Comment not found.', 404)
+  }
+
+  return sendData(response, result)
+})
+
 app.get('/api/admin/works', requireAdmin, requireWorksStore, async (request, response) => {
   const { limit, offset, page } = normalizePagination(request.query, 20, 100)
   const status = String(request.query.status ?? '').trim()

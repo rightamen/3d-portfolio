@@ -1,6 +1,7 @@
 import { Suspense, lazy, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 
+import WorkComments from '../components/WorkComments'
 import { getWork } from '../lib/api'
 import { getApiErrorMessage, languages } from '../lib/i18n'
 import { formatWorkPrice, localizedWorkField as localized } from '../lib/works'
@@ -201,6 +202,19 @@ const WorkDetailPage = ({ authToken, copy, language, onLanguageChange, visitorUs
           )}
         </div>
       </div>
+
+      {/* Only on a published work: a draft has nothing public to discuss, and
+          the API refuses comments on one anyway. */}
+      {work.status === 'published' && (
+        <WorkComments
+          authToken={authToken}
+          copy={copy}
+          handle={handle}
+          isOwner={isOwner}
+          slug={slug}
+          visitorUser={visitorUser}
+        />
+      )}
 
       {viewerOpen && work.modelUrl && (
         <Suspense fallback={<p className="text-neutral-400">{copy.workLoading}</p>}>

@@ -473,3 +473,23 @@ export const workColumns = `
   visitor_users.profile_public AS creator_profile_public,
   visitor_users.profile_admin_disabled AS creator_profile_admin_disabled
 `
+
+// A comment on a work. Shaped on toCommunityComment, which already threads,
+// plus the two things a YouTube-style discussion has that a forum thread does
+// not: a pin, and an edit marker.
+export const toWorkComment = (row) => ({
+  author: row.author,
+  createdAt: row.created_at?.toISOString?.() || row.created_at,
+  editedAt: row.edited_at?.toISOString?.() || row.edited_at || null,
+  id: row.id,
+  likeCount: Number(row.like_count || 0),
+  // Whether THIS viewer has liked it. Anonymous callers always get false,
+  // which is correct: a like belongs to an account.
+  liked: row.liked === true,
+  message: row.message,
+  parentId: row.parent_id || null,
+  pinned: Boolean(row.pinned_at),
+  status: row.status,
+  user: toUserSummary(row),
+  workId: row.work_id,
+})

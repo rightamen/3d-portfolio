@@ -174,6 +174,51 @@ export const getWork = (handle, slug, token) =>
     headers: token ? authHeaders(token) : undefined,
   })
 
+// Comments on a work. The token is optional on the listing and required on
+// everything else: `liked` is per account, so an anonymous read is correct but
+// always gets false.
+const workCommentsPath = (handle, slug) =>
+  `/api/works/${encodeURIComponent(String(handle).replace(/^@/, ''))}/${encodeURIComponent(slug)}/comments`
+
+export const getWorkComments = (handle, slug, { sort = 'top', token } = {}) =>
+  request(`${workCommentsPath(handle, slug)}?sort=${encodeURIComponent(sort)}`, {
+    cache: 'no-store',
+    headers: token ? authHeaders(token) : undefined,
+  })
+
+export const createWorkComment = (handle, slug, { message, parentId }, token) =>
+  request(workCommentsPath(handle, slug), {
+    body: JSON.stringify({ message, parentId: parentId || undefined }),
+    headers: authHeaders(token, { 'Content-Type': 'application/json' }),
+    method: 'POST',
+  })
+
+export const deleteWorkComment = (id, token) =>
+  request(`/api/work-comments/${encodeURIComponent(id)}`, {
+    headers: authHeaders(token),
+    method: 'DELETE',
+  })
+
+export const toggleWorkCommentLike = (id, token) =>
+  request(`/api/work-comments/${encodeURIComponent(id)}/like`, {
+    headers: authHeaders(token),
+    method: 'POST',
+  })
+
+export const setWorkCommentPinned = (id, pinned, token) =>
+  request(`/api/work-comments/${encodeURIComponent(id)}/pin`, {
+    body: JSON.stringify({ pinned }),
+    headers: authHeaders(token, { 'Content-Type': 'application/json' }),
+    method: 'PATCH',
+  })
+
+export const setWorkCommentStatus = (id, status, token) =>
+  request(`/api/work-comments/${encodeURIComponent(id)}/status`, {
+    body: JSON.stringify({ status }),
+    headers: authHeaders(token, { 'Content-Type': 'application/json' }),
+    method: 'PATCH',
+  })
+
 export const getCommunityUploads = () => request('/api/community/uploads')
 
 export const getCommunityPosts = () => request('/api/community/posts')

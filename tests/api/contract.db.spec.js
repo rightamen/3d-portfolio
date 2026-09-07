@@ -2810,3 +2810,290 @@ test.describe('works by a creator whose profile is private', () => {
     expect(payload.data.works.find((item) => item.slug === slug).creator.profilePublic).toBe(true)
   })
 })
+
+// Comments on a work: threaded one level, sortable, likeable, pinnable by the
+// owner. The rules worth pinning are the ones about who may do what to whose
+// words -- an author deletes their own, a creator hides someone else's, and
+// nobody is told which comment ids exist on works they have nothing to do with.
+test.describe('works: the discussion', () => {
+  let handle
+  let slug
+  let stranger
+  let topLevelId
+  let strangerCommentId
+
+  test.beforeAll(async () => {
+    handle = `talk-${randomBytes(4).toString('hex')}`.slice(0, 30)
+    const profile = await sendJson(
+      'PUT',
+      '/api/account/profile',
+      { displayName: 'Talkative Creator', handle },
+      visitorA.sessionToken,
+    )
+    expect(profile.response.status).toBe(200)
+
+    const created = await sendJson(
+      'POST',
+      '/api/account/works',
+      { image: '/assets/projects/fire-extinguisher.png', title: 'Something To Discuss' },
+      visitorA.sessionToken,
+    )
+    expect(created.response.status).toBe(201)
+    slug = created.payload.data.work.slug
+
+    const published = await sendJson(
+      'PATCH',
+      `/api/admin/works/${created.payload.data.work.id}/status`,
+      { status: 'published' },
+      adminToken,
+    )
+    expect(published.response.status).toBe(200)
+
+    const email = `talk-stranger-${randomBytes(4).toString('hex')}@example.com`
+    const registered = await registerVisitor('Passing Stranger', email)
+    const verified = await sendJson('POST', '/api/auth/verify-email', {
+      code: registered.devCode,
+      email,
+    })
+    expect(verified.response.status).toBe(200)
+    stranger = { id: registered.id, token: verified.payload.data.session.token }
+  })
+
+  test('commenting needs an account', async () => {
+    const { response } = await sendJson(
+      'POST',
+      `/api/works/${handle}/${slug}/comments`,
+      { message: 'Anonymously, please.' },
+      null,
+    )
+    expect(response.status).toBe(401)
+  })
+
+  test('a signed-in visitor can comment, and it publishes immediately', async () => {
+    const { payload, response } = await sendJson(
+      'POST',
+      `/api/works/${handle}/${slug}/comments`,
+      { message: 'The silhouette reads really well.' },
+      stranger.token,
+    )
+
+    expect(response.status).toBe(201)
+    expectContractShape(payload, { legacyKeys: ['comment'] })
+    expect(payload.data.comment.status).toBe('published')
+    expect(payload.data.comment.user.displayName).toBe('Passing Stranger')
+    expect(payload.data.comment.parentId).toBeNull()
+    strangerCommentId = payload.data.comment.id
+    topLevelId = strangerCommentId
+  })
+
+  test('an empty comment is refused', async () => {
+    const { response } = await sendJson(
+      'POST',
+      `/api/works/${handle}/${slug}/comments`,
+      { message: '   ' },
+      stranger.token,
+    )
+    expect(response.status).toBe(400)
+  })
+
+  test('replies thread one level, and a reply to a reply flattens onto it', async () => {
+    const reply = await sendJson(
+      'POST',
+      `/api/works/${handle}/${slug}/comments`,
+      { message: 'Thanks!', parentId: topLevelId },
+      visitorA.sessionToken,
+    )
+    expect(reply.response.status).toBe(201)
+    expect(reply.payload.data.comment.parentId).toBe(topLevelId)
+
+    // Replying to the reply must not create a third level: it belongs in the
+    // same thread, which is what "one level" actually means.
+    const nested = await sendJson(
+      'POST',
+      `/api/works/${handle}/${slug}/comments`,
+      { message: 'Agreed.', parentId: reply.payload.data.comment.id },
+      stranger.token,
+    )
+    expect(nested.response.status).toBe(201)
+    expect(nested.payload.data.comment.parentId).toBe(topLevelId)
+  })
+
+  test('a reply cannot be attached to a comment on a different work', async () => {
+    const other = await sendJson(
+      'POST',
+      '/api/account/works',
+      { image: '/assets/projects/fire-extinguisher.png', title: 'A Different Work Entirely' },
+      visitorA.sessionToken,
+    )
+    expect(other.response.status).toBe(201)
+    const otherPublished = await sendJson(
+      'PATCH',
+      `/api/admin/works/${other.payload.data.work.id}/status`,
+      { status: 'published' },
+      adminToken,
+    )
+    expect(otherPublished.response.status).toBe(200)
+
+    const { response } = await sendJson(
+      'POST',
+      `/api/works/${handle}/${otherPublished.payload.data.work.slug}/comments`,
+      { message: 'Wrong thread.', parentId: topLevelId },
+      stranger.token,
+    )
+    expect(response.status).toBe(404)
+  })
+
+  test('likes are per account and toggle', async () => {
+    const liked = await sendJson(
+      'POST',
+      `/api/work-comments/${topLevelId}/like`,
+      {},
+      visitorA.sessionToken,
+    )
+    expect(liked.response.status).toBe(200)
+    expect(liked.payload.data).toMatchObject({ likeCount: 1, liked: true })
+
+    const again = await sendJson(
+      'POST',
+      `/api/work-comments/${topLevelId}/like`,
+      {},
+      visitorA.sessionToken,
+    )
+    expect(again.payload.data).toMatchObject({ likeCount: 0, liked: false })
+  })
+
+  test('the listing tells each viewer whether THEY liked it', async () => {
+    await sendJson('POST', `/api/work-comments/${topLevelId}/like`, {}, visitorA.sessionToken)
+
+    const asLiker = await getJson(
+      `/api/works/${handle}/${slug}/comments`,
+      visitorA.sessionToken,
+    )
+    expect(asLiker.payload.data.comments.find((c) => c.id === topLevelId).liked).toBe(true)
+
+    const anonymous = await getJson(`/api/works/${handle}/${slug}/comments`)
+    const sameComment = anonymous.payload.data.comments.find((c) => c.id === topLevelId)
+    expect(sameComment.liked).toBe(false)
+    expect(sameComment.likeCount).toBe(1)
+  })
+
+  test('the creator can pin one comment, and pinning a second unpins the first', async () => {
+    const pinned = await sendJson(
+      'PATCH',
+      `/api/work-comments/${topLevelId}/pin`,
+      { pinned: true },
+      visitorA.sessionToken,
+    )
+    expect(pinned.response.status).toBe(200)
+
+    const listed = await getJson(`/api/works/${handle}/${slug}/comments?sort=newest`)
+    // Pinned first whatever the sort -- a pin the sort buries is not a pin.
+    expect(listed.payload.data.comments[0].id).toBe(topLevelId)
+    expect(listed.payload.data.comments[0].pinned).toBe(true)
+
+    const other = listed.payload.data.comments.find((c) => c.id !== topLevelId)
+    await sendJson(
+      'PATCH',
+      `/api/work-comments/${other.id}/pin`,
+      { pinned: true },
+      visitorA.sessionToken,
+    )
+
+    const after = await getJson(`/api/works/${handle}/${slug}/comments?sort=newest`)
+    expect(after.payload.data.comments.filter((c) => c.pinned).map((c) => c.id)).toEqual([other.id])
+  })
+
+  test('a stranger cannot pin or moderate on somebody else\'s work', async () => {
+    const pin = await sendJson(
+      'PATCH',
+      `/api/work-comments/${topLevelId}/pin`,
+      { pinned: true },
+      stranger.token,
+    )
+    expect(pin.response.status).toBe(404)
+
+    const status = await sendJson(
+      'PATCH',
+      `/api/work-comments/${topLevelId}/status`,
+      { status: 'hidden' },
+      stranger.token,
+    )
+    // The stranger authored this one, so they are allowed to reach it -- but
+    // moderating is the work creator's power, not the author's.
+    expect(status.response.status).toBe(404)
+  })
+
+  test('the creator hides rather than deletes somebody else\'s comment', async () => {
+    const { payload, response } = await sendJson(
+      'DELETE',
+      `/api/work-comments/${strangerCommentId}`,
+      {},
+      visitorA.sessionToken,
+    )
+
+    expect(response.status).toBe(200)
+    expect(payload.data.hidden).toBe(true)
+
+    // Gone for the public...
+    const anonymous = await getJson(`/api/works/${handle}/${slug}/comments`)
+    expect(anonymous.payload.data.comments.some((c) => c.id === strangerCommentId)).toBe(false)
+
+    // ...but visible to the creator, marked hidden, so undoing it is possible.
+    const asCreator = await getJson(
+      `/api/works/${handle}/${slug}/comments`,
+      visitorA.sessionToken,
+    )
+    const hidden = asCreator.payload.data.comments.find((c) => c.id === strangerCommentId)
+    expect(hidden?.status).toBe('hidden')
+
+    const restored = await sendJson(
+      'PATCH',
+      `/api/work-comments/${strangerCommentId}/status`,
+      { status: 'published' },
+      visitorA.sessionToken,
+    )
+    expect(restored.response.status).toBe(200)
+    const back = await getJson(`/api/works/${handle}/${slug}/comments`)
+    expect(back.payload.data.comments.some((c) => c.id === strangerCommentId)).toBe(true)
+  })
+
+  test('an author deletes their own for real', async () => {
+    const { response } = await sendJson(
+      'DELETE',
+      `/api/work-comments/${strangerCommentId}`,
+      {},
+      stranger.token,
+    )
+    expect(response.status).toBe(200)
+
+    const asCreator = await getJson(
+      `/api/works/${handle}/${slug}/comments`,
+      visitorA.sessionToken,
+    )
+    // Not merely hidden: gone, even from the view that shows hidden ones.
+    expect(asCreator.payload.data.comments.some((c) => c.id === strangerCommentId)).toBe(false)
+  })
+
+  test('a draft work accepts no comments', async () => {
+    const draft = await sendJson(
+      'POST',
+      '/api/account/works',
+      { title: 'Not Published Yet' },
+      visitorA.sessionToken,
+    )
+    expect(draft.response.status).toBe(201)
+
+    const { response } = await sendJson(
+      'POST',
+      `/api/works/${handle}/${draft.payload.data.work.slug}/comments`,
+      { message: 'Talking to myself.' },
+      visitorA.sessionToken,
+    )
+    expect(response.status).toBe(400)
+  })
+
+  test('comments on a work nobody owns answer 404', async () => {
+    const { response } = await getJson(`/api/works/${handle}/no-such-work/comments`)
+    expect(response.status).toBe(404)
+  })
+})
