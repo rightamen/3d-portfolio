@@ -51,7 +51,14 @@ if (!databaseUrl) die('DATABASE_URL is not set.')
 
 const createId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 
-const publicDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'public')
+const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+
+// Two roots, because the server serves from two. /uploads/... is read from
+// public/uploads, while a content-hashed model like
+// /models/fire-extinguisher-4k.3fa834b2.glb is a build output and exists only
+// in dist/. Looking in public/ alone reported that one as unreadable, which is
+// how this list got a second entry.
+const assetRoots = [path.join(rootDir, 'public'), path.join(rootDir, 'dist')]
 
 // The byte count of a file this server serves, or 0 when it cannot be read.
 //
@@ -63,16 +70,20 @@ const publicDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..
 const fileSize = async (fileUrl) => {
   if (typeof fileUrl !== 'string' || !fileUrl.startsWith('/')) return 0
 
-  const localPath = path.resolve(publicDir, fileUrl.replace(/^\//, ''))
-  // Never follow a path out of public/: the URLs come from the database, and
-  // a stat() driven by stored data should not be able to walk the filesystem.
-  if (!localPath.startsWith(publicDir + path.sep)) return 0
+  for (const root of assetRoots) {
+    const localPath = path.resolve(root, fileUrl.replace(/^\//, ''))
+    // Never follow a path out of the root: the URLs come from the database,
+    // and a stat() driven by stored data should not walk the filesystem.
+    if (!localPath.startsWith(root + path.sep)) continue
 
-  try {
-    return (await stat(localPath)).size
-  } catch {
-    return 0
+    try {
+      return (await stat(localPath)).size
+    } catch {
+      // Try the next root; only "in none of them" means unreadable.
+    }
   }
+
+  return 0
 }
 
 // A slug that came from custom_projects exists in that table; anything else is
@@ -271,7 +282,7 @@ try {
   for (const row of zeroSized.rows) {
     const size = await fileSize(row.file_url)
     if (!size) {
-      console.log(`size?   ${row.file_url} -- not readable from ${publicDir}`)
+      console.log(`size?   ${row.file_url} -- not found under public/ or dist/`)
       continue
     }
     if (commit) {
