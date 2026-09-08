@@ -143,6 +143,35 @@ Added 2026-09-07 with phase 2 of `docs/adr/ADR_PLATFORM_PIVOT.md`:
 - `POST /api/account/works/{id}/assets` — multipart, one file per request
 - `DELETE /api/account/works/{id}/assets/{assetId}`
 
+Added 2026-09-07/08 with phases 5, 6 and 7:
+
+- `GET/POST /api/works/{handle}/{slug}/comments`, `DELETE /api/work-comments/{id}`,
+  `PATCH /api/work-comments/{id}/status`, `.../pin`, `POST .../like` — the
+  discussion
+- `GET /api/works/{handle}/{slug}/likes`, `POST .../like` — likes
+- `GET /api/theme-options`, `GET/PUT /api/account/theme` — per-creator themes
+- `GET/PUT /api/account/payment-info` — how a creator gets paid
+- `POST /api/works/{handle}/{slug}/order`, `GET /api/account/orders`,
+  `GET /api/account/orders/{id}`, `PATCH /api/orders/{id}/note`,
+  `PATCH /api/orders/{id}/cancel` — buying
+- `GET /api/account/sales`, `PATCH /api/account/sales/{id}/status` — the
+  creator confirming their own sale
+- `POST /api/works/{handle}/{slug}/download-ticket`, `GET .../download` —
+  entitlement, gated by `ordersStore.hasEntitlement`
+- `GET /api/admin/orders`, `PATCH /api/admin/orders/{id}/status`,
+  `GET /api/admin/orders/stale`, `GET /api/admin/orders/{id}/events` — the
+  evidence trail
+
+⚠️ **Two of these carry rules that must not be relaxed when they are finally
+written into the spec**, because the spec is where a future client learns what
+to expect:
+
+- `creator.acceptsPayment` is public; `paymentInfo.methods` is **not**, and
+  appears only in an order belonging to the caller. A payment code on a public
+  page is a payment code anyone can scrape into a scam.
+- A work's `source` asset carries `fileUrl: null` to everyone but its owner and
+  an admin. The file is reached through a single-use ticket, never a path.
+
 These are **wired, tested end-to-end in `contract.db.spec.js`, and
 deliberately absent from `docs/openapi/api-v1.yaml`.** The reason is the
 freeze plan's own logic: a contract is frozen so a compiled client can rely on

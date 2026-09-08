@@ -35,6 +35,10 @@
    - /u/mrright（创作者主页）
    - /projects/md-leimu 必须是 **301** 且 Location 指向 /w/mrright/md-leimu
      （2026-09-07 起。它不是 200——如果返回 200，说明作品没了或被隐藏了）
+   - **公开作品响应里不能出现 `qrUrl` 或 `"methods"`**（2026-09-08 起）：
+     `curl -s https://mrright.blog/api/works/mrright/md-leimu | grep -c qrUrl`
+     必须是 0。创作者的收款码只给已下单的买家看，
+     出现在公开页面上就是任何人都能抓去做骗局的收款码。
 10. 数据库写操作前必须先说明 SQL 影响。
 11. 不允许 DROP DATABASE、DROP TABLE、TRUNCATE、DELETE without WHERE。
 12. Playwright 测试可以自动打开网站、登录、点击、截图，但不要把 token 或密码输出到日志。

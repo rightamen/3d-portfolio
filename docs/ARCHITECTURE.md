@@ -37,6 +37,11 @@ Current major product areas:
   magic-byte validation.
 - **Discussion on a work**: threaded one level, sorted by top or newest,
   likeable, pinnable by the work's owner.
+- **Selling**, creator-direct: a creator lists how they want to be paid, a
+  buyer orders, pays the creator outside the platform, and the **creator**
+  confirms receipt. Entitlement then grants a single-use download ticket.
+- **Per-creator themes**: an accent colour and two presets, applied to that
+  creator's own work pages and profile.
 - 3D model preview, reached deliberately rather than mounted with the page.
 - Visitor account registration, login, verification, profile, comments.
 - Public user profiles at `/u/:handle`.
@@ -55,8 +60,20 @@ use the work URL, not the project URL.
 ⚠️ **The download-request flow is dormant, not removed.** Production held zero
 rows across `download_requests`, `download_tickets` and `download_events` when
 the redirect shipped, so it was left in place for `/projects/:slug` rather than
-rebuilt on the work page. Phase 7 replaces it: a purchase grants a ticket
-through the same machinery, which is why it was not rebuilt twice.
+rebuilt on the work page. Works use the same ticket machinery through a
+different door: `createWorkDownloadTicket` / `consumeWorkDownloadTicket`.
+
+⚠️ **The platform never holds money.** Payment happens between two people
+outside the system, so there is no merchant account, no settlement, and no
+refund the platform can force. What it has instead is evidence — an
+append-only `order_events` table and a `payment_snapshot` of what the buyer
+was shown — and the ability to suspend an account. Anything that assumes the
+platform can move money is wrong about this system; see
+`docs/adr/ADR_PLATFORM_PIVOT.md` §6 for what it would take to change that.
+
+⚠️ **One question decides every download**: `ordersStore.hasEntitlement`. Free
+works, the creator's own works, and paid works with a paid order all resolve
+there. A new download path that does not ask it is a bug, not a shortcut.
 
 ## Target Platform Shape
 
@@ -81,7 +98,8 @@ server
   Auth
   Projects (legacy catalogue, redirecting to Works)
   Works, work assets, work comments, work likes
-  Creators
+  Orders, entitlement, order events
+  Creators, themes, payment info
   Visitors
   Public profiles
   Community

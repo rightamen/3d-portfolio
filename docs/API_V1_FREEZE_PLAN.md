@@ -86,7 +86,18 @@ C++ App 是编译分发的原生二进制，发布后无法像 Web 一样随服�
 - HTTP status 必须与错误类别一致（见 §7 表）。
 - v1 预留（不实现、不承诺）：`error.details[]` 字段级校验错误数组——未来 additive 添加。
 
-## 7. Error code 表（v1 冻结集，26 个 = `API_ERROR_CODES` 全量 + INTERNAL_ERROR）
+## 7. Error code 表（v1 冻结集，26 个）
+
+⚠️ **这一节的表是 v1 冻结的 26 个,不再等于 `API_ERROR_CODES` 全量。**
+标题原本写着「= `API_ERROR_CODES` 全量」,那句话在 2026-07 之后就不成立了,
+一直挂到 2026-09-08 才改。现在常量里有 39 个,多出来的那些属于**平台化改造
+之后新增、尚未冻结**的端点族(works / orders / themes,见
+`API_V1_GAPS.md` §6b),它们的错误码可以变,下面这 26 个不能。
+
+**新增错误码时的规矩**:加进 `API_ERROR_CODES` 和 OpenAPI 的 enum 即可,
+**不要**动下面这张表——除非那个码确实要进冻结集,那是一次有意的契约变更。
+`scripts/validate-openapi.mjs` 校验的是常量与 enum 一致,不是这张表,
+所以这张表得靠人守。
 
 | Code | HTTP | 语义 | 公开契约 |
 | --- | :-: | --- | :-: |
