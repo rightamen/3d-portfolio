@@ -1,3 +1,5 @@
+import { readStoredTheme, themeToTokens } from '../themes.js'
+
 // Row -> API-shape mappers shared by every store, plus the project field list
 // they all agree on. Kept apart from the stores because they are the contract:
 // what a `visitor_users` row looks like to a public page, to the owner, and to
@@ -37,6 +39,8 @@ export const toAccountUserRecord = (row) =>
   row
     ? {
         accessLevel: row.access_level,
+        theme: readStoredTheme(row.theme),
+        themeTokens: themeToTokens(row.theme),
         activityPublic: row.activity_public !== false,
         avatarUrl: row.avatar_url || '',
         bannerUrl: row.banner_url || '',
@@ -138,6 +142,16 @@ export const toPublicProfile = (row) =>
         profilePublic: row.profile_public !== false,
         profileAdminDisabled: row.profile_admin_disabled === true,
         publicEmail: row.contacts_public === true ? row.public_email || '' : '',
+        // Always a complete theme, never null: a page that has to handle both
+        // "themed" and "not themed" branches will eventually get one wrong,
+        // and the default IS a theme.
+        //
+        // Both shapes travel: `theme` is the three knobs, which the editor
+        // needs to show what is selected, and `themeTokens` is the resolved
+        // CSS, which the renderer needs. Resolving presets to values stays on
+        // the server so the client cannot disagree with it about what 'ink' is.
+        theme: readStoredTheme(row.theme),
+        themeTokens: themeToTokens(row.theme),
         stats:
           row.activity_public !== false
             ? {
@@ -364,6 +378,9 @@ export const toWorkCreator = (row) =>
         displayName: row.creator_display_name || '',
         handle: row.creator_handle || '',
         id: row.creator_id,
+        // The creator's theme rides along so a work page can paint itself in
+        // their colours without a second request for the profile.
+        themeTokens: themeToTokens(row.creator_theme),
         // Whether /u/<handle> is worth linking to. Publishing a work is a
         // deliberate public act and hiding your profile does not retract it,
         // so the work stays listed -- but a private profile answers with
@@ -471,7 +488,8 @@ export const workColumns = `
   visitor_users.display_name AS creator_display_name,
   visitor_users.avatar_url AS creator_avatar_url,
   visitor_users.profile_public AS creator_profile_public,
-  visitor_users.profile_admin_disabled AS creator_profile_admin_disabled
+  visitor_users.profile_admin_disabled AS creator_profile_admin_disabled,
+  visitor_users.theme AS creator_theme
 `
 
 // A comment on a work. Shaped on toCommunityComment, which already threads,

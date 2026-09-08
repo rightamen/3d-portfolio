@@ -89,6 +89,7 @@ export const createAuthStore = ({ pool }) => {
             visitor_users.handle,
             visitor_users.location,
             visitor_users.profile_public,
+            visitor_users.theme,
             visitor_users.website,
             visitor_users.created_at
           FROM visitor_sessions
@@ -561,6 +562,17 @@ export const createAuthStore = ({ pool }) => {
       } finally {
         client.release()
       }
+    },
+
+    // The theme is stored as jsonb and always written whole. There is no
+    // partial update: three knobs is not enough to be worth the ambiguity of
+    // "absent means leave alone" on a nested object.
+    setTheme: async (userId, theme) => {
+      const result = await pool.query(
+        'UPDATE visitor_users SET theme = $2, updated_at = now() WHERE id = $1 RETURNING theme',
+        [userId, JSON.stringify(theme)],
+      )
+      return result.rows[0] ? result.rows[0].theme : null
     },
 
     getAccountProfile: async (userId) => {

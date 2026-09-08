@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { assetCategoryProfiles, getAssetCategoryProfile } from '../lib/assetCategories'
 import {
@@ -59,6 +59,8 @@ const createProfileForm = (profile = {}) => ({
   publicEmail: profile.publicEmail || '',
   website: profile.website || '',
 })
+
+const ThemeEditor = lazy(() => import('../components/ThemeEditor'))
 
 const accountTabs = [
   { key: 'overview', labelKey: 'accountNavOverview' },
@@ -1027,6 +1029,13 @@ const AccountPage = ({
 
   const renderSettings = () => (
     <div className="account-section-stack">
+      {/* Lazily loaded: it pulls the theme options and the account's theme,
+          and nobody visiting /account for a download needs either. */}
+      <section className="admin-section">
+        <Suspense fallback={<p className="text-neutral-400">{copy.loading}</p>}>
+          <ThemeEditor authToken={authToken} copy={copy} />
+        </Suspense>
+      </section>
       <section className="admin-section">
         <div className="admin-section-header">
           <div>

@@ -4648,3 +4648,126 @@ body {
   min-width: 0;
   overflow-wrap: anywhere;
 }
+
+/* A creator's theme. The tokens are written onto this element by
+   src/lib/theme.js through CSSOM, never by an injected <style> -- the CSP
+   checks parsed style elements, not property writes.
+
+   Every var() carries the un-themed value as its fallback, which is what lets
+   the page render correctly before the profile has loaded and for creators who
+   have never set one. */
+.work-page-themed {
+  background:
+    radial-gradient(
+      120% 60% at 50% 0%,
+      color-mix(in srgb, var(--theme-accent, transparent) 9%, transparent),
+      transparent 70%
+    ),
+    var(--theme-surface, transparent);
+}
+
+.work-page-themed h1,
+.work-page-themed h2,
+.work-page-themed .public-profile-shell h1 {
+  font-family: var(--theme-font, inherit);
+}
+
+.work-page-themed .primary-action,
+.work-page-themed .work-comments-sort-active {
+  background: var(--theme-accent, rgb(255 255 255 / 12%));
+  color: var(--theme-on-accent, #0b0b10);
+}
+
+.work-page-themed a:not(.primary-action):not(.secondary-action):hover,
+.work-page-themed .work-creator:hover,
+.work-page-themed .work-like-active {
+  color: var(--theme-accent, inherit);
+}
+
+.work-page-themed .work-like-active {
+  border-color: color-mix(in srgb, var(--theme-accent, currentColor) 45%, transparent);
+}
+
+/* A theme is decoration; motion sensitivity is not. The gradient is static, so
+   there is nothing to disable here -- this is the note that says that was
+   checked rather than forgotten. */
+
+/* The theme editor. Lives in /account settings; the preview beside it is
+   painted with the same tokens the real pages use, so it cannot drift into
+   showing something the pages will not. */
+.theme-editor-grid {
+  display: grid;
+  gap: 0.9rem;
+  margin: 1rem 0;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+}
+
+.theme-editor-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+}
+
+.theme-editor-grid label > span {
+  color: rgb(255 255 255 / 62%);
+}
+
+.theme-editor-grid select,
+.theme-editor-grid input[type='color'] {
+  width: 100%;
+  height: 2.4rem;
+  padding: 0.3rem;
+  border-radius: 0.5rem;
+  border: 1px solid rgb(255 255 255 / 12%);
+  background: rgb(255 255 255 / 4%);
+  color: inherit;
+  font: inherit;
+  font-size: 0.85rem;
+}
+
+.theme-editor-grid input[type='color'] {
+  cursor: pointer;
+  padding: 0.25rem;
+}
+
+.theme-editor-grid code {
+  font-size: 0.72rem;
+  color: rgb(255 255 255 / 45%);
+}
+
+.theme-preview {
+  position: relative;
+  padding: 1.5rem 1.1rem 1.1rem;
+  border-radius: 0.8rem;
+  border: 1px solid rgb(255 255 255 / 10%);
+}
+
+.theme-preview-label {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.75rem;
+  font-size: 0.66rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgb(255 255 255 / 40%);
+}
+
+.theme-preview h3 {
+  font-family: var(--theme-font, inherit);
+  font-size: 1.15rem;
+}
+
+.theme-preview p {
+  margin: 0.35rem 0 0.9rem;
+  font-size: 0.85rem;
+  color: rgb(255 255 255 / 62%);
+}
+
+.theme-editor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}

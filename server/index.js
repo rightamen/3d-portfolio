@@ -11,6 +11,14 @@ import { createContactMessagesStore } from './contactMessagesStore.js'
 import { createContentHealthChecker } from './contentHealth.js'
 import { createContentHealthHeadline } from './contentHealthHeadline.js'
 import { experience, profile, projects as staticProjects, skills } from './content.js'
+import {
+  DEFAULT_THEME,
+  THEME_FONTS,
+  THEME_SURFACES,
+  normalizeTheme,
+  readStoredTheme,
+  themeToTokens,
+} from './themes.js'
 import { createDownloadRequestsStore } from './downloadRequestsStore.js'
 import { hasValidFileSignature } from './fileSignatures.js'
 import {
@@ -1637,6 +1645,48 @@ const loadOwnWork = async (request, response) => {
 
   return work
 }
+
+// Per-creator themes. Three knobs -- an accent colour and two presets -- not
+// free-form CSS: a stylesheet from a creator could restyle the marketplace
+// chrome around their own page, cover a report button, or imitate a checkout
+// dialog, and none of that is worth what a free stylesheet buys.
+app.get('/api/theme-options', (_request, response) =>
+  // The client builds its picker from this rather than hardcoding a copy that
+  // can fall out of step with what the server will accept.
+  sendData(response, {
+    defaults: DEFAULT_THEME,
+    fonts: Object.entries(THEME_FONTS).map(([value, item]) => ({ label: item.label, value })),
+    surfaces: Object.entries(THEME_SURFACES).map(([value, item]) => ({
+      background: item.background,
+      label: item.label,
+      value,
+    })),
+  }),
+)
+
+app.get('/api/account/theme', requireVisitor, async (request, response) =>
+  sendData(response, {
+    theme: readStoredTheme(request.visitorUser.theme),
+    themeTokens: themeToTokens(request.visitorUser.theme),
+  }),
+)
+
+app.put('/api/account/theme', requireVisitor, async (request, response) => {
+  const { errors, theme } = normalizeTheme(request.body?.theme ?? request.body)
+
+  if (errors.length) {
+    // The first error, not all of them: they are ordered so the most
+    // actionable one comes first, and a form shows one message at a time.
+    return sendError(response, API_ERROR_CODES.VALIDATION_ERROR, errors[0], 400)
+  }
+
+  if (typeof authStore.setTheme !== 'function') {
+    return sendError(response, API_ERROR_CODES.SERVICE_UNAVAILABLE, 'Themes are not configured.', 503)
+  }
+
+  await authStore.setTheme(request.visitorUser.id, theme)
+  return sendData(response, { theme, themeTokens: themeToTokens(theme) })
+})
 
 app.get('/api/works', requireWorksStore, async (request, response) => {
   const { limit, offset, page } = normalizePagination(request.query, 24, 60)

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import WorkCard from '../components/WorkCard'
 import {
@@ -9,6 +9,7 @@ import {
   getWorks,
 } from '../lib/api'
 import { getApiErrorMessage, languages } from '../lib/i18n'
+import { applyTheme } from '../lib/theme'
 
 const publicProfileTabs = [
   { key: 'overview', labelKey: 'publicProfileTabOverview' },
@@ -129,6 +130,11 @@ const PublicProfilePage = ({ copy, language, onLanguageChange }) => {
       isMounted = false
     }
   }, [copy, handle])
+
+  // Scoped to this page, not :root, so it cannot follow the visitor onward.
+  const pageRef = useRef(null)
+  const themeTokens = profile?.themeTokens
+  useEffect(() => applyTheme(pageRef.current, themeTokens), [themeTokens])
 
   const isLoading = status === `loading:${handle}`
   const activityPublic = profile?.activityPublic !== false
@@ -338,7 +344,7 @@ const PublicProfilePage = ({ copy, language, onLanguageChange }) => {
   }
 
   return (
-    <main className="admin-shell public-profile-shell">
+    <main className="admin-shell public-profile-shell work-page-themed" ref={pageRef}>
       <header className="auth-nav">
         <Link to="/" className="text-xl font-bold text-neutral-300 hover:text-white">
           mrright.blog

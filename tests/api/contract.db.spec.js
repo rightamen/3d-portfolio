@@ -3289,3 +3289,122 @@ test.describe('works: likes', () => {
     expect(read.payload.data).toMatchObject({ likeCount: 1, liked: true })
   })
 })
+
+// Per-creator themes. The rules worth pinning are the refusals: a preset the
+// client cannot draw, and an accent that would make the creator's own page
+// unreadable. A theme system that accepts anything is a defacement feature.
+test.describe('themes', () => {
+  test('the options come from the server, so a picker cannot offer what it would refuse', async () => {
+    const { payload, response } = await getJson('/api/theme-options')
+
+    expect(response.status).toBe(200)
+    expectContractShape(payload, { legacyKeys: ['defaults', 'fonts', 'surfaces'] })
+    expect(payload.data.surfaces.length).toBeGreaterThan(1)
+    expect(payload.data.fonts.length).toBeGreaterThan(1)
+    // The defaults have to be something the same API would accept.
+    const saved = await sendJson(
+      'PUT',
+      '/api/account/theme',
+      { theme: payload.data.defaults },
+      visitorA.sessionToken,
+    )
+    expect(saved.response.status).toBe(200)
+  })
+
+  test('a theme round-trips, resolved into tokens', async () => {
+    const { payload, response } = await sendJson(
+      'PUT',
+      '/api/account/theme',
+      { theme: { accent: '#ff9966', font: 'serif', surface: 'ink' } },
+      visitorA.sessionToken,
+    )
+
+    expect(response.status).toBe(200)
+    expect(payload.data.theme).toEqual({ accent: '#ff9966', font: 'serif', surface: 'ink' })
+    // Tokens, not knobs: the client must never have to know what 'ink' means.
+    expect(payload.data.themeTokens['--theme-accent']).toBe('#ff9966')
+    expect(payload.data.themeTokens['--theme-surface']).toMatch(/^#[0-9a-f]{6}$/)
+    expect(payload.data.themeTokens['--theme-font']).toContain('serif')
+
+    const read = await getJson('/api/account/theme', visitorA.sessionToken)
+    expect(read.payload.data.theme).toEqual(payload.data.theme)
+  })
+
+  test('an unreadable accent is refused, with the numbers', async () => {
+    const { payload, response } = await sendJson(
+      'PUT',
+      '/api/account/theme',
+      { theme: { accent: '#0c0c12', surface: 'ink' } },
+      visitorA.sessionToken,
+    )
+
+    expect(response.status).toBe(400)
+    expect(payload.error.code).toBe('VALIDATION_ERROR')
+    expect(payload.error.message).toMatch(/contrast \d+\.\d+:1/)
+
+    // ...and the refusal did not half-apply.
+    const read = await getJson('/api/account/theme', visitorA.sessionToken)
+    expect(read.payload.data.theme.accent).toBe('#ff9966')
+  })
+
+  test('a preset the client cannot draw is refused', async () => {
+    for (const theme of [{ surface: 'neon' }, { font: 'comic' }, { accent: 'red' }]) {
+      const { response } = await sendJson('PUT', '/api/account/theme', { theme }, visitorA.sessionToken)
+      expect(response.status, JSON.stringify(theme)).toBe(400)
+    }
+  })
+
+  test('setting a theme needs an account', async () => {
+    const { response } = await sendJson('PUT', '/api/account/theme', { theme: {} }, null)
+    expect(response.status).toBe(401)
+  })
+
+  test('the theme reaches the pages that render it', async () => {
+    // The point of the whole feature: a visitor looking at somebody's work or
+    // profile gets their colours without asking for them separately.
+    const handle = `themed-${randomBytes(4).toString('hex')}`.slice(0, 30)
+    await sendJson(
+      'PUT',
+      '/api/account/profile',
+      { displayName: 'Themed Creator', handle },
+      visitorA.sessionToken,
+    )
+    const created = await sendJson(
+      'POST',
+      '/api/account/works',
+      { image: '/assets/projects/fire-extinguisher.png', title: 'A Themed Work' },
+      visitorA.sessionToken,
+    )
+    await sendJson(
+      'PATCH',
+      `/api/admin/works/${created.payload.data.work.id}/status`,
+      { status: 'published' },
+      adminToken,
+    )
+
+    const work = await getJson(`/api/works/${handle}/${created.payload.data.work.slug}`)
+    expect(work.payload.data.work.creator.themeTokens['--theme-accent']).toBe('#ff9966')
+
+    const profile = await getJson(`/api/users/${handle}`)
+    expect(profile.payload.data.profile.themeTokens['--theme-accent']).toBe('#ff9966')
+  })
+
+  test('a stored value nobody could draw falls back rather than reaching a style property', async () => {
+    // Belt and braces: the column is jsonb and a hand-edit in psql is not an
+    // impossible event. What comes back has to be renderable regardless.
+    const { Pool } = (await import('pg')).default
+    const pool = new Pool({ connectionString: databaseUrl })
+    try {
+      await pool.query(`UPDATE visitor_users SET theme = $2 WHERE id = $1`, [
+        visitorA.id,
+        JSON.stringify({ accent: 'url(javascript:alert(1))', font: 'x', surface: 'y' }),
+      ])
+
+      const read = await getJson('/api/account/theme', visitorA.sessionToken)
+      expect(read.payload.data.themeTokens['--theme-accent']).toMatch(/^#[0-9a-f]{6}$/)
+      expect(read.payload.data.theme.surface).toBe('midnight')
+    } finally {
+      await pool.end()
+    }
+  })
+})

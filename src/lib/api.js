@@ -238,6 +238,20 @@ export const setWorkCommentStatus = (id, status, token) =>
     method: 'PATCH',
   })
 
+// Themes. The options come from the server rather than a hardcoded copy here,
+// which is what stops the picker offering a preset the API would refuse.
+export const getThemeOptions = () => request('/api/theme-options')
+
+export const getAccountTheme = (token) =>
+  request('/api/account/theme', { cache: 'no-store', headers: authHeaders(token) })
+
+export const saveAccountTheme = (theme, token) =>
+  request('/api/account/theme', {
+    body: JSON.stringify({ theme }),
+    headers: authHeaders(token, { 'Content-Type': 'application/json' }),
+    method: 'PUT',
+  })
+
 export const getCommunityUploads = () => request('/api/community/uploads')
 
 export const getCommunityPosts = () => request('/api/community/posts')

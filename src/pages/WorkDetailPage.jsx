@@ -1,9 +1,10 @@
-import { Suspense, lazy, useEffect, useState } from 'react'
+import { Suspense, lazy, useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 
 import WorkComments from '../components/WorkComments'
 import { getWork, getWorkLikes, toggleWorkLike } from '../lib/api'
 import { getApiErrorMessage, languages } from '../lib/i18n'
+import { applyTheme } from '../lib/theme'
 import { formatWorkPrice, localizedWorkField as localized } from '../lib/works'
 
 // One work. This is where 3D earns its place -- the subject IS three
@@ -100,9 +101,17 @@ const WorkDetailPage = ({ authToken, copy, language, onLanguageChange, visitorUs
   const work = status === 'loading' ? null : loaded.work
   const message = loaded.message
 
+  // The creator's theme, scoped to this page. Written onto the page element
+  // rather than :root so it cannot follow the visitor to /explore, and removed
+  // on unmount -- a theme that outlives its page is a bug that only shows up
+  // two navigations later.
+  const pageRef = useRef(null)
+  const themeTokens = work?.creator?.themeTokens
+  useEffect(() => applyTheme(pageRef.current, themeTokens), [themeTokens])
+
   if (status === 'loading') {
     return (
-      <main className="work-page c-space">
+      <main className="work-page c-space" ref={pageRef}>
         <p className="text-neutral-400">{copy.workLoading}</p>
       </main>
     )
@@ -110,7 +119,7 @@ const WorkDetailPage = ({ authToken, copy, language, onLanguageChange, visitorUs
 
   if (status === 'missing' || !work) {
     return (
-      <main className="work-page c-space">
+      <main className="work-page c-space" ref={pageRef}>
         <h1 className="text-heading">{copy.workNotFoundTitle}</h1>
         <p className="text-neutral-400">{message || copy.workNotFoundBody}</p>
         <Link className="secondary-action" to="/explore">
@@ -124,7 +133,7 @@ const WorkDetailPage = ({ authToken, copy, language, onLanguageChange, visitorUs
   const title = localized(work, 'title', language)
 
   return (
-    <main className="work-page c-space">
+    <main className="work-page c-space work-page-themed" ref={pageRef}>
       <header className="auth-nav">
         <Link className="text-xl font-bold text-neutral-300 hover:text-white" to="/">
           mrright.blog
