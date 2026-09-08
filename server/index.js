@@ -11,6 +11,7 @@ import { createContactMessagesStore } from './contactMessagesStore.js'
 import { createContentHealthChecker } from './contentHealth.js'
 import { createContentHealthHeadline } from './contentHealthHeadline.js'
 import { experience, profile, projects as staticProjects, skills } from './content.js'
+import { normalizePaymentInfo, readStoredPaymentInfo } from './paymentInfo.js'
 import {
   DEFAULT_THEME,
   THEME_FONTS,
@@ -1668,20 +1669,9 @@ const loadOwnWork = async (request, response) => {
 // what a card is.
 // ---------------------------------------------------------------------------
 
-// How a buyer is told to pay. Read from the environment because it is an
-// operational detail, not code: a QR image path and a line of instructions.
-//
-// Selling is OFF until both are set. An order a buyer has no way to pay is
-// worse than a button that says purchasing is not available yet.
-const manualPaymentInstructions = String(process.env.PAYMENT_MANUAL_INSTRUCTIONS || '').trim()
-const manualPaymentQrUrl = String(process.env.PAYMENT_MANUAL_QR_URL || '').trim()
-const platformFeeBasisPoints = Math.min(
-  10000,
-  Math.max(0, Number(process.env.PLATFORM_FEE_BASIS_POINTS || 0)),
-)
-
-const paymentsConfigured = () => Boolean(manualPaymentInstructions && manualPaymentQrUrl)
-
+// Selling is per creator, not per site: a creator who has set up a way to be
+// paid can sell, and one who has not cannot. There is no global switch, because
+// there is no global merchant -- the platform never receives the money.
 const requireOrdersStore = (_request, response, next) => {
   if (!ordersStore) {
     return sendError(
@@ -1694,16 +1684,34 @@ const requireOrdersStore = (_request, response, next) => {
   return next()
 }
 
-app.get('/api/payment-methods', (_request, response) =>
-  sendData(response, {
-    // The client shows a disabled buy button when this is false, rather than
-    // an order form that leads nowhere.
-    available: paymentsConfigured(),
-    instructions: manualPaymentInstructions,
-    provider: 'manual',
-    qrUrl: manualPaymentQrUrl,
-  }),
-)
+// A creator's own payment setup. Read and written by them alone; the METHODS
+// never appear on a public page, because a payment code on a public page is a
+// payment code anyone can scrape and put in a scam.
+app.get('/api/account/payment-info', requireVisitor, async (request, response) => {
+  if (typeof authStore.getPaymentInfo !== 'function') {
+    return sendError(response, API_ERROR_CODES.SERVICE_UNAVAILABLE, 'Not configured.', 503)
+  }
+
+  return sendData(response, {
+    paymentInfo: readStoredPaymentInfo(await authStore.getPaymentInfo(request.visitorUser.id)),
+  })
+})
+
+app.put('/api/account/payment-info', requireVisitor, async (request, response) => {
+  const { errors, paymentInfo } = normalizePaymentInfo(
+    request.body?.paymentInfo ?? request.body,
+  )
+
+  if (errors.length) {
+    return sendError(response, API_ERROR_CODES.VALIDATION_ERROR, errors[0], 400)
+  }
+  if (typeof authStore.setPaymentInfo !== 'function') {
+    return sendError(response, API_ERROR_CODES.SERVICE_UNAVAILABLE, 'Not configured.', 503)
+  }
+
+  await authStore.setPaymentInfo(request.visitorUser.id, paymentInfo)
+  return sendData(response, { paymentInfo })
+})
 
 app.post(
   '/api/works/:handle/:slug/order',
@@ -1711,15 +1719,6 @@ app.post(
   requireWorksStore,
   requireOrdersStore,
   async (request, response) => {
-    if (!paymentsConfigured()) {
-      return sendError(
-        response,
-        API_ERROR_CODES.SERVICE_UNAVAILABLE,
-        'Purchasing is not available yet.',
-        503,
-      )
-    }
-
     const work = await worksStore.getWorkByHandleAndSlug(request.params.handle, request.params.slug)
     if (!work) {
       return sendError(response, API_ERROR_CODES.WORK_NOT_FOUND, 'Work not found.', 404)
@@ -1741,14 +1740,29 @@ app.post(
       )
     }
 
+    // The creator's own methods, read at order time. If they have none, there
+    // is nowhere for the buyer's money to go and the order would be a dead
+    // end -- so it is refused rather than created.
+    const paymentInfo = readStoredPaymentInfo(await authStore.getPaymentInfo(work.creator.id))
+    if (!paymentInfo.methods.length) {
+      return sendError(
+        response,
+        API_ERROR_CODES.SERVICE_UNAVAILABLE,
+        'This creator has not set up a way to be paid yet.',
+        503,
+      )
+    }
+
     // Clicking buy twice lands on the same order. A second row would be a
-    // second thing for the operator to reconcile against one payment.
+    // second thing to reconcile against one payment.
     const existing = await ordersStore.findOpenOrder(request.visitorUser.id, work.id)
     if (existing) return sendData(response, { order: existing })
 
     const order = await ordersStore.createOrder({
       buyerId: request.visitorUser.id,
-      feeBasisPoints: platformFeeBasisPoints,
+      // Snapshotted, so a creator changing their code later cannot erase what
+      // the buyer was told to pay.
+      paymentSnapshot: paymentInfo,
       workId: work.id,
     })
 
@@ -1799,6 +1813,107 @@ app.patch('/api/orders/:id/note', requireVisitor, requireOrdersStore, async (req
   return sendData(response, { order: await ordersStore.getOrder(request.params.id) })
 })
 
+// One order, to the buyer who placed it. This is where the payment methods
+// finally appear -- to one person, after they have committed to buying -- and
+// they come from the ORDER's snapshot rather than from the creator's current
+// setup, so a code changed mid-dispute cannot rewrite what the buyer was told.
+app.get('/api/account/orders/:id', requireVisitor, requireOrdersStore, async (request, response) => {
+  const order = await ordersStore.getOrder(request.params.id)
+
+  // The buyer and the creator may both read it. Anyone else gets a 404,
+  // because whether an order id exists is not their business.
+  const involved =
+    order &&
+    (order.buyerId === request.visitorUser.id || order.creatorId === request.visitorUser.id)
+  if (!involved) {
+    return sendError(response, API_ERROR_CODES.RESOURCE_FORBIDDEN, 'Order not found.', 404)
+  }
+
+  return sendData(response, {
+    events: await ordersStore.listOrderEvents(order.id),
+    order,
+    paymentMethods: order.paymentSnapshot.methods,
+  })
+})
+
+// The creator confirms their own sale. They are the only one who can see the
+// money arrive, which is the whole reason this model works without a licence
+// -- and the whole reason it needs a record: nobody else can check them.
+app.patch(
+  '/api/account/sales/:id/status',
+  requireVisitor,
+  requireOrdersStore,
+  async (request, response) => {
+    const sale = await ordersStore.getSaleForCreator(request.params.id, request.visitorUser.id)
+    if (!sale) {
+      return sendError(response, API_ERROR_CODES.RESOURCE_FORBIDDEN, 'Sale not found.', 404)
+    }
+
+    const status = String(request.body?.status ?? '').trim()
+    if (!SETTLEABLE_ORDER_STATUSES.has(status)) {
+      return sendError(
+        response,
+        API_ERROR_CODES.VALIDATION_ERROR,
+        `status must be one of: ${[...SETTLEABLE_ORDER_STATUSES].join(', ')}.`,
+        400,
+      )
+    }
+
+    const result = await ordersStore.settleOrder(sale.id, status, {
+      actorId: request.visitorUser.id,
+      actorKind: 'creator',
+      note: String(request.body?.note ?? '').trim().slice(0, 400) || null,
+      settledBy: request.visitorUser.displayName,
+    })
+
+    if (result.conflict === 'already-owned') {
+      return sendError(
+        response,
+        API_ERROR_CODES.VALIDATION_ERROR,
+        'That buyer already owns this work.',
+        409,
+      )
+    }
+    if (!result.order) {
+      return sendError(response, API_ERROR_CODES.RESOURCE_FORBIDDEN, 'Sale not found.', 404)
+    }
+
+    return sendData(response, { order: result.order })
+  },
+)
+
+// Orders a buyer says they paid for and nobody confirmed. The platform holds
+// no money, so this list IS its leverage: a creator who takes payments and
+// never confirms them shows up here, and an operator can act on the account
+// even though they cannot act on the funds.
+app.get('/api/admin/orders/stale', requireAdmin, requireOrdersStore, async (request, response) => {
+  const hours = Math.min(720, Math.max(1, Number(request.query.hours || 48)))
+  return sendData(response, {
+    hours,
+    orders: await ordersStore.listStaleOrders({ olderThanMs: hours * 3600 * 1000 }),
+  })
+})
+
+// The evidence, in order. Everything anybody said or did about one order.
+app.get(
+  '/api/admin/orders/:id/events',
+  requireAdmin,
+  requireOrdersStore,
+  async (request, response) => {
+    const order = await ordersStore.getOrder(request.params.id)
+    if (!order) {
+      return sendError(response, API_ERROR_CODES.RESOURCE_FORBIDDEN, 'Order not found.', 404)
+    }
+
+    return sendData(response, {
+      events: await ordersStore.listOrderEvents(order.id),
+      order,
+      // What the buyer was shown at the time, not what the creator shows now.
+      paymentMethods: order.paymentSnapshot.methods,
+    })
+  },
+)
+
 app.get('/api/admin/orders', requireAdmin, requireOrdersStore, async (request, response) => {
   const { limit, offset, page } = normalizePagination(request.query, 20, 100)
   const status = String(request.query.status ?? '').trim()
@@ -1832,6 +1947,7 @@ app.patch(
     }
 
     const result = await ordersStore.settleOrder(request.params.id, status, {
+      actorKind: 'admin',
       note: String(request.body?.note ?? '').trim().slice(0, 400) || null,
       settledBy: request.adminUser?.username || 'admin',
     })

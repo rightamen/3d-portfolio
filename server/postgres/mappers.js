@@ -1,3 +1,4 @@
+import { acceptsPayment, readStoredPaymentInfo } from '../paymentInfo.js'
 import { readStoredTheme, themeToTokens } from '../themes.js'
 
 // Row -> API-shape mappers shared by every store, plus the project field list
@@ -378,6 +379,11 @@ export const toWorkCreator = (row) =>
         displayName: row.creator_display_name || '',
         handle: row.creator_handle || '',
         id: row.creator_id,
+        // Whether this creator can be paid at all -- the work page needs it to
+        // choose between a buy button and "not selling yet". The METHODS are
+        // deliberately not here: a payment code on a public page is a payment
+        // code anyone can scrape and put in a scam.
+        acceptsPayment: acceptsPayment(row.creator_payment_info),
         // The creator's theme rides along so a work page can paint itself in
         // their colours without a second request for the profile.
         themeTokens: themeToTokens(row.creator_theme),
@@ -489,7 +495,8 @@ export const workColumns = `
   visitor_users.avatar_url AS creator_avatar_url,
   visitor_users.profile_public AS creator_profile_public,
   visitor_users.profile_admin_disabled AS creator_profile_admin_disabled,
-  visitor_users.theme AS creator_theme
+  visitor_users.theme AS creator_theme,
+  visitor_users.payment_info AS creator_payment_info
 `
 
 // A comment on a work. Shaped on toCommunityComment, which already threads,
@@ -533,6 +540,10 @@ export const toOrder = (row) =>
         // each caller, because a marketplace that shows two different numbers
         // for the same sale has a support problem, not a rounding problem.
         netCents: Number(row.amount_cents || 0) - Number(row.platform_fee_cents || 0),
+        // What the buyer was shown when they ordered. Read back through the
+        // validator, because it is jsonb and what reaches a screen has to be
+        // something paymentInfo.js produced.
+        paymentSnapshot: readStoredPaymentInfo(row.payment_snapshot),
         platformFeeCents: Number(row.platform_fee_cents || 0),
         provider: row.provider || 'manual',
         providerReference: row.provider_reference || '',
@@ -548,3 +559,18 @@ export const toOrder = (row) =>
         workUrl: row.creator_handle && row.work_slug ? `/w/${row.creator_handle}/${row.work_slug}` : '',
       }
     : null
+
+// One thing that happened to an order. The actor's display name is joined in
+// so a dispute can be read without a second lookup per row -- and the id is
+// kept beside it, because a display name is not an identity.
+export const toOrderEvent = (row) => ({
+  actorId: row.actor_id || null,
+  actorKind: row.actor_kind,
+  actorName: row.actor_name || '',
+  createdAt: row.created_at?.toISOString?.() || row.created_at,
+  event: row.event,
+  fromStatus: row.from_status || null,
+  id: row.id,
+  note: row.note || '',
+  toStatus: row.to_status || null,
+})

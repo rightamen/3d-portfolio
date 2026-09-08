@@ -575,6 +575,25 @@ export const createAuthStore = ({ pool }) => {
       return result.rows[0] ? result.rows[0].theme : null
     },
 
+    // Written whole, like the theme: three fields on up to four methods is
+    // not enough to be worth the ambiguity of a partial update.
+    setPaymentInfo: async (userId, paymentInfo) => {
+      await pool.query(
+        'UPDATE visitor_users SET payment_info = $2, updated_at = now() WHERE id = $1',
+        [userId, JSON.stringify(paymentInfo)],
+      )
+    },
+
+    // Read on its own rather than folded into the session user: the methods
+    // are shown to a buyer who has placed an order, and a value that only
+    // travels when it is needed is a value that cannot leak by accident.
+    getPaymentInfo: async (userId) => {
+      const result = await pool.query('SELECT payment_info FROM visitor_users WHERE id = $1', [
+        userId,
+      ])
+      return result.rows[0] ? result.rows[0].payment_info : null
+    },
+
     getAccountProfile: async (userId) => {
       const result = await pool.query(
         `

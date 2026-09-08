@@ -179,17 +179,52 @@ gets past any of them.
 
 ### What was built instead
 
-A **provider-agnostic order and entitlement model**, with `manual` as the
-first provider: the buyer pays by whatever the operator arranged — an Alipay
-or WeChat code, a transfer — and an operator marks the order paid. That is not
-a placeholder; it is what a creator without a company actually does, and it
-exercises the whole path from wanting a work to being allowed to download it.
+A **provider-agnostic order and entitlement model**, with `direct` as the
+first provider: the buyer pays the CREATOR — an Alipay or WeChat code, a
+transfer — and the **creator** confirms receipt, because they are the only one
+who can see it arrive. The platform never touches the money, which is what
+keeps this buildable with no company and no payment licence.
 
 `ordersStore.hasEntitlement` is the single answer to "may this person have the
 file", and every download path asks it. Free is a price, so a free work needs
 no order at all. Two rules live in the database rather than in a query: one
 paid order per buyer per work, and a ticket that names neither a project nor a
 work.
+
+### Fairness, and what a platform that holds no money can actually do
+
+The owner asked whether platform collection is needed to keep creators and
+buyers honest. Two things were being conflated, and separating them is what
+made this shippable:
+
+- **Forcing a refund** requires holding the money. It requires an entity, a
+  licensed split-settlement product, and KYC for every creator. There is no
+  version of it without those.
+- **Keeping evidence** requires none of that, and is the same evidence a
+  platform-collecting provider would need later.
+
+So the evidence was built now:
+
+- `order_events` is append-only — a separate table rather than a jsonb array,
+  because an array is rewritten whole on every append, and a record that can
+  be rewritten whole is not a record. Nothing in `ordersStore` updates or
+  deletes a row in it.
+- `orders.payment_snapshot` holds the creator's payment methods **as the buyer
+  was shown them**. Not a denormalisation for speed: a creator who changes
+  their code after a dispute starts would otherwise erase what the buyer was
+  told, and the order would agree with the creator's new story.
+- `listStaleOrders` surfaces orders a buyer says they paid for and nobody
+  confirmed. That list *is* the leverage: an operator cannot act on funds they
+  never held, but they can act on the account.
+- `platformFeeBasisPoints` forces the fee to zero for `direct`, as a named and
+  tested rule rather than a line inside `createOrder` — the next provider is
+  the one likely to break it.
+
+⚠️ **What buyers must be told, in the purchase flow and not in the terms:**
+an Alipay or WeChat transfer to an individual has no chargeback and no buyer
+protection. Their recourse is that the platform can suspend a creator who does
+not deliver — not that the platform will return their money, because it never
+had it.
 
 ### The routes that remain open, for when there is an entity
 

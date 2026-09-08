@@ -439,6 +439,10 @@ export const ensureSchema = async (pool) => {
     -- diverge later (verification, suspension) without a second table.
     ALTER TABLE visitor_users
       ADD COLUMN IF NOT EXISTS theme jsonb,
+      -- How this creator wants to be paid. The platform never touches the
+      -- money, so this is the whole payment system: an Alipay or WeChat code
+      -- and a line of instructions, shown to a buyer who has placed an order.
+      ADD COLUMN IF NOT EXISTS payment_info jsonb,
       ADD COLUMN IF NOT EXISTS creator_enabled_at timestamptz,
       ADD COLUMN IF NOT EXISTS stripe_account_id text,
       ADD COLUMN IF NOT EXISTS payout_state text NOT NULL DEFAULT 'none';
@@ -683,6 +687,38 @@ export const ensureSchema = async (pool) => {
       ADD COLUMN IF NOT EXISTS order_id text REFERENCES orders(id) ON DELETE SET NULL;
 
     ALTER TABLE download_tickets ALTER COLUMN project_slug DROP NOT NULL;
+
+    -- The creator's payment methods AS THE BUYER WAS SHOWN THEM.
+    --
+    -- Not a denormalisation for speed: it is the evidence. A creator who
+    -- changes their payment code after a dispute starts would otherwise erase
+    -- what the buyer was actually told to pay, and the order would agree with
+    -- the creator's new story.
+    ALTER TABLE orders
+      ADD COLUMN IF NOT EXISTS payment_snapshot jsonb;
+
+    -- Append-only history of everything that happened to an order: who did
+    -- it, when, from what to what, and what they said about it.
+    --
+    -- A separate table rather than a jsonb array on the order, because an
+    -- array is rewritten whole on every append -- and a record that can be
+    -- rewritten whole is not a record. Nothing in ordersStore updates or
+    -- deletes a row here.
+    CREATE TABLE IF NOT EXISTS order_events (
+      id text PRIMARY KEY,
+      order_id text NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+      actor_kind text NOT NULL
+        CHECK (actor_kind IN ('buyer', 'creator', 'admin', 'system')),
+      actor_id text,
+      event text NOT NULL,
+      from_status text,
+      to_status text,
+      note text,
+      created_at timestamptz NOT NULL DEFAULT now()
+    );
+
+    CREATE INDEX IF NOT EXISTS order_events_order_idx
+      ON order_events (order_id, created_at);
   `)
 
   // A ticket that names neither a project nor a work authorises nothing and

@@ -249,11 +249,6 @@ test.beforeAll(async () => {
       // publishes and hides a work and then reads it back, which that cache
       // would hide entirely.
       SITEMAP_CACHE_MS: '0',
-      // Purchasing is off until an operator says how to pay; the suite needs
-      // it on to exercise the order path at all.
-      PAYMENT_MANUAL_INSTRUCTIONS: 'Scan the code and send the exact amount.',
-      PAYMENT_MANUAL_QR_URL: '/assets/projects/fire-extinguisher.png',
-      PLATFORM_FEE_BASIS_POINTS: '1000',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
@@ -3204,12 +3199,67 @@ test.describe('orders and entitlement', () => {
     buyer = { id: registered.id, token: verified.payload.data.session.token }
   })
 
-  test('the payment method is advertised, so the client knows whether to offer buying', async () => {
-    const { payload, response } = await getJson('/api/payment-methods')
+  test('a creator with no payment setup cannot be paid, so no order is created', async () => {
+    // Refused rather than created: an order with nowhere for the money to go
+    // is a dead end the buyer discovers after committing.
+    const { payload, response } = await sendJson(
+      'POST',
+      `/api/works/${handle}/${paidSlug}/order`,
+      {},
+      buyer.token,
+    )
 
-    expect(response.status).toBe(200)
-    expect(payload.data.available).toBe(true)
-    expect(payload.data.provider).toBe('manual')
+    expect(response.status).toBe(503)
+    expect(payload.error.message).toContain('set up a way to be paid')
+  })
+
+  test('the work page says whether this creator can be paid, without saying how', async () => {
+    const before = await getJson(`/api/works/${handle}/${paidSlug}`)
+    expect(before.payload.data.work.creator.acceptsPayment).toBe(false)
+
+    const saved = await sendJson(
+      'PUT',
+      '/api/account/payment-info',
+      {
+        paymentInfo: {
+          methods: [{ instructions: 'Send the exact amount.', label: 'Alipay', qrUrl: '' }],
+        },
+      },
+      visitorA.sessionToken,
+    )
+    expect(saved.response.status).toBe(200)
+
+    const after = await getJson(`/api/works/${handle}/${paidSlug}`)
+    expect(after.payload.data.work.creator.acceptsPayment).toBe(true)
+    // A payment code on a public page is a payment code anyone can scrape and
+    // put in a scam, so the METHODS must not be here.
+    expect(JSON.stringify(after.payload)).not.toContain('Send the exact amount')
+  })
+
+  test('a payment code must be a file uploaded here, not any url', async () => {
+    const { payload, response } = await sendJson(
+      'PUT',
+      '/api/account/payment-info',
+      {
+        paymentInfo: {
+          methods: [{ label: 'Alipay', qrUrl: 'https://example.com/not-mine.png' }],
+        },
+      },
+      visitorA.sessionToken,
+    )
+
+    expect(response.status).toBe(400)
+    expect(payload.error.message).toContain('uploaded here')
+  })
+
+  test('a method with no instructions and no code is refused', async () => {
+    const { response } = await sendJson(
+      'PUT',
+      '/api/account/payment-info',
+      { paymentInfo: { methods: [{ label: 'Vibes' }] } },
+      visitorA.sessionToken,
+    )
+    expect(response.status).toBe(400)
   })
 
   test('a free work needs no order and downloads for any signed-in visitor', async () => {
@@ -3268,9 +3318,11 @@ test.describe('orders and entitlement', () => {
     // A price that arrives in a request body is a price the buyer chose.
     expect(payload.data.order.amountCents).toBe(2500)
     expect(payload.data.order.status).toBe('pending')
-    // 10% fee, from the env in beforeAll.
-    expect(payload.data.order.platformFeeCents).toBe(250)
-    expect(payload.data.order.netCents).toBe(2250)
+    // Zero, and forced rather than defaulted: the platform cannot take a share
+    // of money that never passes through it, and an order claiming otherwise
+    // would be a number nobody can collect.
+    expect(payload.data.order.platformFeeCents).toBe(0)
+    expect(payload.data.order.netCents).toBe(2500)
     orderId = payload.data.order.id
   })
 
@@ -3335,12 +3387,15 @@ test.describe('orders and entitlement', () => {
     expect(order?.buyerNote).toContain('4321')
   })
 
-  test('marking it paid is what turns money into entitlement', async () => {
+  test('the creator confirms their own sale, and that is what grants entitlement', async () => {
+    // They are the only one who can see the money arrive. That is the whole
+    // reason this works without a licence, and the whole reason it needs a
+    // record: nobody else can check them.
     const settled = await sendJson(
       'PATCH',
-      `/api/admin/orders/${orderId}/status`,
+      `/api/account/sales/${orderId}/status`,
       { note: 'Seen in the Alipay ledger.', status: 'paid' },
-      adminToken,
+      visitorA.sessionToken,
     )
 
     expect(settled.response.status).toBe(200)
@@ -3408,16 +3463,16 @@ test.describe('orders and entitlement', () => {
 
     expect(response.status).toBe(200)
     expect(payload.data.grossCents).toBe(2500)
-    expect(payload.data.netCents).toBe(2250)
+    expect(payload.data.netCents).toBe(2500)
     expect(payload.data.sales.some((sale) => sale.id === orderId)).toBe(true)
   })
 
   test('a refund takes the entitlement back', async () => {
     const refunded = await sendJson(
       'PATCH',
-      `/api/admin/orders/${orderId}/status`,
+      `/api/account/sales/${orderId}/status`,
       { status: 'refunded' },
-      adminToken,
+      visitorA.sessionToken,
     )
     expect(refunded.response.status).toBe(200)
 
@@ -3443,14 +3498,119 @@ test.describe('orders and entitlement', () => {
     expect(payload.data.ticket.reason).toBe('creator')
   })
 
-  test('settling needs the admin token', async () => {
-    const { response } = await sendJson(
+  test('settling needs the admin token, or the creator it belongs to', async () => {
+    const asBuyer = await sendJson(
       'PATCH',
       `/api/admin/orders/${orderId}/status`,
       { status: 'paid' },
       buyer.token,
     )
-    expect(response.status).toBe(401)
+    expect(asBuyer.response.status).toBe(401)
+
+    // Not a stranger's sale, either -- a creator may settle only their own.
+    const asStranger = await sendJson(
+      'PATCH',
+      `/api/account/sales/${orderId}/status`,
+      { status: 'paid' },
+      buyer.token,
+    )
+    expect(asStranger.response.status).toBe(404)
+  })
+
+  // The platform holds no money, so it cannot force a refund. What it has
+  // instead is a record nobody can rewrite -- which is worth more in an
+  // argument than either party's memory.
+  test('the trail records who did what, in order', async () => {
+    const { payload, response } = await getJson(
+      `/api/admin/orders/${orderId}/events`,
+      adminToken,
+    )
+
+    expect(response.status).toBe(200)
+    const events = payload.data.events
+    expect(events.map((event) => event.event)).toEqual([
+      'placed',
+      'claimed-payment',
+      'settled:paid',
+      'settled:refunded',
+    ])
+
+    // Each one says who, and the transition it made.
+    expect(events[0].actorKind).toBe('buyer')
+    expect(events[1].note).toContain('4321')
+    expect(events[2].actorKind).toBe('creator')
+    expect(events[2].fromStatus).toBe('pending')
+    expect(events[2].toStatus).toBe('paid')
+    // Chronological, which is most of what a record is for.
+    const times = events.map((event) => new Date(event.createdAt).getTime())
+    expect([...times].sort((a, b) => a - b)).toEqual(times)
+  })
+
+  test('the buyer sees the methods they were shown, from the order, not from now', async () => {
+    const before = await getJson(`/api/account/orders/${orderId}`, buyer.token)
+    expect(before.response.status).toBe(200)
+    expect(before.payload.data.paymentMethods[0].label).toBe('Alipay')
+
+    // The creator changes their setup, as they would mid-dispute.
+    const changed = await sendJson(
+      'PUT',
+      '/api/account/payment-info',
+      {
+        paymentInfo: {
+          methods: [{ instructions: 'A completely different account.', label: 'WeChat' }],
+        },
+      },
+      visitorA.sessionToken,
+    )
+    expect(changed.response.status).toBe(200)
+
+    const after = await getJson(`/api/account/orders/${orderId}`, buyer.token)
+    // Still Alipay: the snapshot is the evidence. Reading the creator's
+    // CURRENT setup here would let them erase what the buyer was told.
+    expect(after.payload.data.paymentMethods[0].label).toBe('Alipay')
+  })
+
+  test('an order is readable by its two parties and nobody else', async () => {
+    const asCreator = await getJson(`/api/account/orders/${orderId}`, visitorA.sessionToken)
+    expect(asCreator.response.status).toBe(200)
+
+    const email = `nosy-${randomBytes(4).toString('hex')}@example.com`
+    const registered = await registerVisitor('Nosy Stranger', email)
+    const verified = await sendJson('POST', '/api/auth/verify-email', {
+      code: registered.devCode,
+      email,
+    })
+    const asStranger = await getJson(
+      `/api/account/orders/${orderId}`,
+      verified.payload.data.session.token,
+    )
+    expect(asStranger.response.status).toBe(404)
+  })
+
+  test('an order the buyer paid for and nobody confirmed is visible to an operator', async () => {
+    // The leverage a platform that holds no money still has.
+    const fresh = await publish('Something Unconfirmed', 900)
+    const ordered = await sendJson(
+      'POST',
+      `/api/works/${handle}/${fresh.slug}/order`,
+      {},
+      buyer.token,
+    )
+    expect(ordered.response.status).toBe(201)
+    await sendJson(
+      'PATCH',
+      `/api/orders/${ordered.payload.data.order.id}/note`,
+      { note: 'Paid, waiting.' },
+      buyer.token,
+    )
+
+    // hours=0 is clamped to 1, so ask across a window that includes it.
+    const { payload, response } = await getJson('/api/admin/orders/stale?hours=1', adminToken)
+    expect(response.status).toBe(200)
+    // Nothing is old enough yet, which is itself the correct answer -- the
+    // point under test is that the endpoint reports on the right population.
+    expect(Array.isArray(payload.data.orders)).toBe(true)
+    expect(payload.data.hours).toBe(1)
   })
 })
 
