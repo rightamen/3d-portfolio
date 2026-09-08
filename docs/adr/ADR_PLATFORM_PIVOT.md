@@ -3,8 +3,9 @@
 Date: 2026-09-06
 
 Status: Accepted, and largely built. Phases 1, 2, 3 and 5 shipped on
-2026-09-07, along with phase 4's redirect. See §7 for what each one actually
-delivered and where the plan was departed from.
+2026-09-07 along with phase 4's redirect; phase 6 on 2026-09-08. Only phase 7
+(payments) and phase 4's visual rebuild remain. See §7 for what each one
+actually delivered and where the plan was departed from.
 
 ## 1. What is changing
 
@@ -194,7 +195,7 @@ constraint that makes a pivot this size survivable on a live site.
 | 3 | Discovery | 2 | Browse, search, filter, creator pages | **Shipped** 2026-09-07 |
 | 4 | New interface shell | 3 | The rebuilt frontend, 3D per §5's split | Redirect shipped; visual rebuild open |
 | 5 | Comments | 2 | Threaded, sorted, moderated | **Shipped** 2026-09-07 |
-| 6 | Themes | 3 | Per-user theme, stored and rendered | Open |
+| 6 | Themes | 3 | Per-user theme, stored and rendered | **Shipped** 2026-09-08 |
 | 7 | Payments | 2, 6 | Connect onboarding, checkout, entitlement, payouts | Open |
 
 Phase 7 is last on purpose: a marketplace with no content and no audience has
@@ -217,6 +218,14 @@ building it twice, so the redirect drops it. `project_likes` and
 `project_comments` were **not** zero — two rows each — so both were migrated,
 because a redirect that silently discards what people left behind is a deletion
 with extra steps.
+
+**Themes are three knobs, not CSS.** The ADR said "per-user theme" without
+saying what a theme is. It is an accent colour and two presets, applied to the
+creator's own pages only. Free-form CSS was considered and rejected: a
+stylesheet from a creator could restyle the marketplace chrome around their
+page, cover a report button, or imitate a checkout dialog, and none of that is
+worth what a free stylesheet buys. The accent must clear 3:1 against its
+surface, so a creator cannot ship a page whose own links are invisible.
 
 **The redirect is conditional, which is what makes it reversible.** It fires
 only when a *published* work records that slug as its `source_slug`; everything
