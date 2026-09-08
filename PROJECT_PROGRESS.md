@@ -1,5 +1,89 @@
 # mrright.blog 项目进度记录
 
+## 下次从这里继续（截至 2026-09-08 第四十五轮收工）
+
+### 2026-09-08（第四十五轮）：创作者直收 + 凭证链
+
+**支付模型换了。** ADR 原本记的是 Stripe Connect，不适用；中途先做了「平台收款
++ 人工确认」，你看过之后选了「创作者各自收款，以后升级」。现在是后者。
+
+⚠️ **换掉 Stripe 的三个事实**（写进 ADR §6）：
+Stripe 不支持中国大陆作商户国家；大陆直连支付宝/微信要 ICP 备案，
+而备案要求服务器在大陆（这台在日本）；平台代收代付在中国需要支付牌照。
+这些是世界的事实，不是代码问题。
+
+⚠️ **「平台不碰钱，谁确认到账？」——只能是创作者。**
+他是唯一能看见钱到账的人。这就是这个模型不需要牌照的原因，
+也正是它**需要记录**的原因：没有第三方能核对他。
+
+⚠️ **把「公平」和「凭证」拆开，是这一轮能落地的关键。**
+强制退款必须握着钱——要主体、要持牌分账、每个创作者都要 KYC，没有替代路径。
+但**留证据完全不需要这些**，而且是以后平台收款时同样需要的那套证据。所以先做证据：
+
+- **`order_events` 只追加**——用表不用 jsonb 数组，因为数组每次追加都是整体重写，
+  **一条能被整体重写的记录不叫记录**。`ordersStore` 里没有任何更新或删除它的方法。
+- **`orders.payment_snapshot` 存的是「买家当时被展示的收款方式」**。
+  这不是为性能做的冗余：创作者在纠纷开始后改掉收款码，
+  否则就能抹掉买家当初被告知的内容，而订单会站在他新说法那边。
+  把这里改成读创作者当前设置 → 测试失败。
+- **`listStaleOrders`** 列出「买家说付了、没人确认」的订单。
+  这份列表**就是**杠杆：管理员动不了没经手的钱，但动得了账号。
+
+⚠️ **抽成那条守卫原本是死代码，而声称覆盖它的测试也确实没覆盖。**
+路由根本不传 fee，删掉 `provider === 'direct' ? 0 :` 变异跑完 **194 条全过**。
+改成 `platformFeeBasisPoints()` 这个具名函数并单独写单元测试后，
+变异才会失败——**下一个接支付渠道的人正是最可能破坏这条规则的人**。
+
+⚠️ **收款方式是私密的,能否收款是公开的。**
+公开页面上的收款码就是任何人都能抓去做骗局的收款码。
+所以 `creator.acceptsPayment` 公开（作品页据此决定显示购买按钮还是「暂未开售」），
+`methods` 只在买家下单后、在订单里给他一个人看。
+
+⚠️ **必须在购买流程里告诉买家**（不是藏在条款里）：
+支付宝/微信个人转账**没有拒付、没有交易保障**。
+买家的保障来自「平台会封掉不发货的创作者」，不是「平台会退钱」——平台没拿过这笔钱。
+
+完成内容：
+
+- `server/paymentInfo.js`（新增）：收款方式校验、`acceptsPayment`、`platformFeeBasisPoints`
+- schema：`visitor_users.payment_info`、`orders.payment_snapshot`、`order_events` 表
+- `ordersStore`：`recordEvent` / `listOrderEvents` / `getSaleForCreator` / `listStaleOrders`
+- 端点：`GET/PUT /api/account/payment-info`、`GET /api/account/orders/:id`、
+  `PATCH /api/account/sales/:id/status`、`GET /api/admin/orders/stale`、
+  `GET /api/admin/orders/:id/events`
+- 移除了全站的 `PAYMENT_MANUAL_*` 环境变量（收款改成按创作者）
+
+commit：`1e20e57`（前置：`0d38646` 订单与权益、`c9c9718` 文档）
+
+验证结果：
+
+- `npm run build` / `lint` / `test:openapi`：通过
+- `npm run test:unit`：**277 通过**（原 265，新增 12）
+- `npm run test:api:db`：**194 通过**（原 187，新增 7）
+- `verify-schema-migration` / `verify-works-migration`：通过
+- 变异验证：买家读当前收款方式而非快照 → 失败；
+  direct 订单可带抽成 → 单元测试失败；任意 URL 当收款码 → 3 条失败
+- VPS 部署：成功
+- 接口验证：`CLAUDE.md` 第 9 条完整清单 + `/projects/md-leimu` 301
+- 线上抽查：`acceptsPayment:false`，公开响应里**没有** `methods`/`qrUrl`；
+  未登录读收款设置/结算/看凭证链全部 401
+
+备份路径：
+
+- `/opt/mrright-portfolio.backup-20260908-060403`
+
+待办事项：
+
+- **前端还没做**：购买按钮、订单页（含收款码与风险提示）、
+  创作者的收款设置界面与「确认到账」、后台的凭证链视图 —— **下一步**
+- Phase 4 剩余：界面外壳的视觉重构（不阻塞）
+- 升级到平台收款需要：主体 + 持牌分账 + 每个创作者 KYC（见 ADR §6）
+- ⚠️ **`@mrright` 的显示名仍然是 `111111`**
+- `API_V1_FREEZE_PLAN.md` §7 的错误码数字已过期（26 vs 39）
+- 仍未决：外部 uptime 服务（需要你的账号）
+
+---
+
 ## 下次从这里继续（截至 2026-09-08 第四十四轮收工）
 
 ### 2026-09-08（第四十四轮）：Phase 6 个人主题
