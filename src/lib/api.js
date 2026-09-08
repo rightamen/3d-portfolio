@@ -252,6 +252,67 @@ export const saveAccountTheme = (theme, token) =>
     method: 'PUT',
   })
 
+// Buying a work. The platform never touches the money -- these endpoints move
+// an ORDER through its states, and the money moves between two people
+// elsewhere. See docs/adr/ADR_PLATFORM_PIVOT.md §6.
+const workPath = (handle, slug) =>
+  `/api/works/${encodeURIComponent(String(handle).replace(/^@/, ''))}/${encodeURIComponent(slug)}`
+
+export const createWorkOrder = (handle, slug, token) =>
+  request(`${workPath(handle, slug)}/order`, { headers: authHeaders(token), method: 'POST' })
+
+// Carries the payment methods the buyer was shown AT ORDER TIME, not the
+// creator's current setup.
+export const getOrder = (id, token) =>
+  request(`/api/account/orders/${encodeURIComponent(id)}`, {
+    cache: 'no-store',
+    headers: authHeaders(token),
+  })
+
+export const setOrderNote = (id, note, token) =>
+  request(`/api/orders/${encodeURIComponent(id)}/note`, {
+    body: JSON.stringify({ note }),
+    headers: authHeaders(token, { 'Content-Type': 'application/json' }),
+    method: 'PATCH',
+  })
+
+export const cancelOrder = (id, token) =>
+  request(`/api/orders/${encodeURIComponent(id)}/cancel`, {
+    headers: authHeaders(token),
+    method: 'PATCH',
+  })
+
+export const getMyOrders = (token) =>
+  request('/api/account/orders', { cache: 'no-store', headers: authHeaders(token) })
+
+export const getMySales = (token) =>
+  request('/api/account/sales', { cache: 'no-store', headers: authHeaders(token) })
+
+// The creator confirming their own sale. They are the only one who can see the
+// money arrive, which is why this is theirs and not an operator's.
+export const settleSale = (id, status, note, token) =>
+  request(`/api/account/sales/${encodeURIComponent(id)}/status`, {
+    body: JSON.stringify({ note, status }),
+    headers: authHeaders(token, { 'Content-Type': 'application/json' }),
+    method: 'PATCH',
+  })
+
+export const createWorkDownloadTicket = (handle, slug, token) =>
+  request(`${workPath(handle, slug)}/download-ticket`, {
+    headers: authHeaders(token),
+    method: 'POST',
+  })
+
+export const getPaymentInfo = (token) =>
+  request('/api/account/payment-info', { cache: 'no-store', headers: authHeaders(token) })
+
+export const savePaymentInfo = (paymentInfo, token) =>
+  request('/api/account/payment-info', {
+    body: JSON.stringify({ paymentInfo }),
+    headers: authHeaders(token, { 'Content-Type': 'application/json' }),
+    method: 'PUT',
+  })
+
 export const getCommunityUploads = () => request('/api/community/uploads')
 
 export const getCommunityPosts = () => request('/api/community/posts')

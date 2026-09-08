@@ -3467,6 +3467,31 @@ test.describe('orders and entitlement', () => {
     expect(payload.data.sales.some((sale) => sale.id === orderId)).toBe(true)
   })
 
+  test('a PENDING sale is listed too -- it is the one the creator must act on', async () => {
+    // The list filtered on status = 'paid' when it was first written, which
+    // hid every order waiting for confirmation. The creator confirming receipt
+    // IS the payment system here, so the confirm button would never have
+    // rendered and nothing could ever have been sold.
+    const fresh = await publish('Waiting On Confirmation', 700)
+    const ordered = await sendJson(
+      'POST',
+      `/api/works/${handle}/${fresh.slug}/order`,
+      {},
+      buyer.token,
+    )
+    expect(ordered.response.status).toBe(201)
+
+    const { payload } = await getJson('/api/account/sales', visitorA.sessionToken)
+    const pending = payload.data.sales.find((sale) => sale.id === ordered.payload.data.order.id)
+
+    expect(pending?.status).toBe('pending')
+    // Pending first: it is the actionable one.
+    expect(payload.data.sales[0].status).toBe('pending')
+    // ...while the totals still count only what was actually confirmed. An
+    // order nobody has confirmed is not revenue.
+    expect(payload.data.grossCents).toBe(2500)
+  })
+
   test('a refund takes the entitlement back', async () => {
     const refunded = await sendJson(
       'PATCH',
@@ -3485,6 +3510,33 @@ test.describe('orders and entitlement', () => {
     // Refunded means they no longer own it. A refund that leaves the file
     // reachable is a refund that gave the money back for nothing.
     expect(ticket.response.status).toBe(403)
+  })
+
+  test('a buyer can abandon their own pending order', async () => {
+    // Without this, clicking buy and changing your mind leaves an order in the
+    // creator's list forever, and in the operator's stale list where it looks
+    // like a creator ignoring a payment that never happened.
+    const fresh = await publish('Second Thoughts', 400)
+    const ordered = await sendJson(
+      'POST',
+      `/api/works/${handle}/${fresh.slug}/order`,
+      {},
+      buyer.token,
+    )
+    const id = ordered.payload.data.order.id
+
+    const cancelled = await sendJson('PATCH', `/api/orders/${id}/cancel`, {}, buyer.token)
+    expect(cancelled.response.status).toBe(200)
+    expect(cancelled.payload.data.order.status).toBe('cancelled')
+
+    // Not somebody else's order, and not one that has been paid.
+    const notMine = await sendJson('PATCH', `/api/orders/${id}/cancel`, {}, visitorA.sessionToken)
+    expect(notMine.response.status).toBe(404)
+
+    // The abandonment is in the record like everything else.
+    const events = await getJson(`/api/admin/orders/${id}/events`, adminToken)
+    expect(events.payload.data.events.at(-1).event).toBe('settled:cancelled')
+    expect(events.payload.data.events.at(-1).actorKind).toBe('buyer')
   })
 
   test('the creator always has their own files, without buying them back', async () => {

@@ -60,6 +60,7 @@ const createProfileForm = (profile = {}) => ({
   website: profile.website || '',
 })
 
+const SellerPanel = lazy(() => import('../components/SellerPanel'))
 const ThemeEditor = lazy(() => import('../components/ThemeEditor'))
 
 const accountTabs = [
@@ -67,6 +68,7 @@ const accountTabs = [
   { key: 'downloads', labelKey: 'accountNavDownloads' },
   { key: 'comments', labelKey: 'accountNavComments' },
   { key: 'community', labelKey: 'accountNavCommunity' },
+  { key: 'selling', labelKey: 'accountNavSelling' },
   { key: 'settings', labelKey: 'accountNavSettings' },
   { key: 'security', labelKey: 'accountSecurityTitle' },
 ]
@@ -1528,6 +1530,14 @@ const AccountPage = ({
         return renderComments()
       case 'community':
         return renderCommunity()
+      case 'selling':
+        return (
+          // Lazily loaded: it pulls payment setup, sales and purchases, and
+          // nobody visiting /account for a download needs any of them.
+          <Suspense fallback={<p className="text-neutral-400">{copy.loading}</p>}>
+            <SellerPanel authToken={authToken} copy={copy} />
+          </Suspense>
+        )
       case 'settings':
         return renderSettings()
       case 'security':

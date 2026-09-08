@@ -2,6 +2,7 @@ import { Suspense, lazy, useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 
 import WorkComments from '../components/WorkComments'
+import WorkPurchase from '../components/WorkPurchase'
 import { getWork, getWorkLikes, toggleWorkLike } from '../lib/api'
 import { getApiErrorMessage, languages } from '../lib/i18n'
 import { applyTheme } from '../lib/theme'
@@ -206,6 +207,17 @@ const WorkDetailPage = ({ authToken, copy, language, onLanguageChange, visitorUs
               <span className="explore-search-label">{copy.workLike}</span>
             </button>
           </div>
+
+          {/* Immediately under the price, because that is the question the
+              price raises. */}
+          <WorkPurchase
+            authToken={authToken}
+            copy={copy}
+            handle={handle}
+            isOwner={isOwner}
+            slug={slug}
+            work={work}
+          />
 
           <p>{localized(work, 'summary', language)}</p>
           {localized(work, 'workflow', language) && (

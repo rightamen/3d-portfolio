@@ -1914,6 +1914,29 @@ app.get(
   },
 )
 
+// A buyer abandoning their own order. Without this, someone who clicks buy
+// and changes their mind leaves a pending order sitting in the creator's list
+// forever -- and in listStaleOrders, where it looks like a creator ignoring a
+// payment that never happened.
+//
+// Only their own, only while pending: an order that has been paid is not the
+// buyer's to withdraw.
+app.patch('/api/orders/:id/cancel', requireVisitor, requireOrdersStore, async (request, response) => {
+  const order = await ordersStore.getOrder(request.params.id)
+
+  if (!order || order.buyerId !== request.visitorUser.id || order.status !== 'pending') {
+    return sendError(response, API_ERROR_CODES.RESOURCE_FORBIDDEN, 'Order not found.', 404)
+  }
+
+  const result = await ordersStore.settleOrder(order.id, 'cancelled', {
+    actorId: request.visitorUser.id,
+    actorKind: 'buyer',
+    note: String(request.body?.note ?? '').trim().slice(0, 400) || null,
+  })
+
+  return sendData(response, { order: result.order })
+})
+
 app.get('/api/admin/orders', requireAdmin, requireOrdersStore, async (request, response) => {
   const { limit, offset, page } = normalizePagination(request.query, 20, 100)
   const status = String(request.query.status ?? '').trim()

@@ -289,9 +289,16 @@ export const createOrdersStore = ({ pool }) => {
       }
     },
 
+    // EVERY order, not only the paid ones. The creator confirming receipt is
+    // the payment system here, so a list that hides pending orders hides the
+    // one thing they have to act on -- and the confirm button would never
+    // render. Pending first, for the same reason.
+    //
+    // The money totals still count only paid orders: an order nobody has
+    // confirmed is not revenue.
     creatorSales: async (creatorId, { limit = 50, offset = 0 } = {}) => {
       const total = await pool.query(
-        `SELECT count(*)::int AS count FROM orders WHERE creator_id = $1 AND status = 'paid'`,
+        'SELECT count(*)::int AS count FROM orders WHERE creator_id = $1',
         [creatorId],
       )
       const rows = await pool.query(
@@ -300,8 +307,9 @@ export const createOrdersStore = ({ pool }) => {
          FROM orders
          JOIN works ON works.id = orders.work_id
          JOIN visitor_users ON visitor_users.id = orders.creator_id
-         WHERE orders.creator_id = $1 AND orders.status = 'paid'
-         ORDER BY orders.purchased_at DESC
+         WHERE orders.creator_id = $1
+         ORDER BY CASE WHEN orders.status = 'pending' THEN 0 ELSE 1 END,
+                  orders.updated_at DESC
          LIMIT $2 OFFSET $3`,
         [creatorId, limit, offset],
       )
