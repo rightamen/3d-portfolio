@@ -140,6 +140,7 @@ const stores = process.env.DATABASE_URL
           projects.find((project) => project.slug === slug) || null,
         listProjects: async (projects) => projects.map((project) => ({ ...project, isPublic: true })),
       },
+      ordersStore: null,
       // Works are database-only. There is no bundled fallback catalogue for
       // them the way there is for projects, and inventing an in-memory one
       // would mean a marketplace that quietly loses everything on restart.
@@ -153,6 +154,7 @@ const {
   contactMessagesStore,
   downloadRequestsStore,
   interactionsStore,
+  ordersStore,
   projectStore,
   worksStore,
 } = stores
@@ -1517,6 +1519,11 @@ app.get('/api/projects/:slug/interactions', async (request, response) => {
 
 const WORK_STATUSES = new Set(['draft', 'review', 'published', 'hidden', 'rejected'])
 
+const ORDER_STATUSES = new Set(['pending', 'paid', 'failed', 'refunded', 'cancelled'])
+// What an operator may set by hand. 'failed' is a provider's word, not a
+// person's -- there is nothing for a human to mean by it on a manual order.
+const SETTLEABLE_ORDER_STATUSES = new Set(['paid', 'refunded', 'cancelled'])
+
 // The statuses a creator may put their own work into. Publishing is not one of
 // them: that is the moderator's call, and letting the author set it would make
 // the review step decorative.
@@ -1645,6 +1652,339 @@ const loadOwnWork = async (request, response) => {
 
   return work
 }
+
+// ---------------------------------------------------------------------------
+// Buying a work. docs/adr/ADR_PLATFORM_PIVOT.md §6, revised 2026-09-08.
+//
+// The provider is `manual`: the buyer pays however the operator arranged --
+// an Alipay or WeChat code, a transfer -- and an operator confirms it. That is
+// not a stub. Stripe does not serve mainland China, the owner has no business
+// entity, and platform-collected settlement in China needs a payment licence;
+// a manual settlement is what a creator in that position actually does, and it
+// exercises the whole path from "wants it" to "may download it".
+//
+// Everything below is provider-agnostic. A card provider later fills in
+// PAYMENT_PROVIDER and a webhook that calls settleOrder; nothing here knows
+// what a card is.
+// ---------------------------------------------------------------------------
+
+// How a buyer is told to pay. Read from the environment because it is an
+// operational detail, not code: a QR image path and a line of instructions.
+//
+// Selling is OFF until both are set. An order a buyer has no way to pay is
+// worse than a button that says purchasing is not available yet.
+const manualPaymentInstructions = String(process.env.PAYMENT_MANUAL_INSTRUCTIONS || '').trim()
+const manualPaymentQrUrl = String(process.env.PAYMENT_MANUAL_QR_URL || '').trim()
+const platformFeeBasisPoints = Math.min(
+  10000,
+  Math.max(0, Number(process.env.PLATFORM_FEE_BASIS_POINTS || 0)),
+)
+
+const paymentsConfigured = () => Boolean(manualPaymentInstructions && manualPaymentQrUrl)
+
+const requireOrdersStore = (_request, response, next) => {
+  if (!ordersStore) {
+    return sendError(
+      response,
+      API_ERROR_CODES.SERVICE_UNAVAILABLE,
+      'Purchasing is not configured.',
+      503,
+    )
+  }
+  return next()
+}
+
+app.get('/api/payment-methods', (_request, response) =>
+  sendData(response, {
+    // The client shows a disabled buy button when this is false, rather than
+    // an order form that leads nowhere.
+    available: paymentsConfigured(),
+    instructions: manualPaymentInstructions,
+    provider: 'manual',
+    qrUrl: manualPaymentQrUrl,
+  }),
+)
+
+app.post(
+  '/api/works/:handle/:slug/order',
+  requireVisitor,
+  requireWorksStore,
+  requireOrdersStore,
+  async (request, response) => {
+    if (!paymentsConfigured()) {
+      return sendError(
+        response,
+        API_ERROR_CODES.SERVICE_UNAVAILABLE,
+        'Purchasing is not available yet.',
+        503,
+      )
+    }
+
+    const work = await worksStore.getWorkByHandleAndSlug(request.params.handle, request.params.slug)
+    if (!work) {
+      return sendError(response, API_ERROR_CODES.WORK_NOT_FOUND, 'Work not found.', 404)
+    }
+    if (work.priceCents === 0) {
+      return sendError(
+        response,
+        API_ERROR_CODES.VALIDATION_ERROR,
+        'This work is free -- no order is needed.',
+        400,
+      )
+    }
+    if (work.creator?.id === request.visitorUser.id) {
+      return sendError(
+        response,
+        API_ERROR_CODES.VALIDATION_ERROR,
+        'You cannot buy your own work.',
+        400,
+      )
+    }
+
+    // Clicking buy twice lands on the same order. A second row would be a
+    // second thing for the operator to reconcile against one payment.
+    const existing = await ordersStore.findOpenOrder(request.visitorUser.id, work.id)
+    if (existing) return sendData(response, { order: existing })
+
+    const order = await ordersStore.createOrder({
+      buyerId: request.visitorUser.id,
+      feeBasisPoints: platformFeeBasisPoints,
+      workId: work.id,
+    })
+
+    if (!order) {
+      return sendError(response, API_ERROR_CODES.WORK_NOT_FOUND, 'Work not found.', 404)
+    }
+
+    return sendData(response, { order }, 201)
+  },
+)
+
+app.get('/api/account/orders', requireVisitor, requireOrdersStore, async (request, response) => {
+  const { limit, offset, page } = normalizePagination(request.query, 50, 100)
+  const payload = toPaginatedPayload(
+    await ordersStore.listOrdersForBuyer(request.visitorUser.id, { limit, offset }),
+    page,
+    limit,
+  )
+  return sendPage(response, { orders: payload.items }, payload.pagination)
+})
+
+app.get('/api/account/sales', requireVisitor, requireOrdersStore, async (request, response) => {
+  const { limit, offset, page } = normalizePagination(request.query, 50, 100)
+  const result = await ordersStore.creatorSales(request.visitorUser.id, { limit, offset })
+  const payload = toPaginatedPayload(result, page, limit)
+
+  return sendPage(
+    response,
+    { grossCents: result.grossCents, netCents: result.netCents, sales: payload.items },
+    payload.pagination,
+  )
+})
+
+// What the buyer says they paid with -- a transfer note, the last digits of an
+// account. It goes on the order so the operator confirming it is reading the
+// buyer's own words next to the amount, rather than matching a bank statement
+// against nothing.
+app.patch('/api/orders/:id/note', requireVisitor, requireOrdersStore, async (request, response) => {
+  const note = String(request.body?.note ?? '').trim().slice(0, 400)
+  const updated = await ordersStore.setBuyerNote(request.params.id, request.visitorUser.id, note)
+
+  if (!updated) {
+    // 404 rather than 403: whether an order id exists is not a stranger's
+    // business, and a settled order is no longer editable either.
+    return sendError(response, API_ERROR_CODES.RESOURCE_FORBIDDEN, 'Order not found.', 404)
+  }
+
+  return sendData(response, { order: await ordersStore.getOrder(request.params.id) })
+})
+
+app.get('/api/admin/orders', requireAdmin, requireOrdersStore, async (request, response) => {
+  const { limit, offset, page } = normalizePagination(request.query, 20, 100)
+  const status = String(request.query.status ?? '').trim()
+  const payload = toPaginatedPayload(
+    await ordersStore.listOrdersForAdmin({
+      limit,
+      offset,
+      status: ORDER_STATUSES.has(status) ? status : '',
+    }),
+    page,
+    limit,
+  )
+  return sendPage(response, { orders: payload.items }, payload.pagination)
+})
+
+// The moment money becomes entitlement. Everything else in this file is
+// bookkeeping around this one call.
+app.patch(
+  '/api/admin/orders/:id/status',
+  requireAdmin,
+  requireOrdersStore,
+  async (request, response) => {
+    const status = String(request.body?.status ?? '').trim()
+    if (!SETTLEABLE_ORDER_STATUSES.has(status)) {
+      return sendError(
+        response,
+        API_ERROR_CODES.VALIDATION_ERROR,
+        `status must be one of: ${[...SETTLEABLE_ORDER_STATUSES].join(', ')}.`,
+        400,
+      )
+    }
+
+    const result = await ordersStore.settleOrder(request.params.id, status, {
+      note: String(request.body?.note ?? '').trim().slice(0, 400) || null,
+      settledBy: request.adminUser?.username || 'admin',
+    })
+
+    if (result.conflict === 'already-owned') {
+      return sendError(
+        response,
+        API_ERROR_CODES.VALIDATION_ERROR,
+        'That buyer already owns this work. Cancel this order instead.',
+        409,
+      )
+    }
+    if (!result.order) {
+      return sendError(response, API_ERROR_CODES.RESOURCE_FORBIDDEN, 'Order not found.', 404)
+    }
+
+    return sendData(response, { order: result.order })
+  },
+)
+
+// ---------------------------------------------------------------------------
+// Downloading what you are entitled to.
+//
+// One question decides it -- ordersStore.hasEntitlement -- and both halves of
+// the flow ask it. The ticket is short-lived and single-use because a browser
+// navigation carries no Authorization header, so the credential has to ride in
+// the URL; making it worthless seconds later is what stops a link in someone's
+// history being an entitlement.
+// ---------------------------------------------------------------------------
+
+const sourceAssetFor = (work) =>
+  work.assets?.find((asset) => asset.kind === 'source') ||
+  work.assets?.find((asset) => asset.kind === 'model') ||
+  null
+
+app.post(
+  '/api/works/:handle/:slug/download-ticket',
+  requireVisitor,
+  requireWorksStore,
+  requireOrdersStore,
+  async (request, response) => {
+    const work = await worksStore.getWorkByHandleAndSlug(
+      request.params.handle,
+      request.params.slug,
+      { viewerId: request.visitorUser.id },
+    )
+    if (!work) {
+      return sendError(response, API_ERROR_CODES.WORK_NOT_FOUND, 'Work not found.', 404)
+    }
+
+    const entitlement = await ordersStore.hasEntitlement(request.visitorUser.id, work.id)
+    if (!entitlement.entitled) {
+      return sendError(
+        response,
+        API_ERROR_CODES.RESOURCE_FORBIDDEN,
+        'This work has not been purchased.',
+        403,
+      )
+    }
+    if (!sourceAssetFor(work)) {
+      return sendError(
+        response,
+        API_ERROR_CODES.WORK_NOT_FOUND,
+        'This work has no downloadable file.',
+        404,
+      )
+    }
+
+    const token = randomBytes(32).toString('base64url')
+    const expiresAt = new Date(Date.now() + DOWNLOAD_TICKET_TTL_MS)
+
+    await downloadRequestsStore.createWorkDownloadTicket({
+      expiresAt,
+      tokenHash: hashToken(token),
+      userId: request.visitorUser.id,
+      workId: work.id,
+    })
+
+    return sendData(
+      response,
+      {
+        ticket: {
+          expiresAt: expiresAt.toISOString(),
+          reason: entitlement.reason,
+          url:
+            `/api/works/${encodeURIComponent(request.params.handle)}` +
+            `/${encodeURIComponent(request.params.slug)}/download?ticket=${token}`,
+        },
+      },
+      201,
+    )
+  },
+)
+
+app.get('/api/works/:handle/:slug/download', requireWorksStore, async (request, response) => {
+  const work = await worksStore.getWorkByHandleAndSlug(request.params.handle, request.params.slug, {
+    // includeProtected, because this route's whole job is to serve the
+    // protected file once the ticket has proved it may.
+    isAdmin: true,
+  })
+  if (!work) {
+    return sendError(response, API_ERROR_CODES.WORK_NOT_FOUND, 'Work not found.', 404)
+  }
+
+  const ticket = String(request.query.ticket ?? '').trim()
+  if (!ticket || !downloadRequestsStore?.consumeWorkDownloadTicket) {
+    return sendError(
+      response,
+      API_ERROR_CODES.DOWNLOAD_TICKET_INVALID,
+      'A download ticket is required.',
+      403,
+    )
+  }
+
+  const redeemed = await downloadRequestsStore.consumeWorkDownloadTicket(hashToken(ticket), work.id)
+  if (!redeemed) {
+    return sendError(
+      response,
+      API_ERROR_CODES.DOWNLOAD_TICKET_INVALID,
+      'Download link is invalid, already used, or expired. Please start the download again.',
+      403,
+    )
+  }
+
+  const asset = sourceAssetFor(work)
+  if (!asset?.fileUrl) {
+    return sendError(response, API_ERROR_CODES.WORK_NOT_FOUND, 'File not available.', 404)
+  }
+
+  // The path comes out of the database, so it is confined to the upload root
+  // before it reaches the filesystem. A stored value is not a trusted one.
+  const localPath = path.resolve(rootDir, 'public', asset.fileUrl.replace(/^\//, ''))
+  if (!localPath.startsWith(uploadRoot) && !localPath.startsWith(path.join(rootDir, 'dist'))) {
+    return sendError(response, API_ERROR_CODES.WORK_NOT_FOUND, 'File not available.', 404)
+  }
+
+  // Logged before the transfer starts, so an aborted download still leaves a
+  // trace of who took what.
+  if (typeof downloadRequestsStore?.recordDownloadEvent === 'function') {
+    try {
+      await downloadRequestsStore.recordDownloadEvent({
+        actor: 'visitor',
+        ip: request.ip,
+        projectSlug: `work:${work.id}`,
+        userId: redeemed.userId,
+      })
+    } catch (error) {
+      console.error('Download event logging failed:', error.message)
+    }
+  }
+
+  return response.download(localPath, asset.fileName || path.basename(localPath))
+})
 
 // Per-creator themes. Three knobs -- an accent colour and two presets -- not
 // free-form CSS: a stylesheet from a creator could restyle the marketplace

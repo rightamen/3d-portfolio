@@ -126,6 +126,41 @@ export const createDownloadRequestsStore = ({ pool }) => ({
     return row ? { projectSlug: row.project_slug, userId: row.user_id } : null
   },
 
+  // The same ticket, for a work. Kept beside the project one rather than
+  // generalised into a single function with a nullable argument: the two
+  // lookups differ in what they match on, and a single function would have to
+  // branch on which id was null -- which is exactly how one of them ends up
+  // matching on nothing.
+  createWorkDownloadTicket: async ({ expiresAt, orderId, tokenHash, userId, workId }) => {
+    await pool.query(
+      `
+        INSERT INTO download_tickets (token_hash, work_id, order_id, user_id, expires_at)
+        VALUES ($1, $2, $3, $4, $5)
+      `,
+      [tokenHash, workId, orderId || null, userId || null, expiresAt],
+    )
+  },
+
+  // Marks it used and returns it in the same statement, so two concurrent
+  // requests cannot both redeem one ticket.
+  consumeWorkDownloadTicket: async (tokenHash, workId) => {
+    const result = await pool.query(
+      `
+        UPDATE download_tickets
+        SET used_at = now()
+        WHERE token_hash = $1
+          AND work_id = $2
+          AND used_at IS NULL
+          AND expires_at > now()
+        RETURNING work_id, order_id, user_id
+      `,
+      [tokenHash, workId],
+    )
+
+    const row = result.rows[0]
+    return row ? { orderId: row.order_id, userId: row.user_id, workId: row.work_id } : null
+  },
+
   deleteExpiredDownloadTickets: async () => {
     const result = await pool.query(
       "DELETE FROM download_tickets WHERE expires_at <= now() - interval '1 day'",

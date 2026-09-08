@@ -642,5 +642,58 @@ export const ensureSchema = async (pool) => {
 
     CREATE INDEX IF NOT EXISTS payouts_creator_created_idx
       ON payouts (creator_id, created_at DESC);
+
+    -- ------------------------------------------------------------------
+    -- Making orders provider-agnostic.
+    --
+    -- The table was written Stripe-shaped, and Stripe turned out not to be
+    -- the first provider: it does not serve mainland China, and the owner has
+    -- no business entity yet. The columns below are what every provider has --
+    -- a name and a reference -- so the Stripe ones become one provider's
+    -- detail rather than the schema's assumption.
+    -- ------------------------------------------------------------------
+    ALTER TABLE orders
+      ADD COLUMN IF NOT EXISTS provider text NOT NULL DEFAULT 'manual',
+      ADD COLUMN IF NOT EXISTS provider_reference text,
+      -- What the buyer says they paid with, and what the operator saw when
+      -- confirming it. On a manual settlement these two ARE the audit trail.
+      ADD COLUMN IF NOT EXISTS buyer_note text,
+      ADD COLUMN IF NOT EXISTS settled_note text,
+      ADD COLUMN IF NOT EXISTS settled_by text;
+
+    -- Idempotency, the same job orders_payment_intent_unique_idx does for
+    -- Stripe, for whatever provider is in use.
+    CREATE UNIQUE INDEX IF NOT EXISTS orders_provider_reference_unique_idx
+      ON orders (provider, provider_reference)
+      WHERE provider_reference IS NOT NULL;
+
+    -- The entitlement rule itself, in the database rather than only in a
+    -- query: one PAID order per buyer per work. You own a thing once. A
+    -- refunded order leaves the slot free, which is what lets someone buy
+    -- again after a refund.
+    CREATE UNIQUE INDEX IF NOT EXISTS orders_paid_entitlement_unique_idx
+      ON orders (buyer_id, work_id)
+      WHERE status = 'paid';
+
+    -- A ticket can now be for a work as well as for a project. project_slug
+    -- stops being mandatory because a work has no slug of its own that is
+    -- unique site-wide -- the pair (creator, slug) is.
+    ALTER TABLE download_tickets
+      ADD COLUMN IF NOT EXISTS work_id text REFERENCES works(id) ON DELETE CASCADE,
+      ADD COLUMN IF NOT EXISTS order_id text REFERENCES orders(id) ON DELETE SET NULL;
+
+    ALTER TABLE download_tickets ALTER COLUMN project_slug DROP NOT NULL;
+  `)
+
+  // A ticket that names neither a project nor a work authorises nothing and
+  // can only be a bug. ADD CONSTRAINT has no IF NOT EXISTS, so the duplicate
+  // is swallowed -- which is what makes running this on every boot safe.
+  await pool.query(`
+    DO $$ BEGIN
+      ALTER TABLE download_tickets
+        ADD CONSTRAINT download_tickets_target_check
+        CHECK (project_slug IS NOT NULL OR work_id IS NOT NULL);
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END $$;
   `)
 }

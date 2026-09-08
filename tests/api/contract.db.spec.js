@@ -249,6 +249,11 @@ test.beforeAll(async () => {
       // publishes and hides a work and then reads it back, which that cache
       // would hide entirely.
       SITEMAP_CACHE_MS: '0',
+      // Purchasing is off until an operator says how to pay; the suite needs
+      // it on to exercise the order path at all.
+      PAYMENT_MANUAL_INSTRUCTIONS: 'Scan the code and send the exact amount.',
+      PAYMENT_MANUAL_QR_URL: '/assets/projects/fire-extinguisher.png',
+      PLATFORM_FEE_BASIS_POINTS: '1000',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
@@ -2533,284 +2538,6 @@ test.describe('works: assets', () => {
   })
 })
 
-// The quota is the reason works uploads had to be wired into it rather than
-// beside it. Without worksStore.getUploadUsage in enforceUploadQuota, the
-// count comes only from community_uploads -- a handful for the whole suite --
-// and this loop would run to its ceiling without ever being told no.
-//
-// Last in the file on purpose: it deliberately exhausts the account's budget.
-test.describe('works: assets count against the storage budget', () => {
-  test('a creator cannot store unlimited files by routing around community uploads', async () => {
-    const png = Buffer.from(
-      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
-      'base64',
-    )
-
-    // Spread across several works: a single work caps at WORK_ASSET_LIMIT
-    // files, which is a different rule with a different error, and hitting it
-    // would end this loop before the budget ever had a say.
-    const newWork = async (index) => {
-      const created = await sendJson(
-        'POST',
-        '/api/account/works',
-        { title: `Quota Under Test ${index}` },
-        visitorA.sessionToken,
-      )
-      expect(created.response.status).toBe(201)
-      return created.payload.data.work.id
-    }
-
-    let refused = null
-    let workId = await newWork(0)
-
-    for (let attempt = 0; attempt < 60 && !refused; attempt += 1) {
-      if (attempt > 0 && attempt % 15 === 0) workId = await newWork(attempt)
-
-      const form = new FormData()
-      form.append('kind', 'texture')
-      form.append('file', new Blob([png], { type: 'image/png' }), `texture-${attempt}.png`)
-      const result = await postForm(`/api/account/works/${workId}/assets`, form, visitorA.sessionToken)
-      if (result.response.status === 429) refused = result
-      else expect(result.response.status, `upload ${attempt}`).toBe(201)
-    }
-
-    expect(refused, 'the budget was never enforced').not.toBeNull()
-    expect(refused.payload.error.code).toBe('UPLOAD_QUOTA_EXCEEDED')
-  })
-})
-
-// ADR_PLATFORM_PIVOT §5's first requirement: the server keeps rendering the
-// head. A crawler or a link-preview scraper has to get a complete answer about
-// a work without executing a line of WebGL, and a draft must not leak into
-// either the head or the sitemap.
-test.describe('works: the head a crawler sees', () => {
-  let handle
-  let slug
-
-  // Local to this block: the one in the per-route head suite above is scoped
-  // to that describe, and this one returns the status because half of what is
-  // under test here is whether a draft answers 404.
-  const getHtml = async (requestPath) => {
-    const response = await fetch(`${baseURL}${requestPath}`)
-    return { body: await response.text(), status: response.status }
-  }
-
-  test.beforeAll(async () => {
-    handle = `seo-${randomBytes(4).toString('hex')}`.slice(0, 30)
-    const profile = await sendJson(
-      'PUT',
-      '/api/account/profile',
-      { displayName: 'SEO Creator', handle },
-      visitorA.sessionToken,
-    )
-    expect(profile.response.status).toBe(200)
-
-    const created = await sendJson(
-      'POST',
-      '/api/account/works',
-      {
-        image: '/assets/projects/fire-extinguisher.png',
-        summaryEn: 'A crawler should be able to read this without any javascript.',
-        title: 'Head Under Test',
-      },
-      visitorA.sessionToken,
-    )
-    expect(created.response.status).toBe(201)
-    slug = created.payload.data.work.slug
-  })
-
-  test('a draft answers 404 and advertises nothing', async () => {
-    const { body, status } = await getHtml(`/w/${handle}/${slug}`)
-
-    expect(status).toBe(404)
-    expect(body).not.toContain('Head Under Test')
-    expect(body).toContain('noindex')
-  })
-
-  test('a draft is not in the sitemap', async () => {
-    const body = await (await fetch(`${baseURL}/sitemap.xml`)).text()
-    expect(body).not.toContain(`/w/${handle}/${slug}`)
-  })
-
-  test('once published, the head carries the work', async () => {
-    const workId = (await getJson('/api/account/works', visitorA.sessionToken)).payload.data.works.find(
-      (work) => work.slug === slug,
-    ).id
-    const published = await sendJson(
-      'PATCH',
-      `/api/admin/works/${workId}/status`,
-      { status: 'published' },
-      adminToken,
-    )
-    expect(published.response.status).toBe(200)
-
-    const { body, status } = await getHtml(`/w/${handle}/${slug}`)
-
-    expect(status).toBe(200)
-    expect(body).toContain('<title>Head Under Test | mrright.blog</title>')
-    expect(body).toContain(`https://mrright.blog/w/${handle}/${slug}`)
-    expect(body).toContain('A crawler should be able to read this without any javascript.')
-    expect(body).not.toContain('noindex')
-    // Its own picture on the share card, not the site default.
-    expect(body).toContain('/assets/projects/fire-extinguisher.png')
-  })
-
-  test('it is crawlable without javascript', async () => {
-    const { body } = await getHtml(`/w/${handle}/${slug}`)
-    const noscript = body.slice(body.indexOf('<noscript'), body.indexOf('</noscript>'))
-
-    expect(noscript).toContain('Head Under Test')
-  })
-
-  test('it claims to be a creative work in its structured data', async () => {
-    const { body } = await getHtml(`/w/${handle}/${slug}`)
-
-    expect(body).toContain('ld+json')
-    expect(body).toContain('CreativeWork')
-    expect(body).toContain('Head Under Test')
-  })
-
-  test('and now it IS in the sitemap', async () => {
-    const body = await (await fetch(`${baseURL}/sitemap.xml`)).text()
-
-    expect(body).toContain(`<loc>https://mrright.blog/w/${handle}/${slug}</loc>`)
-    expect(body).toContain('<loc>https://mrright.blog/explore</loc>')
-  })
-
-  test('the browse page has a head of its own, not a copy of the homepage', async () => {
-    const { body, status } = await getHtml('/explore')
-
-    expect(status).toBe(200)
-    expect(body).toContain('<title>Explore works | mrright.blog</title>')
-    expect(body).toContain('https://mrright.blog/explore')
-    expect(body).not.toContain('noindex')
-  })
-
-  test('a filtered browse URL canonicalises to the unfiltered one', async () => {
-    // ?query=sword is the same page, narrowed. Two URLs for one page is how a
-    // catalogue splits its own ranking between them.
-    const { body } = await getHtml('/explore?query=sword&category=prop')
-
-    expect(body).toContain('rel="canonical" href="https://mrright.blog/explore"')
-  })
-
-  test('a work URL nobody owns answers 404 rather than a soft 404', async () => {
-    const missing = await getHtml(`/w/${handle}/nothing-here`)
-    expect(missing.status).toBe(404)
-
-    const noSuchCreator = await getHtml(`/w/nobody-at-all/${slug}`)
-    expect(noSuchCreator.status).toBe(404)
-  })
-
-  test('hiding it takes the head and the sitemap entry with it', async () => {
-    const workId = (await getJson('/api/account/works', visitorA.sessionToken)).payload.data.works.find(
-      (work) => work.slug === slug,
-    ).id
-    const hidden = await sendJson(
-      'PATCH',
-      `/api/account/works/${workId}/status`,
-      { status: 'hidden' },
-      visitorA.sessionToken,
-    )
-    expect(hidden.response.status).toBe(200)
-
-    const { body, status } = await getHtml(`/w/${handle}/${slug}`)
-    expect(status).toBe(404)
-    expect(body).not.toContain('Head Under Test')
-  })
-})
-
-// Publishing a work is a deliberate public act; hiding your profile is a
-// separate choice about a different object. So a work by a creator with a
-// private profile stays listed -- but the response has to say the profile will
-// not answer, or every card linking to it is a link to a 404.
-test.describe('works by a creator whose profile is private', () => {
-  let handle
-  let slug
-
-  test.beforeAll(async () => {
-    handle = `private-${randomBytes(4).toString('hex')}`.slice(0, 30)
-    const profile = await sendJson(
-      'PUT',
-      '/api/account/profile',
-      { displayName: 'Private Creator', handle },
-      visitorA.sessionToken,
-    )
-    expect(profile.response.status).toBe(200)
-
-    const created = await sendJson(
-      'POST',
-      '/api/account/works',
-      { image: '/assets/projects/fire-extinguisher.png', title: 'Published By A Private Creator' },
-      visitorA.sessionToken,
-    )
-    expect(created.response.status).toBe(201)
-    slug = created.payload.data.work.slug
-
-    const published = await sendJson(
-      'PATCH',
-      `/api/admin/works/${created.payload.data.work.id}/status`,
-      { status: 'published' },
-      adminToken,
-    )
-    expect(published.response.status).toBe(200)
-  })
-
-  test('while the profile is public, the creator is linkable', async () => {
-    const { payload } = await getJson(`/api/works?creator=${handle}`)
-    const work = payload.data.works.find((item) => item.slug === slug)
-
-    expect(work).toBeTruthy()
-    expect(work.creator.profilePublic).toBe(true)
-  })
-
-  test('making the profile private leaves the work listed but not the link', async () => {
-    const hidden = await sendJson(
-      'PUT',
-      '/api/account/profile',
-      { displayName: 'Private Creator', handle, profilePublic: false },
-      visitorA.sessionToken,
-    )
-    expect(hidden.response.status).toBe(200)
-
-    const listed = await getJson(`/api/works?creator=${handle}`)
-    const work = listed.payload.data.works.find((item) => item.slug === slug)
-
-    // Still listed: they published it.
-    expect(work).toBeTruthy()
-    // But the client is told not to link to a page that will 404.
-    expect(work.creator.profilePublic).toBe(false)
-
-    // ...and that is not a guess. A private profile is not a 404 -- only an
-    // admin-disabled one is -- it answers 200 with noindex and the client
-    // renders "this profile is private". Which is still a dead end to send
-    // someone to from a card, hence profilePublic.
-    const profilePage = await fetch(`${baseURL}/u/${handle}`)
-    expect(profilePage.status).toBe(200)
-    const profileHtml = await profilePage.text()
-    expect(profileHtml).toContain('noindex')
-    expect(profileHtml).not.toContain('Private Creator')
-
-    // The work itself is untouched and still reachable at its own address.
-    const detail = await getJson(`/api/works/${handle}/${slug}`)
-    expect(detail.response.status).toBe(200)
-    expect(detail.payload.data.work.creator.profilePublic).toBe(false)
-  })
-
-  test('making it public again restores the link', async () => {
-    const shown = await sendJson(
-      'PUT',
-      '/api/account/profile',
-      { displayName: 'Private Creator', handle, profilePublic: true },
-      visitorA.sessionToken,
-    )
-    expect(shown.response.status).toBe(200)
-
-    const { payload } = await getJson(`/api/works?creator=${handle}`)
-    expect(payload.data.works.find((item) => item.slug === slug).creator.profilePublic).toBe(true)
-  })
-})
-
 // Comments on a work: threaded one level, sortable, likeable, pinnable by the
 // owner. The rules worth pinning are the ones about who may do what to whose
 // words -- an author deletes their own, a creator hides someone else's, and
@@ -3406,5 +3133,602 @@ test.describe('themes', () => {
     } finally {
       await pool.end()
     }
+  })
+})
+
+// Buying a work, and the entitlement it grants. The rules worth pinning are
+// the refusals: nobody downloads a paid file they have not bought, and no
+// operator's slip turns one payment into two entitlements.
+test.describe('orders and entitlement', () => {
+  let buyer
+  let handle
+  let freeSlug
+  let orderId
+  let paidSlug
+
+  const onePixelPng = () =>
+    Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+      'base64',
+    )
+
+  const publish = async (title, priceCents) => {
+    const created = await sendJson(
+      'POST',
+      '/api/account/works',
+      { image: '/assets/projects/fire-extinguisher.png', priceCents, title },
+      visitorA.sessionToken,
+    )
+    expect(created.response.status).toBe(201)
+
+    // A real file, so the download has something to stream.
+    const form = new FormData()
+    form.append('kind', 'source')
+    form.append('file', new Blob([onePixelPng()], { type: 'image/png' }), 'bundle.png')
+    const asset = await postForm(
+      `/api/account/works/${created.payload.data.work.id}/assets`,
+      form,
+      visitorA.sessionToken,
+    )
+    expect(asset.response.status).toBe(201)
+
+    const published = await sendJson(
+      'PATCH',
+      `/api/admin/works/${created.payload.data.work.id}/status`,
+      { status: 'published' },
+      adminToken,
+    )
+    expect(published.response.status).toBe(200)
+    return { id: created.payload.data.work.id, slug: created.payload.data.work.slug }
+  }
+
+  test.beforeAll(async () => {
+    handle = `seller-${randomBytes(4).toString('hex')}`.slice(0, 30)
+    await sendJson(
+      'PUT',
+      '/api/account/profile',
+      { displayName: 'Seller', handle },
+      visitorA.sessionToken,
+    )
+
+    paidSlug = (await publish('A Paid Work', 2500)).slug
+    freeSlug = (await publish('A Free Work', 0)).slug
+
+    const email = `buyer-${randomBytes(4).toString('hex')}@example.com`
+    const registered = await registerVisitor('A Buyer', email)
+    const verified = await sendJson('POST', '/api/auth/verify-email', {
+      code: registered.devCode,
+      email,
+    })
+    expect(verified.response.status).toBe(200)
+    buyer = { id: registered.id, token: verified.payload.data.session.token }
+  })
+
+  test('the payment method is advertised, so the client knows whether to offer buying', async () => {
+    const { payload, response } = await getJson('/api/payment-methods')
+
+    expect(response.status).toBe(200)
+    expect(payload.data.available).toBe(true)
+    expect(payload.data.provider).toBe('manual')
+  })
+
+  test('a free work needs no order and downloads for any signed-in visitor', async () => {
+    const ordered = await sendJson(
+      'POST',
+      `/api/works/${handle}/${freeSlug}/order`,
+      {},
+      buyer.token,
+    )
+    // Free is a price. Charging an order row for it would mean an entitlement
+    // check that can fail for something nobody has to buy.
+    expect(ordered.response.status).toBe(400)
+
+    const ticket = await sendJson(
+      'POST',
+      `/api/works/${handle}/${freeSlug}/download-ticket`,
+      {},
+      buyer.token,
+    )
+    expect(ticket.response.status).toBe(201)
+    expect(ticket.payload.data.ticket.reason).toBe('free')
+  })
+
+  test('a paid work refuses a ticket to someone who has not bought it', async () => {
+    const { payload, response } = await sendJson(
+      'POST',
+      `/api/works/${handle}/${paidSlug}/download-ticket`,
+      {},
+      buyer.token,
+    )
+
+    expect(response.status).toBe(403)
+    expect(payload.error.code).toBe('RESOURCE_FORBIDDEN')
+  })
+
+  test('the file cannot be reached without a ticket at all', async () => {
+    const response = await fetch(`${baseURL}/api/works/${handle}/${paidSlug}/download`)
+    expect(response.status).toBe(403)
+
+    const forged = await fetch(
+      `${baseURL}/api/works/${handle}/${paidSlug}/download?ticket=made-up`,
+    )
+    expect(forged.status).toBe(403)
+  })
+
+  test('placing an order records the price from the work, not from the request', async () => {
+    const { payload, response } = await sendJson(
+      'POST',
+      `/api/works/${handle}/${paidSlug}/order`,
+      { amountCents: 1 },
+      buyer.token,
+    )
+
+    expect(response.status).toBe(201)
+    expectContractShape(payload, { legacyKeys: ['order'] })
+    // A price that arrives in a request body is a price the buyer chose.
+    expect(payload.data.order.amountCents).toBe(2500)
+    expect(payload.data.order.status).toBe('pending')
+    // 10% fee, from the env in beforeAll.
+    expect(payload.data.order.platformFeeCents).toBe(250)
+    expect(payload.data.order.netCents).toBe(2250)
+    orderId = payload.data.order.id
+  })
+
+  test('clicking buy twice lands on the same order', async () => {
+    const { payload } = await sendJson(
+      'POST',
+      `/api/works/${handle}/${paidSlug}/order`,
+      {},
+      buyer.token,
+    )
+    // A second row would be a second thing to reconcile against one payment.
+    expect(payload.data.order.id).toBe(orderId)
+  })
+
+  test('a creator cannot buy their own work', async () => {
+    const { response } = await sendJson(
+      'POST',
+      `/api/works/${handle}/${paidSlug}/order`,
+      {},
+      visitorA.sessionToken,
+    )
+    expect(response.status).toBe(400)
+  })
+
+  test('a pending order grants nothing', async () => {
+    const { response } = await sendJson(
+      'POST',
+      `/api/works/${handle}/${paidSlug}/download-ticket`,
+      {},
+      buyer.token,
+    )
+    // The order exists. It has not been paid. Those are different things.
+    expect(response.status).toBe(403)
+  })
+
+  test('the buyer can say how they paid, and only while it is pending', async () => {
+    const noted = await sendJson(
+      'PATCH',
+      `/api/orders/${orderId}/note`,
+      { note: 'Alipay, last four 4321' },
+      buyer.token,
+    )
+    expect(noted.response.status).toBe(200)
+    expect(noted.payload.data.order.buyerNote).toContain('4321')
+
+    // Not somebody else's order.
+    const stranger = await sendJson(
+      'PATCH',
+      `/api/orders/${orderId}/note`,
+      { note: 'mine now' },
+      visitorA.sessionToken,
+    )
+    expect(stranger.response.status).toBe(404)
+  })
+
+  test('the order is in the moderation queue with the buyer note', async () => {
+    const { payload, response } = await getJson('/api/admin/orders?status=pending', adminToken)
+
+    expect(response.status).toBe(200)
+    expectRealPagination(payload.pagination)
+    const order = payload.data.orders.find((item) => item.id === orderId)
+    expect(order?.buyerNote).toContain('4321')
+  })
+
+  test('marking it paid is what turns money into entitlement', async () => {
+    const settled = await sendJson(
+      'PATCH',
+      `/api/admin/orders/${orderId}/status`,
+      { note: 'Seen in the Alipay ledger.', status: 'paid' },
+      adminToken,
+    )
+
+    expect(settled.response.status).toBe(200)
+    expect(settled.payload.data.order.status).toBe('paid')
+    expect(settled.payload.data.order.purchasedAt).not.toBeNull()
+
+    const ticket = await sendJson(
+      'POST',
+      `/api/works/${handle}/${paidSlug}/download-ticket`,
+      {},
+      buyer.token,
+    )
+    expect(ticket.response.status).toBe(201)
+    expect(ticket.payload.data.ticket.reason).toBe('purchased')
+
+    const file = await fetch(`${baseURL}${ticket.payload.data.ticket.url}`)
+    expect(file.status).toBe(200)
+    expect(file.headers.get('content-disposition')).toContain('bundle.png')
+  })
+
+  test('a ticket is single use', async () => {
+    const ticket = await sendJson(
+      'POST',
+      `/api/works/${handle}/${paidSlug}/download-ticket`,
+      {},
+      buyer.token,
+    )
+    const url = `${baseURL}${ticket.payload.data.ticket.url}`
+
+    expect((await fetch(url)).status).toBe(200)
+    // A link in someone's history must not still be an entitlement.
+    expect((await fetch(url)).status).toBe(403)
+  })
+
+  test('a ticket for one work cannot open another', async () => {
+    const ticket = await sendJson(
+      'POST',
+      `/api/works/${handle}/${freeSlug}/download-ticket`,
+      {},
+      buyer.token,
+    )
+    const token = new URL(`${baseURL}${ticket.payload.data.ticket.url}`).searchParams.get('ticket')
+
+    const wrongWork = await fetch(
+      `${baseURL}/api/works/${handle}/${paidSlug}/download?ticket=${token}`,
+    )
+    expect(wrongWork.status).toBe(403)
+  })
+
+  test('one payment cannot become two entitlements', async () => {
+    // The partial unique index is what enforces this; the endpoint turns its
+    // violation into an answer rather than a 500.
+    const second = await sendJson(
+      'POST',
+      `/api/works/${handle}/${paidSlug}/order`,
+      {},
+      buyer.token,
+    )
+    // The paid order comes back rather than a new pending one.
+    expect(second.payload.data.order.status).toBe('paid')
+  })
+
+  test('the sale shows up for the creator, net of the fee', async () => {
+    const { payload, response } = await getJson('/api/account/sales', visitorA.sessionToken)
+
+    expect(response.status).toBe(200)
+    expect(payload.data.grossCents).toBe(2500)
+    expect(payload.data.netCents).toBe(2250)
+    expect(payload.data.sales.some((sale) => sale.id === orderId)).toBe(true)
+  })
+
+  test('a refund takes the entitlement back', async () => {
+    const refunded = await sendJson(
+      'PATCH',
+      `/api/admin/orders/${orderId}/status`,
+      { status: 'refunded' },
+      adminToken,
+    )
+    expect(refunded.response.status).toBe(200)
+
+    const ticket = await sendJson(
+      'POST',
+      `/api/works/${handle}/${paidSlug}/download-ticket`,
+      {},
+      buyer.token,
+    )
+    // Refunded means they no longer own it. A refund that leaves the file
+    // reachable is a refund that gave the money back for nothing.
+    expect(ticket.response.status).toBe(403)
+  })
+
+  test('the creator always has their own files, without buying them back', async () => {
+    const { payload, response } = await sendJson(
+      'POST',
+      `/api/works/${handle}/${paidSlug}/download-ticket`,
+      {},
+      visitorA.sessionToken,
+    )
+    expect(response.status).toBe(201)
+    expect(payload.data.ticket.reason).toBe('creator')
+  })
+
+  test('settling needs the admin token', async () => {
+    const { response } = await sendJson(
+      'PATCH',
+      `/api/admin/orders/${orderId}/status`,
+      { status: 'paid' },
+      buyer.token,
+    )
+    expect(response.status).toBe(401)
+  })
+})
+
+
+// ADR_PLATFORM_PIVOT §5's first requirement: the server keeps rendering the
+// head. A crawler or a link-preview scraper has to get a complete answer about
+// a work without executing a line of WebGL, and a draft must not leak into
+// either the head or the sitemap.
+test.describe('works: the head a crawler sees', () => {
+  let handle
+  let slug
+
+  // Local to this block: the one in the per-route head suite above is scoped
+  // to that describe, and this one returns the status because half of what is
+  // under test here is whether a draft answers 404.
+  const getHtml = async (requestPath) => {
+    const response = await fetch(`${baseURL}${requestPath}`)
+    return { body: await response.text(), status: response.status }
+  }
+
+  test.beforeAll(async () => {
+    handle = `seo-${randomBytes(4).toString('hex')}`.slice(0, 30)
+    const profile = await sendJson(
+      'PUT',
+      '/api/account/profile',
+      { displayName: 'SEO Creator', handle },
+      visitorA.sessionToken,
+    )
+    expect(profile.response.status).toBe(200)
+
+    const created = await sendJson(
+      'POST',
+      '/api/account/works',
+      {
+        image: '/assets/projects/fire-extinguisher.png',
+        summaryEn: 'A crawler should be able to read this without any javascript.',
+        title: 'Head Under Test',
+      },
+      visitorA.sessionToken,
+    )
+    expect(created.response.status).toBe(201)
+    slug = created.payload.data.work.slug
+  })
+
+  test('a draft answers 404 and advertises nothing', async () => {
+    const { body, status } = await getHtml(`/w/${handle}/${slug}`)
+
+    expect(status).toBe(404)
+    expect(body).not.toContain('Head Under Test')
+    expect(body).toContain('noindex')
+  })
+
+  test('a draft is not in the sitemap', async () => {
+    const body = await (await fetch(`${baseURL}/sitemap.xml`)).text()
+    expect(body).not.toContain(`/w/${handle}/${slug}`)
+  })
+
+  test('once published, the head carries the work', async () => {
+    const workId = (await getJson('/api/account/works', visitorA.sessionToken)).payload.data.works.find(
+      (work) => work.slug === slug,
+    ).id
+    const published = await sendJson(
+      'PATCH',
+      `/api/admin/works/${workId}/status`,
+      { status: 'published' },
+      adminToken,
+    )
+    expect(published.response.status).toBe(200)
+
+    const { body, status } = await getHtml(`/w/${handle}/${slug}`)
+
+    expect(status).toBe(200)
+    expect(body).toContain('<title>Head Under Test | mrright.blog</title>')
+    expect(body).toContain(`https://mrright.blog/w/${handle}/${slug}`)
+    expect(body).toContain('A crawler should be able to read this without any javascript.')
+    expect(body).not.toContain('noindex')
+    // Its own picture on the share card, not the site default.
+    expect(body).toContain('/assets/projects/fire-extinguisher.png')
+  })
+
+  test('it is crawlable without javascript', async () => {
+    const { body } = await getHtml(`/w/${handle}/${slug}`)
+    const noscript = body.slice(body.indexOf('<noscript'), body.indexOf('</noscript>'))
+
+    expect(noscript).toContain('Head Under Test')
+  })
+
+  test('it claims to be a creative work in its structured data', async () => {
+    const { body } = await getHtml(`/w/${handle}/${slug}`)
+
+    expect(body).toContain('ld+json')
+    expect(body).toContain('CreativeWork')
+    expect(body).toContain('Head Under Test')
+  })
+
+  test('and now it IS in the sitemap', async () => {
+    const body = await (await fetch(`${baseURL}/sitemap.xml`)).text()
+
+    expect(body).toContain(`<loc>https://mrright.blog/w/${handle}/${slug}</loc>`)
+    expect(body).toContain('<loc>https://mrright.blog/explore</loc>')
+  })
+
+  test('the browse page has a head of its own, not a copy of the homepage', async () => {
+    const { body, status } = await getHtml('/explore')
+
+    expect(status).toBe(200)
+    expect(body).toContain('<title>Explore works | mrright.blog</title>')
+    expect(body).toContain('https://mrright.blog/explore')
+    expect(body).not.toContain('noindex')
+  })
+
+  test('a filtered browse URL canonicalises to the unfiltered one', async () => {
+    // ?query=sword is the same page, narrowed. Two URLs for one page is how a
+    // catalogue splits its own ranking between them.
+    const { body } = await getHtml('/explore?query=sword&category=prop')
+
+    expect(body).toContain('rel="canonical" href="https://mrright.blog/explore"')
+  })
+
+  test('a work URL nobody owns answers 404 rather than a soft 404', async () => {
+    const missing = await getHtml(`/w/${handle}/nothing-here`)
+    expect(missing.status).toBe(404)
+
+    const noSuchCreator = await getHtml(`/w/nobody-at-all/${slug}`)
+    expect(noSuchCreator.status).toBe(404)
+  })
+
+  test('hiding it takes the head and the sitemap entry with it', async () => {
+    const workId = (await getJson('/api/account/works', visitorA.sessionToken)).payload.data.works.find(
+      (work) => work.slug === slug,
+    ).id
+    const hidden = await sendJson(
+      'PATCH',
+      `/api/account/works/${workId}/status`,
+      { status: 'hidden' },
+      visitorA.sessionToken,
+    )
+    expect(hidden.response.status).toBe(200)
+
+    const { body, status } = await getHtml(`/w/${handle}/${slug}`)
+    expect(status).toBe(404)
+    expect(body).not.toContain('Head Under Test')
+  })
+})
+
+// Publishing a work is a deliberate public act; hiding your profile is a
+// separate choice about a different object. So a work by a creator with a
+// private profile stays listed -- but the response has to say the profile will
+// not answer, or every card linking to it is a link to a 404.
+test.describe('works by a creator whose profile is private', () => {
+  let handle
+  let slug
+
+  test.beforeAll(async () => {
+    handle = `private-${randomBytes(4).toString('hex')}`.slice(0, 30)
+    const profile = await sendJson(
+      'PUT',
+      '/api/account/profile',
+      { displayName: 'Private Creator', handle },
+      visitorA.sessionToken,
+    )
+    expect(profile.response.status).toBe(200)
+
+    const created = await sendJson(
+      'POST',
+      '/api/account/works',
+      { image: '/assets/projects/fire-extinguisher.png', title: 'Published By A Private Creator' },
+      visitorA.sessionToken,
+    )
+    expect(created.response.status).toBe(201)
+    slug = created.payload.data.work.slug
+
+    const published = await sendJson(
+      'PATCH',
+      `/api/admin/works/${created.payload.data.work.id}/status`,
+      { status: 'published' },
+      adminToken,
+    )
+    expect(published.response.status).toBe(200)
+  })
+
+  test('while the profile is public, the creator is linkable', async () => {
+    const { payload } = await getJson(`/api/works?creator=${handle}`)
+    const work = payload.data.works.find((item) => item.slug === slug)
+
+    expect(work).toBeTruthy()
+    expect(work.creator.profilePublic).toBe(true)
+  })
+
+  test('making the profile private leaves the work listed but not the link', async () => {
+    const hidden = await sendJson(
+      'PUT',
+      '/api/account/profile',
+      { displayName: 'Private Creator', handle, profilePublic: false },
+      visitorA.sessionToken,
+    )
+    expect(hidden.response.status).toBe(200)
+
+    const listed = await getJson(`/api/works?creator=${handle}`)
+    const work = listed.payload.data.works.find((item) => item.slug === slug)
+
+    // Still listed: they published it.
+    expect(work).toBeTruthy()
+    // But the client is told not to link to a page that will 404.
+    expect(work.creator.profilePublic).toBe(false)
+
+    // ...and that is not a guess. A private profile is not a 404 -- only an
+    // admin-disabled one is -- it answers 200 with noindex and the client
+    // renders "this profile is private". Which is still a dead end to send
+    // someone to from a card, hence profilePublic.
+    const profilePage = await fetch(`${baseURL}/u/${handle}`)
+    expect(profilePage.status).toBe(200)
+    const profileHtml = await profilePage.text()
+    expect(profileHtml).toContain('noindex')
+    expect(profileHtml).not.toContain('Private Creator')
+
+    // The work itself is untouched and still reachable at its own address.
+    const detail = await getJson(`/api/works/${handle}/${slug}`)
+    expect(detail.response.status).toBe(200)
+    expect(detail.payload.data.work.creator.profilePublic).toBe(false)
+  })
+
+  test('making it public again restores the link', async () => {
+    const shown = await sendJson(
+      'PUT',
+      '/api/account/profile',
+      { displayName: 'Private Creator', handle, profilePublic: true },
+      visitorA.sessionToken,
+    )
+    expect(shown.response.status).toBe(200)
+
+    const { payload } = await getJson(`/api/works?creator=${handle}`)
+    expect(payload.data.works.find((item) => item.slug === slug).creator.profilePublic).toBe(true)
+  })
+})
+
+// The quota is the reason works uploads had to be wired into it rather than
+// beside it. Without worksStore.getUploadUsage in enforceUploadQuota, the
+// count comes only from community_uploads -- a handful for the whole suite --
+// and this loop would run to its ceiling without ever being told no.
+//
+// Last in the file on purpose: it deliberately exhausts the account's budget.
+test.describe('works: assets count against the storage budget', () => {
+  test('a creator cannot store unlimited files by routing around community uploads', async () => {
+    const png = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+      'base64',
+    )
+
+    // Spread across several works: a single work caps at WORK_ASSET_LIMIT
+    // files, which is a different rule with a different error, and hitting it
+    // would end this loop before the budget ever had a say.
+    const newWork = async (index) => {
+      const created = await sendJson(
+        'POST',
+        '/api/account/works',
+        { title: `Quota Under Test ${index}` },
+        visitorA.sessionToken,
+      )
+      expect(created.response.status).toBe(201)
+      return created.payload.data.work.id
+    }
+
+    let refused = null
+    let workId = await newWork(0)
+
+    for (let attempt = 0; attempt < 60 && !refused; attempt += 1) {
+      if (attempt > 0 && attempt % 15 === 0) workId = await newWork(attempt)
+
+      const form = new FormData()
+      form.append('kind', 'texture')
+      form.append('file', new Blob([png], { type: 'image/png' }), `texture-${attempt}.png`)
+      const result = await postForm(`/api/account/works/${workId}/assets`, form, visitorA.sessionToken)
+      if (result.response.status === 429) refused = result
+      else expect(result.response.status, `upload ${attempt}`).toBe(201)
+    }
+
+    expect(refused, 'the budget was never enforced').not.toBeNull()
+    expect(refused.payload.error.code).toBe('UPLOAD_QUOTA_EXCEEDED')
   })
 })

@@ -6,6 +6,7 @@ import { createCommunityStore } from './postgres/communityStore.js'
 import { createContactMessagesStore } from './postgres/contactMessagesStore.js'
 import { createDownloadRequestsStore } from './postgres/downloadRequestsStore.js'
 import { createInteractionsStore } from './postgres/interactionsStore.js'
+import { createOrdersStore } from './postgres/ordersStore.js'
 import { createProjectStore } from './postgres/projectStore.js'
 import { createWorksStore } from './postgres/worksStore.js'
 
@@ -36,6 +37,7 @@ export const createPostgresStores = async (databaseUrl) => {
     contactMessagesStore: createContactMessagesStore({ pool }),
     downloadRequestsStore: createDownloadRequestsStore({ pool }),
     interactionsStore: createInteractionsStore({ pool }),
+    ordersStore: createOrdersStore({ pool }),
     projectStore,
     worksStore: createWorksStore({ pool }),
   }

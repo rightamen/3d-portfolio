@@ -511,3 +511,40 @@ export const toWorkComment = (row) => ({
   user: toUserSummary(row),
   workId: row.work_id,
 })
+
+// An order. Provider-agnostic on purpose: `provider` and `providerReference`
+// are what every payment route has, and the Stripe columns are one provider's
+// detail rather than the shape of the thing.
+//
+// No buyer identity beyond the id: an order is shown to its buyer, to the
+// creator who sold it, and to an operator, and none of those need the other
+// party's email from here.
+export const toOrder = (row) =>
+  row
+    ? {
+        amountCents: Number(row.amount_cents || 0),
+        buyerId: row.buyer_id || null,
+        buyerNote: row.buyer_note || '',
+        createdAt: row.created_at?.toISOString?.() || row.created_at,
+        creatorId: row.creator_id,
+        currency: row.currency || 'usd',
+        id: row.id,
+        // What the creator actually keeps. Computed here rather than left to
+        // each caller, because a marketplace that shows two different numbers
+        // for the same sale has a support problem, not a rounding problem.
+        netCents: Number(row.amount_cents || 0) - Number(row.platform_fee_cents || 0),
+        platformFeeCents: Number(row.platform_fee_cents || 0),
+        provider: row.provider || 'manual',
+        providerReference: row.provider_reference || '',
+        purchasedAt: row.purchased_at?.toISOString?.() || row.purchased_at || null,
+        refundedAt: row.refunded_at?.toISOString?.() || row.refunded_at || null,
+        settledNote: row.settled_note || '',
+        status: row.status,
+        updatedAt: row.updated_at?.toISOString?.() || row.updated_at,
+        workId: row.work_id,
+        workTitle: row.work_title || '',
+        // The address the buyer goes back to, built here for the same reason
+        // toWork builds one: two callers would not agree on it.
+        workUrl: row.creator_handle && row.work_slug ? `/w/${row.creator_handle}/${row.work_slug}` : '',
+      }
+    : null
