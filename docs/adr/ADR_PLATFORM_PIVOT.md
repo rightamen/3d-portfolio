@@ -3,8 +3,9 @@
 Date: 2026-09-06
 
 Status: Accepted, and largely built. Phases 1, 2, 3 and 5 shipped on
-2026-09-07 along with phase 4's redirect; phase 6 on 2026-09-08. Only phase 7
-(payments) and phase 4's visual rebuild remain. See §7 for what each one
+2026-09-07 along with phase 4's redirect; phase 6 and phase 7's core on
+2026-09-08. What remains is a real payment provider (blocked on a business
+entity, see §6) and phase 4's visual rebuild. See §7 for what each one
 actually delivered and where the plan was departed from.
 
 ## 1. What is changing
@@ -162,13 +163,53 @@ should be run against the new frontend, not assumed.
 
 ## 6. Money
 
-Stripe Connect, Express accounts: Stripe hosts creator onboarding and KYC, the
-platform takes an application fee, Stripe handles payouts.
+⚠️ **Revised 2026-09-08. Stripe Connect was the decision on 2026-09-06 and it
+does not fit.** The owner asked for payment methods usable from China, and
+three facts settle it:
 
-Things that are the owner's, not the code's, and which gate launch:
+1. **Stripe does not serve mainland China** as a merchant country.
+2. **Domestic Alipay/WeChat merchant integration requires ICP filing**, which
+   requires the server to be physically in mainland China. This one is in
+   Japan (`bytevirt.JP`), so the direct route is closed without a move.
+3. **The owner has no business entity**, and platform-collected settlement in
+   China ("代收代付") needs a payment licence or a licensed intermediary.
 
-- A Stripe account, and Connect enabled on it.
-- Whether a business entity is needed, which depends on jurisdiction.
+Those are facts about the world, not about the code, and no amount of code
+gets past any of them.
+
+### What was built instead
+
+A **provider-agnostic order and entitlement model**, with `manual` as the
+first provider: the buyer pays by whatever the operator arranged — an Alipay
+or WeChat code, a transfer — and an operator marks the order paid. That is not
+a placeholder; it is what a creator without a company actually does, and it
+exercises the whole path from wanting a work to being allowed to download it.
+
+`ordersStore.hasEntitlement` is the single answer to "may this person have the
+file", and every download path asks it. Free is a price, so a free work needs
+no order at all. Two rules live in the database rather than in a query: one
+paid order per buyer per work, and a ticket that names neither a project nor a
+work.
+
+### The routes that remain open, for when there is an entity
+
+| Route | Entity needed | Server | Notes |
+| --- | --- | --- | --- |
+| Stripe + Alipay/WeChat as payment methods | HK / SG / JP / US … | may stay in Japan | Chinese buyers pay the way they expect; Connect payouts to mainland accounts are restricted |
+| Alipay Global / WeChat Pay cross-border | overseas company | may stay in Japan | the same idea without Stripe in the middle |
+| Domestic Alipay/WeChat merchant | mainland licence + corporate account | **must move to mainland, ICP filing** | best rates and experience, heaviest compliance |
+
+Each is an adapter that fills in `orders.provider` and calls `settleOrder`
+from a webhook. Nothing above `ordersStore` knows what a card is.
+
+⚠️ **Payment-provider country support changes.** The table above reflects
+what was true when this was written; confirm against the provider's own
+documentation before committing to one.
+
+Things that are the owner's, not the code's, and which still gate a real
+payment provider:
+
+- A business entity, and which jurisdiction it is in.
 - **Tax on cross-border digital goods** (VAT/GST). Stripe Tax can compute it;
   someone still has to decide registration and liability.
 - Refund, licensing and takedown policy — a marketplace needs stated terms
@@ -196,7 +237,7 @@ constraint that makes a pivot this size survivable on a live site.
 | 4 | New interface shell | 3 | The rebuilt frontend, 3D per §5's split | Redirect shipped; visual rebuild open |
 | 5 | Comments | 2 | Threaded, sorted, moderated | **Shipped** 2026-09-07 |
 | 6 | Themes | 3 | Per-user theme, stored and rendered | **Shipped** 2026-09-08 |
-| 7 | Payments | 2, 6 | Connect onboarding, checkout, entitlement, payouts | Open |
+| 7 | Payments | 2, 6 | Orders, entitlement, gated download | **Core shipped** 2026-09-08 (manual provider; see §6) |
 
 Phase 7 is last on purpose: a marketplace with no content and no audience has
 nothing to sell. Everything before it is useful on its own.

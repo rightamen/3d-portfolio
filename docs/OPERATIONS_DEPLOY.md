@@ -63,6 +63,28 @@ VPS_DRY_RUN=true npm run deploy:vps   # 打印将在 VPS 上执行的完整脚�
 | `VPS_BACKUP_RETAIN` | `3` | 保留最近几份应用备份；`0` 关闭裁剪 |
 | `VPS_REWRITE_NGINX` / `VPS_REWRITE_SERVICE` | `false` | 重写 vhost / unit（先读上面的警告） |
 
+## 开启收款（服务端环境变量）
+
+这些写在 **VPS 的 `/etc/mrright-portfolio.env`**，不在部署脚本的环境里，
+因为它们是服务运行时读的。改完要 `systemctl restart mrright-portfolio`。
+
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `PAYMENT_MANUAL_INSTRUCTIONS` | 空 | 给买家看的付款说明，一两句话 |
+| `PAYMENT_MANUAL_QR_URL` | 空 | 收款码图片的路径，例如 `/uploads/images/xxx.png` |
+| `PLATFORM_FEE_BASIS_POINTS` | `0` | 平台抽成，万分之一为单位（`1000` = 10%） |
+
+⚠️ **两个都设上之前，购买是关闭的**（`GET /api/payment-methods` 返回
+`available:false`，前端不放出购买按钮，下单端点返回 503）。
+这是故意的：**让买家下一个他没法支付的订单，比按钮直接说「暂不支持」更糟**。
+
+⚠️ **收款码要先上传成站内文件**，`PAYMENT_MANUAL_QR_URL` 只接受本站路径。
+外部 URL 会被前端当成图片直接引用，等于把收款码的可用性交给别人的服务器。
+
+⚠️ **抽成是下单那一刻算进订单行的**，改了 `PLATFORM_FEE_BASIS_POINTS`
+只影响之后的新订单，不会追溯改写已有订单——这是对的，
+一笔已经谈好的交易不该因为后台改了个数字就变金额。
+
 ## 代码是怎么分层的
 
 | 文件 | 职责 |
