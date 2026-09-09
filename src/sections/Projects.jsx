@@ -84,9 +84,15 @@ const Projects = ({ authToken, copy, language, onDetailReady, projects = [], vis
         })}
       </div>
 
+      {/* Only for the category actually chosen.
+          Rendering all six on "all" put 1096px of explanation between the
+          section heading and the first work -- measured at 440px, where the
+          whole page is 6046px. On a portfolio "here is how I organise my work"
+          was a statement; on a catalogue it is six essays in front of the
+          thing people came for. The text is one chip away. */}
       <div className="asset-category-strip">
         {(activeCategory === 'all'
-          ? assetCategoryProfiles
+          ? []
           : assetCategoryProfiles.filter((category) => category.value === activeCategory)
         ).map((categoryBase) => {
           const category = getAssetCategoryProfile({ assetCategory: categoryBase.value }, language)

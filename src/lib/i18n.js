@@ -392,10 +392,10 @@ const copy = {
     aboutFocusTitle: '创作重点',
     aboutFocusBody: '造型比例、轮廓识别、材质质感、贴图颜色，以及最终画面表现力。',
     aboutToolsTitle: '工具箱',
-    projectsKicker: '作品展示',
-    projectsTitle: '按资产类别整理的三维作品',
+    projectsKicker: '最新作品',
+    projectsTitle: '来自每一位创作者的三维资产',
     projectsIntro:
-      '集中展示次世代道具、角色、场景，以及手绘资产的模型预览、纹理表现和项目说明。',
+      '次世代道具、角色、场景与手绘资产。点开可以看模型预览、材质说明和文件清单。',
     communityKicker: '社区资源',
     communityTitle: '访客作品与资源交流',
     communityIntro:
@@ -975,10 +975,10 @@ const copy = {
     aboutFocusBody:
       'Proportion, silhouette, material feel, texture color, and the final readability of the image.',
     aboutToolsTitle: 'Toolkit',
-    projectsKicker: 'Selected Work',
-    projectsTitle: '3D Work Organized By Asset Type',
+    projectsKicker: 'Latest Works',
+    projectsTitle: '3D Assets From Every Creator Here',
     projectsIntro:
-      'A focused look at next-gen props, characters, scenes, and hand-painted assets with model previews, texture presentation, and production notes.',
+      'Next-gen props, characters, scenes and hand-painted assets. Open one for its model preview, material notes and file list.',
     communityKicker: 'Community Resources',
     communityTitle: 'Visitor Assets And Creative Exchange',
     communityIntro:
@@ -1563,10 +1563,10 @@ const copy = {
     aboutFocusBody:
       'プロポーション、シルエット、質感、テクスチャ色、最終画面での読みやすさ。',
     aboutToolsTitle: 'ツール',
-    projectsKicker: '作品展示',
-    projectsTitle: 'アセット種別で整理した3D作品',
+    projectsKicker: '最新の作品',
+    projectsTitle: 'すべてのクリエイターによる3Dアセット',
     projectsIntro:
-      '次世代小物、キャラクター、背景、手描きアセットを、モデルプレビュー、テクスチャ表現、制作メモとともに展示します。',
+      '次世代プロップ、キャラクター、背景、手描きアセット。開くとモデルプレビュー、マテリアル説明、ファイル一覧が見られます。',
     communityKicker: 'コミュニティ素材',
     communityTitle: '訪問者の作品と素材交流',
     communityIntro:
