@@ -269,7 +269,7 @@ constraint that makes a pivot this size survivable on a live site.
 | 1 | Creator + work data model, migration | — | Schema, stores, migration of the 4 works | **Shipped** 2026-09-07 |
 | 2 | Publishing flow | 1 | Multi-file upload, draft→review→published | **Shipped** 2026-09-07 |
 | 3 | Discovery | 2 | Browse, search, filter, creator pages | **Shipped** 2026-09-07 |
-| 4 | New interface shell | 3 | The rebuilt frontend, 3D per §5's split | Redirect shipped; visual rebuild open |
+| 4 | New interface shell | 3 | The rebuilt frontend, 3D per §5's split | **Shipped** 2026-09-09, except the hero copy (see below) |
 | 5 | Comments | 2 | Threaded, sorted, moderated | **Shipped** 2026-09-07 |
 | 6 | Themes | 3 | Per-user theme, stored and rendered | **Shipped** 2026-09-08 |
 | 7 | Payments | 2, 6 | Orders, entitlement, gated download | **Core shipped** 2026-09-08 (manual provider; see §6) |
@@ -294,6 +294,30 @@ building it twice, so the redirect drops it. `project_likes` and
 `project_comments` were **not** zero — two rows each — so both were migrated,
 because a redirect that silently discards what people left behind is a deletion
 with extra steps.
+
+**Phase 4 turned out to be product work, not visual work.** The plan said
+"the rebuilt frontend"; what the site actually needed was for the front door
+to describe the product. Three things, all shipped 2026-09-09:
+
+- The homepage catalogue read `/api/projects` -- the owner's four legacy
+  works -- and would have gone on showing only theirs however many creators
+  joined. It reads the marketplace now.
+- Nothing anywhere told a visitor they could publish, which is the one thing
+  §1 is about. `PublishCta` says so on the homepage and on `/explore`.
+- The owner's About, Experience and Contact moved to their profile. A
+  marketplace front page is somewhere people arrive, not somebody's page.
+
+And one measured fix: six category descriptions rendered on the default
+"All" filter, putting 1096px of explanation between the section heading and
+the first work at 440px, on a 6046px page. On a portfolio that was a
+statement about craft; on a catalogue it is six essays in front of the thing
+people came for. Now 330px, with the text one chip away.
+
+⚠️ **What is deliberately NOT done: the hero copy.** It still reads "Hi, I am
+Right / Creating Next-Gen Props / 3D model and game art asset creator" --
+a personal portfolio hero on a marketplace, so a visitor landing there is
+told nothing about what the site is. That is the owner's name and tagline and
+the change is theirs to make, so it was raised rather than taken.
 
 **Themes are three knobs, not CSS.** The ADR said "per-user theme" without
 saying what a theme is. It is an accent colour and two presets, applied to the

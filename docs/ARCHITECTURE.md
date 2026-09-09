@@ -30,11 +30,15 @@ VPS: systemd service + nginx
 
 Current major product areas:
 
-- Public portfolio pages, and the homepage catalogue.
+- **The homepage is the marketplace front door**, not a portfolio. Its
+  catalogue reads `/api/works` -- every creator's, not the owner's -- and it
+  says publishing is open to whoever is looking. The owner's About,
+  Experience and Contact moved to `/u/<their handle>` on 2026-09-09; the
+  homepage is a place people arrive at, not a person's page.
 - **The marketplace**: browse at `/explore`, one work at `/w/:handle/:slug`,
   a creator's works on their profile. Publishing runs draft → review →
   published, with multi-file assets, per-account storage quotas and
-  magic-byte validation.
+  magic-byte validation, and is driven from `/account/works`.
 - **Discussion on a work**: threaded one level, sorted by top or newest,
   likeable, pinnable by the work's owner.
 - **Selling**, creator-direct: a creator lists how they want to be paid, a
@@ -44,7 +48,11 @@ Current major product areas:
   creator's own work pages and profile.
 - 3D model preview, reached deliberately rather than mounted with the page.
 - Visitor account registration, login, verification, profile, comments.
-- Public user profiles at `/u/:handle`.
+- Public user profiles at `/u/:handle`. The site owner's carries their About,
+  Experience and Contact as well -- identified by matching the account's email
+  against `server/content.js`, because the bundled record IS the owner and no
+  second place can then disagree with it. Only a boolean leaves the server;
+  the email never does.
 - Community posts, comments, and uploads.
 - Admin dashboard for comments, likes, contact messages, download requests,
   projects, works, community, and visitor management.

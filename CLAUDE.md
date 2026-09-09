@@ -30,6 +30,7 @@
    - /admin
    - /login?mode=login
    - /account
+   - /account/works（发布界面；标签在 URL 里，2026-09-09 起）
    - /explore（作品目录）
    - /w/mrright/md-leimu（单个作品）
    - /u/mrright（创作者主页）
