@@ -684,6 +684,36 @@ export const getAdminContactMessages = (token) =>
 export const getAdminDownloadRequests = (token) =>
   adminRequest('/api/admin/download-requests', token)
 
+// Orders, for the operator. The platform holds no money, so these do not move
+// funds -- they read the record and, as a backstop for a dispute, settle an
+// order the creator has not.
+export const getAdminOrders = (token, status = '') =>
+  request(`/api/admin/orders${status ? `?status=${encodeURIComponent(status)}` : ''}`, {
+    cache: 'no-store',
+    headers: authHeaders(token),
+  })
+
+// Orders a buyer says they paid for and nobody confirmed. This list IS the
+// leverage a platform that never held the money still has.
+export const getAdminStaleOrders = (token, hours = 48) =>
+  request(`/api/admin/orders/stale?hours=${encodeURIComponent(hours)}`, {
+    cache: 'no-store',
+    headers: authHeaders(token),
+  })
+
+export const getAdminOrderEvents = (token, id) =>
+  request(`/api/admin/orders/${encodeURIComponent(id)}/events`, {
+    cache: 'no-store',
+    headers: authHeaders(token),
+  })
+
+export const updateAdminOrderStatus = (token, id, status, note = '') =>
+  request(`/api/admin/orders/${encodeURIComponent(id)}/status`, {
+    body: JSON.stringify({ note, status }),
+    headers: authHeaders(token, { 'Content-Type': 'application/json' }),
+    method: 'PATCH',
+  })
+
 export const getAdminProjects = (token) => adminRequest('/api/admin/projects', token)
 
 export const getAdminVisitors = (token, filters = {}) => {

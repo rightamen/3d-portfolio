@@ -16,6 +16,7 @@ export const sections = [
   { group: 'catalogue', icon: 'community', key: 'community' },
   { group: 'moderation', icon: 'comments', key: 'comments' },
   { group: 'moderation', icon: 'downloads', key: 'downloads' },
+  { group: 'moderation', icon: 'orders', key: 'orders' },
   { group: 'moderation', icon: 'messages', key: 'messages' },
   { group: 'people', icon: 'visitors', key: 'visitors' },
   { group: 'people', icon: 'likes', key: 'likes' },
@@ -46,6 +47,7 @@ export const searchableSections = new Set([
   'community',
   'downloads',
   'messages',
+  'orders',
 ])
 
 export const visitorAccessPresets = [

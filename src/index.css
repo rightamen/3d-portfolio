@@ -4944,3 +4944,102 @@ body {
   font-size: 0.72rem;
   text-align: right;
 }
+
+/* The orders section of the console. The trail is the centre of the screen,
+   not a detail behind a link: in a dispute it is the whole of what the
+   platform can contribute, since it never held the money. */
+.admin-order-hint {
+  margin: -0.25rem 0 0.9rem;
+  padding: 0.6rem 0.8rem;
+  border-radius: 0.5rem;
+  border: 1px solid rgb(255 190 120 / 30%);
+  background: rgb(255 190 120 / 7%);
+  font-size: 0.8rem;
+  line-height: 1.55;
+}
+
+.admin-order-all {
+  margin-top: 2rem;
+}
+
+.admin-order-note {
+  margin-top: 0.35rem;
+  padding: 0.35rem 0.6rem;
+  border-radius: 0.4rem;
+  background: rgb(255 255 255 / 5%);
+  font-size: 0.82rem;
+}
+
+.admin-order-detail {
+  display: grid;
+  gap: 1.25rem;
+  margin-top: 0.9rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid rgb(255 255 255 / 10%);
+}
+
+.admin-order-detail h4 {
+  font-size: 0.88rem;
+  margin-bottom: 0.15rem;
+}
+
+.admin-order-trail {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+}
+
+/* Numbered, because the order things happened in is half of what a trail is
+   for. */
+.admin-order-trail li {
+  position: relative;
+  padding: 0.45rem 0.7rem;
+  border-radius: 0.45rem;
+  border-left: 2px solid rgb(255 255 255 / 18%);
+  background: rgb(255 255 255 / 3%);
+  font-size: 0.82rem;
+}
+
+.admin-order-actor {
+  display: block;
+  font-size: 0.72rem;
+  color: rgb(255 255 255 / 50%);
+}
+
+.admin-order-trail time {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 0.72rem;
+  color: rgb(255 255 255 / 45%);
+}
+
+.admin-order-trail p {
+  margin-top: 0.3rem;
+  color: rgb(255 255 255 / 70%);
+}
+
+.admin-order-methods {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+}
+
+.admin-order-methods li {
+  padding: 0.5rem 0.7rem;
+  border-radius: 0.45rem;
+  border: 1px solid rgb(255 255 255 / 10%);
+  font-size: 0.82rem;
+}
+
+.admin-order-methods img {
+  display: block;
+  width: min(9rem, 100%);
+  margin-top: 0.4rem;
+  border-radius: 0.4rem;
+}
+
+@media (min-width: 60rem) {
+  .admin-order-detail {
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  }
+}

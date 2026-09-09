@@ -18,6 +18,10 @@ import {
   getAdminCommunityUploads,
   getAdminContactMessages,
   getAdminDownloadRequests,
+  getAdminOrderEvents,
+  getAdminOrders,
+  getAdminStaleOrders,
+  updateAdminOrderStatus,
   getAdminLikes,
   getAdminMe,
   getAdminOverview,
@@ -48,6 +52,7 @@ import AdminIcon from './components/admin/AdminIcon'
 import AdminLikesSection from './components/admin/AdminLikesSection'
 import AdminMembersSection from './components/admin/AdminMembersSection'
 import AdminMessagesSection from './components/admin/AdminMessagesSection'
+import AdminOrdersSection from './components/admin/AdminOrdersSection'
 import AdminProjectEditor from './components/admin/AdminProjectEditor'
 import AdminProjectsSection from './components/admin/AdminProjectsSection'
 import AdminSystemPanel from './components/admin/AdminSystemPanel'
@@ -118,8 +123,10 @@ const Admin = () => {
     communityUploads: [],
     likes: [],
     messages: [],
+    orders: [],
     projects: [],
     requests: [],
+    staleOrders: [],
     visitors: [],
     visitorPagination: { page: 1, pages: 1, total: 0 },
     summary: null,
@@ -186,6 +193,8 @@ const Admin = () => {
         likesPayload,
         messagesPayload,
         requestsPayload,
+        ordersPayload,
+        staleOrdersPayload,
         projectsPayload,
         visitorsPayload,
         overviewPayload,
@@ -199,6 +208,10 @@ const Admin = () => {
           getAdminLikes(activeToken),
           getAdminContactMessages(activeToken),
           getAdminDownloadRequests(activeToken),
+          // Soft-fail, like the overview: a server that predates these routes
+          // should cost the operator the orders list, not the whole console.
+          getAdminOrders(activeToken).catch(() => ({ orders: [] })),
+          getAdminStaleOrders(activeToken).catch(() => ({ orders: [] })),
           getAdminProjects(activeToken),
           getAdminVisitors(activeToken, visitorFilters),
           // Soft-fails on purpose. A server that predates this route, or a
@@ -215,7 +228,9 @@ const Admin = () => {
         likes: likesPayload.likes || [],
         messages: messagesPayload.messages || [],
         projects: projectsPayload.projects || [],
+        orders: ordersPayload.orders || [],
         requests: requestsPayload.requests || [],
+        staleOrders: staleOrdersPayload.orders || [],
         visitors: visitorsPayload.visitors || [],
         visitorPagination: visitorsPayload.pagination || { page: 1, pages: 1, total: 0 },
         summary: summaryPayload.summary || {},
@@ -446,6 +461,32 @@ const Admin = () => {
       } catch {
         // Already expired or never a session token — nothing to clean up.
       }
+    }
+  }
+
+  // An operator settling an order is a BACKSTOP -- the creator is who should
+  // confirm, since they are the only one who can see the money arrive. Doing
+  // it here is recorded as an admin action in order_events, which is the point:
+  // the trail has to show who actually decided.
+  const updateOrderStatus = async (id, nextStatus) => {
+    setActionMessage('')
+    try {
+      await updateAdminOrderStatus(token, id, nextStatus)
+      await loadAdminData(token)
+    } catch (error) {
+      setActionMessage(error.message || t('shell.requestFailed'))
+    }
+  }
+
+  // Fetched on demand rather than with the list: a console that pulled the
+  // full trail for every order would spend most of its load on records nobody
+  // opened.
+  const loadOrderEvents = async (id) => {
+    try {
+      return await getAdminOrderEvents(token, id)
+    } catch (error) {
+      setActionMessage(error.message || t('shell.requestFailed'))
+      return { events: [], paymentMethods: [] }
     }
   }
 
@@ -1292,6 +1333,15 @@ const Admin = () => {
               }
               onUpdateStatus={updateRequestStatus}
               requests={visibleRequests}
+            />
+          )}
+
+          {activeSection === 'orders' && (
+            <AdminOrdersSection
+              onLoadEvents={loadOrderEvents}
+              onUpdateStatus={updateOrderStatus}
+              orders={data.orders}
+              staleOrders={data.staleOrders}
             />
           )}
 
