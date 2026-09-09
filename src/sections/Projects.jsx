@@ -1,32 +1,22 @@
-import { motion as Motion } from 'motion/react'
-import { lazy, Suspense, useMemo, useState } from 'react'
-import { Link, useLocation, useMatch, useNavigate } from 'react-router-dom'
+import { useMemo, useState } from 'react'
+
+import WorkCard from '../components/WorkCard'
 import { assetCategoryProfiles, getAssetCategoryProfile } from '../lib/assetCategories'
-import { pickLocalized, translateKnownLabel } from '../lib/i18n'
 
-const ModelPreview = lazy(() => import('../components/ModelPreview'))
-const ProjectDetail = lazy(() => import('../components/ProjectDetail'))
-
-const Projects = ({ authToken, copy, language, onDetailReady, projects = [], visitorUser }) => {
-  const [previewProject, setPreviewProject] = useState(null)
+// The homepage catalogue.
+//
+// It used to be a grid of rich cards -- category badge, year, format, title,
+// summary paragraph, stack pills, a model-preview button and a details link --
+// which is a product listing rather than a thumbnail. It is now the same tile
+// /explore and the creator profiles use, for two reasons: a browsing art site
+// shows work, not descriptions of work; and two implementations of one card
+// drift apart, which these two already had.
+//
+// The model viewer moved with it. It lives on the work page, which is where
+// somebody who has chosen a work is -- rather than on every tile of a grid
+// they are still scanning.
+const Projects = ({ copy, language, projects = [] }) => {
   const [activeCategory, setActiveCategory] = useState('all')
-  const location = useLocation()
-  const navigate = useNavigate()
-  // The open detail is the URL, not component state. That is the whole point of
-  // giving projects a route: the panel a visitor is looking at is now something
-  // they can link to, and something a crawler can be handed a title and a
-  // picture for. The model preview above is still local state -- it is a viewer
-  // for the same project, not a different page.
-  const detailMatch = useMatch('/projects/:slug')
-  const detailSlug = detailMatch?.params?.slug || null
-
-  const closeDetail = () => {
-    // Opened from the grid: step back, so closing does not pile a second entry
-    // onto history and Back still means back. Arrived from outside (a shared
-    // link) there is nothing behind this URL, so go to the homepage.
-    if (location.state?.fromCatalogue) navigate(-1)
-    else navigate('/')
-  }
 
   const categoryCounts = useMemo(() => {
     const counts = new Map(assetCategoryProfiles.map((category) => [category.value, 0]))
@@ -38,11 +28,14 @@ const Projects = ({ authToken, copy, language, onDetailReady, projects = [], vis
 
     return counts
   }, [language, projects])
+
   const visibleProjects = useMemo(
     () =>
       activeCategory === 'all'
         ? projects
-        : projects.filter((project) => getAssetCategoryProfile(project, language).value === activeCategory),
+        : projects.filter(
+            (project) => getAssetCategoryProfile(project, language).value === activeCategory,
+          ),
     [activeCategory, language, projects],
   )
 
@@ -51,9 +44,7 @@ const Projects = ({ authToken, copy, language, onDetailReady, projects = [], vis
       <div className="section-kicker">{copy.projectsKicker}</div>
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <h2 className="text-heading">{copy.projectsTitle}</h2>
-        <p className="max-w-xl text-neutral-400">
-          {copy.projectsIntro}
-        </p>
+        <p className="max-w-xl text-neutral-400">{copy.projectsIntro}</p>
       </div>
 
       <div className="asset-filter-panel">
@@ -67,7 +58,6 @@ const Projects = ({ authToken, copy, language, onDetailReady, projects = [], vis
         </button>
         {assetCategoryProfiles.map((categoryBase) => {
           const category = getAssetCategoryProfile({ assetCategory: categoryBase.value }, language)
-          const count = categoryCounts.get(category.value) || 0
 
           return (
             <button
@@ -78,161 +68,54 @@ const Projects = ({ authToken, copy, language, onDetailReady, projects = [], vis
               onClick={() => setActiveCategory(category.value)}
             >
               <span>{category.shortLabel}</span>
-              <strong>{count}</strong>
+              <strong>{categoryCounts.get(category.value) || 0}</strong>
             </button>
           )
         })}
       </div>
 
-      {/* Only for the category actually chosen.
-          Rendering all six on "all" put 1096px of explanation between the
-          section heading and the first work -- measured at 440px, where the
-          whole page is 6046px. On a portfolio "here is how I organise my work"
-          was a statement; on a catalogue it is six essays in front of the
-          thing people came for. The text is one chip away. */}
+      {/* Only for the category actually chosen. Rendering all six on "all" put
+          1096px of explanation between the heading and the first work at
+          440px; the text is one chip away instead. */}
       <div className="asset-category-strip">
         {(activeCategory === 'all'
           ? []
           : assetCategoryProfiles.filter((category) => category.value === activeCategory)
         ).map((categoryBase) => {
           const category = getAssetCategoryProfile({ assetCategory: categoryBase.value }, language)
+          const count = categoryCounts.get(category.value) || 0
 
           return (
-          <div
-            key={category.value}
-            className={`asset-category-summary ${
-              (categoryCounts.get(category.value) || 0) === 0 ? 'asset-category-empty' : ''
-            }`}
-            style={{ '--category-accent': category.accent }}
-          >
-            <div className="asset-category-heading">
-              <span>{category.label}</span>
-              <strong>
-                {(categoryCounts.get(category.value) || 0) > 0
-                  ? `${categoryCounts.get(category.value)} ${copy.workCount}`
-                  : copy.waitingUpload}
-              </strong>
+            <div
+              key={category.value}
+              className={`asset-category-summary ${count === 0 ? 'asset-category-empty' : ''}`}
+              style={{ '--category-accent': category.accent }}
+            >
+              <div className="asset-category-heading">
+                <span>{category.label}</span>
+                <strong>{count > 0 ? `${count} ${copy.workCount}` : copy.waitingUpload}</strong>
+              </div>
+              <p>{category.description}</p>
             </div>
-            <p>{category.description}</p>
-          </div>
           )
         })}
       </div>
 
-      {visibleProjects.length === 0 && (
+      {/* The empty state came back here after the redesign dropped it: filter
+          to a category nobody has published in and a grid with no message is a
+          page that looks broken rather than empty. The i18n usage test is what
+          noticed, by reporting its two strings as unrendered. */}
+      {visibleProjects.length === 0 ? (
         <div className="asset-empty-state">
           <strong>{copy.emptyCategoryTitle}</strong>
           <span>{copy.emptyCategoryBody}</span>
         </div>
-      )}
-
-      <div className="mt-8 grid grid-cols-1 gap-4 md:grid-cols-2">
-        {visibleProjects.map((project, index) => {
-          const category = getAssetCategoryProfile(project, language)
-          const title = pickLocalized(project, 'title', language)
-          const summary = pickLocalized(project, 'summary', language)
-
-          return (
-          <Motion.article
-            key={project.slug}
-            className="project-card group"
-            style={{ '--category-accent': category.accent }}
-            initial={{ opacity: 0, y: 28 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, margin: '-80px' }}
-            transition={{ duration: 0.45, delay: index * 0.08 }}
-          >
-            <div className="project-media">
-              <img
-                src={project.image}
-                alt={`${title} preview`}
-                className="h-full w-full object-cover"
-                decoding="async"
-                loading="lazy"
-              />
-              <span className="project-category-badge">{category.label}</span>
-            </div>
-            <div className="flex flex-1 flex-col gap-4 p-5">
-              <div>
-                <div className="project-card-meta">
-                  <span>{project.year}</span>
-                  <span>
-                    {translateKnownLabel(
-                      pickLocalized(project, 'format', language) || category.shortLabel,
-                      language,
-                    )}
-                  </span>
-                </div>
-                <h3 className="mt-2 text-2xl font-semibold text-white">
-                  {title}
-                </h3>
-                <p className="mt-3 leading-relaxed text-neutral-400">
-                  {summary}
-                </p>
-              </div>
-              <div className="mt-auto flex flex-wrap gap-2">
-                {(project.stack || []).map((tag) => (
-                  <span key={tag} className="skill-pill">
-                    {translateKnownLabel(tag, language)}
-                  </span>
-                ))}
-              </div>
-              {project.modelUrl && (
-                <button
-                  type="button"
-                  className="secondary-action mt-2 w-full"
-                  onClick={() => setPreviewProject(project)}
-                >
-                  {copy.openModelPreview}
-                </button>
-              )}
-              {/* A real link, not a button: this is what lets a crawler walk
-                  from the homepage into each project, and what lets a visitor
-                  copy the address of the one they are looking at. */}
-              {/* workUrl when the project has been migrated: linking to
-                  /projects/:slug would only 301, and an internal link that
-                  redirects is a round trip nobody needs and an address that
-                  looks wrong when copied. */}
-              <Link
-                className="primary-action w-full"
-                state={{ fromCatalogue: true, preserveScroll: true }}
-                to={project.workUrl || `/projects/${encodeURIComponent(project.slug)}`}
-              >
-                {copy.viewDetails}
-              </Link>
-            </div>
-          </Motion.article>
-          )
-        })}
-      </div>
-
-      {previewProject && (
-        <Suspense fallback={null}>
-          <ModelPreview
-            key={previewProject.slug}
-            project={previewProject}
-            language={language}
-            copy={copy}
-            onClose={() => setPreviewProject(null)}
-          />
-        </Suspense>
-      )}
-
-      {detailSlug && (
-        <Suspense fallback={null}>
-          <ProjectDetail
-            authToken={authToken}
-            key={detailSlug}
-            slug={detailSlug}
-            visitorUser={visitorUser}
-            language={language}
-            copy={copy}
-            onClose={closeDetail}
-            // Tells the homepage the panel is up, so the 3D hero behind it can
-            // stop holding back and load. See useDeferredHero in App.jsx.
-            onReady={onDetailReady}
-          />
-        </Suspense>
+      ) : (
+        <div className="explore-grid">
+          {visibleProjects.map((work) => (
+            <WorkCard copy={copy} key={work.slug} language={language} work={work} />
+          ))}
+        </div>
       )}
     </section>
   )

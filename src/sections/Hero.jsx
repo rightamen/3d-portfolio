@@ -13,8 +13,13 @@ const Hero = ({ copy, language, ownerHandle, profile, status }) => {
   const isMobile = useMediaQuery({ maxWidth: 853 })
   const prefersReducedMotion = useMediaQuery({ query: '(prefers-reduced-motion: reduce)' })
 
+  // Not min-h-screen any more. A browsing site puts work on the first screen;
+  // a full-viewport hero means every visitor scrolls past a picture of the
+  // site before seeing anything IN it. The 3D stays -- ADR §5 keeps the
+  // landing hero three-dimensional -- it just stops being the whole first
+  // screen.
   return (
-    <section className="hero-stage c-space relative flex min-h-screen items-start justify-center overflow-hidden md:justify-start">
+    <section className="hero-stage c-space relative flex min-h-[68vh] items-start justify-center overflow-hidden md:min-h-[74vh] md:justify-start">
       <HeroText copy={copy} language={language} ownerHandle={ownerHandle} profile={profile} status={status} />
       <ParallaxBackground />
       <figure

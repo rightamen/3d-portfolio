@@ -132,7 +132,15 @@ const HomePage = ({
     experience: [],
   })
   const [status, setStatus] = useState('loading')
-  const [heroReady, releaseHero] = useDeferredHero()
+  // Only the flag now. `release` was handed to Projects, which no longer has a
+  // detail panel to signal from.
+  //
+  // ⚠️ The whole deferral is in fact inert: it exists to hold the 3D hero back
+  // while a /projects/:slug panel loads, and that route 301s at the server
+  // with nothing linking to it, so useMatch never matches and `ready` starts
+  // true. Left in place rather than ripped out mid-redesign; noted so it is
+  // removed deliberately rather than discovered again.
+  const [heroReady] = useDeferredHero()
 
   useEffect(() => {
     let isMounted = true
@@ -166,7 +174,15 @@ const HomePage = ({
           // Falls back to the legacy catalogue when the marketplace is empty:
           // a fresh install, or a database that predates works, should still
           // show the bundled projects rather than an empty homepage.
-          projects: works.length ? works : projectsPayload.projects,
+          projects: works.length
+            ? works
+            : // The bundled fallback has no work URL, and the tile links by
+              // `url`. Giving it the project address keeps those links real
+              // rather than rendering `to={undefined}`.
+              (projectsPayload.projects || []).map((project) => ({
+                ...project,
+                url: project.workUrl || `/projects/${project.slug}`,
+              })),
           experience: experiencePayload.experience,
         })
         setStatus('ready')
@@ -215,12 +231,9 @@ const HomePage = ({
           <PublishCta authToken={visitorToken} copy={copy} />
 
           <Projects
-            authToken={visitorToken}
             copy={copy}
             language={language}
-            onDetailReady={releaseHero}
             projects={siteData.projects}
-            visitorUser={visitorUser}
           />
         </Suspense>
         <Suspense fallback={<SectionFallback title="Community" copy={copy} />}>

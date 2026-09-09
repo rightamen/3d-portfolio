@@ -4200,101 +4200,119 @@ body {
   border: 0;
 }
 
-/* Two columns from about 380px up. The catalogue is reviewed on a narrow
-   viewport, and one 500px-tall card per screen is a browse page you scroll
-   past rather than browse. */
+/* The catalogue grid, in the shape a browsing art site uses: tight gutters,
+   the tiles nearly touching, so the page reads as a wall of work rather than a
+   list of products in boxes. */
 .explore-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(10.5rem, 1fr));
-  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr));
+  gap: 0.4rem;
 }
 
 @media (min-width: 48rem) {
   .explore-grid {
-    grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
-    gap: 1rem;
+    grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+    gap: 0.55rem;
   }
 }
 
-.explore-card {
-  display: flex;
-  flex-direction: column;
+/* No border and no card background. The artwork is the tile; chrome around it
+   is chrome between the visitor and the thing they came to look at. */
+.work-tile {
+  position: relative;
+  border-radius: 0.45rem;
   overflow: hidden;
-  border-radius: 0.9rem;
-  border: 1px solid rgb(255 255 255 / 10%);
-  background: rgb(255 255 255 / 3%);
+  background: rgb(255 255 255 / 4%);
 }
 
-.explore-card-media,
-.explore-card-placeholder {
+.work-tile-media,
+.work-tile-placeholder {
   display: block;
   aspect-ratio: 4 / 3;
   overflow: hidden;
-  background: rgb(255 255 255 / 5%);
 }
 
-.explore-card-media img {
+.work-tile-media img {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  transition: transform 240ms ease;
 }
 
-.explore-card-body {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  gap: 0.3rem;
-  padding: 0.6rem 0.7rem 0.7rem;
+.work-tile-price {
+  position: absolute;
+  top: 0.45rem;
+  right: 0.45rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  background: rgb(0 0 0 / 62%);
+  backdrop-filter: blur(4px);
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+  color: rgb(255 255 255 / 88%);
 }
 
-/* Both clamped, so every card in a row is the same height. Without it a
-   one-line title lets its summary run to three lines and the grid looks
-   ragged -- which reads as sloppy long before anyone notices why. */
-.explore-card-body h3 {
-  font-size: 0.92rem;
+.work-tile-meta {
+  padding: 0.45rem 0.55rem 0.55rem;
+}
+
+.work-tile-meta h3 {
+  font-size: 0.85rem;
   line-height: 1.3;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  min-height: 2.4em;
-}
-
-.explore-card-body p {
-  flex: 1;
-  font-size: 0.8rem;
-  color: rgb(255 255 255 / 62%);
-  /* Two lines, so a long summary cannot make one card twice the height of the
-     one beside it. */
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  min-height: 2.6em;
-}
-
-.explore-card-meta {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 0.5rem;
-  margin-top: 0.15rem;
-  font-size: 0.74rem;
-}
-
-.explore-card-creator {
-  color: rgb(255 255 255 / 62%);
-  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.explore-card-price {
-  flex-shrink: 0;
-  font-variant-numeric: tabular-nums;
+.work-tile-creator {
+  display: block;
+  margin-top: 0.1rem;
+  font-size: 0.75rem;
+  color: rgb(255 255 255 / 58%);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ⚠️ Only where hovering exists.
+   On a touch screen there is no hover, so a title that appears on hover is a
+   title nobody on a phone ever reads. Below `hover: hover` the metadata stays
+   under the image, which is why this whole block is inside the query rather
+   than being undone by one. */
+@media (hover: hover) and (pointer: fine) {
+  .work-tile-meta {
+    position: absolute;
+    inset-inline: 0;
+    bottom: 0;
+    padding: 1.75rem 0.6rem 0.55rem;
+    background: linear-gradient(to top, rgb(0 0 0 / 88%), rgb(0 0 0 / 55%) 55%, transparent);
+    opacity: 0;
+    transform: translateY(0.4rem);
+    transition: opacity 180ms ease, transform 180ms ease;
+  }
+
+  /* focus-within, not only hover: a keyboard user tabbing through the grid has
+     to be able to read what they are on. */
+  .work-tile:hover .work-tile-meta,
+  .work-tile:focus-within .work-tile-meta {
+    opacity: 1;
+    transform: none;
+  }
+
+  .work-tile:hover .work-tile-media img {
+    transform: scale(1.04);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .work-tile-media img,
+  .work-tile-meta {
+    transition: none;
+  }
+
+  .work-tile:hover .work-tile-media img {
+    transform: none;
+  }
 }
 
 .explore-pagination {

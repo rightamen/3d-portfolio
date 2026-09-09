@@ -160,7 +160,7 @@ const WorkDetailPage = ({ authToken, copy, language, onLanguageChange, visitorUs
           {work.image ? (
             <img alt="" decoding="async" src={work.image} />
           ) : (
-            <span className="explore-card-placeholder" />
+            <span className="work-tile-placeholder" />
           )}
           {work.modelUrl ? (
             <button className="primary-action" onClick={() => setViewerOpen(true)} type="button">
