@@ -12,6 +12,7 @@ import {
   getExperience,
   getProfile,
   getProjects,
+  getWorks,
   loginVisitor,
   logoutVisitor,
   registerVisitor,
@@ -22,6 +23,7 @@ import {
 } from './lib/api'
 import { getCopy, getInitialLanguage } from './lib/i18n'
 import Navbar from './sections/Navbar'
+import PublishCta from './components/PublishCta'
 
 const AuthPage = lazy(() => import('./pages/AuthPage'))
 const AccountPage = lazy(() => import('./pages/AccountPage'))
@@ -137,14 +139,35 @@ const HomePage = ({
   useEffect(() => {
     let isMounted = true
 
-    Promise.all([getProfile(), getProjects(), getExperience()])
-      .then(([profilePayload, projectsPayload, experiencePayload]) => {
+    Promise.all([
+      getProfile(),
+      getProjects(),
+      getExperience(),
+      // The homepage catalogue is the MARKETPLACE, not the owner's four legacy
+      // projects. Until this it showed only their works and would have gone on
+      // doing so however many creators joined. Soft-fails: a catalogue that
+      // cannot be read should cost the visitor that section, not the homepage.
+      getWorks({ limit: 12 }).catch(() => ({ works: [] })),
+    ])
+      .then(([profilePayload, projectsPayload, experiencePayload, worksPayload]) => {
         if (!isMounted) return
+
+        // A work carries the project field names -- that is why the mapper
+        // kept them -- so the catalogue section renders one without a
+        // translation layer. `url` becomes `workUrl` because that is the name
+        // the section's link already reads.
+        const works = (worksPayload.works || []).map((work) => ({
+          ...work,
+          workUrl: work.url,
+        }))
 
         setSiteData({
           profile: profilePayload.profile,
           skills: profilePayload.skills,
-          projects: projectsPayload.projects,
+          // Falls back to the legacy catalogue when the marketplace is empty:
+          // a fresh install, or a database that predates works, should still
+          // show the bundled projects rather than an empty homepage.
+          projects: works.length ? works : projectsPayload.projects,
           experience: experiencePayload.experience,
         })
         setStatus('ready')
@@ -189,6 +212,8 @@ const HomePage = ({
           />
         </Suspense>
         <Suspense fallback={<SectionFallback title="Projects" copy={copy} />}>
+          <PublishCta authToken={visitorToken} copy={copy} />
+
           <Projects
             authToken={visitorToken}
             copy={copy}
@@ -485,6 +510,7 @@ const App = () => {
           element={
             <Suspense fallback={<SectionFallback title="Explore" copy={copy} />}>
               <ExplorePage
+                authToken={visitorToken}
                 copy={copy}
                 language={language}
                 onLanguageChange={setLanguage}

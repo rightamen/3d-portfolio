@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 
+import PublishCta from '../components/PublishCta'
 import WorkCard from '../components/WorkCard'
 import { getWorks } from '../lib/api'
 import { getApiErrorMessage, languages } from '../lib/i18n'
@@ -30,7 +31,7 @@ const LanguageSwitch = ({ language, onLanguageChange, copy }) => (
 // invalidate the memo below.
 const EMPTY_WORKS = []
 
-const ExplorePage = ({ copy, language, onLanguageChange }) => {
+const ExplorePage = ({ authToken, copy, language, onLanguageChange }) => {
   // The filters live in the URL, not in component state alone: a filtered
   // catalogue is a thing people link to and reload, and losing the filter on
   // refresh is the kind of small betrayal that makes a browse page feel cheap.
@@ -127,6 +128,8 @@ const ExplorePage = ({ copy, language, onLanguageChange }) => {
           <p className="text-neutral-400">{copy.exploreSubtitle}</p>
         </div>
       </header>
+
+      <PublishCta authToken={authToken} copy={copy} />
 
       <form
         className="explore-filters"

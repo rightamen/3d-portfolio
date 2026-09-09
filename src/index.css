@@ -5148,3 +5148,49 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* "You can publish here too." The site became a marketplace and never said so
+   to anyone looking at it -- which is the one thing the pivot is about. */
+.publish-cta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 0 auto 1.75rem;
+  padding: 1rem 1.1rem;
+  max-width: 80rem;
+  border-radius: 0.9rem;
+  border: 1px solid rgb(255 255 255 / 12%);
+  background:
+    linear-gradient(
+      120deg,
+      rgb(125 211 252 / 10%),
+      transparent 60%
+    ),
+    rgb(255 255 255 / 3%);
+}
+
+.publish-cta strong {
+  display: block;
+  font-size: 1rem;
+}
+
+.publish-cta p {
+  margin-top: 0.25rem;
+  max-width: 44rem;
+  font-size: 0.85rem;
+  line-height: 1.55;
+  color: rgb(255 255 255 / 66%);
+}
+
+.publish-cta .primary-action {
+  flex-shrink: 0;
+}
+
+/* On the homepage it sits inside the section padding rather than floating in
+   the full-width band the sections use. */
+.explore-page .publish-cta {
+  margin-left: 0;
+  margin-right: 0;
+}

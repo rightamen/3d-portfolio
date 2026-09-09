@@ -1,5 +1,5 @@
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { assetCategoryProfiles, getAssetCategoryProfile } from '../lib/assetCategories'
 import {
   cancelEmailChange,
@@ -176,7 +176,18 @@ const AccountPage = ({
   visitorLoading,
   visitorUser,
 }) => {
-  const [activeTab, setActiveTab] = useState('overview')
+  // The tab lives in the URL, not only in state. It was component state,
+  // which meant /account/works rendered the overview -- and the moment
+  // anything links to a tab, that is a broken link. Linkable tabs also mean a
+  // reload keeps you where you were.
+  const location = useLocation()
+  const navigate = useNavigate()
+  const tabFromPath = location.pathname.replace(/^\/account\/?/, '').split('/')[0]
+  const activeTab = accountTabs.some((tab) => tab.key === tabFromPath) ? tabFromPath : 'overview'
+  const setActiveTab = (key) =>
+    // replace, not push: flipping between tabs should not fill the Back
+    // button with a trail of them.
+    navigate(key === 'overview' ? '/account' : `/account/${key}`, { replace: true })
   const [dashboard, setDashboard] = useState({ posts: [], uploads: [] })
   const [dashboardStatus, setDashboardStatus] = useState('idle')
   const [dashboardMessage, setDashboardMessage] = useState('')
