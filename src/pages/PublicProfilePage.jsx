@@ -1,7 +1,20 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import WorkCard from '../components/WorkCard'
+
+// The site owner's own pages. They used to sit on the homepage, which stopped
+// making sense once the front door became a marketplace: an about-me, a career
+// timeline and a contact form are one person's, and one person's things belong
+// on their profile.
+//
+// Lazy, because they are only ever rendered for one profile out of all of
+// them, and nobody visiting somebody else's page should pay for the code.
+const About = lazy(() => import('../sections/About'))
+const Experience = lazy(() => import('../sections/Experience'))
+const Contact = lazy(() => import('../sections/Contact'))
 import {
+  getExperience,
+  getProfile,
   getPublicUserActivity,
   getPublicUserPosts,
   getPublicUserProfile,
@@ -130,6 +143,33 @@ const PublicProfilePage = ({ copy, language, onLanguageChange }) => {
       isMounted = false
     }
   }, [copy, handle])
+
+  // The static content.js record, fetched only for the one profile it belongs
+  // to. `siteOwner` is decided by the server, by matching the account's email
+  // against content.js -- the client never learns which email that is.
+  const [ownerContent, setOwnerContent] = useState(null)
+  const isSiteOwner = profile?.siteOwner === true
+
+  useEffect(() => {
+    if (!isSiteOwner) return undefined
+    let isMounted = true
+
+    Promise.all([getProfile(), getExperience()])
+      .then(([profilePayload, experiencePayload]) => {
+        if (!isMounted) return
+        setOwnerContent({
+          experience: experiencePayload.experience || [],
+          profile: profilePayload.profile,
+          skills: profilePayload.skills || [],
+        })
+      })
+      // Soft-fails: a profile without its about section is still a profile.
+      .catch(() => {})
+
+    return () => {
+      isMounted = false
+    }
+  }, [isSiteOwner])
 
   // Scoped to this page, not :root, so it cannot follow the visitor onward.
   const pageRef = useRef(null)
@@ -454,6 +494,27 @@ const PublicProfilePage = ({ copy, language, onLanguageChange }) => {
           </nav>
 
           <section className="public-profile-content">{renderTab()}</section>
+
+          {/* Below the tabs rather than inside one: these are not activity,
+              they are who this person is, and burying them behind a tab is how
+              the homepage's About came to be the thing nobody scrolled to. */}
+          {isSiteOwner && ownerContent && (
+            <Suspense fallback={null}>
+              <About
+                copy={copy}
+                language={language}
+                profile={ownerContent.profile}
+                skills={ownerContent.skills}
+              />
+              <Experience
+                copy={copy}
+                experience={ownerContent.experience}
+                language={language}
+                skills={ownerContent.skills}
+              />
+              <Contact copy={copy} profile={ownerContent.profile} />
+            </Suspense>
+          )}
         </>
       )}
     </main>

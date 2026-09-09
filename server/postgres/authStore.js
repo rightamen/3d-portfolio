@@ -677,7 +677,18 @@ export const createAuthStore = ({ pool }) => {
       return authStore.getAccountProfile(userId)
     },
 
-    getUserByHandle: async (handle) => {
+    // The handle of whoever owns this email, or ''. Used to point at the site
+    // owner's profile without the client knowing which handle that is.
+    getHandleForEmail: async (email) => {
+      if (!email) return ''
+      const result = await pool.query(
+        'SELECT handle FROM visitor_users WHERE lower(email) = lower($1) LIMIT 1',
+        [email],
+      )
+      return result.rows[0]?.handle || ''
+    },
+
+    getUserByHandle: async (handle, { ownerEmail = '' } = {}) => {
       const result = await pool.query(
         `
           SELECT
@@ -708,6 +719,16 @@ export const createAuthStore = ({ pool }) => {
       return {
         ...profile,
         contactLinks: publicContactLinks(result.rows[0].contact_links, profile.contactsPublic),
+        // Whether this profile belongs to the person the site is about.
+        //
+        // Matched on the email in server/content.js rather than a handle or an
+        // env var: that record IS the site owner's identity, so no second
+        // place can disagree with it, and nothing has to be configured. The
+        // email itself never leaves -- only this boolean does.
+        siteOwner: Boolean(
+          ownerEmail &&
+            String(result.rows[0].email || '').toLowerCase() === String(ownerEmail).toLowerCase(),
+        ),
         internalId: result.rows[0].id,
       }
     },

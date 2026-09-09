@@ -46,6 +46,12 @@ import { renderSeoHtml, resolveRoute } from './seo.js'
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const rootDir = path.resolve(__dirname, '..')
+
+// The site owner's email, aliased at module scope. Several route handlers
+// declare a local `profile` for the visitor whose page they are serving, so
+// reaching for `profile.email` inside one of them refers to that visitor --
+// or, since it is a const being initialised, to itself.
+const siteOwnerEmail = profile.email
 const dataDir = path.join(rootDir, 'data')
 const distDir = path.join(rootDir, 'dist')
 const distIndexPath = path.join(distDir, 'index.html')
@@ -1461,8 +1467,18 @@ const requireAdmin = async (request, response, next) => {
   return next()
 }
 
-app.get('/api/profile', (_request, response) => {
-  sendData(response, { profile, skills })
+app.get('/api/profile', async (_request, response) => {
+  // The handle of the account that belongs to the site owner, so the nav can
+  // link to their profile without a handle hardcoded in the client. Empty when
+  // there is no such account, which is the correct answer for a fresh install.
+  let ownerHandle = ''
+  try {
+    ownerHandle = (await authStore?.getHandleForEmail?.(siteOwnerEmail)) || ''
+  } catch (error) {
+    console.error('Owner handle lookup failed:', error.message)
+  }
+
+  sendData(response, { ownerHandle, profile, skills })
 })
 
 app.get('/api/projects', (_request, response) => {
@@ -3399,7 +3415,7 @@ app.get('/api/users/:handle', async (request, response) => {
     return sendError(response, API_ERROR_CODES.RESOURCE_FORBIDDEN, 'User profile not found.', 404)
   }
 
-  const profile = await authStore.getUserByHandle(handle)
+  const profile = await authStore.getUserByHandle(handle, { ownerEmail: siteOwnerEmail })
   if (!profile) {
     return sendError(response, API_ERROR_CODES.RESOURCE_FORBIDDEN, 'User profile not found.', 404)
   }
@@ -3426,7 +3442,7 @@ app.get('/api/users/:handle/resources', async (request, response) => {
     return sendError(response, API_ERROR_CODES.RESOURCE_FORBIDDEN, 'User profile not found.', 404)
   }
 
-  const profile = await authStore.getUserByHandle(handle)
+  const profile = await authStore.getUserByHandle(handle, { ownerEmail: siteOwnerEmail })
   if (!profile) {
     return sendError(response, API_ERROR_CODES.RESOURCE_FORBIDDEN, 'User profile not found.', 404)
   }
@@ -3452,7 +3468,7 @@ app.get('/api/users/:handle/posts', async (request, response) => {
     return sendError(response, API_ERROR_CODES.RESOURCE_FORBIDDEN, 'User profile not found.', 404)
   }
 
-  const profile = await authStore.getUserByHandle(handle)
+  const profile = await authStore.getUserByHandle(handle, { ownerEmail: siteOwnerEmail })
   if (!profile) {
     return sendError(response, API_ERROR_CODES.RESOURCE_FORBIDDEN, 'User profile not found.', 404)
   }
@@ -3480,7 +3496,7 @@ app.get('/api/users/:handle/activity', async (request, response) => {
     return sendError(response, API_ERROR_CODES.RESOURCE_FORBIDDEN, 'User profile not found.', 404)
   }
 
-  const profile = await authStore.getUserByHandle(handle)
+  const profile = await authStore.getUserByHandle(handle, { ownerEmail: siteOwnerEmail })
   if (!profile) {
     return sendError(response, API_ERROR_CODES.RESOURCE_FORBIDDEN, 'User profile not found.', 404)
   }
@@ -5732,7 +5748,7 @@ const loadSeoData = async (route) => {
   if (route.kind === 'profile') {
     if (!authStore) return {}
     // Named to stay clear of the static `profile` imported from content.js.
-    const publicProfile = await authStore.getUserByHandle(route.handle)
+    const publicProfile = await authStore.getUserByHandle(route.handle, { ownerEmail: siteOwnerEmail })
     if (!publicProfile || publicProfile.profileAdminDisabled) return { missing: true }
     return { profile: publicProfile }
   }

@@ -1,8 +1,9 @@
+import { Link } from 'react-router-dom'
 import { motion as Motion } from 'motion/react'
 import { FlipWords } from './FlipWords'
 import { pickLocalized } from '../lib/i18n'
 
-const HeroText = ({ profile, status, language, copy }) => {
+const HeroText = ({ copy, language, ownerHandle, profile, status }) => {
   const words = copy.heroWords
   const name = profile?.name || 'Right'
   const title = pickLocalized(profile, 'title', language) || copy.heroTitle
@@ -76,9 +77,15 @@ const HeroText = ({ profile, status, language, copy }) => {
             <a href="#projects" className="primary-action">
               {copy.heroProjects}
             </a>
-            <a href="#contact" className="secondary-action">
-              {copy.heroContact}
-            </a>
+            {/* Contact moved to the owner's profile with the rest of their
+                personal sections. Rendered only when there is a profile to send
+                someone to -- a button that scrolls to a section which no longer
+                exists is worse than no button. */}
+            {ownerHandle && (
+              <Link className="secondary-action" to={`/u/${ownerHandle}`}>
+                {copy.heroContact}
+              </Link>
+            )}
           </Motion.div>
         </div>
       </div>
@@ -134,9 +141,15 @@ const HeroText = ({ profile, status, language, copy }) => {
           <a href="#projects" className="primary-action">
             {copy.heroProjects}
           </a>
-          <a href="#contact" className="secondary-action">
-            {copy.heroContact}
-          </a>
+          {/* Contact moved to the owner's profile with the rest of their
+              personal sections. Rendered only when there is a profile to send
+              someone to -- a button that scrolls to a section which no longer
+              exists is worse than no button. */}
+          {ownerHandle && (
+            <Link className="secondary-action" to={`/u/${ownerHandle}`}>
+              {copy.heroContact}
+            </Link>
+          )}
         </div>
       </div>
     </div>

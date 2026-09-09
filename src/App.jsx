@@ -32,11 +32,8 @@ const PublicProfilePage = lazy(() => import('./pages/PublicProfilePage'))
 const ExplorePage = lazy(() => import('./pages/ExplorePage'))
 const WorkDetailPage = lazy(() => import('./pages/WorkDetailPage'))
 const Hero = lazy(() => import('./sections/Hero'))
-const About = lazy(() => import('./sections/About'))
 const Projects = lazy(() => import('./sections/Projects'))
 const Community = lazy(() => import('./sections/Community'))
-const Experience = lazy(() => import('./sections/Experience'))
-const Contact = lazy(() => import('./sections/Contact'))
 const Footer = lazy(() => import('./sections/Footer'))
 const visitorTokenKey = 'mrright-visitor-token'
 const getStoredVisitorToken = () => window.localStorage.getItem(visitorTokenKey) || ''
@@ -128,6 +125,7 @@ const HomePage = ({
   visitorUser,
 }) => {
   const [siteData, setSiteData] = useState({
+    ownerHandle: '',
     profile: null,
     skills: [],
     projects: [],
@@ -162,6 +160,7 @@ const HomePage = ({
         }))
 
         setSiteData({
+          ownerHandle: profilePayload.ownerHandle || '',
           profile: profilePayload.profile,
           skills: profilePayload.skills,
           // Falls back to the legacy catalogue when the marketplace is empty:
@@ -185,6 +184,7 @@ const HomePage = ({
     <div id="home" className="site-home min-h-screen overflow-hidden">
       <Navbar
         authStatus={authStatus}
+        ownerHandle={siteData.ownerHandle}
         copy={copy}
         language={language}
         onLanguageChange={onLanguageChange}
@@ -195,7 +195,13 @@ const HomePage = ({
       />
       {heroReady ? (
         <Suspense fallback={<SectionFallback title="Hero" copy={copy} />}>
-          <Hero profile={siteData.profile} status={status} language={language} copy={copy} />
+          <Hero
+            copy={copy}
+            language={language}
+            ownerHandle={siteData.ownerHandle}
+            profile={siteData.profile}
+            status={status}
+          />
         </Suspense>
       ) : (
         // The same placeholder the Suspense boundary uses, so the deferred case
@@ -204,12 +210,6 @@ const HomePage = ({
       )}
       <main className="relative z-10 mx-auto max-w-7xl">
         <Suspense fallback={<SectionFallback title="About" copy={copy} />}>
-          <About
-            profile={siteData.profile}
-            skills={siteData.skills}
-            language={language}
-            copy={copy}
-          />
         </Suspense>
         <Suspense fallback={<SectionFallback title="Projects" copy={copy} />}>
           <PublishCta authToken={visitorToken} copy={copy} />
@@ -227,15 +227,8 @@ const HomePage = ({
           <Community copy={copy} />
         </Suspense>
         <Suspense fallback={<SectionFallback title="Experience" copy={copy} />}>
-          <Experience
-            experience={siteData.experience}
-            skills={siteData.skills}
-            language={language}
-            copy={copy}
-          />
         </Suspense>
         <Suspense fallback={<SectionFallback title="Contact" copy={copy} />}>
-          <Contact profile={siteData.profile} copy={copy} />
         </Suspense>
         <Suspense fallback={null}>
           <Footer profile={siteData.profile} copy={copy} />

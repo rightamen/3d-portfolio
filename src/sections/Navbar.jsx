@@ -4,15 +4,18 @@ import { Link } from 'react-router-dom'
 import AccountMenu from '../components/AccountMenu'
 import { languages } from '../lib/i18n'
 
-function Navigation({ onNavigate, copy }) {
+function Navigation({ onNavigate, copy, ownerHandle }) {
+  // About, Experience and Contact moved to the site owner's profile when the
+  // homepage became a marketplace front door. Their anchors would now scroll
+  // to nothing, so they point at the profile instead -- and only when there is
+  // one to point at, because a nav item that 404s is worse than one absent.
+  const ownerPath = ownerHandle ? `/u/${ownerHandle}` : ''
   const navItems = [
     { label: copy.navHome, href: '#home' },
-    { label: copy.navAbout, href: '#about' },
     { label: copy.navProjects, href: '#projects' },
     { label: copy.navExplore, href: '/explore' },
     { label: copy.navCommunity, href: '/community' },
-    { label: copy.navExperience, href: '#experience' },
-    { label: copy.navContact, href: '#contact' },
+    ...(ownerPath ? [{ label: copy.navAbout, href: ownerPath }] : []),
   ]
 
   // Mixed list: the in-page sections stay plain anchors so the browser keeps
@@ -53,16 +56,7 @@ const LanguageSwitch = ({ language, onLanguageChange, copy }) => (
   </div>
 )
 
-const Navbar = ({
-  authStatus,
-  copy,
-  language,
-  onLanguageChange,
-  onVisitorLogin,
-  onVisitorLogout,
-  onVisitorRegister,
-  visitorUser,
-}) => {
+const Navbar = ({ authStatus, copy, language, onLanguageChange, onVisitorLogin, onVisitorLogout, onVisitorRegister, ownerHandle, visitorUser }) => {
   const [isOpen, setIsOpen] = useState(false)
 
   return (
@@ -85,7 +79,7 @@ const Navbar = ({
               so raising the breakpoint gives those widths more, not less. */}
           <div className="hidden items-center gap-5 lg:flex">
             <nav>
-              <Navigation copy={copy} />
+              <Navigation copy={copy} ownerHandle={ownerHandle} />
             </nav>
 
             <div className="hidden lg:block">
@@ -134,7 +128,7 @@ const Navbar = ({
           style={{ maxHeight: '100vh' }}
         >
           <nav className="grid gap-4 pb-5">
-            <Navigation copy={copy} onNavigate={() => setIsOpen(false)} />
+            <Navigation copy={copy} onNavigate={() => setIsOpen(false)} ownerHandle={ownerHandle} />
             <div className="mx-auto">
               <LanguageSwitch
                 language={language}
