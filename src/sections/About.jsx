@@ -8,16 +8,20 @@ const About = ({ profile, skills = [], language, copy }) => {
   const cardLabels = copy.aboutCards
 
   return (
-    <section id="about" className="c-space section-space">
+    <section id="about" className="owner-section">
       <div className="section-kicker">{copy.aboutKicker}</div>
-      <h2 className="text-heading">{copy.aboutTitle}</h2>
+      <h2>{copy.aboutTitle}</h2>
 
-      <div className="mt-12 grid grid-cols-1 gap-4 auto-rows-auto md:grid-cols-6 md:auto-rows-[18rem]">
+      <div className="mt-6 grid grid-cols-1 gap-3 auto-rows-auto md:grid-cols-6 md:auto-rows-[12.5rem]">
         <div className="relative grid-default-color grid-1 overflow-hidden">
+          {/* Was md:opacity-100, which put the body text on top of a
+              full-strength photograph of a code editor -- unreadable. A code
+              screenshot is also the wrong subject for a 3D modelling profile;
+              dimmed here to a texture rather than a picture. */}
           <img
             src="/assets/coding-pov.png"
             alt=""
-            className="pointer-events-none absolute right-[-3rem] top-[-1rem] scale-[1.2] opacity-20 md:right-[-6rem] md:scale-[2.5] md:opacity-100"
+            className="pointer-events-none absolute right-[-3rem] top-[-1rem] scale-[1.2] opacity-20 md:right-[-6rem] md:scale-[2.5] md:opacity-25"
           />
 
           <div
@@ -45,7 +49,7 @@ const About = ({ profile, skills = [], language, copy }) => {
             ref={grid2Container}
             className="relative flex h-full w-full items-center justify-center"
           >
-            <p className="flex items-end text-5xl text-gray-500">{copy.aboutCraft}</p>
+            <p className="flex items-end text-3xl text-gray-500">{copy.aboutCraft}</p>
             <Card rotate={30} style={{ top: '30%', left: '20%' }} text={cardLabels[0]} containerRef={grid2Container} />
             <Card rotate={-30} style={{ top: '60%', left: '45%' }} text={cardLabels[1]} containerRef={grid2Container} />
             <Card rotate={90} style={{ bottom: '30%', left: '70%' }} text={cardLabels[2]} containerRef={grid2Container} />

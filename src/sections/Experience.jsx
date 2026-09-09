@@ -2,13 +2,11 @@ import { pickLocalized } from '../lib/i18n'
 
 const Experience = ({ experience = [], skills = [], language, copy }) => {
   return (
-    <section id="experience" className="c-space section-space">
+    <section id="experience" className="owner-section">
       <div className="section-kicker">{copy.experienceKicker}</div>
-      <div className="grid gap-8 lg:grid-cols-[0.85fr_1.15fr]">
+      <div className="mt-4 grid gap-6 lg:grid-cols-[0.85fr_1.15fr]">
         <div>
-          <h2 className="text-heading">
-            {copy.experienceTitle}
-          </h2>
+          <h2>{copy.experienceTitle}</h2>
           <p className="mt-5 max-w-xl leading-relaxed text-neutral-400">
             {copy.experienceIntro}
           </p>

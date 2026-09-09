@@ -26,11 +26,11 @@ const Contact = ({ profile, copy }) => {
   }
 
   return (
-    <section id="contact" className="c-space section-space pb-20">
+    <section id="contact" className="owner-section pb-4">
       <div className="contact-panel">
         <div>
           <div className="section-kicker">{copy.contactKicker}</div>
-          <h2 className="text-heading">{copy.contactTitle}</h2>
+          <h2>{copy.contactTitle}</h2>
           <p className="mt-5 max-w-2xl leading-relaxed text-neutral-400">
             {copy.contactIntro}
           </p>

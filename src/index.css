@@ -2111,6 +2111,22 @@ select option:checked {
          bg-primary w-[12rem] cursor-pointer overflow-hidden;
 }
 
+/* The owner's About / Experience / Contact.
+   These were homepage sections and, when they moved to the profile in round
+   51, they kept homepage scale on a page that is not the homepage: `c-space`
+   gave them NO max-width, so each ran the full viewport while every card above
+   them stopped at max-w-6xl, and `section-space` gave each one min-h-screen
+   plus a 3xl heading. Three full screens of one person, wider than the page
+   they sit in. Same content, page scale -- the width now matches
+   .public-profile-content exactly, because that is what they sit under. */
+.owner-section {
+  @apply mx-auto mt-10 w-full max-w-6xl px-4 md:px-6;
+}
+
+.owner-section h2 {
+  @apply max-w-3xl text-xl font-semibold text-white md:text-2xl;
+}
+
 /* About section */
 .grid-1 {
   @apply row-span-2 md:col-span-3 h-[15rem] md:h-full relative
