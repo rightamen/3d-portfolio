@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 
+import { initials } from '../lib/initials'
+
 // The account menu in the top bar.
 //
 // Shaped on the one a browsing art site puts behind its avatar: view/edit
@@ -8,13 +10,6 @@ import { Link } from 'react-router-dom'
 // entry here goes somewhere that already exists -- these pages were all built,
 // they were just several clicks deep. Nothing is a placeholder: an icon that
 // does nothing teaches people not to trust the bar.
-
-const initials = (name, handle) => {
-  const source = String(name || handle || '?').trim()
-  const parts = source.split(/\s+/).filter(Boolean)
-  if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`.toUpperCase()
-  return source.slice(0, 2).toUpperCase()
-}
 
 const AccountMenuBar = ({ copy, onSignOut, visitorUser }) => {
   const [open, setOpen] = useState(false)

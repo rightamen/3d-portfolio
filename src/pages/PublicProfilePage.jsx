@@ -21,6 +21,7 @@ import {
   getPublicUserResources,
   getWorks,
 } from '../lib/api'
+import { initials } from '../lib/initials'
 import { getApiErrorMessage } from '../lib/i18n'
 import { applyTheme } from '../lib/theme'
 
@@ -42,14 +43,6 @@ const privateActivityTabs = [
   { key: 'works', labelKey: 'publicProfileTabWorks' },
   { key: 'about', labelKey: 'publicProfileTabAbout' },
 ]
-
-const getInitials = (name = '', handle = '') => {
-  const source = String(name || handle || '?').trim()
-  if (!source) return '?'
-  const parts = source.split(/\s+/).filter(Boolean)
-  if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`.toUpperCase()
-  return source.slice(0, 2).toUpperCase()
-}
 
 const formatDate = (value) => (value ? new Date(value).toLocaleDateString() : '')
 
@@ -430,7 +423,7 @@ const PublicProfilePage = ({ copy, language }) => {
                 />
               ) : (
                 <span className="public-profile-avatar public-profile-avatar-empty">
-                  {getInitials(profile.displayName, profile.handle)}
+                  {initials(profile.displayName, profile.handle)}
                 </span>
               )}
               <div className="public-profile-title">

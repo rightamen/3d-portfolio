@@ -1,5 +1,79 @@
 # mrright.blog 项目进度记录
 
+## 下次从这里继续（截至 2026-09-10 第五十四轮收工）
+
+### 2026-09-10（第五十四轮）：一条顶栏，放在路由之上
+
+你列了八个问题，这一轮做掉其中三个（6、7、8）外加下拉框配色（2）。
+
+⚠️ **六个页面各自抄了一份页头**——logo 加语言开关，复制六次并且已经
+在漂移；而作品页和 `/explore` 根本没有回首页的路。浏览器的后退键不是导航。
+
+现在只有一条顶栏，渲染在 `<Routes>` 之上，所以它跨每一次跳转都在：
+品牌 / 短导航 / 搜索（提交进目录）/ 发布 / 语言 / 账号菜单。
+账号菜单照 ArtStation 那个头像下拉的形状做，但**每一项都通向真实存在的页面**。
+**故意没有铃铛、没有购物车**：本站两样都没有，一个点了没反应的图标
+会教会用户不要相信这条栏里的其它东西。
+
+⚠️ **sticky 而不是 fixed。** sticky 把那 4rem 留在文档流里，
+所以任何内容都不可能跑到它下面——fixed 正是「每个页面各自加 padding
+然后各自漂移」的来路。（第五十三轮我已经因为一次错误测量给 hero 加过
+一次 padding 又撤销，这次从结构上排除掉这类问题。）
+
+⚠️ **你圈的那个白底白字下拉框**：站点根本没有声明 `color-scheme`，
+浏览器就按浅色页面去渲染原生控件；而 `.explore-filters select`
+写的是 `color: inherit`（白）配 4% 白的半透明底——原生弹出层于是
+白底白字。修在根上（`html { color-scheme: dark }` 加显式的
+`option` 配色），不是修在每一个踩坑的 select 上。
+
+⚠️ **删页头留下三个孤儿键**（`navHome`、`navProjects`、`communityBackHome`），
+是第四十八轮补的「字典键必须被渲染」测试报出来的——它在干活。
+
+完成内容：
+
+- `src/sections/Navbar.jsx`：重写为统一顶栏（品牌/导航/搜索/发布/语言/账号）
+- `src/components/AccountMenuBar.jsx`：新增，ArtStation 形状的账号下拉
+  （外部点击与 Esc 关闭；无 handle 时明说）
+- `src/App.jsx`：Navbar 提到 `<Routes>` 之上；取 `ownerHandle` 供「About」链接
+- `src/pages/{Explore,WorkDetail,PublicProfile,Community,Account,Auth}Page.jsx`：
+  移除各自的 `auth-nav` 页头与随之无用的 `LanguageSwitch`/`onLanguageChange`
+  （账号设置里那个语言开关保留——那里它是设置，不是导航）
+- `src/index.css`：`.topbar*` 全套；`html { color-scheme: dark }` 与 select/option 配色；
+  删掉已无人引用的 `.auth-nav` 与 `.nav-ul/.nav-li/.nav-link`
+- `src/lib/i18n.js`：新增 11 个导航/菜单键 × 3 语言；删 3 个孤儿键 × 3 语言
+
+commit：`9d52d99`
+
+验证结果：
+
+- `npm run build` / `lint`：通过
+- `npm run test:unit`：281 通过
+- 本地实测（1440 / 440）：栏 sticky 于 top 0、高 65px、零横向溢出，
+  栏底下方 4px 处的元素是页面内容而不是栏本身
+- `option` 实测：`color-scheme: dark`，底 `rgb(37,43,71)`、字 `rgb(255,255,255)`
+- VPS 部署：成功
+- 接口验证：`CLAUDE.md` 第 9 条完整清单全过，含 301 与 `qrUrl`/`methods` 检查（各 0）
+- 线上实测（首页 / explore / 作品页 / 创作者页，1440 与 440）：
+  `strayHeaders: 0`、`overflow: 0`、瓦片正常渲染
+
+备份路径：
+
+- 见部署日志（deploy:vps 自动创建并保留最新 3 份）
+
+待办事项（你那八条里剩下的）：
+
+- 1. 头像与封面上传要能自由调整与裁剪 —— 最大的一件，单独一轮
+- 3. `/account/works` 列表只有文字，要缩略图
+- 4. 首页仍偏单调
+- 5. 瓦片上的创作者头像，点进作者个人空间
+- ⚠️ **`@mrright` 的显示名仍然是 `111111`**，出现在每一张瓦片上，需要你改
+- Hero 文案仍是个人口吻（"Hi, I am Right"），需要你定
+- hero 延迟机制是死代码，可以删（第五十三轮记录）
+- 升级到平台收款需要：主体 + 持牌分账 + 每个创作者 KYC（见 ADR §6）
+- 仍未决：外部 uptime 服务（需要你的账号）
+
+---
+
 ## 下次从这里继续（截至 2026-09-10 第五十三轮收工）
 
 ### 2026-09-10（第五十三轮）：目录改成 ArtStation 那种「作品墙」

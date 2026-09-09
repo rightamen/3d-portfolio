@@ -20,6 +20,7 @@ import {
   uploadAccountBanner,
   uploadCommunityResource,
 } from '../lib/api'
+import { initials } from '../lib/initials'
 import { getAccessLevelLabel, getApiErrorMessage, languages } from '../lib/i18n'
 
 const emptyUploadForm = {
@@ -113,14 +114,6 @@ const getTopicLabel = (copy, topic) => {
 }
 
 const getStatusLabel = (copy, status) => copy[`accountStudioStatus${status}`] || status
-
-const getInitials = (name = '', email = '') => {
-  const source = String(name || email || '?').trim()
-  if (!source) return '?'
-  const parts = source.split(/\s+/).filter(Boolean)
-  if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`.toUpperCase()
-  return source.slice(0, 2).toUpperCase()
-}
 
 const getImageUrl = (url) => {
   if (!url) return ''
@@ -511,7 +504,7 @@ const AccountPage = ({
         </div>
         <article className="account-profile-card">
           <span className="account-avatar" aria-hidden="true">
-            {getInitials(visitorUser.displayName, visitorUser.email)}
+            {initials(visitorUser.displayName, visitorUser.email)}
           </span>
           <div className="account-profile-meta">
             <strong>{visitorUser.displayName}</strong>
@@ -1079,7 +1072,7 @@ const AccountPage = ({
               />
             ) : (
               <span className="account-channel-avatar account-channel-avatar-empty">
-                {getInitials(profileForm.displayName, visitorUser.email)}
+                {initials(profileForm.displayName, visitorUser.email)}
               </span>
             )}
             <div>

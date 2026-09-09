@@ -299,18 +299,31 @@ const WorksPanel = ({ authToken, copy, language, visitorUser }) => {
 
       {works.map((work) => (
         <article className="works-row" key={work.id}>
-          <div>
-            <div className="admin-row-title">
-              <strong>{work.title}</strong>
-              <span className={`status-pill status-${work.status}`}>
-                {copy[STATUS_KEYS[work.status]] || work.status}
-              </span>
+          <div className="works-row-head">
+            {/* The thumbnail is not decoration. A work with no preview shows as
+                a blank tile on /explore, and this list -- a column of titles --
+                was the one place a creator could not see that. Saying so where
+                the preview is uploaded is the whole point. */}
+            <span className="works-row-thumb">
+              {work.image ? (
+                <img alt="" decoding="async" loading="lazy" src={work.image} />
+              ) : (
+                <span className="works-row-thumb-empty">{copy.worksNoPreview}</span>
+              )}
+            </span>
+            <div>
+              <div className="admin-row-title">
+                <strong>{work.title}</strong>
+                <span className={`status-pill status-${work.status}`}>
+                  {copy[STATUS_KEYS[work.status]] || work.status}
+                </span>
+              </div>
+              <small>
+                {work.priceCents > 0
+                  ? `${(work.priceCents / 100).toFixed(2)} ${String(work.currency).toUpperCase()}`
+                  : copy.exploreFree}
+              </small>
             </div>
-            <small>
-              {work.priceCents > 0
-                ? `${(work.priceCents / 100).toFixed(2)} ${String(work.currency).toUpperCase()}`
-                : copy.exploreFree}
-            </small>
           </div>
           <div className="works-row-actions">
             <button className="secondary-action" onClick={() => open(work)} type="button">
