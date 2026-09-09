@@ -1,5 +1,75 @@
 # mrright.blog 项目进度记录
 
+## 下次从这里继续（截至 2026-09-09 第五十一轮收工）
+
+### 2026-09-09（第五十一轮，当天第五轮）：个人区块搬到 /u/mrright
+
+按你的决定，About / Experience / Contact 从首页搬到了创作者主页。
+首页现在是市集门面，这三块是一个人的东西，属于他自己的主页。
+
+⚠️ **「谁是站主」用 `server/content.js` 里的邮箱去匹配账号，
+不是靠 handle，也不是靠环境变量。**
+那条记录本来就是站主身份，所以不会有第二个地方跟它说法不一致，
+也不需要任何配置。**只有一个布尔值出去，邮箱本身永远不出去**——
+线上实测 `siteOwner=true` 且响应里搜不到邮箱。
+另一个创作者的主页拿不到这三块，这条有断言。
+
+⚠️ **`content.js` 的 handle 是 `rightamen`，而创作者账号是 `mrright`——对不上。**
+所以用邮箱匹配不只是"更优雅"，是唯一能对上的办法。
+
+⚠️ **搬迁逼出两个小修：**
+1. `/api/profile` 现在返回 `ownerHandle`，导航和 Hero 据此链接到站主主页，
+   **客户端里不写死 handle**；没有站主账号时那些链接根本不渲染——
+   一个会 404 的导航项比没有更糟。
+2. Hero 里两个「联系我」按钮指向 `#contact`，那个锚点现在滚不到任何地方。
+
+`navContact` / `navExperience` 随对应导航项一起删掉（i18n 用法测试也会抓）。
+
+⚠️ **一个测试教训**：第一版浏览器测试挂在「懒加载区块前面放固定 sleep」上——
+那三块是 lazy 的，而且要等另外两个请求先回来才开始加载。
+**区块其实一直在正常渲染**，是测试在掷硬币。改成 `waitForSelector` 等元素，
+不等时钟。
+
+完成内容：
+
+- `server/postgres/authStore.js`：`siteOwner` 标志、`getHandleForEmail`
+- `server/index.js`：`siteOwnerEmail` 模块级别名（几个 handler 里的局部
+  `profile` 会遮蔽它，直接写 `profile.email` 会引用到它自己）、
+  `/api/profile` 返回 `ownerHandle`
+- `src/pages/PublicProfilePage.jsx`：站主的三个区块（懒加载）
+- `src/App.jsx`：首页移除三块，传 `ownerHandle`
+- `src/sections/Navbar.jsx` / `Hero.jsx` / `components/HeroText.jsx`：
+  死锚点改为指向站主主页
+- `src/lib/i18n.js`：删 2 个键 × 3 语言
+
+commit：`8dfa3e9`
+
+验证结果：
+
+- `npm run build` / `lint` / `test:openapi`：通过
+- `npm run test:unit`：281 通过
+- `npm run test:api:db`：196 通过
+- **浏览器端到端 10 项全过**：站主判定正确、别人不是、邮箱不外泄、
+  首页无死锚点、Experience 已从首页移除、Hero 按钮指向站主主页、
+  三个区块出现在站主主页、**不出现在别人的主页**、零控制台错误
+- VPS 部署：成功
+- 接口验证：完整清单全过；线上 `ownerHandle="mrright"`、
+  `siteOwner=true`、响应里无邮箱
+
+备份路径：
+
+- `/opt/mrright-portfolio.backup-20260909-044739`
+
+待办事项：
+
+- Phase 4 剩余：界面外壳的视觉重构（纯视觉，不阻塞）
+- 升级到平台收款需要：主体 + 持牌分账 + 每个创作者 KYC（见 ADR §6）
+- ⚠️ **`@mrright` 的显示名仍然是 `111111`**——现在它还出现在
+  站主主页顶部的大标题上
+- 仍未决：外部 uptime 服务（需要你的账号）
+
+---
+
 ## 下次从这里继续（截至 2026-09-09 第五十轮收工）
 
 ### 2026-09-09（第五十轮，当天第四轮）：门口开着，但没人告诉访客可以进来
