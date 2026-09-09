@@ -1,5 +1,135 @@
 # mrright.blog 项目进度记录
 
+## 下次从这里继续（截至 2026-09-10 第五十六轮收工）
+
+### 2026-09-10（第五十六轮）：派生图与真正能调的裁剪
+
+你八条里的第 1 条，外加你中途圈的那块个人主页。
+
+⚠️ **先量，再改。** 目录页四张瓦片要下载 **15.31 MB 原图**（最大一张
+8.47 MB），创作者头像 **1.75 MB**——为了渲染一个 17px 的圆圈。
+上传的图按原尺寸存、按原尺寸发，全站没有任何派生图。
+**你说的「首页太单调」，有一半根本不是排版问题**：瓦片不是空的，
+是图还没下载完。我差点又去调 CSS。
+
+回填之后同一个页面 **108.5 KB**（144 倍）。四张瓦片现在真的显示作品了。
+
+⚠️ **哪些原图能动、哪些绝对不能动**：
+
+| 类型 | 存法 | 原图 |
+|---|---|---|
+| 头像 / 个人封面 | `multer.memoryStorage()`，内存里解码+缩放 | **原始字节根本不落盘**，所以不会留孤儿文件 |
+| 作品封面（`preview` 资源） | 照常存盘，不动 | **一个字节都不改**——它挂在「包含文件」里、买家会下载它。缩略图是另一个文件，存进新的 `works.thumbnail` 列 |
+
+⚠️ **裁剪对话框**：以前你选的图整张传上去，靠 `object-fit` 在显示时裁——
+所以裁法由文件的宽高比决定，一张竖构图照片就变成一张下巴的头像。
+现在拖动移动、滚轮或滑块缩放，框就是这张图实际被用的形状，
+确认时把框里的内容画到 canvas 上传——**你看到的就是发出去的那个文件**。
+
+裁剪框宽度是**实测的**，不是写死的。原来写死 420px，而 440px 屏幕上
+对话框只有 366px：CSS 会把元素缩小，而裁剪算术还以为自己是 420 宽，
+结果就和预览对不上。浏览器里验过：1440px 下 420、440px 下 366，
+两个宽度都是正方形且铺满。
+
+算术抽在 `src/lib/crop.js` 而不是组件里，因为**它是会悄悄算错的那部分**：
+每一种错法都产出一张图，而不是一个报错。16 条测试，4 个合法变异全部被抓到。
+
+⚠️ **两个安全问题**（都是接线时发现的）：
+
+1. `sharp <0.35.4` 有两条 **high** 级 libheif 公告，而我正要把它变成
+   **解码陌生人上传图片**的运行时依赖。升到 0.35.4。
+   顺带 `multer`/`body-parser`/`qs` 也各有公告——**multer 那条正是
+   fileFilter 竞态导致的大小限制绕过，就在我这一轮动的路径上**。
+   全部在既有 semver 范围内，生产依赖现在 `npm audit --omit=dev` 是
+   **0 个漏洞**，在服务器上用真的 `npm ci --omit=dev` 验过。
+2. `renderDerivative` 现在只放行 JPEG/PNG/WebP，**在完整解码之前**拦。
+   上传表单查的是文件名和浏览器声明的类型；sharp 读的是字节——
+   一张叫 `photo.png` 的 HEIC 照样会进解码器，而 sharp 的高危 CVE
+   恰恰都在这些本站根本用不到的冷门解码器里。
+
+⚠️ **`cover` 和 `withoutEnlargement` 不能叠加使用**（本轮踩到并已修，但
+**尚未部署**）：让它从 1200x960 的源图出 1920x480，sharp 会把宽度按到
+1200、高度留在 480，**给你一张 2.5:1 的封面而且不报错**。
+线上那张封面现在就是 1200x480。修法是 cover 的目标框在源图撑不满时
+**等比缩小**。这是「只产出错文件、不产出报错」的典型，
+我是靠打印管线真实返回的尺寸才发现的。
+
+⚠️ **`find-orphaned-uploads.mjs` 根本不认识 `works` 表**——它比市集早，
+所以每一件已发布作品的封面、模型、资源文件都被它报成孤儿文件。
+那是一份**有人可能真的照着去删**的清单。已补上 works / work_assets /
+`thumbnails/`。
+
+⚠️ **你圈的个人主页那块**（About/Experience/Contact）：它们是按首页整屏
+尺度做的，第 51 轮搬过来后尺度没跟着改——`c-space` 根本没有 max-width，
+所以每一块都横贯整个视口，而它上面每张卡片都停在 max-w-6xl；
+`section-space` 又给了每块 min-h-screen 加 3xl 标题。三屏一个人，
+比它所在的页面还宽。现在 `.owner-section` 和 `.public-profile-content`
+**像素级对齐**（1920px 下都是 left 384 / width 1152），高度从整屏降到 712。
+那张卡的背景本来是 `md:opacity-100` 的代码编辑器照片，正文压在上面读不清——
+何况一个 3D 建模主页放代码截图本身就不对题，调成纹理了。
+
+完成内容：
+
+- `server/images.js`：新增，三个命名 profile + 格式白名单 + 等比 cover
+- `server/index.js`：头像/封面走内存管线；preview 上传生成缩略图
+- `server/postgres/schema.js`：`works.thumbnail`（可空，增量迁移）
+- `server/postgres/{mappers,worksStore}.js`：查询与序列化带上 thumbnail
+- `src/components/ImageCropDialog.jsx`：新增裁剪对话框
+- `src/lib/crop.js`：新增，裁剪算术
+- `src/lib/initials.js`（第 55 轮）+ `tests/unit/{crop,images}.spec.js`：新增
+- `src/components/{WorkCard,WorksPanel}.jsx`：优先用 thumbnail
+- `src/pages/AccountPage.jsx`：选图先进裁剪框，确认后才上传
+- `src/sections/{About,Experience,Contact}.jsx` + `src/index.css`：`.owner-section` 尺度
+- `scripts/backfill-image-derivatives.mjs`：新增回填工具
+- `scripts/find-orphaned-uploads.mjs`：补上 works 的引用
+- `package.json` / `package-lock.json`：sharp 移到 dependencies 并升级；安全修复
+
+commit：`5315f2a`（个人主页尺度）、`8a28b9b`（派生图与裁剪）、
+`73e4500`（移除误提交的探针）、`3e1be64`（cover 比例修复，**未部署**）
+
+验证结果：
+
+- `npm run build` / `lint`：通过
+- `npm run test:unit`：**327 通过**（第 54 轮是 281）
+- `npm run test:schema-migration`：通过，迁移干净且幂等（一次性数据库集群）
+- 变异测试：initials 3 个、images 3 个、crop 4 个、cover 比例 1 个，**全部被抓到**
+- 浏览器实测裁剪（stub 会话，不涉及任何线上凭证）：
+  1440px 框 420、440px 框 366，正方形、铺满、拖动后仍铺满，上传的是 webp
+- VPS 部署：`5315f2a`、`8a28b9b` 已部署；**`3e1be64` 未部署**
+- 数据库写入：先备份（`mrright-portfolio-20260909-174809.dump`），
+  再回填 4 行 `works.thumbnail` + 2 行 `visitor_users`，
+  全部是按主键的单行 UPDATE，**没有删除任何文件**（旧值已记录可回滚）
+- 接口验证：`CLAUDE.md` 第 9 条完整清单全过，含 301 与 `qrUrl`/`methods`（各 0）
+- 线上实测：目录页 `/uploads` 下载 5 个文件共 **108.5 KB**（改前 15676.5 KB），
+  4 张瓦片全部 `painted`、0 破图、0 横向溢出，首页同样
+- 线上生产依赖：`npm audit --omit=dev` → **0 个漏洞**；sharp 0.35.4 / libvips 8.18.6
+
+备份路径：
+
+- 应用：见部署日志（deploy:vps 自动创建并保留最新 3 份）
+- 数据库：`mrright-portfolio-20260909-174809.dump`（74.2 KB，26 张表）
+
+待办事项：
+
+- ⚠️ **`3e1be64` 未部署**：线上个人封面仍是 1200x480（2.5:1）。
+  部署后还要把那一行指回原始 jpg 再重跑回填——
+  回填会跳过已经是 `.webp` 的源（旧值：
+  `/uploads/banners/1788677108192-8ee87dbb5182.jpg`）。
+- 4. 首页仍偏单调。**图片那一半已经解决**（15.31 MB → 108.5 KB），
+  剩下的一半是数据（全站 4 件作品）和 hero 文案仍是个人口吻
+  （"Hi, I am Right"），需要你定。我不打算加「热门 / 编辑精选」
+  这种把同样 4 件作品换个标题再摆一遍的板块。
+- 个人主页那块的「Creative Focus」是亮紫色卡片（`grid-special-color`），
+  和全站的青/深色调不搭——是原模板留下的，要不要改由你定。
+- 本地 `node_modules` 还是升级前的 multer/body-parser/qs（沙箱禁网装不了），
+  所以本地测试跑的是旧版本，线上跑的是新版本。下次能联网时 `npm install` 一次。
+- `App.jsx` 里 About/Experience/Contact 三个 `<Suspense>` 是空的（第 51 轮搬走后剩的壳）
+- hero 延迟机制是死代码，可以删（第 53 轮记录）
+- 升级到平台收款需要：主体 + 持牌分账 + 每个创作者 KYC（见 ADR §6）
+- 仍未决：外部 uptime 服务（需要你的账号）
+
+---
+
 ## 下次从这里继续（截至 2026-09-10 第五十五轮收工）
 
 ### 2026-09-10（第五十五轮）：瓦片上的脸，列表里的缩略图

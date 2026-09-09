@@ -40,6 +40,10 @@
      `curl -s https://mrright.blog/api/works/mrright/md-leimu | grep -c qrUrl`
      必须是 0。创作者的收款码只给已下单的买家看，
      出现在公开页面上就是任何人都能抓去做骗局的收款码。
+   - **每件已发布作品都要有 `thumbnail`**（2026-09-10 起）：
+     `curl -s https://mrright.blog/api/works?page=1` 里每个 work 的
+     `thumbnail` 都不能是空字符串。空的会回落到原图——不报错，
+     只是目录页悄悄从 108 KB 变回 15 MB。这一条只有量才看得出来。
 10. 数据库写操作前必须先说明 SQL 影响。
 11. 不允许 DROP DATABASE、DROP TABLE、TRUNCATE、DELETE without WHERE。
 12. Playwright 测试可以自动打开网站、登录、点击、截图，但不要把 token 或密码输出到日志。

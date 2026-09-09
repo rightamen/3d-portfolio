@@ -161,6 +161,22 @@ again:
 `scripts/measure-project-link.mjs --chain` exists to measure exactly this and
 should be run against the new frontend, not assumed.
 
+**Addendum, 2026-09-10: the weight was never in the engine.** Rounds 26–28
+fought three.js down to 467 KB on the critical path, and the catalogue that
+replaced it then loaded **15.31 MB of images** — one 8.47 MB PNG serving as a
+thumbnail, plus a 1.75 MB avatar for a 17px circle. Two orders of magnitude
+more than the thing we spent three rounds removing, and invisible to every
+check we had, because none of them looked at bytes on the browse page.
+
+The owner reported it as "the homepage is too plain" and I nearly went looking
+in the CSS. The tiles were not empty; the pictures had not arrived. Derivative
+images (see ARCHITECTURE.md) took the same page to 108.5 KB.
+
+The lesson generalises past images: **this project's performance rules were all
+written about JavaScript**, because JavaScript was what hurt in 2026-07. A
+"fast list" is not fast because it is a list. Before treating a density or
+layout complaint as a design problem, measure what the page actually downloads.
+
 ## 6. Money
 
 ⚠️ **Revised 2026-09-08. Stripe Connect was the decision on 2026-09-06 and it

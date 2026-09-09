@@ -221,6 +221,45 @@ Asset rules:
 - Asset URLs should remain stable for a release, but clients must handle refreshed URLs.
 - Model assets should prefer GLB/GLTF for cross-platform consumption.
 
+### Derivative images (2026-09-10)
+
+Uploads used to be stored at whatever size they arrived and served at that size
+everywhere. Measured against production on 2026-09-10, the catalogue's four
+tiles pulled **15.31 MB** of full-size PNGs — one of them 8.47 MB — and the
+creator avatar rendered into a 17px circle was **1.75 MB**. That, not the CSS,
+was why the grid looked empty for its first few seconds.
+
+`server/images.js` now renders every stored image through one of three named
+profiles (`avatar` 512², `banner` 1920×480, `workThumb` 720 inside), always to
+WebP, always without enlarging, always dropping metadata — an avatar is a public
+file and EXIF on a phone photo carries GPS. After the backfill, the same
+catalogue page is **108.5 KB**.
+
+Two rules decide whether an original is replaced or kept:
+
+| Kind | Storage | Original |
+| --- | --- | --- |
+| Profile avatar / banner | `multer.memoryStorage()`, decoded and resized in memory | Never written to disk at all, so there is nothing to orphan |
+| Work cover (`preview` asset) | On disk, unchanged | **Kept byte-for-byte.** It is listed under "Files included" and a buyer downloads it. The derivative is a separate file in `works.thumbnail` |
+
+Consequences worth knowing:
+
+- `sharp` is a **runtime dependency**, not a dev one, and it ships native
+  binaries. `npm ci --omit=dev` must run on the target platform — the deploy
+  already does this on the VPS.
+- `renderDerivative` refuses any format but JPEG/PNG/WebP *before* the full
+  decode. The uploader checks the file name and the browser-declared type;
+  sharp reads the bytes, so a HEIC image called `photo.png` reaches the decoder
+  regardless, and sharp's high-severity advisories live in exactly the exotic
+  decoders this site has no use for.
+- `cover` and `withoutEnlargement` do **not** compose: asked for 1920×480 from a
+  1200×960 source, sharp clamps the width and returns a 2.5:1 banner without
+  erroring. A cover box therefore shrinks proportionally when the source cannot
+  fill it. This shipped wrong once; the tests now pin it.
+- `scripts/backfill-image-derivatives.mjs` does the same for rows that predate
+  the pipeline. Report-only unless `--apply`; single-row updates by primary key;
+  it never deletes or overwrites a file.
+
 Current implementation gaps:
 
 - Project image/model fields are still embedded as project strings.
