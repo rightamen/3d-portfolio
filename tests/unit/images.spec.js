@@ -55,6 +55,40 @@ describe('renderDerivative', () => {
     expect(meta.height).toBe(200)
   })
 
+  it('keeps a cover profile at its aspect when the source is too small to fill it', async () => {
+    // ⚠️ The bug this exists for: cover + withoutEnlargement asked for
+    // 1920x480 from a 1200x960 source gives 1200x480 -- a 2.5:1 banner where
+    // 4:1 was asked for. Nothing throws; the file is just the wrong shape, and
+    // the page crops it again, undoing whatever the creator framed. It reached
+    // the live banner before it was measured.
+    const meta = await readImageMetadata(
+      await renderDerivative(await makeImage({ height: 960, width: 1200 }), 'banner'),
+    )
+
+    expect(meta.width / meta.height).toBeCloseTo(4)
+    // Shrunk rather than clamped, and still never enlarged.
+    expect(meta.width).toBeLessThanOrEqual(1200)
+    expect(meta.height).toBeLessThanOrEqual(960)
+  })
+
+  it('renders a cover profile at full size when the source can fill it', async () => {
+    const meta = await readImageMetadata(
+      await renderDerivative(await makeImage({ height: 1400, width: 4000 }), 'banner'),
+    )
+
+    expect(meta.width).toBe(1920)
+    expect(meta.height).toBe(480)
+  })
+
+  it('keeps the avatar square even when the source is smaller than the box', async () => {
+    const meta = await readImageMetadata(
+      await renderDerivative(await makeImage({ height: 300, width: 900 }), 'avatar'),
+    )
+
+    expect(meta.width).toBe(meta.height)
+    expect(meta.width).toBe(300)
+  })
+
   it('writes webp whatever it was handed', async () => {
     for (const format of ['png', 'jpeg']) {
       const meta = await readImageMetadata(

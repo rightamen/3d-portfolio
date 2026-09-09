@@ -76,6 +76,30 @@ export const readImageMetadata = async (input) => {
   return { format, height, width }
 }
 
+// The size to actually render at.
+//
+// ⚠️ `cover` and `withoutEnlargement` do not compose the way they look like they
+// do. Asked for 1920x480 from a 1200x960 source, sharp clamps the width to 1200
+// and keeps the height at 480 -- and hands back a 2.5:1 banner where a 4:1 one
+// was asked for. Nothing errors; the file is simply the wrong shape, and the
+// display then crops it again, undoing whatever the creator framed. That is
+// exactly what shipped to the live banner before this was measured.
+//
+// So a cover box shrinks PROPORTIONALLY when the source cannot fill it: the
+// aspect ratio is the whole point of a cover profile, and the size is not.
+// `inside` profiles are unaffected -- they keep the source's own ratio by
+// definition -- and withoutEnlargement stays below as the backstop for them.
+const targetBox = (profile, source) => {
+  if (profile.fit !== 'cover') return { height: profile.height, width: profile.width }
+
+  const scale = Math.min(1, source.width / profile.width, source.height / profile.height)
+
+  return {
+    height: Math.max(1, Math.round(profile.height * scale)),
+    width: Math.max(1, Math.round(profile.width * scale)),
+  }
+}
+
 // `withoutEnlargement` matters more than it looks: without it a 200px avatar
 // is upscaled to 512 and stored as a blurry file BIGGER than the sharp
 // original. Shrinking is the point; growing never is.
@@ -86,11 +110,12 @@ export const renderDerivative = async (input, profileName) => {
   // Here, not only at the call sites: this is the function that starts a full
   // decode, so this is where the format allowlist has to hold. A caller that
   // forgets to check first must not be able to reach the decoder.
-  await readImageMetadata(input)
+  const source = await readImageMetadata(input)
+  const { height, width } = targetBox(profile, source)
 
   return sharp(input, { failOn: 'error' })
     .rotate() // Honours EXIF orientation, then drops it -- see below.
-    .resize(profile.width, profile.height, {
+    .resize(width, height, {
       fit: profile.fit,
       withoutEnlargement: true,
     })
