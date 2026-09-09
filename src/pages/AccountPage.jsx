@@ -130,16 +130,11 @@ const getImageUrl = (url) => {
 
 const getContactLabel = (copy, key) => copy[`accountContact${key[0].toUpperCase()}${key.slice(1)}`] || key
 
-const AccountShell = ({ children, copy, language, onLanguageChange }) => (
-  <main className="auth-page">
-    <nav className="auth-nav">
-      <Link to="/" className="text-xl font-bold text-neutral-300 hover:text-white">
-        mrright.blog
-      </Link>
-      <LanguageSwitch language={language} onLanguageChange={onLanguageChange} copy={copy} />
-    </nav>
-    {children}
-  </main>
+// The site's top bar carries home and the language switch on every page now,
+// so this shell is only the page frame. The language switch inside account
+// settings stays: it is a setting there, not navigation.
+const AccountShell = ({ children }) => (
+  <main className="auth-page">{children}</main>
 )
 
 const StatusPill = ({ ok, copy }) => (
@@ -469,7 +464,7 @@ const AccountPage = ({
 
   if (visitorLoading) {
     return (
-      <AccountShell copy={copy} language={language} onLanguageChange={onLanguageChange}>
+      <AccountShell>
         <section className="account-state-card">
           <p className="section-kicker">{copy.account}</p>
           <h1>{copy.accountCheckingTitle}</h1>
@@ -482,7 +477,7 @@ const AccountPage = ({
 
   if (!visitorUser) {
     return (
-      <AccountShell copy={copy} language={language} onLanguageChange={onLanguageChange}>
+      <AccountShell>
         <section className="account-state-card">
           <p className="section-kicker">{copy.account}</p>
           <h1>{copy.accountLoginRequiredTitle}</h1>

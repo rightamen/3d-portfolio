@@ -4,7 +4,7 @@ import { Link, useParams } from 'react-router-dom'
 import WorkComments from '../components/WorkComments'
 import WorkPurchase from '../components/WorkPurchase'
 import { getWork, getWorkLikes, toggleWorkLike } from '../lib/api'
-import { getApiErrorMessage, languages } from '../lib/i18n'
+import { getApiErrorMessage } from '../lib/i18n'
 import { applyTheme } from '../lib/theme'
 import { formatWorkPrice, localizedWorkField as localized } from '../lib/works'
 
@@ -14,22 +14,6 @@ import { formatWorkPrice, localizedWorkField as localized } from '../lib/works'
 // paint, and the description, the price and the file list are all readable
 // before a single byte of the engine is fetched.
 const ModelPreview = lazy(() => import('../components/ModelPreview'))
-
-const LanguageSwitch = ({ language, onLanguageChange, copy }) => (
-  <div className="language-switch" aria-label={copy.toggleLanguage}>
-    {languages.map((item) => (
-      <button
-        key={item.code}
-        type="button"
-        className={language === item.code ? 'language-switch-active' : 'language-switch-button'}
-        onClick={() => onLanguageChange(item.code)}
-        title={item.label}
-      >
-        {item.shortLabel}
-      </button>
-    ))}
-  </div>
-)
 
 const formatBytes = (bytes) => {
   if (!bytes) return ''
@@ -43,7 +27,7 @@ const formatBytes = (bytes) => {
   return `${value.toFixed(value >= 10 || unit === 0 ? 0 : 1)} ${units[unit]}`
 }
 
-const WorkDetailPage = ({ authToken, copy, language, onLanguageChange, visitorUser }) => {
+const WorkDetailPage = ({ authToken, copy, language, visitorUser }) => {
   const { handle = '', slug = '' } = useParams()
   // The loaded work is stored WITH the address that produced it, so "loading"
   // is derived rather than assigned. That keeps the effect free of a
@@ -135,13 +119,9 @@ const WorkDetailPage = ({ authToken, copy, language, onLanguageChange, visitorUs
 
   return (
     <main className="work-page c-space work-page-themed" ref={pageRef}>
-      <header className="auth-nav">
-        <Link className="text-xl font-bold text-neutral-300 hover:text-white" to="/">
-          mrright.blog
-        </Link>
-        <LanguageSwitch copy={copy} language={language} onLanguageChange={onLanguageChange} />
-      </header>
-
+      {/* Home and the language switch live in the site's top bar now. What is
+          left here is the one link that is specific to this page: back to the
+          catalogue this work was found in. */}
       <div className="work-header">
         <Link className="secondary-action" to="/explore">
           {copy.workBackToExplore}

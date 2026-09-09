@@ -21,7 +21,7 @@ import {
   getPublicUserResources,
   getWorks,
 } from '../lib/api'
-import { getApiErrorMessage, languages } from '../lib/i18n'
+import { getApiErrorMessage } from '../lib/i18n'
 import { applyTheme } from '../lib/theme'
 
 const publicProfileTabs = [
@@ -43,22 +43,6 @@ const privateActivityTabs = [
   { key: 'about', labelKey: 'publicProfileTabAbout' },
 ]
 
-const LanguageSwitch = ({ language, onLanguageChange, copy }) => (
-  <div className="language-switch" aria-label={copy.toggleLanguage}>
-    {languages.map((item) => (
-      <button
-        key={item.code}
-        type="button"
-        className={language === item.code ? 'language-switch-active' : 'language-switch-button'}
-        onClick={() => onLanguageChange(item.code)}
-        title={item.label}
-      >
-        {item.shortLabel}
-      </button>
-    ))}
-  </div>
-)
-
 const getInitials = (name = '', handle = '') => {
   const source = String(name || handle || '?').trim()
   if (!source) return '?'
@@ -69,7 +53,7 @@ const getInitials = (name = '', handle = '') => {
 
 const formatDate = (value) => (value ? new Date(value).toLocaleDateString() : '')
 
-const PublicProfilePage = ({ copy, language, onLanguageChange }) => {
+const PublicProfilePage = ({ copy, language }) => {
   const { handle = '' } = useParams()
   const [activeTab, setActiveTab] = useState('overview')
   const [profile, setProfile] = useState(null)
@@ -385,13 +369,6 @@ const PublicProfilePage = ({ copy, language, onLanguageChange }) => {
 
   return (
     <main className="admin-shell public-profile-shell work-page-themed" ref={pageRef}>
-      <header className="auth-nav">
-        <Link to="/" className="text-xl font-bold text-neutral-300 hover:text-white">
-          mrright.blog
-        </Link>
-        <LanguageSwitch language={language} onLanguageChange={onLanguageChange} copy={copy} />
-      </header>
-
       {isLoading && (
         <section className="account-state-card">
           <p className="section-kicker">{copy.publicProfileKicker}</p>

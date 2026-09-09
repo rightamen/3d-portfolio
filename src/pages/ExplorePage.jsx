@@ -1,37 +1,21 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { useSearchParams } from 'react-router-dom'
 
 import PublishCta from '../components/PublishCta'
 import WorkCard from '../components/WorkCard'
 import { getWorks } from '../lib/api'
-import { getApiErrorMessage, languages } from '../lib/i18n'
+import { getApiErrorMessage } from '../lib/i18n'
 
 // Browse, search and filter. Flat DOM on purpose -- ADR_PLATFORM_PIVOT §5 puts
 // 3D where the subject is three-dimensional or where spatial browsing beats a
 // grid, and a results list is neither. The 3D lives one click away, on the work
 // itself, and this page loads without touching three.js at all.
 
-const LanguageSwitch = ({ language, onLanguageChange, copy }) => (
-  <div className="language-switch" aria-label={copy.toggleLanguage}>
-    {languages.map((item) => (
-      <button
-        key={item.code}
-        type="button"
-        className={language === item.code ? 'language-switch-active' : 'language-switch-button'}
-        onClick={() => onLanguageChange(item.code)}
-        title={item.label}
-      >
-        {item.shortLabel}
-      </button>
-    ))}
-  </div>
-)
-
 // A stable identity for "nothing yet", so a render with no results does not
 // invalidate the memo below.
 const EMPTY_WORKS = []
 
-const ExplorePage = ({ authToken, copy, language, onLanguageChange }) => {
+const ExplorePage = ({ authToken, copy, language }) => {
   // The filters live in the URL, not in component state alone: a filtered
   // catalogue is a thing people link to and reload, and losing the filter on
   // refresh is the kind of small betrayal that makes a browse page feel cheap.
@@ -112,16 +96,9 @@ const ExplorePage = ({ authToken, copy, language, onLanguageChange }) => {
 
   return (
     <main className="explore-page c-space">
-      {/* The same header PublicProfilePage and CommunityPage use. A standalone
-          page with no way back to the site is a dead end, and the browser Back
-          button is not navigation. */}
-      <header className="auth-nav">
-        <Link className="text-xl font-bold text-neutral-300 hover:text-white" to="/">
-          mrright.blog
-        </Link>
-        <LanguageSwitch copy={copy} language={language} onLanguageChange={onLanguageChange} />
-      </header>
-
+      {/* No page-local header any more: the site's top bar is rendered above
+          the router, so the way home and the language switch are in the same
+          place on every page instead of being re-invented per page. */}
       <header className="explore-header">
         <div>
           <h1 className="text-heading">{copy.exploreTitle}</h1>

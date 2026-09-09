@@ -1,54 +1,31 @@
 import { useState } from 'react'
-import { motion as Motion } from 'motion/react'
-import { Link } from 'react-router-dom'
-import AccountMenu from '../components/AccountMenu'
+import { Link, useNavigate } from 'react-router-dom'
+
+import AccountMenuBar from '../components/AccountMenuBar'
 import { languages } from '../lib/i18n'
 
-function Navigation({ onNavigate, copy, ownerHandle }) {
-  // About, Experience and Contact moved to the site owner's profile when the
-  // homepage became a marketplace front door. Their anchors would now scroll
-  // to nothing, so they point at the profile instead -- and only when there is
-  // one to point at, because a nav item that 404s is worse than one absent.
-  const ownerPath = ownerHandle ? `/u/${ownerHandle}` : ''
-  const navItems = [
-    { label: copy.navHome, href: '#home' },
-    { label: copy.navProjects, href: '#projects' },
-    { label: copy.navExplore, href: '/explore' },
-    { label: copy.navCommunity, href: '/community' },
-    ...(ownerPath ? [{ label: copy.navAbout, href: ownerPath }] : []),
-  ]
+// The one top bar, on every page.
+//
+// Each page used to carry its own header -- a logo and a language switch,
+// repeated six times and drifting apart -- and the work and explore pages had
+// no way back to the homepage at all. There is one bar now, rendered above the
+// routes, so the site reads as one place rather than a set of pages that
+// happen to share a domain.
+//
+// Shaped on a browsing art site: brand, a short nav, search, the publish
+// action, and the account menu. Deliberately no notification bell, no cart:
+// this site has neither, and an icon that does nothing teaches people not to
+// trust the rest of the bar.
 
-  // Mixed list: the in-page sections stay plain anchors so the browser keeps
-  // doing the hash scrolling, and only the one that leaves the homepage
-  // becomes a router Link.
-  return (
-    <ul className="nav-ul">
-      {navItems.map((item) => (
-        <li key={item.href} className="nav-li">
-          {item.href.startsWith('/') ? (
-            <Link to={item.href} className="nav-link" onClick={onNavigate}>
-              {item.label}
-            </Link>
-          ) : (
-            <a href={item.href} className="nav-link" onClick={onNavigate}>
-              {item.label}
-            </a>
-          )}
-        </li>
-      ))}
-    </ul>
-  )
-}
-
-const LanguageSwitch = ({ language, onLanguageChange, copy }) => (
+const LanguageSwitch = ({ copy, language, onLanguageChange }) => (
   <div className="language-switch" aria-label={copy.toggleLanguage}>
     {languages.map((item) => (
       <button
-        key={item.code}
-        type="button"
         className={language === item.code ? 'language-switch-active' : 'language-switch-button'}
+        key={item.code}
         onClick={() => onLanguageChange(item.code)}
         title={item.label}
+        type="button"
       >
         {item.shortLabel}
       </button>
@@ -56,101 +33,101 @@ const LanguageSwitch = ({ language, onLanguageChange, copy }) => (
   </div>
 )
 
-const Navbar = ({ authStatus, copy, language, onLanguageChange, onVisitorLogin, onVisitorLogout, onVisitorRegister, ownerHandle, visitorUser }) => {
-  const [isOpen, setIsOpen] = useState(false)
+const Navbar = ({
+  copy,
+  language,
+  onLanguageChange,
+  onVisitorLogout,
+  ownerHandle,
+  visitorToken,
+  visitorUser,
+}) => {
+  const [open, setOpen] = useState(false)
+  const navigate = useNavigate()
+
+  const search = (event) => {
+    event.preventDefault()
+    const value = String(event.target.elements.q.value || '').trim()
+    // Always to /explore: search IS the catalogue, filtered. An empty query
+    // lands there unfiltered rather than doing nothing.
+    navigate(value ? `/explore?query=${encodeURIComponent(value)}` : '/explore')
+    setOpen(false)
+  }
+
+  const links = [
+    { label: copy.navExplore, to: '/explore' },
+    { label: copy.navCommunity, to: '/community' },
+    ...(ownerHandle ? [{ label: copy.navAbout, to: `/u/${ownerHandle}` }] : []),
+  ]
 
   return (
-    <div className="fixed inset-x-0 z-20 w-full border-b border-white/10 bg-[#050616]/70 backdrop-blur-lg">
-      <div className="mx-auto c-space max-w-7xl">
-        <div className="flex items-center justify-between py-2 lg:py-0">
-          <a
-            href="#home"
-            className="text-xl font-bold text-neutral-300 transition-colors hover:text-white"
-          >
-            mrright.blog
-          </a>
+    <header className="topbar">
+      <div className="topbar-inner">
+        <Link className="topbar-brand" onClick={() => setOpen(false)} to="/">
+          mrright.blog
+        </Link>
 
-          {/* lg, not sm. The full bar is the brand, six nav links, the language
-              switch and the account menu, and it needs about 960px. Revealing it
-              at sm (640px) meant that from 640px to ~950px -- every tablet and
-              small laptop -- the account menu was laid out past the right edge
-              and clipped away by body{overflow-x:hidden}, so signing in was
-              simply unreachable there. The mobile sheet below carries all three,
-              so raising the breakpoint gives those widths more, not less. */}
-          <div className="hidden items-center gap-5 lg:flex">
-            <nav>
-              <Navigation copy={copy} ownerHandle={ownerHandle} />
-            </nav>
+        <nav className="topbar-links">
+          {links.map((item) => (
+            <Link key={item.to} onClick={() => setOpen(false)} to={item.to}>
+              {item.label}
+            </Link>
+          ))}
+        </nav>
 
-            <div className="hidden lg:block">
-              <LanguageSwitch
-                language={language}
-                onLanguageChange={onLanguageChange}
-                copy={copy}
-              />
-            </div>
+        <form className="topbar-search" onSubmit={search} role="search">
+          <label className="explore-search-label" htmlFor="topbar-q">
+            {copy.navSearch}
+          </label>
+          <input id="topbar-q" name="q" placeholder={copy.navSearch} type="search" />
+        </form>
 
-            <AccountMenu
-              authStatus={authStatus}
-              copy={copy}
-              language={language}
-              onLogin={onVisitorLogin}
-              onLogout={onVisitorLogout}
-              onRegister={onVisitorRegister}
-              visitorUser={visitorUser}
-            />
-          </div>
-
-          <button
-            type="button"
-            onClick={() => setIsOpen((prev) => !prev)}
-            className="flex cursor-pointer text-neutral-400 hover:text-white focus:outline-none lg:hidden"
-            aria-label={copy.toggleMenu}
-            aria-expanded={isOpen}
-            aria-controls="mobile-navigation"
-          >
-            <img
-              src={isOpen ? '/assets/close.svg' : '/assets/menu.svg'}
-              className="h-6 w-6"
-              alt=""
-            />
-          </button>
+        <div className="topbar-actions">
+          {/* Publishing is the thing this site is for, so it is an action in
+              the bar rather than something to find in a menu. */}
+          <Link className="topbar-publish" to={visitorToken ? '/account/works' : '/login?mode=login'}>
+            {copy.navPublish}
+          </Link>
+          <LanguageSwitch copy={copy} language={language} onLanguageChange={onLanguageChange} />
+          <AccountMenuBar copy={copy} onSignOut={onVisitorLogout} visitorUser={visitorUser} />
         </div>
+
+        <button
+          aria-controls="topbar-mobile"
+          aria-expanded={open}
+          aria-label={copy.toggleMenu}
+          className="topbar-toggle"
+          onClick={() => setOpen((value) => !value)}
+          type="button"
+        >
+          <img alt="" src={open ? '/assets/close.svg' : '/assets/menu.svg'} />
+        </button>
       </div>
 
-      {isOpen && (
-        <Motion.div
-          id="mobile-navigation"
-          className="block overflow-hidden text-center lg:hidden"
-          initial={{ opacity: 0, x: -10 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ duration: 0.3 }}
-          style={{ maxHeight: '100vh' }}
-        >
-          <nav className="grid gap-4 pb-5">
-            <Navigation copy={copy} onNavigate={() => setIsOpen(false)} ownerHandle={ownerHandle} />
-            <div className="mx-auto">
-              <LanguageSwitch
-                language={language}
-                onLanguageChange={onLanguageChange}
-                copy={copy}
-              />
-            </div>
-            <div className="mx-auto w-full max-w-sm px-5">
-              <AccountMenu
-                authStatus={authStatus}
-                copy={copy}
-                language={language}
-                onLogin={onVisitorLogin}
-                onLogout={onVisitorLogout}
-                onRegister={onVisitorRegister}
-                visitorUser={visitorUser}
-              />
-            </div>
-          </nav>
-        </Motion.div>
+      {open && (
+        <div className="topbar-mobile" id="topbar-mobile">
+          <form onSubmit={search} role="search">
+            <label className="explore-search-label" htmlFor="topbar-q-mobile">
+              {copy.navSearch}
+            </label>
+            <input id="topbar-q-mobile" name="q" placeholder={copy.navSearch} type="search" />
+          </form>
+          {links.map((item) => (
+            <Link key={item.to} onClick={() => setOpen(false)} to={item.to}>
+              {item.label}
+            </Link>
+          ))}
+          <Link
+            className="topbar-publish"
+            onClick={() => setOpen(false)}
+            to={visitorToken ? '/account/works' : '/login?mode=login'}
+          >
+            {copy.navPublish}
+          </Link>
+          <LanguageSwitch copy={copy} language={language} onLanguageChange={onLanguageChange} />
+        </div>
       )}
-    </div>
+    </header>
   )
 }
 

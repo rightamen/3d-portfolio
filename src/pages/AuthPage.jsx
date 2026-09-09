@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { getApiErrorMessage, languages } from '../lib/i18n'
+import { getApiErrorMessage } from '../lib/i18n'
 
 const emptyForm = {
   code: '',
@@ -16,27 +16,9 @@ const authModes = ['login', 'register', 'verify', 'forgot', 'reset']
 
 const normalizeMode = (mode) => (authModes.includes(mode) ? mode : 'login')
 
-const LanguageSwitch = ({ language, onLanguageChange, copy }) => (
-  <div className="language-switch" aria-label={copy.toggleLanguage}>
-    {languages.map((item) => (
-      <button
-        key={item.code}
-        type="button"
-        className={language === item.code ? 'language-switch-active' : 'language-switch-button'}
-        onClick={() => onLanguageChange(item.code)}
-        title={item.label}
-      >
-        {item.shortLabel}
-      </button>
-    ))}
-  </div>
-)
-
 const AuthPage = ({
   authStatus,
   copy,
-  language,
-  onLanguageChange,
   onLogin,
   onRegister,
   onRequestPasswordReset,
@@ -188,13 +170,6 @@ const AuthPage = ({
 
   return (
     <main className="auth-page">
-      <nav className="auth-nav">
-        <Link to="/" className="text-xl font-bold text-neutral-300 hover:text-white">
-          mrright.blog
-        </Link>
-        <LanguageSwitch language={language} onLanguageChange={onLanguageChange} copy={copy} />
-      </nav>
-
       <section className="auth-card">
         <div className="auth-brand-panel">
           <p className="section-kicker">{copy.authPageKicker}</p>

@@ -113,17 +113,9 @@ const useDeferredHero = () => {
 // The homepage owns its own data. It used to live in App behind a
 // `pathname !== '/'` guard, which existed only because every route shared one
 // component; now the fetch simply does not mount anywhere else.
-const HomePage = ({
-  authStatus,
-  copy,
-  language,
-  onLanguageChange,
-  onVisitorLogin,
-  onVisitorLogout,
-  onVisitorRegister,
-  visitorToken,
-  visitorUser,
-}) => {
+// Auth and language props went with the navbar when it moved above the
+// routes: the homepage no longer renders any chrome of its own.
+const HomePage = ({ copy, language, visitorToken }) => {
   const [siteData, setSiteData] = useState({
     ownerHandle: '',
     profile: null,
@@ -198,17 +190,6 @@ const HomePage = ({
 
   return (
     <div id="home" className="site-home min-h-screen overflow-hidden">
-      <Navbar
-        authStatus={authStatus}
-        ownerHandle={siteData.ownerHandle}
-        copy={copy}
-        language={language}
-        onLanguageChange={onLanguageChange}
-        onVisitorLogin={onVisitorLogin}
-        onVisitorLogout={onVisitorLogout}
-        onVisitorRegister={onVisitorRegister}
-        visitorUser={visitorUser}
-      />
       {heroReady ? (
         <Suspense fallback={<SectionFallback title="Hero" copy={copy} />}>
           <Hero
@@ -430,17 +411,7 @@ const App = () => {
   }
 
   const homePage = (
-    <HomePage
-      authStatus={authStatus}
-      copy={copy}
-      language={language}
-      onLanguageChange={setLanguage}
-      onVisitorLogin={handleVisitorLogin}
-      onVisitorLogout={handleVisitorLogout}
-      onVisitorRegister={handleVisitorRegister}
-      visitorToken={visitorToken}
-      visitorUser={visitorUser}
-    />
+    <HomePage copy={copy} language={language} visitorToken={visitorToken} />
   )
 
   const communityPage = (
@@ -449,16 +420,47 @@ const App = () => {
         authToken={visitorToken}
         copy={copy}
         language={language}
-        onLanguageChange={setLanguage}
         visitorLoading={visitorLoading}
         visitorUser={visitorUser}
       />
     </Suspense>
   )
 
+  // The bar's link to the owner's profile needs their handle, and the bar is
+  // on every page now. HomePage keeps fetching its own data -- see the note on
+  // it -- so this duplicates one small request there and is the only one
+  // elsewhere.
+  const [ownerHandle, setOwnerHandle] = useState('')
+  useEffect(() => {
+    let isMounted = true
+    getProfile()
+      .then((payload) => {
+        if (isMounted) setOwnerHandle(payload.ownerHandle || '')
+      })
+      // A bar that loses one link is better than a bar that fails to render.
+      .catch(() => {})
+
+    return () => {
+      isMounted = false
+    }
+  }, [])
+
   return (
     <BrowserRouter>
       <ScrollToTop />
+      {/* One bar, above the routes, so every page has the same chrome and the
+          same way home. Each page used to carry its own header -- a logo and a
+          language switch, repeated six times and drifting -- and the work and
+          explore pages had no way back to the homepage at all. */}
+      <Navbar
+        copy={copy}
+        language={language}
+        onLanguageChange={setLanguage}
+        onVisitorLogout={handleVisitorLogout}
+        ownerHandle={ownerHandle}
+        visitorToken={visitorToken}
+        visitorUser={visitorUser}
+      />
       <Routes>
         <Route
           path="/login/*"
@@ -467,8 +469,6 @@ const App = () => {
               <AuthPage
                 authStatus={authStatus}
                 copy={copy}
-                language={language}
-                onLanguageChange={setLanguage}
                 onLogin={handleVisitorLogin}
                 onRegister={handleVisitorRegister}
                 onRequestPasswordReset={handleRequestPasswordReset}
@@ -500,11 +500,7 @@ const App = () => {
           path="/u/:handle/*"
           element={
             <Suspense fallback={<SectionFallback title="Profile" copy={copy} />}>
-              <PublicProfilePage
-                copy={copy}
-                language={language}
-                onLanguageChange={setLanguage}
-              />
+              <PublicProfilePage copy={copy} language={language} />
             </Suspense>
           }
         />
@@ -515,12 +511,7 @@ const App = () => {
           path="/explore"
           element={
             <Suspense fallback={<SectionFallback title="Explore" copy={copy} />}>
-              <ExplorePage
-                authToken={visitorToken}
-                copy={copy}
-                language={language}
-                onLanguageChange={setLanguage}
-              />
+              <ExplorePage authToken={visitorToken} copy={copy} language={language} />
             </Suspense>
           }
         />
@@ -532,7 +523,6 @@ const App = () => {
                 authToken={visitorToken}
                 copy={copy}
                 language={language}
-                onLanguageChange={setLanguage}
                 visitorUser={visitorUser}
               />
             </Suspense>

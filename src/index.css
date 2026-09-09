@@ -117,6 +117,29 @@ body {
 
 html {
   scroll-behavior: smooth;
+  /* The whole site is dark. Without this the browser renders native widgets --
+     the option list of a <select>, scrollbars, date pickers -- for a light page,
+     and a <select> styled `color: inherit` over a translucent background then
+     drops a white popup full of white text. Site-wide, because the fix belongs
+     where the assumption is, not on each select that trips over it. */
+  color-scheme: dark;
+}
+
+/* The closed control, for the same reason: a 4%-white background is transparent
+   over whatever is behind it, which is not always the page. An opaque, explicit
+   pair here means no select anywhere can render text on its own colour. */
+select {
+  background-color: #1a1e33;
+  color: #ffffff;
+}
+
+select option {
+  background-color: #1a1e33;
+  color: #ffffff;
+}
+
+select option:checked {
+  background-color: #252b47;
 }
 
 .c-space {
@@ -286,14 +309,6 @@ html {
   background:
     radial-gradient(circle at 20% 20%, rgba(54, 199, 212, 0.16), transparent 28rem),
     radial-gradient(circle at 82% 0%, rgba(117, 226, 168, 0.11), transparent 24rem);
-}
-
-/* flex-wrap, because the row is the brand plus a back link plus the language
-   switch: below about 380px that does not fit, and without wrapping the last
-   language button was cut off by body{overflow-x:hidden} rather than moving to
-   a second line. Wrapping is a no-op at every width where it already fits. */
-.auth-nav {
-  @apply relative z-10 mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4;
 }
 
 .auth-card {
@@ -1972,21 +1987,122 @@ html {
   @apply border-coral/30 bg-coral/10 text-coral;
 }
 
-/* Navigation Bar */
-/* These breakpoints track Navbar.jsx, where the desktop bar now appears at lg
-   rather than sm. The same <ul> serves both the bar and the mobile sheet, so
-   when it turned into a row at sm the sheet's links became one left-flush line
-   from 640px up instead of the stacked menu the sheet is designed around. */
-.nav-ul {
-  @apply flex flex-col items-center gap-4 lg:flex-row lg:gap-6 relative z-20;
+/* The top bar.
+   Sticky rather than fixed, deliberately: sticky keeps its 4rem in the flow, so
+   nothing can end up underneath it. The previous fixed bar is exactly how the
+   work and explore pages ended up needing per-page padding that then drifted. */
+.topbar {
+  @apply sticky top-0 z-50 border-b border-white/10 backdrop-blur-xl;
+  background: rgba(5, 7, 22, 0.86);
 }
 
-.nav-li {
-  @apply text-neutral-400 hover:text-white max-lg:w-full max-lg:rounded-md py-2 max-lg:px-5;
+.topbar-inner {
+  @apply mx-auto flex h-16 w-full max-w-[110rem] items-center gap-4 px-5 sm:px-8 lg:gap-6;
 }
 
-.nav-link {
-  @apply text-lg md:text-base hover:text-white transition-colors;
+.topbar-brand {
+  @apply shrink-0 text-lg font-bold text-white transition-colors duration-200 hover:text-aqua;
+}
+
+/* The link row and the search box are the first things to go as the bar
+   narrows -- both are reachable from the mobile sheet under the toggle. */
+.topbar-links {
+  @apply hidden items-center gap-6 lg:flex;
+}
+
+.topbar-links a {
+  @apply text-sm font-semibold text-neutral-400 transition-colors duration-200 hover:text-white;
+}
+
+.topbar-search {
+  @apply hidden flex-1 justify-center md:flex;
+}
+
+.topbar-search input,
+.topbar-mobile input {
+  @apply h-10 w-full max-w-md rounded-full border border-white/10 bg-white/[0.05] px-4 text-sm text-white outline-none transition duration-200 placeholder:text-neutral-500;
+}
+
+.topbar-search input:focus,
+.topbar-mobile input:focus {
+  @apply border-aqua/50 bg-white/[0.08];
+}
+
+.topbar-actions {
+  @apply ml-auto flex items-center gap-3;
+}
+
+/* Hidden in the bar below lg because it is in the sheet; the account menu is
+   not, because a signed-in person needs their own avatar at every width. */
+.topbar-actions .language-switch {
+  @apply hidden lg:inline-flex;
+}
+
+.topbar-publish {
+  @apply hidden min-h-10 items-center rounded-full border border-aqua/50 bg-aqua px-4 text-sm font-semibold text-[#031014] transition duration-200 hover:bg-mint md:inline-flex;
+}
+
+.topbar-signin {
+  @apply inline-flex min-h-10 items-center rounded-full border border-white/15 bg-white/5 px-4 text-sm font-semibold text-white transition duration-200 hover:border-white/30 hover:bg-white/10;
+}
+
+.topbar-account {
+  @apply relative;
+}
+
+.topbar-avatar {
+  @apply flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/15 bg-white/[0.06] text-xs font-bold text-neutral-200 transition duration-200 hover:border-aqua/50 hover:text-white;
+}
+
+.topbar-avatar img {
+  @apply size-full object-cover;
+}
+
+.topbar-menu {
+  @apply absolute right-0 top-[calc(100%+0.6rem)] z-50 flex w-60 flex-col overflow-hidden rounded-lg border border-white/10 py-2 shadow-2xl;
+  background: #0d1122;
+}
+
+.topbar-menu-head {
+  @apply flex flex-col gap-0.5 px-4 pb-2 pt-1;
+}
+
+.topbar-menu-head strong {
+  @apply truncate text-sm font-semibold text-white;
+}
+
+.topbar-menu-head span {
+  @apply truncate text-xs text-neutral-500;
+}
+
+.topbar-menu a,
+.topbar-menu button {
+  @apply w-full px-4 py-2 text-left text-sm text-neutral-300 transition-colors duration-150 hover:bg-white/[0.07] hover:text-white;
+}
+
+.topbar-menu hr {
+  @apply my-2 border-white/10;
+}
+
+.topbar-toggle {
+  @apply flex size-10 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] lg:hidden;
+}
+
+.topbar-toggle img {
+  @apply size-5;
+}
+
+.topbar-mobile {
+  @apply flex flex-col gap-3 border-t border-white/10 px-5 py-4 sm:px-8 lg:hidden;
+  background: rgba(5, 7, 22, 0.96);
+}
+
+.topbar-mobile > a {
+  @apply text-base font-semibold text-neutral-300 transition-colors duration-200 hover:text-white;
+}
+
+.topbar-mobile .topbar-publish {
+  @apply inline-flex w-fit justify-center;
 }
 
 /* Button Component */

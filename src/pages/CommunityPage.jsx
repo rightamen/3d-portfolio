@@ -9,7 +9,7 @@ import {
   getCommunityUploads,
   uploadCommunityResource,
 } from '../lib/api'
-import { getApiErrorMessage, languages } from '../lib/i18n'
+import { getApiErrorMessage } from '../lib/i18n'
 
 const CommentSection = lazy(() => import('../components/CommentSection'))
 
@@ -39,35 +39,10 @@ const getTopicLabel = (copy, topic) => {
   return copy[`communityTopic${topic[0].toUpperCase()}${topic.slice(1)}`] || topic
 }
 
-const LanguageSwitch = ({ language, onLanguageChange, copy }) => (
-  <div className="language-switch" aria-label={copy.toggleLanguage}>
-    {languages.map((item) => (
-      <button
-        key={item.code}
-        type="button"
-        className={language === item.code ? 'language-switch-active' : 'language-switch-button'}
-        onClick={() => onLanguageChange(item.code)}
-        title={item.label}
-      >
-        {item.shortLabel}
-      </button>
-    ))}
-  </div>
-)
-
-const CommunityShell = ({ children, copy, language, onLanguageChange }) => (
+// No nav of its own: home and the language switch are in the site's top bar,
+// which is rendered above the router.
+const CommunityShell = ({ children }) => (
   <main className="auth-page">
-    <nav className="auth-nav">
-      <Link to="/" className="text-xl font-bold text-neutral-300 hover:text-white">
-        mrright.blog
-      </Link>
-      <div className="flex items-center gap-2 sm:gap-3">
-        <Link className="secondary-action px-3 py-2 text-xs sm:px-4 sm:text-sm" to="/">
-          ← {copy.communityBackHome}
-        </Link>
-        <LanguageSwitch language={language} onLanguageChange={onLanguageChange} copy={copy} />
-      </div>
-    </nav>
     <div className="community-page">{children}</div>
   </main>
 )
@@ -567,7 +542,6 @@ const CommunityPage = ({
   authToken,
   copy,
   language,
-  onLanguageChange,
   visitorLoading,
   visitorUser,
 }) => {
@@ -576,7 +550,7 @@ const CommunityPage = ({
   const { postId = '' } = useParams()
 
   return (
-    <CommunityShell copy={copy} language={language} onLanguageChange={onLanguageChange}>
+    <CommunityShell>
       {postId ? (
         <PostDetail
           authToken={authToken}
