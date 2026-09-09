@@ -61,6 +61,7 @@ const createProfileForm = (profile = {}) => ({
 })
 
 const SellerPanel = lazy(() => import('../components/SellerPanel'))
+const WorksPanel = lazy(() => import('../components/WorksPanel'))
 const ThemeEditor = lazy(() => import('../components/ThemeEditor'))
 
 const accountTabs = [
@@ -68,6 +69,7 @@ const accountTabs = [
   { key: 'downloads', labelKey: 'accountNavDownloads' },
   { key: 'comments', labelKey: 'accountNavComments' },
   { key: 'community', labelKey: 'accountNavCommunity' },
+  { key: 'works', labelKey: 'accountNavWorks' },
   { key: 'selling', labelKey: 'accountNavSelling' },
   { key: 'settings', labelKey: 'accountNavSettings' },
   { key: 'security', labelKey: 'accountSecurityTitle' },
@@ -1530,6 +1532,17 @@ const AccountPage = ({
         return renderComments()
       case 'community':
         return renderCommunity()
+      case 'works':
+        return (
+          <Suspense fallback={<p className="text-neutral-400">{copy.loading}</p>}>
+            <WorksPanel
+              authToken={authToken}
+              copy={copy}
+              language={language}
+              visitorUser={visitorUser}
+            />
+          </Suspense>
+        )
       case 'selling':
         return (
           // Lazily loaded: it pulls payment setup, sales and purchases, and

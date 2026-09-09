@@ -252,6 +252,61 @@ export const saveAccountTheme = (theme, token) =>
     method: 'PUT',
   })
 
+// Publishing a work. The API for this has existed since the publishing flow
+// shipped; nothing in the client called it, so the site said "anyone can
+// publish" while offering no way to.
+export const getMyWorks = (token) =>
+  request('/api/account/works', { cache: 'no-store', headers: authHeaders(token) })
+
+export const createWork = (fields, token) =>
+  request('/api/account/works', {
+    body: JSON.stringify(fields),
+    headers: authHeaders(token, { 'Content-Type': 'application/json' }),
+    method: 'POST',
+  })
+
+// Partial: only the keys sent are written, which is what lets a form save one
+// field without blanking the rest.
+export const updateWork = (id, fields, token) =>
+  request(`/api/account/works/${encodeURIComponent(id)}`, {
+    body: JSON.stringify(fields),
+    headers: authHeaders(token, { 'Content-Type': 'application/json' }),
+    method: 'PATCH',
+  })
+
+export const setWorkStatus = (id, status, token) =>
+  request(`/api/account/works/${encodeURIComponent(id)}/status`, {
+    body: JSON.stringify({ status }),
+    headers: authHeaders(token, { 'Content-Type': 'application/json' }),
+    method: 'PATCH',
+  })
+
+export const deleteWork = (id, token) =>
+  request(`/api/account/works/${encodeURIComponent(id)}`, {
+    headers: authHeaders(token),
+    method: 'DELETE',
+  })
+
+// One file per request. `kind` rides in the query string as well as the body:
+// multer only fills request.body from text fields that precede the file, and
+// not every client orders a multipart body that way.
+export const uploadWorkAsset = (id, kind, file, token) => {
+  const form = new FormData()
+  form.append('kind', kind)
+  form.append('file', file)
+
+  return request(
+    `/api/account/works/${encodeURIComponent(id)}/assets?kind=${encodeURIComponent(kind)}`,
+    { body: form, headers: authHeaders(token), method: 'POST' },
+  )
+}
+
+export const deleteWorkAsset = (id, assetId, token) =>
+  request(
+    `/api/account/works/${encodeURIComponent(id)}/assets/${encodeURIComponent(assetId)}`,
+    { headers: authHeaders(token), method: 'DELETE' },
+  )
+
 // Buying a work. The platform never touches the money -- these endpoints move
 // an ORDER through its states, and the money moves between two people
 // elsewhere. See docs/adr/ADR_PLATFORM_PIVOT.md §6.

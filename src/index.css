@@ -5043,3 +5043,108 @@ body {
     grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
   }
 }
+
+/* Publishing a work. Draft-first: a creator gathering assets is the normal
+   case, so the form saves what it has rather than waiting for everything. */
+.works-row {
+  padding: 0.85rem 0;
+  border-top: 1px solid rgb(255 255 255 / 8%);
+}
+
+.works-row small {
+  display: block;
+  margin-top: 0.2rem;
+  color: rgb(255 255 255 / 55%);
+  font-size: 0.78rem;
+}
+
+.works-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+}
+
+.works-editor {
+  margin-top: 0.9rem;
+  padding: 0.9rem;
+  border-radius: 0.7rem;
+  border: 1px solid rgb(255 255 255 / 10%);
+  background: rgb(255 255 255 / 3%);
+}
+
+.works-editor h4 {
+  margin-top: 1.1rem;
+  font-size: 0.9rem;
+}
+
+.works-fields {
+  display: grid;
+  gap: 0.7rem;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+}
+
+.works-fields label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.82rem;
+}
+
+.works-fields label > span {
+  color: rgb(255 255 255 / 62%);
+}
+
+.works-fields small {
+  color: rgb(255 255 255 / 45%);
+  font-size: 0.72rem;
+}
+
+.works-fields input,
+.works-fields textarea,
+.works-fields select {
+  padding: 0.5rem 0.65rem;
+  border-radius: 0.5rem;
+  border: 1px solid rgb(255 255 255 / 12%);
+  background: rgb(255 255 255 / 4%);
+  color: inherit;
+  font: inherit;
+  font-size: 0.85rem;
+  resize: vertical;
+}
+
+/* The summary is the one field people write more than a line in. */
+.works-fields label:has(textarea) {
+  grid-column: 1 / -1;
+}
+
+.works-asset {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0;
+  border-top: 1px solid rgb(255 255 255 / 7%);
+  font-size: 0.82rem;
+}
+
+.works-asset > span:first-child {
+  min-width: 7rem;
+  color: rgb(255 255 255 / 62%);
+}
+
+.works-asset-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 0.4rem;
+  background: rgb(255 255 255 / 5%);
+  max-width: 100%;
+}
+
+.works-asset-row > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
