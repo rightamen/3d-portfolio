@@ -61,6 +61,9 @@ const createProfileForm = (profile = {}) => ({
   website: profile.website || '',
 })
 
+// Only ever mounted while someone is actually cropping, which is a rare
+// moment in a long-lived page.
+const ImageCropDialog = lazy(() => import('../components/ImageCropDialog'))
 const SellerPanel = lazy(() => import('../components/SellerPanel'))
 const WorksPanel = lazy(() => import('../components/WorksPanel'))
 const ThemeEditor = lazy(() => import('../components/ThemeEditor'))
@@ -196,6 +199,10 @@ const AccountPage = ({
   const [profileStatus, setProfileStatus] = useState('idle')
   const [profileMessage, setProfileMessage] = useState('')
   const [imageUploadState, setImageUploadState] = useState({ field: '', message: '', progress: 0 })
+  // The file someone just picked, waiting to be framed. Nothing is uploaded
+  // until they confirm a crop -- the old flow sent the raw file the moment it
+  // was chosen, which is why nobody could ever adjust it.
+  const [cropRequest, setCropRequest] = useState(null)
   const [securityForm, setSecurityForm] = useState(emptySecurityForm)
   const [securityState, setSecurityState] = useState({ message: '', phase: 'idle' })
   const isMountedRef = useRef(true)
@@ -1090,7 +1097,12 @@ const AccountPage = ({
               type="file"
               accept="image/jpeg,image/png,image/webp"
               disabled={imageUploadState.field === 'avatar'}
-              onChange={(event) => uploadProfileImage('avatar', event.target.files?.[0])}
+              onChange={(event) => {
+                const picked = event.target.files?.[0]
+                // Cleared so picking the same file twice still opens the dialog.
+                event.target.value = ''
+                if (picked) setCropRequest({ field: 'avatar', file: picked })
+              }}
             />
             <span className="text-xs text-neutral-500">{copy.accountProfileAvatarHint}</span>
           </label>
@@ -1101,13 +1113,36 @@ const AccountPage = ({
               type="file"
               accept="image/jpeg,image/png,image/webp"
               disabled={imageUploadState.field === 'banner'}
-              onChange={(event) => uploadProfileImage('banner', event.target.files?.[0])}
+              onChange={(event) => {
+                const picked = event.target.files?.[0]
+                // Cleared so picking the same file twice still opens the dialog.
+                event.target.value = ''
+                if (picked) setCropRequest({ field: 'banner', file: picked })
+              }}
             />
             <span className="text-xs text-neutral-500">{copy.accountProfileBannerHint}</span>
           </label>
         </div>
         {imageUploadState.message && (
           <p className="account-section-intro">{imageUploadState.message}</p>
+        )}
+
+        {cropRequest && (
+          <Suspense fallback={null}>
+            <ImageCropDialog
+              // The frame is the shape the picture is actually used in: a
+              // circle on every avatar, a 4:1 band across the profile header.
+              aspect={cropRequest.field === 'banner' ? 4 : 1}
+              copy={copy}
+              file={cropRequest.file}
+              onCancel={() => setCropRequest(null)}
+              onConfirm={(cropped) => {
+                setCropRequest(null)
+                uploadProfileImage(cropRequest.field, cropped)
+              }}
+              outputWidth={cropRequest.field === 'banner' ? 1920 : 512}
+            />
+          </Suspense>
         )}
       </section>
 

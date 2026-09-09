@@ -679,6 +679,19 @@ export const ensureSchema = async (pool) => {
       ON orders (buyer_id, work_id)
       WHERE status = 'paid';
 
+    -- A small, fast copy of the cover, for grids.
+    --
+    -- The image column points at the preview file the creator uploaded, and
+    -- that file is theirs: it is listed under Files included and downloaded, so
+    -- it is never rewritten. But it is also what every tile on the catalogue
+    -- was loading -- measured on 2026-09-10, four tiles came to 15.31MB, one of
+    -- them 8.47MB. This column holds a separate generated file. Nullable
+    -- because every row that predates it has none, and because a work whose
+    -- thumbnail failed to render should still list with its full-size cover
+    -- rather than list with nothing.
+    ALTER TABLE works
+      ADD COLUMN IF NOT EXISTS thumbnail text;
+
     -- A ticket can now be for a work as well as for a project. project_slug
     -- stops being mandatory because a work has no slug of its own that is
     -- unique site-wide -- the pair (creator, slug) is.

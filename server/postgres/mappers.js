@@ -413,6 +413,9 @@ export const toWork = (row, { assets = null, includeProtected = false } = {}) =>
   formatZh: row.format_zh,
   id: row.id,
   image: row.image || '',
+  // Falls back to the full cover: a row from before thumbnails exist, or one
+  // whose thumbnail failed to render, still shows a picture.
+  thumbnail: row.thumbnail || '',
   license: row.license || '',
   modelSize: row.model_size || '',
   modelSizeEn: row.model_size_en,
@@ -457,6 +460,9 @@ export const toWorkSummary = (row) => ({
   currency: row.currency || 'usd',
   id: row.id,
   image: row.image || '',
+  // Falls back to the full cover: a row from before thumbnails exist, or one
+  // whose thumbnail failed to render, still shows a picture.
+  thumbnail: row.thumbnail || '',
   priceCents: Number(row.price_cents || 0),
   publishedAt: row.published_at?.toISOString?.() || row.published_at || null,
   slug: row.slug,
@@ -486,7 +492,7 @@ export const workColumns = `
   works.model_size, works.model_size_zh, works.model_size_en, works.model_size_ja,
   works.download_policy, works.download_policy_zh, works.download_policy_en,
   works.download_policy_ja,
-  works.year, works.asset_category, works.image, works.model_url,
+  works.year, works.asset_category, works.image, works.thumbnail, works.model_url,
   works.stack, works.viewer_features, works.tags,
   works.price_cents, works.currency, works.license,
   works.published_at, works.created_at, works.updated_at,

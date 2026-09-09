@@ -2111,6 +2111,75 @@ select option:checked {
          bg-primary w-[12rem] cursor-pointer overflow-hidden;
 }
 
+/* The crop dialog. */
+.crop-backdrop {
+  @apply fixed inset-0 z-[60] flex items-center justify-center p-4;
+  background: rgb(3 4 18 / 82%);
+  backdrop-filter: blur(6px);
+}
+
+.crop-dialog {
+  @apply flex w-full max-w-lg flex-col gap-3 rounded-lg border border-white/10 p-5 shadow-2xl;
+  background: #0d1122;
+  /* The frame plus its controls can be taller than a short laptop window, and
+     a dialog you cannot reach the confirm button in is not a dialog. */
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
+}
+
+.crop-dialog h2 {
+  @apply text-lg font-semibold text-white;
+}
+
+/* The measured box. .crop-frame takes its exact size from JS, so this is what
+   tells it how much room there is. */
+.crop-frame-wrap {
+  @apply w-full;
+}
+
+.crop-frame {
+  @apply relative mx-auto touch-none select-none overflow-hidden rounded-md;
+  background: rgb(255 255 255 / 4%);
+  cursor: grab;
+}
+
+.crop-frame:active {
+  cursor: grabbing;
+}
+
+.crop-frame img {
+  @apply pointer-events-none absolute max-w-none;
+}
+
+/* The guide, not the crop: the stored file is the whole frame, so rounding it
+   differently somewhere later cannot cut anything off. */
+.crop-frame-circle {
+  @apply pointer-events-none absolute inset-0 rounded-full;
+  box-shadow: 0 0 0 9999px rgb(3 4 18 / 55%);
+  border: 1px solid rgb(255 255 255 / 45%);
+}
+
+.crop-zoom {
+  @apply flex items-center gap-3 text-xs text-neutral-400;
+}
+
+.crop-zoom input {
+  @apply h-1 flex-1 cursor-pointer appearance-none rounded-full;
+  background: rgb(255 255 255 / 16%);
+}
+
+.crop-zoom input::-webkit-slider-thumb {
+  @apply size-4 cursor-pointer appearance-none rounded-full bg-aqua;
+}
+
+.crop-zoom input::-moz-range-thumb {
+  @apply size-4 cursor-pointer rounded-full border-0 bg-aqua;
+}
+
+.crop-actions {
+  @apply flex justify-end gap-2;
+}
+
 /* The owner's About / Experience / Contact.
    These were homepage sections and, when they moved to the profile in round
    51, they kept homepage scale on a page that is not the homepage: `c-space`

@@ -50,13 +50,29 @@ export const derivativeFileName = (sourceName, suffix) => {
   return `${Date.now()}-${randomBytes(4).toString('hex')}-${base || 'image'}-${suffix}${OUTPUT_EXTENSION}`
 }
 
+// The formats the full decoder is allowed to run on.
+//
+// ⚠️ Not the same list as the uploader's `accept` attribute, and not redundant
+// with it. The uploader checks the file NAME and the browser-declared type;
+// sharp reads the actual bytes, so a HEIC image called photo.png is decoded as
+// HEIC regardless of what the form said. sharp's advisories are overwhelmingly
+// in the exotic decoders it links -- libheif has had two high-severity ones --
+// and this server has no reason to run any of them: the three formats below are
+// the three the uploader offers.
+const DECODABLE_FORMATS = new Set(['jpeg', 'jpg', 'png', 'webp'])
+
 // Reading the metadata is the format check. An extension and a magic-number
 // sniff both describe the first few bytes; this describes whether the decoder
 // can actually read the image, which is the question that matters and the one
 // a truncated or malformed file fails.
+//
+// metadata() parses the header only. Doing this BEFORE renderDerivative is what
+// makes the allowlist worth having: the full decode never starts on a format
+// this server does not serve.
 export const readImageMetadata = async (input) => {
   const { format, height, width } = await sharp(input).metadata()
   if (!format || !width || !height) throw new Error('Unreadable image.')
+  if (!DECODABLE_FORMATS.has(format)) throw new Error(`Unsupported image format: ${format}`)
   return { format, height, width }
 }
 
@@ -66,6 +82,11 @@ export const readImageMetadata = async (input) => {
 export const renderDerivative = async (input, profileName) => {
   const profile = IMAGE_PROFILES[profileName]
   if (!profile) throw new Error(`Unknown image profile: ${profileName}`)
+
+  // Here, not only at the call sites: this is the function that starts a full
+  // decode, so this is where the format allowlist has to hold. A caller that
+  // forgets to check first must not be able to reach the decoder.
+  await readImageMetadata(input)
 
   return sharp(input, { failOn: 'error' })
     .rotate() // Honours EXIF orientation, then drops it -- see below.

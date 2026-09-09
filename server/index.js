@@ -4,7 +4,7 @@ import rateLimit from 'express-rate-limit'
 import helmet from 'helmet'
 import multer from 'multer'
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
-import { mkdir, unlink, access, readFile, stat } from 'node:fs/promises'
+import { mkdir, unlink, access, readFile, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createContactMessagesStore } from './contactMessagesStore.js'
@@ -29,6 +29,7 @@ import {
   sendPasswordResetEmail,
   sendVerificationEmail,
 } from './emailDelivery.js'
+import { derivativeFileName, readImageMetadata, renderDerivative } from './images.js'
 import { createInteractionsStore } from './interactionsStore.js'
 import { convertModelToGlb } from './modelConverter.js'
 import { createPostgresStores } from './postgresStores.js'
@@ -593,22 +594,18 @@ const upload = multer({
   },
 })
 
-const createProfileImageUpload = ({ folder, limit }) =>
+// In memory, not on disk. A profile image is never downloaded as a file -- it
+// exists to be shown at one size -- so the bytes that arrive are decoded,
+// resized and re-encoded, and only the derivative is ever written. Nothing raw
+// reaches the filesystem, which means there is nothing to clean up afterwards
+// and no way for an upload to leave an orphan behind.
+//
+// Safe because these are capped at 2MB and 5MB by `limits` below; the shared
+// asset uploader, which may take a 120MB model, stays on disk.
+const createProfileImageUpload = ({ limit }) =>
   multer({
     limits: { fileSize: limit },
-    storage: multer.diskStorage({
-      destination: (_request, _file, callback) => {
-        const destination = path.join(uploadRoot, folder)
-
-        mkdir(destination, { recursive: true })
-          .then(() => callback(null, destination))
-          .catch(callback)
-      },
-      filename: (_request, file, callback) => {
-        const extension = path.extname(file.originalname).toLowerCase()
-        callback(null, `${Date.now()}-${randomBytes(6).toString('hex')}${extension}`)
-      },
-    }),
+    storage: multer.memoryStorage(),
     fileFilter: (_request, file, callback) => {
       const extension = path.extname(file.originalname).toLowerCase()
       const allowed =
@@ -625,8 +622,51 @@ const createProfileImageUpload = ({ folder, limit }) =>
     },
   })
 
-const avatarUpload = createProfileImageUpload({ folder: 'avatars', limit: avatarUploadLimit })
-const bannerUpload = createProfileImageUpload({ folder: 'banners', limit: bannerUploadLimit })
+const avatarUpload = createProfileImageUpload({ limit: avatarUploadLimit })
+const bannerUpload = createProfileImageUpload({ limit: bannerUploadLimit })
+
+// Decode, resize, re-encode, write. Returns the public URL, or null when the
+// bytes are not an image the decoder can read -- which is a stronger check than
+// the extension and the magic-number sniff it replaces here: both of those
+// describe the first few bytes, this one describes whether the picture opens.
+const storeProfileImage = async ({ buffer, folder, profileName }) => {
+  let derivative
+  try {
+    await readImageMetadata(buffer)
+    derivative = await renderDerivative(buffer, profileName)
+  } catch {
+    return null
+  }
+
+  const destination = path.join(uploadRoot, folder)
+  await mkdir(destination, { recursive: true })
+  const fileName = derivativeFileName(profileName, profileName)
+  await writeFile(path.join(destination, fileName), derivative)
+
+  return `/uploads/${folder}/${fileName}`
+}
+
+// The grid-sized copy of a work's cover. Reads the file the creator uploaded
+// and writes a new one beside it -- the original is never touched, because it
+// is an asset a buyer downloads.
+//
+// Returns '' rather than throwing: a thumbnail is an optimisation, and losing
+// one must not fail the upload that a creator is in the middle of. The tile
+// falls back to the full cover, which is what it used before this existed.
+export const renderWorkThumbnail = async (sourcePath) => {
+  try {
+    const derivative = await renderDerivative(await readFile(sourcePath), 'workThumb')
+    const destination = path.join(uploadRoot, 'thumbnails')
+    await mkdir(destination, { recursive: true })
+    const fileName = derivativeFileName(path.basename(sourcePath), 'thumb')
+    await writeFile(path.join(destination, fileName), derivative)
+
+    return `/uploads/thumbnails/${fileName}`
+  } catch (error) {
+    console.error('Thumbnail render failed:', error.message)
+    return ''
+  }
+}
 
 // Rejects and removes an upload whose bytes do not match its extension.
 // Returns true when the caller should stop (the response has been sent).
@@ -2489,7 +2529,14 @@ app.post(
     // work still has no cover has been made to do the same thing twice. Only
     // when the slot is empty -- replacing a cover is a deliberate edit.
     const fill = {}
-    if (kind === 'preview' && !work.image) fill.image = fileUrl
+    if (kind === 'preview' && !work.image) {
+      fill.image = fileUrl
+      // A separate small file. The uploaded preview is the creator's, listed
+      // under "Files included" and downloaded as-is, so it is never rewritten.
+      // Soft-fails: a work with a cover and no thumbnail still lists, using the
+      // cover, which is exactly what every row did before this existed.
+      fill.thumbnail = (await renderWorkThumbnail(request.file.path)) || ''
+    }
     if (kind === 'model' && !work.modelUrl) fill.model_url = fileUrl
 
     const updated = Object.keys(fill).length
@@ -3373,9 +3420,21 @@ app.post(
       return sendError(response, API_ERROR_CODES.VALIDATION_ERROR, 'Avatar file is required.', 400)
     }
 
-    if (await rejectOnSignatureMismatch(request, response)) return
+    const avatarUrl = await storeProfileImage({
+      buffer: request.file.buffer,
+      folder: 'avatars',
+      profileName: 'avatar',
+    })
 
-    const avatarUrl = `/uploads/avatars/${request.file.filename}`
+    if (!avatarUrl) {
+      return sendError(
+        response,
+        API_ERROR_CODES.INVALID_FILE_TYPE,
+        'That file could not be read as an image.',
+        400,
+      )
+    }
+
     const profile = await authStore.updateAccountImage(user.id, 'avatar', avatarUrl)
     return sendData(response, { avatarUrl, profile }, 201)
   },
@@ -3392,9 +3451,21 @@ app.post(
       return sendError(response, API_ERROR_CODES.VALIDATION_ERROR, 'Banner file is required.', 400)
     }
 
-    if (await rejectOnSignatureMismatch(request, response)) return
+    const bannerUrl = await storeProfileImage({
+      buffer: request.file.buffer,
+      folder: 'banners',
+      profileName: 'banner',
+    })
 
-    const bannerUrl = `/uploads/banners/${request.file.filename}`
+    if (!bannerUrl) {
+      return sendError(
+        response,
+        API_ERROR_CODES.INVALID_FILE_TYPE,
+        'That file could not be read as an image.',
+        400,
+      )
+    }
+
     const profile = await authStore.updateAccountImage(user.id, 'banner', bannerUrl)
     return sendData(response, { bannerUrl, profile }, 201)
   },

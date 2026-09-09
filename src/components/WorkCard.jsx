@@ -37,8 +37,12 @@ const WorkCard = ({ copy, language, showCreator = true, work }) => {
   return (
     <article className="work-tile">
       <Link className="work-tile-media" to={work.url}>
-        {work.image ? (
-          <img alt="" decoding="async" loading="lazy" src={work.image} />
+        {/* The thumbnail, falling back to the full cover for rows that predate
+            thumbnails. A grid pulling full-size covers is how four tiles came
+            to weigh 15.31MB -- the tiles were not empty, the pictures had not
+            arrived. */}
+        {work.thumbnail || work.image ? (
+          <img alt="" decoding="async" loading="lazy" src={work.thumbnail || work.image} />
         ) : (
           <span className="work-tile-placeholder" />
         )}

@@ -14,11 +14,14 @@
 // The five upload subdirectories and what can reference a file in each:
 //   images/    community_posts.image_url, community_uploads.file_url (when
 //              file_type is an image), community_uploads.preview_url,
-//              project images (base catalogue + project_overrides + custom_projects)
+//              project images (base catalogue + project_overrides + custom_projects),
+//              works.image, work_assets.file_url
 //   avatars/   visitor_users.avatar_url
 //   banners/   visitor_users.banner_url
 //   models/    community_uploads.file_url (when file_type is a model),
-//              project model_url (base catalogue + project_overrides + custom_projects)
+//              project model_url (base catalogue + project_overrides + custom_projects),
+//              works.model_url, work_assets.file_url
+//   thumbnails/ works.thumbnail
 //   projects/  <slug>-source.zip archives -- these carry no URL column at
 //              all (server/index.js's projectArchivePath builds the name from
 //              a slug, never stores it). A slug that still exists in the
@@ -56,7 +59,7 @@ const uploadRoot = path.join(rootDir, 'public', 'uploads')
 // Kept in one place because it is asserted against server/index.js's own
 // multer destinations in the header comment above -- if a sixth folder is
 // ever added there, it belongs here too.
-const UPLOAD_SUBDIRS = ['images', 'avatars', 'banners', 'models', 'projects']
+const UPLOAD_SUBDIRS = ['images', 'avatars', 'banners', 'models', 'projects', 'thumbnails']
 
 const args = process.argv.slice(2)
 const jsonOutput = args.includes('--json')
@@ -94,6 +97,24 @@ const collectReferencedPaths = async () => {
     addPath(referencedPaths, row.avatar_url)
     addPath(referencedPaths, row.banner_url)
   }
+
+  // ⚠️ Works were missing entirely until 2026-09-10. This script predates the
+  // marketplace, so every published work's cover, model and asset file was
+  // being reported as an orphan -- four works' worth of files that are very
+  // much in use. Read-only or not, that is a list somebody could have acted
+  // on.
+  const works = await pool.query('SELECT image, thumbnail, model_url FROM works')
+  for (const row of works.rows) {
+    addPath(referencedPaths, row.image)
+    addPath(referencedPaths, row.thumbnail)
+    addPath(referencedPaths, row.model_url)
+  }
+
+  // Every file in a work's bundle, not only the two the work row points at:
+  // a source archive nobody has downloaded yet is still the thing a buyer
+  // paid for.
+  const workAssets = await pool.query('SELECT file_url FROM work_assets')
+  for (const row of workAssets.rows) addPath(referencedPaths, row.file_url)
 
   // Base + project_overrides + custom_projects, minus deleted_projects, via
   // the store's own merge -- see the header comment for why this is not

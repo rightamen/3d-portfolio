@@ -43,6 +43,7 @@ const EDITABLE_COLUMNS = [
   'year',
   'asset_category',
   'image',
+  'thumbnail',
   'model_url',
   'license',
   'currency',

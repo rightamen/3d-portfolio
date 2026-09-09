@@ -305,8 +305,8 @@ const WorksPanel = ({ authToken, copy, language, visitorUser }) => {
                 was the one place a creator could not see that. Saying so where
                 the preview is uploaded is the whole point. */}
             <span className="works-row-thumb">
-              {work.image ? (
-                <img alt="" decoding="async" loading="lazy" src={work.image} />
+              {work.thumbnail || work.image ? (
+                <img alt="" decoding="async" loading="lazy" src={work.thumbnail || work.image} />
               ) : (
                 <span className="works-row-thumb-empty">{copy.worksNoPreview}</span>
               )}
