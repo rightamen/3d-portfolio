@@ -43,7 +43,7 @@
 - `docs/adr/ADR_PLATFORM_PIVOT.md`：补记那条方法论——
   「两个账号分别驱动」是对第 46 轮失败的修正
 
-commit：`（见下方 git log）`
+commit：`2800053`
 
 验证结果：
 
