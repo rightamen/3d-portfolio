@@ -1,5 +1,6 @@
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
+import CreatorProfileContent from '../components/CreatorProfileContent'
 import WorkCard from '../components/WorkCard'
 
 // The site owner's own pages. They used to sit on the homepage, which stopped
@@ -9,8 +10,6 @@ import WorkCard from '../components/WorkCard'
 //
 // Lazy, because they are only ever rendered for one profile out of all of
 // them, and nobody visiting somebody else's page should pay for the code.
-const About = lazy(() => import('../sections/About'))
-const Experience = lazy(() => import('../sections/Experience'))
 const Contact = lazy(() => import('../sections/Contact'))
 import {
   getExperience,
@@ -467,21 +466,20 @@ const PublicProfilePage = ({ copy, language }) => {
 
           {/* Below the tabs rather than inside one: these are not activity,
               they are who this person is, and burying them behind a tab is how
-              the homepage's About came to be the thing nobody scrolled to. */}
+              the homepage's About came to be the thing nobody scrolled to.
+              For EVERY creator now, from what they wrote -- it used to be the
+              site owner's only, out of content.js, behind an isSiteOwner
+              check. */}
+          <CreatorProfileContent
+            content={profile}
+            copy={copy}
+            displayName={profile?.displayName || `@${handle}`}
+          />
+
+          {/* The contact form stays owner-only: it posts to the site's own
+              inbox, which is not a thing another creator has. */}
           {isSiteOwner && ownerContent && (
             <Suspense fallback={null}>
-              <About
-                copy={copy}
-                language={language}
-                profile={ownerContent.profile}
-                skills={ownerContent.skills}
-              />
-              <Experience
-                copy={copy}
-                experience={ownerContent.experience}
-                language={language}
-                skills={ownerContent.skills}
-              />
               <Contact copy={copy} profile={ownerContent.profile} />
             </Suspense>
           )}

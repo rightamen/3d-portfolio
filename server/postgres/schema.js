@@ -447,6 +447,29 @@ export const ensureSchema = async (pool) => {
       ADD COLUMN IF NOT EXISTS stripe_account_id text,
       ADD COLUMN IF NOT EXISTS payout_state text NOT NULL DEFAULT 'none';
 
+    -- A creator's own profile content.
+    --
+    -- The About / Experience / Toolkit blocks on a profile were the SITE
+    -- OWNER'S ONLY: they came from content.js, were rendered behind an
+    -- isSiteOwner check, and no other creator had them at all -- let alone a
+    -- way to write them. bio (300 chars) was everything anyone else got.
+    --
+    -- Single language, deliberately, unlike content.js's zh/en/ja triples.
+    -- Those are hand-maintained for one person. Asking every creator to write
+    -- their introduction three times produces one filled field and two blank
+    -- ones, and a profile that is empty in two of the site's three languages.
+    -- What a creator types is what every visitor reads.
+    ALTER TABLE visitor_users
+      -- The long introduction. bio is the one-line version that fits on a card;
+      -- this is the paragraph behind it.
+      ADD COLUMN IF NOT EXISTS about text,
+      -- [{ title, body }] -- the small cards beside the introduction.
+      ADD COLUMN IF NOT EXISTS highlights jsonb,
+      -- ["ZBrush", "Maya", ...] -- the toolkit row.
+      ADD COLUMN IF NOT EXISTS skills jsonb,
+      -- [{ period, title, body }] -- the timeline, newest first as entered.
+      ADD COLUMN IF NOT EXISTS experience jsonb;
+
     -- The new centre of gravity. It replaces the split between content.js,
     -- project_overrides, custom_projects and the work-shaped half of
     -- community_uploads -- but only once phases 2-3 are built; for now the old

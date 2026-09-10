@@ -637,6 +637,10 @@ export const createAuthStore = ({ pool }) => {
               profile_public = $9,
               contacts_public = $10,
               activity_public = $11,
+              about = $12,
+              highlights = $13::jsonb,
+              skills = $14::jsonb,
+              experience = $15::jsonb,
               updated_at = now()
           WHERE id = $1
           RETURNING id
@@ -653,6 +657,10 @@ export const createAuthStore = ({ pool }) => {
           profile.profilePublic,
           profile.contactsPublic,
           profile.activityPublic,
+          profile.about,
+          JSON.stringify(profile.highlights || []),
+          JSON.stringify(profile.skills || []),
+          JSON.stringify(profile.experience || []),
         ],
       )
 

@@ -98,10 +98,22 @@ export const toPrivateUser = (row) =>
       }
     : null
 
+// A creator's own profile content, in both the account shape and the public
+// one. It is the same content either way -- there is nothing private about an
+// introduction somebody wrote to be read -- so it is read once, here, rather
+// than duplicated into two mappers that would drift.
+const toCreatorProfileContent = (row) => ({
+  about: row.about || '',
+  experience: Array.isArray(row.experience) ? row.experience : [],
+  highlights: Array.isArray(row.highlights) ? row.highlights : [],
+  skills: Array.isArray(row.skills) ? row.skills : [],
+})
+
 export const toAccountProfile = (row) =>
   row
     ? {
         ...toAccountUserRecord(row),
+        ...toCreatorProfileContent(row),
         contactLinks: row.contact_links || {},
         contactsPublic: row.contacts_public === true,
         lastLoginAt: row.last_login_at?.toISOString?.() || row.last_login_at || null,
@@ -131,6 +143,7 @@ export const toAccountProfile = (row) =>
 export const toPublicProfile = (row) =>
   row
     ? {
+        ...toCreatorProfileContent(row),
         activityPublic: row.activity_public !== false,
         avatarUrl: row.avatar_url || '',
         bannerUrl: row.banner_url || '',

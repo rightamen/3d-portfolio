@@ -2164,6 +2164,98 @@ select option:checked {
   @apply flex justify-end gap-2;
 }
 
+/* A creator's own About / Toolkit / Timeline, on their profile. */
+.creator-profile-content h2 {
+  @apply mb-1;
+}
+
+.creator-profile-grid {
+  @apply mt-6 grid gap-3 md:grid-cols-[1.15fr_0.85fr];
+}
+
+.creator-profile-about {
+  @apply grid content-start gap-3 rounded-2xl p-6;
+  background: linear-gradient(180deg, rgba(40, 43, 68, 0.9), rgba(31, 30, 57, 0.9));
+}
+
+.creator-profile-about h3 {
+  @apply text-lg font-semibold text-white;
+}
+
+.creator-profile-about p {
+  @apply leading-relaxed text-neutral-300;
+}
+
+.creator-profile-highlights {
+  @apply grid content-start gap-3;
+}
+
+.creator-profile-highlights article {
+  @apply rounded-2xl p-5;
+  background: linear-gradient(180deg, rgba(51, 194, 204, 0.16), rgba(31, 30, 57, 0.9));
+}
+
+.creator-profile-highlights h3 {
+  @apply text-base font-semibold text-white;
+}
+
+.creator-profile-highlights p {
+  @apply mt-1 text-sm leading-relaxed text-neutral-300;
+}
+
+.creator-profile-skills,
+.creator-profile-timeline {
+  @apply mt-6;
+}
+
+.creator-profile-skills h3,
+.creator-profile-timeline h3 {
+  @apply mb-3 text-sm font-semibold uppercase tracking-[0.16em] text-neutral-400;
+}
+
+.creator-profile-skills > div {
+  @apply flex flex-wrap gap-2;
+}
+
+.creator-profile-timeline h4 {
+  @apply mt-2 text-lg font-semibold text-white;
+}
+
+.creator-profile-timeline p {
+  @apply mt-2 leading-relaxed text-neutral-400;
+}
+
+.creator-profile-timeline span {
+  @apply text-sm uppercase tracking-[0.16em] text-aqua;
+}
+
+/* The editor for the same content, in account settings. */
+.creator-editor {
+  @apply grid gap-5;
+}
+
+.creator-editor-section {
+  @apply grid gap-2;
+}
+
+.creator-editor-head {
+  @apply flex flex-wrap items-center justify-between gap-2;
+}
+
+/* One row per card, collapsing to stacked fields on a narrow screen -- the
+   delete button last, so a mis-tap while typing does not remove the row. */
+.creator-editor-row {
+  @apply grid items-start gap-2 rounded-lg border border-white/10 bg-white/[0.03] p-3 md:grid-cols-[1fr_1.6fr_auto];
+}
+
+.creator-editor-row .field-input {
+  @apply mt-0;
+}
+
+.creator-editor-row .danger-action {
+  @apply min-h-10 px-4 py-2 text-xs;
+}
+
 /* The owner's About / Experience / Contact.
    These were homepage sections and, when they moved to the profile in round
    51, they kept homepage scale on a page that is not the homepage: `c-space`

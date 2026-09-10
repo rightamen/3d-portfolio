@@ -44,10 +44,17 @@ const emptyContactLinks = Object.fromEntries(
 )
 
 const createProfileForm = (profile = {}) => ({
+  // The creator's own About / Toolkit / Timeline. They ride in the same form
+  // and save with the same button as everything else on this screen -- the
+  // whole profileForm is what gets sent.
+  about: profile.about || '',
   activityPublic: profile.activityPublic !== false,
   avatarUrl: profile.avatarUrl || '',
   bannerUrl: profile.bannerUrl || '',
   bio: profile.bio || '',
+  experience: Array.isArray(profile.experience) ? profile.experience : [],
+  highlights: Array.isArray(profile.highlights) ? profile.highlights : [],
+  skills: Array.isArray(profile.skills) ? profile.skills : [],
   contactLinks: {
     ...emptyContactLinks,
     ...(profile.contactLinks || {}),
@@ -63,6 +70,7 @@ const createProfileForm = (profile = {}) => ({
 
 // Only ever mounted while someone is actually cropping, which is a rare
 // moment in a long-lived page.
+const CreatorProfileEditor = lazy(() => import('../components/CreatorProfileEditor'))
 const ImageCropDialog = lazy(() => import('../components/ImageCropDialog'))
 const SellerPanel = lazy(() => import('../components/SellerPanel'))
 const WorksPanel = lazy(() => import('../components/WorksPanel'))
@@ -1221,6 +1229,21 @@ const AccountPage = ({
               onChange={(event) => updateProfileField('publicEmail', event.target.value)}
             />
           </label>
+        </div>
+
+        {/* The blocks a visitor actually reads on the profile. bio is the one
+            line that fits on a card; this is everything behind it, and until
+            now only the site owner had any of it. */}
+        <div className="account-form-block">
+          <h3>{copy.creatorEditorHeading}</h3>
+          <p className="account-section-intro">{copy.creatorEditorIntro}</p>
+          <Suspense fallback={<p className="text-neutral-400">{copy.loading}</p>}>
+            <CreatorProfileEditor
+              copy={copy}
+              onChange={(next) => setProfileForm((current) => ({ ...current, ...next }))}
+              value={profileForm}
+            />
+          </Suspense>
         </div>
 
         <div className="account-form-block">

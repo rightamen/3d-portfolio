@@ -30,6 +30,7 @@ import {
   sendVerificationEmail,
 } from './emailDelivery.js'
 import { derivativeFileName, readImageMetadata, renderDerivative } from './images.js'
+import { normalizeCreatorProfileContent } from './creatorProfile.js'
 import { createInteractionsStore } from './interactionsStore.js'
 import { convertModelToGlb } from './modelConverter.js'
 import { createPostgresStores } from './postgresStores.js'
@@ -912,6 +913,10 @@ const normalizeContactLinks = (value = {}) => {
 }
 
 const normalizeAccountProfile = (body) => ({
+  // The creator's own About / Toolkit / Timeline, bounded in
+  // server/creatorProfile.js. Spread first so an explicit field below always
+  // wins over anything that happens to share a name.
+  ...normalizeCreatorProfileContent(body),
   activityPublic: body?.activityPublic !== false,
   bio: String(body?.bio ?? '').trim().slice(0, 300),
   contactLinks: normalizeContactLinks(body?.contactLinks),
