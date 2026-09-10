@@ -28,6 +28,7 @@
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
     "test:e2e:report": "playwright show-report",
+    "test:notification-journey": "node scripts/verify-notification-journey.mjs",
     "test:notifications": "node scripts/verify-notifications.mjs",
     "test:openapi": "node scripts/validate-openapi.mjs",
     "test:schema-migration": "node scripts/verify-schema-migration.mjs",

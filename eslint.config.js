@@ -52,6 +52,19 @@ export default defineConfig([
     },
   },
   {
+    // Named one by one rather than by a scripts/*browser* pattern: everything
+    // else under scripts/ is Node-only, and widening the whole directory to
+    // browser globals would hide a real `document` typo in the twenty scripts
+    // that have no browser at all.
+    files: ['scripts/verify-notification-journey.mjs'],
+    extends: [js.configs.recommended],
+    languageOptions: {
+      ecmaVersion: 'latest',
+      globals: { ...globals.node, ...globals.browser },
+      parserOptions: { sourceType: 'module' },
+    },
+  },
+  {
     // Playwright specs run in Node, but page.evaluate callbacks are serialized
     // into the browser, so both global sets are legitimately in scope.
     files: ['tests/**/*.{js,mjs}'],

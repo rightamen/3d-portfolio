@@ -27,10 +27,20 @@ const timeAgo = (copy, iso) => {
   return new Date(iso).toLocaleDateString()
 }
 
-// The kinds the platform sends. An unknown kind falls back to the stored title,
-// which is why the server does not constrain `kind` with a CHECK: a new event
-// type must not need a migration before it can be sent.
-const kindLabel = (copy, kind) => copy[`notificationKind${kind.replace(/[:-](\w)/g, (_, c) => c.toUpperCase())}`] || ''
+// The kinds the platform sends. An unknown kind falls back to nothing, which is
+// why the server does not constrain `kind` with a CHECK: a new event type must
+// not need a migration before it can be sent, and the stored title still shows.
+//
+// ⚠️ The FIRST letter has to be capitalised too. Without it, 'order:placed'
+// built `notificationKindorderPlaced`, which is in no dictionary, so every
+// notification rendered with a blank label — the line that says what actually
+// happened. Nothing threw, the title still showed, and the store tests could not
+// see it. It took walking the chain in a browser.
+const kindLabel = (copy, kind) => {
+  const camel = String(kind || '').replace(/[:-](\w)/g, (_, character) => character.toUpperCase())
+  if (!camel) return ''
+  return copy[`notificationKind${camel[0].toUpperCase()}${camel.slice(1)}`] || ''
+}
 
 const NotificationBell = ({ authToken, copy }) => {
   const [open, setOpen] = useState(false)
