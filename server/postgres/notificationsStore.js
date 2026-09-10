@@ -192,9 +192,16 @@ export const createNotificationsStore = ({ pool }) => {
              -- Publishing stamps the time; unpublishing clears it and the
              -- announcement disappears from every inbox, which is the point of
              -- being able to unpublish at all.
+             -- $5 is cast explicitly, and createAnnouncement's identical-looking
+             -- CASE is not, for a real reason: there the parameter is first
+             -- reached by WHEN, which requires a boolean and so pins the type.
+             -- Here IS NULL comes first, and IS NULL accepts anything -- so
+             -- Postgres has nothing to infer from and fails at parse time with
+             -- 42P08. Loud, but only once something calls this path, which is
+             -- why it took a verification run rather than a build to find.
              published_at = CASE
-               WHEN $5 IS NULL THEN published_at
-               WHEN $5 THEN coalesce(published_at, now())
+               WHEN $5::boolean IS NULL THEN published_at
+               WHEN $5::boolean THEN coalesce(published_at, now())
                ELSE NULL
              END,
              updated_at = now()
