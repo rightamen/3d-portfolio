@@ -291,7 +291,28 @@ GET    /api/account/downloads
 GET    /api/account/comments
 DELETE /api/account/community/uploads/:id
 DELETE /api/account/community/posts/:id
+
+GET    /api/account/notifications          # personal + published announcements
+GET    /api/account/notifications/unread   # a count only -- the bell polls this
+POST   /api/account/notifications/read     # marks everything read
+GET    /api/account/notices                # this creator's own profile notices
+POST   /api/account/notices
+DELETE /api/account/notices/:id
 ```
+
+⚠️ `PUT /api/account/profile` also carries the creator's own profile content
+since 2026-09-10 — `about`, `highlights`, `skills`, `experience`. The editor
+sends the **full set** every time, and the server treats a missing key as empty
+rather than as "leave it alone": treating it as "keep" would make deleting the
+last highlight impossible. Limits live in `server/creatorProfile.js` and the
+server truncates silently, so a client that does not show them will lose text
+without saying so.
+
+⚠️ Everything under `/api/account/notifications` and `/api/account/notices` is
+visitor-only and answers 401 without a token. `/api/admin/announcements`
+(GET / POST / PATCH / DELETE) is admin-only and reaches **every signed-in
+account** when an announcement is published — see `docs/ARCHITECTURE.md`
+§ Notifications.
 
 Target data keys:
 

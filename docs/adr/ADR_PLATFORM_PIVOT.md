@@ -177,6 +177,31 @@ written about JavaScript**, because JavaScript was what hurt in 2026-07. A
 "fast list" is not fast because it is a list. Before treating a density or
 layout complaint as a design problem, measure what the page actually downloads.
 
+**Addendum, 2026-09-10: a marketplace that did not tell anyone.**
+
+For three rounds this document described orders, entitlement, evidence and
+settlement, and every one of those descriptions was accurate. What none of them
+noticed is that **nobody was told**. A stranger could order a work and the
+creator would not learn it had happened -- there was no email, no notification,
+nothing. They had to go and look at `/account/selling` on the off-chance.
+
+Everything about the transaction was built and correct. The part that makes a
+transaction *begin* was missing, and it was missing because "notify the seller"
+is not a feature you can find by reading the schema. It only shows up if you
+walk the journey as a person rather than as a request: place an order, then ask
+what happens next. The stranger-journey walk in round 46 did exactly that and
+still missed it, because the walk was done by one operator holding both
+accounts, who therefore always already knew.
+
+The general form, and the reason it belongs in this file rather than only in a
+progress entry: **this platform's failure mode is silence, not error.** It holds
+no money, so it cannot bounce a payment. It cannot force a refund. Almost
+nothing it gets wrong produces a stack trace — a lost sale, a wrong-shaped
+banner, a 15MB thumbnail and an unnotified creator all look exactly like a quiet
+site. Round 56 recorded the measurement version of this rule; this is the
+behavioural one. Before adding to the marketplace, ask what a person would be
+waiting for, and whether anything tells them.
+
 ## 6. Money
 
 ⚠️ **Revised 2026-09-08. Stripe Connect was the decision on 2026-09-06 and it

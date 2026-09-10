@@ -48,11 +48,17 @@ Current major product areas:
   creator's own work pages and profile.
 - 3D model preview, reached deliberately rather than mounted with the page.
 - Visitor account registration, login, verification, profile, comments.
-- Public user profiles at `/u/:handle`. The site owner's carries their About,
-  Experience and Contact as well -- identified by matching the account's email
-  against `server/content.js`, because the bundled record IS the owner and no
-  second place can then disagree with it. Only a boolean leaves the server;
-  the email never does.
+- Public user profiles at `/u/:handle`. **Every** creator's carries their own
+  About, Toolkit and Timeline since 2026-09-10, written by them and stored on
+  their row -- it used to be the owner's alone, out of `server/content.js`,
+  behind an `isSiteOwner` check. What remains owner-only is the contact form,
+  because it posts to the site's own inbox, which no other creator has. The
+  owner is still identified by matching the account's email against
+  `server/content.js` -- the bundled record IS the owner, so no second place
+  can disagree with it -- and only a boolean leaves the server; the email
+  never does.
+- A creator can post short notices to their own profile, and the platform
+  notifies them when something happens to their work. See **Notifications**.
 - Community posts, comments, and uploads.
 - Admin dashboard for comments, likes, contact messages, download requests,
   projects, works, community, and visitor management.
@@ -178,6 +184,95 @@ Rules:
 - `profile_admin_disabled` overrides user-controlled public profile settings.
 - Public profile endpoints must enforce admin-disabled state server-side.
 - Audit records must be created server-side for admin moderation actions.
+- Notification endpoints are visitor-only and announcement management is
+  admin-only; both answer 401 without a token. A published announcement reaches
+  every signed-in account, which makes the admin side of it one of the few
+  routes on this server with site-wide reach.
+- A creator's notices are public on their profile, but only their owner can
+  delete one — the creator id is part of the delete, not a check before it.
+
+## Creator Profile Content (2026-09-10)
+
+The About / Toolkit / Timeline blocks on a creator page were the **site owner's
+only**: they came from `server/content.js`, rendered behind an `isSiteOwner`
+check, and no other creator had them — or any way to write them. A 300-character
+`bio` was the whole of what somebody else could say about themselves on a site
+that asks them to sell their work.
+
+Four nullable columns on `visitor_users`, one renderer for everyone, and an
+editor that saves with the rest of the profile form:
+
+| Column | Shape | Limit |
+| --- | --- | --- |
+| `about` | text, paragraphs preserved | 2000 chars |
+| `highlights` | `[{ title, body }]` | 6 cards, 60 / 240 chars |
+| `skills` | `["ZBrush", …]` | 24 entries, 40 chars |
+| `experience` | `[{ period, title, body }]` | 12 entries, 40 / 80 / 400 chars |
+
+**Single language**, unlike `content.js`'s zh/en/ja triples. Those are
+hand-maintained for one person; asking every creator to write their
+introduction three times produces one filled field and two blank ones, and a
+profile that is empty in two of the site's three languages. The accepted cost:
+the owner's existing English and Japanese text no longer renders. `content.js`
+is untouched, so it can be pasted back in by hand.
+
+Everything is authored by a stranger and rendered on a public page, so every
+field is bounded in `server/creatorProfile.js` — a length, a count, and a shape.
+Two rules worth keeping in mind when extending it:
+
+- Non-strings become `''` rather than being coerced. `String(null)` is `"null"`
+  and `String({})` is `"[object Object]"`; either would appear verbatim on
+  somebody's profile.
+- Skills de-duplicate case-insensitively. "Blender" beside "blender" reads as a
+  rendering bug, not as two tools.
+
+The character counters in the editor are not decoration: the server truncates
+silently, so a creator who cannot see the limit finds out by having their last
+sentence disappear.
+
+## Notifications (2026-09-10)
+
+Three kinds, three tables. They are **not** one table with a `kind` column,
+because they are not the same shape:
+
+| Table | Rows and readers | Read state |
+| --- | --- | --- |
+| `announcements` | one row, every reader | per `(row, reader)` in `announcement_reads` |
+| `notifications` | one row, one reader | a `read_at` column on the row |
+| `creator_notices` | public content on a profile | none — there is no recipient |
+
+Forcing them together means a nullable `user_id` that means "everyone", a
+`read_at` that is meaningless for half the rows, and a public post living in an
+inbox table. The bell merges the first two **at query time**, which is the only
+place they actually belong together.
+
+`notifications` is the one that closed a real gap: a creator had no way to learn
+a stranger had ordered their work — they had to go and look at the orders page
+on the off-chance. A sale nobody is told about is a sale the site loses. Five
+events now reach somebody: an order placed (the creator), a sale confirmed or
+refunded (the buyer), an order cancelled (the creator).
+
+Rules that matter when adding to this:
+
+- **A notification must never fail the thing it reports.** Every call is
+  fire-and-forget and the store swallows its own errors on top of that. A
+  notification is a courtesy attached to an action that already succeeded.
+- **`kind` has no CHECK constraint.** A new event type must not need a migration
+  before it can be sent; an unknown kind renders with its stored title.
+- **Unpublishing clears `published_at`**, and the announcement disappears from
+  every inbox. That is the point of being able to unpublish at all.
+- **`deleteCreatorNotice` puts `creator_id` in the WHERE**, not in a check
+  before it. Knowing an id must not be enough to remove somebody else's notice.
+- Announcements have drafts, because an announcement is the one thing on the
+  console that reaches every account at once.
+
+`npm run test:notifications` exercises all of this against a throwaway cluster —
+23 checks covering the failures that are invisible when they happen. It is how
+the `42P08` in `updateAnnouncement` was found: `$5` appeared only inside a
+`CASE` whose first branch was `IS NULL`, which accepts anything, so Postgres had
+nothing to infer the type from. `createAnnouncement`'s identical-looking `CASE`
+works because `WHEN` reaches the parameter first and requires a boolean. Neither
+the build nor the lint can see this.
 
 ## Asset Model
 

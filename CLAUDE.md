@@ -44,6 +44,15 @@
      `curl -s https://mrright.blog/api/works?page=1` 里每个 work 的
      `thumbnail` 都不能是空字符串。空的会回落到原图——不报错，
      只是目录页悄悄从 108 KB 变回 15 MB。这一条只有量才看得出来。
+   - **通知类接口不带 token 必须全是 401**（2026-09-10 起）：
+     `/api/account/notifications`、`/api/account/notifications/unread`、
+     `/api/account/notices`、`/api/admin/announcements`。
+     其中管理端那条**一次触达所有已登录账号**，是本服务上极少数
+     具有全站影响力的路由；它要是变成公开的，任何人都能给全站发公告。
+   - **`/api/users/:handle` 不能出现邮箱或 `internalId`**（2026-09-10 起）：
+     `curl -s https://mrright.blog/api/users/mrright | grep -c internalId`
+     必须是 0。创作者公告是跟着这个接口一起返回的，
+     加字段时很容易顺手把内部 id 也带出去。
 10. 数据库写操作前必须先说明 SQL 影响。
 11. 不允许 DROP DATABASE、DROP TABLE、TRUNCATE、DELETE without WHERE。
 12. Playwright 测试可以自动打开网站、登录、点击、截图，但不要把 token 或密码输出到日志。
