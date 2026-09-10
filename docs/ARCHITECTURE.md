@@ -266,13 +266,27 @@ Rules that matter when adding to this:
 - Announcements have drafts, because an announcement is the one thing on the
   console that reaches every account at once.
 
-`npm run test:notifications` exercises all of this against a throwaway cluster —
-23 checks covering the failures that are invisible when they happen. It is how
-the `42P08` in `updateAnnouncement` was found: `$5` appeared only inside a
-`CASE` whose first branch was `IS NULL`, which accepts anything, so Postgres had
-nothing to infer the type from. `createAnnouncement`'s identical-looking `CASE`
-works because `WHEN` reaches the parameter first and requires a boolean. Neither
-the build nor the lint can see this.
+Two checks cover this, and **neither is sufficient alone** — see
+`docs/TESTING.md`:
+
+- `npm run test:notifications` exercises the queries against a throwaway
+  cluster, 23 checks. It found the `42P08` in `updateAnnouncement`: `$5`
+  appeared only inside a `CASE` whose first branch was `IS NULL`, which accepts
+  anything, so Postgres had nothing to infer the type from.
+  `createAnnouncement`'s identical-looking `CASE` works because `WHEN` reaches
+  the parameter first and requires a boolean. Neither the build nor the lint can
+  see this.
+- `npm run test:notification-journey` walks the whole chain in a browser: a
+  throwaway cluster, the real server, the real built frontend, and **two
+  accounts in two separate browser contexts**. It found that every notification
+  rendered with a blank label, because the dictionary key was built without
+  capitalising the first letter — `notificationKindorderPlaced` is in no
+  dictionary, the lookup fell back to `''`, and the title still showed. The
+  query suite was green throughout; it cannot see a translation key.
+
+The two accounts are not ceremony. Round 46's stranger-journey walk was supposed
+to catch the missing seller notification and did not, because one operator held
+both sides and therefore always already knew.
 
 ## Asset Model
 

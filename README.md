@@ -1,16 +1,44 @@
-# mrright.blog 3D Portfolio
+# mrright.blog — a marketplace for 3D creators
 
-A full-stack personal portfolio for Right, built with React, Vite, Tailwind CSS,
-React Three Fiber, and a small Node/Express API.
+A full-stack site where anyone registers, publishes 3D works and sells them.
+React, Vite, Tailwind CSS, React Three Fiber, and a Node/Express API over
+PostgreSQL.
+
+⚠️ **It was a personal portfolio for one person until 2026-09-07.** Anything
+that reads as if the owner is special is either a leftover or deliberately
+scoped — `docs/adr/ADR_PLATFORM_PIVOT.md` records which, and why.
 
 ## Features
 
-- 3D hero scene with a responsive astronaut model and parallax background
-- API-powered profile, projects, experience, and skills content
-- Project, experience, about, contact, and footer sections
-- Contact form endpoint that writes messages to `data/messages.jsonl`
-- Production server that serves the Vite `dist` build and `/api/*`
+- **Publishing**: draft → review → published, multi-file works, per-account
+  storage quotas, magic-byte validation
+- **Selling, creator-direct**: the creator states how they want to be paid, the
+  buyer pays them outside the platform, the creator confirms receipt.
+  **The platform never holds money** — what it holds is an append-only record
+- **Entitlement**: one question, `ordersStore.hasEntitlement`, decides every
+  download
+- **Notifications** in three kinds: site announcements, platform-to-person
+  notices, and a creator posting to their own profile
+- **Per-creator profiles and themes**: About, Toolkit and Timeline written by
+  the creator; an accent colour applied to their pages
+- 3D model preview, reached deliberately rather than mounted with every page
+- Community posts, threaded comments and likes
+- Trilingual admin console (zh / en / ja) with moderation and an audit trail
+- Server-rendered `<head>` per route, including JSON-LD, so crawlers never
+  execute WebGL
 - VPS deployment helper for systemd-based Linux servers
+
+## Documentation
+
+| File | What it is for |
+| --- | --- |
+| `PROJECT_PROGRESS.md` | Every round: what changed, what was verified, what is still open. Read first. |
+| `docs/TESTING.md` | **What each check can see, and what it cannot.** A green suite answers its own question, not yours. |
+| `docs/ARCHITECTURE.md` | Subsystems, the permission model, the asset model |
+| `docs/adr/ADR_PLATFORM_PIVOT.md` | Why this stopped being a portfolio, and the decisions that followed |
+| `docs/API_CONTRACT.md`, `docs/API_ERRORS.md` | The HTTP contract |
+| `docs/OPERATIONS_*.md` | Deploys, backups, admin auth, client IP |
+| `CLAUDE.md` | The safety rules and the post-deploy checklist |
 
 ## Local Development
 
@@ -23,6 +51,20 @@ npm run dev:full
 
 The frontend runs on `http://localhost:5173`; Vite proxies `/api` to the
 Express server on `http://localhost:4173`.
+
+## Testing
+
+```bash
+npm run test:unit                  # pure logic, no I/O
+npm run test:api:db                # the HTTP contract against a disposable PostgreSQL
+npm run test:schema-migration      # that ensureSchema upgrades an EXISTING database
+npm run test:notifications         # the notification queries
+npm run test:notification-journey  # the whole chain, in a browser, two accounts
+```
+
+⚠️ Read `docs/TESTING.md` before trusting any of these. Each one answers a
+narrow question, and on 2026-09-10 a bug shipped past a suite that was green
+because the suite structurally could not see it.
 
 ## Production Build
 

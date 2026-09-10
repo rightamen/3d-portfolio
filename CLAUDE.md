@@ -20,6 +20,19 @@
 4. 不要 force push。
 5. 不要 reset，除非用户明确要求。
 6. 修改代码后必须运行 npm run build 和 npm run lint。
+   另外，**改到下面这些地方时，还要跑对应的检查**——
+   `npm run build` 看不见运行时才拼出来的字符串，
+   `npm run test:unit` 看不见数据库，SQL 检查看不见界面：
+   - 数据库 schema → `npm run test:schema-migration`
+     （它验的是「升级一个已有的库」，不是「建一个空库」——线上走的是前者）
+   - 通知相关 → `npm run test:notifications` **加上**
+     `npm run test:notification-journey`
+     （前者验查询，**看不见缺失的 i18n 键**；2026-09-10 就是这样漏掉了
+     「每条通知的说明行都是空的」这个 bug）
+   - 图片管线 → `npm run test:unit`（images.spec.js）
+   - API 契约 → `npm run test:api:db`
+   **每个检查能看见什么、看不见什么，写在 `docs/TESTING.md` 里。
+   绿灯只回答它自己的问题，不回答你的问题。**
 7. 部署前必须备份 /opt/mrright-portfolio。
 8. 部署前必须确认 ADMIN_TOKEN 和 DATABASE_URL 都是 [set]，但不要输出 value。
 9. 部署后必须验证：
@@ -62,6 +75,7 @@
 每次开始工作前，必须先阅读：
 
 - PROJECT_PROGRESS.md
+- 涉及测试或验证时，还要读 docs/TESTING.md（每个检查能看见什么、看不见什么）
 
 每次完成以下任务后，必须更新 PROJECT_PROGRESS.md：
 

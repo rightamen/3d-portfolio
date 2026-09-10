@@ -193,6 +193,15 @@ what happens next. The stranger-journey walk in round 46 did exactly that and
 still missed it, because the walk was done by one operator holding both
 accounts, who therefore always already knew.
 
+**Resolved 2026-09-10, and the method matters as much as the fix.** The walk is
+now `npm run test:notification-journey`, and it drives **two accounts in two
+separate browser contexts**. That is the whole correction: an operator holding
+both sides of a transaction cannot experience "nobody told me", because they
+were the one who did it. A seller learning something only counts as learning if
+the buyer is somebody else. The same run then found a second silent failure the
+query suite could not see — every notification rendered with a blank label,
+because a dictionary key was built without capitalising its first letter.
+
 The general form, and the reason it belongs in this file rather than only in a
 progress entry: **this platform's failure mode is silence, not error.** It holds
 no money, so it cannot bounce a payment. It cannot force a refund. Almost
