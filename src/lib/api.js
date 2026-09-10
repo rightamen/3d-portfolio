@@ -939,3 +939,47 @@ export const sendMessage = (payload) =>
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   })
+
+// ── Notifications ──────────────────────────────────────────────────────────
+
+export const getUnreadNotifications = (token) =>
+  request('/api/account/notifications/unread', { cache: 'no-store', headers: authHeaders(token) })
+
+export const getNotifications = (token) =>
+  request('/api/account/notifications', { cache: 'no-store', headers: authHeaders(token) })
+
+export const markNotificationsRead = (token) =>
+  request('/api/account/notifications/read', { method: 'POST', headers: authHeaders(token) })
+
+export const getCreatorNotices = (token) =>
+  request('/api/account/notices', { cache: 'no-store', headers: authHeaders(token) })
+
+export const createCreatorNotice = (token, body) =>
+  request('/api/account/notices', {
+    method: 'POST',
+    headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ body }),
+  })
+
+export const deleteCreatorNotice = (token, id) =>
+  request(`/api/account/notices/${id}`, { method: 'DELETE', headers: authHeaders(token) })
+
+export const getAdminAnnouncements = (token) =>
+  adminRequest('/api/admin/announcements', token, { cache: 'no-store' })
+
+export const createAdminAnnouncement = (token, fields) =>
+  adminRequest('/api/admin/announcements', token, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(fields),
+  })
+
+export const updateAdminAnnouncement = (token, id, fields) =>
+  adminRequest(`/api/admin/announcements/${id}`, token, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(fields),
+  })
+
+export const deleteAdminAnnouncement = (token, id) =>
+  adminRequest(`/api/admin/announcements/${id}`, token, { method: 'DELETE' })

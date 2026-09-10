@@ -49,6 +49,7 @@ const PublicProfilePage = ({ copy, language }) => {
   const { handle = '' } = useParams()
   const [activeTab, setActiveTab] = useState('overview')
   const [profile, setProfile] = useState(null)
+  const [notices, setNotices] = useState([])
   const [activity, setActivity] = useState({ comments: [], posts: [], resources: [] })
   const [works, setWorks] = useState({ error: '', items: [], loaded: false })
   const [status, setStatus] = useState(() => `loading:${handle}`)
@@ -61,6 +62,7 @@ const PublicProfilePage = ({ copy, language }) => {
       .then(async (payload) => {
         if (!isMounted) return
         setProfile(payload.profile)
+        setNotices(payload.notices || [])
 
         if (payload.profile?.profilePublic === false) {
           setActivity({ comments: [], posts: [], resources: [] })
@@ -470,6 +472,23 @@ const PublicProfilePage = ({ copy, language }) => {
               For EVERY creator now, from what they wrote -- it used to be the
               site owner's only, out of content.js, behind an isSiteOwner
               check. */}
+          {/* The creator's own notices, above the introduction: "commissions
+              open" is the thing a visitor came to find out, and an introduction
+              is the thing they can read afterwards. */}
+          {notices.length > 0 && (
+            <section className="owner-section creator-notices">
+              <p className="section-kicker">{copy.creatorNoticesKicker}</p>
+              <ul>
+                {notices.map((notice) => (
+                  <li key={notice.id}>
+                    <p>{notice.body}</p>
+                    <time>{formatDate(notice.createdAt)}</time>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
           <CreatorProfileContent
             content={profile}
             copy={copy}

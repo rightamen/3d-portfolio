@@ -149,6 +149,10 @@ const stores = process.env.DATABASE_URL
           projects.find((project) => project.slug === slug) || null,
         listProjects: async (projects) => projects.map((project) => ({ ...project, isPublic: true })),
       },
+      // Notifications are database-only for the same reason orders are: an
+      // in-memory inbox that empties on restart is worse than no inbox, because
+      // people would come to rely on it.
+      notificationsStore: null,
       ordersStore: null,
       // Works are database-only. There is no bundled fallback catalogue for
       // them the way there is for projects, and inventing an in-memory one
@@ -163,10 +167,34 @@ const {
   contactMessagesStore,
   downloadRequestsStore,
   interactionsStore,
+  notificationsStore,
   ordersStore,
   projectStore,
   worksStore,
 } = stores
+
+// Notifications are a courtesy attached to something that already succeeded --
+// an order was placed, a sale was confirmed. They must never be able to fail
+// the thing they are reporting, so every call is fire-and-forget and the store
+// swallows its own errors on top of that.
+const notify = (payload) => {
+  if (!notificationsStore) return
+  notificationsStore.notify(payload).catch((error) => {
+    console.error('Notification not delivered:', error.message)
+  })
+}
+
+const requireNotificationsStore = (_request, response, next) => {
+  if (!notificationsStore) {
+    return sendError(
+      response,
+      API_ERROR_CODES.SERVICE_UNAVAILABLE,
+      'Notifications are unavailable.',
+      503,
+    )
+  }
+  return next()
+}
 
 const setNoStoreHeaders = (response) => {
   response.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate')
@@ -1831,6 +1859,17 @@ app.post(
       return sendError(response, API_ERROR_CODES.WORK_NOT_FOUND, 'Work not found.', 404)
     }
 
+    // ⚠️ The gap that made the marketplace quietly lossy. Until this, a creator
+    // had no way to learn a stranger had ordered their work -- they had to go
+    // and look at the orders page on the off-chance.
+    notify({
+      body: request.visitorUser.displayName,
+      kind: 'order:placed',
+      link: '/account/selling',
+      title: work.title,
+      userId: work.creator?.id,
+    })
+
     return sendData(response, { order }, 201)
   },
 )
@@ -1939,6 +1978,16 @@ app.patch(
       return sendError(response, API_ERROR_CODES.RESOURCE_FORBIDDEN, 'Sale not found.', 404)
     }
 
+    // The buyer paid a stranger directly and then waited. This is the moment
+    // they find out it landed -- and, if it went the other way, that it did
+    // not.
+    notify({
+      kind: `order:${status}`,
+      link: '/account/downloads',
+      title: result.order.workTitle,
+      userId: result.order.buyerId,
+    })
+
     return sendData(response, { order: result.order })
   },
 )
@@ -1993,6 +2042,16 @@ app.patch('/api/orders/:id/cancel', requireVisitor, requireOrdersStore, async (r
     actorId: request.visitorUser.id,
     actorKind: 'buyer',
     note: String(request.body?.note ?? '').trim().slice(0, 400) || null,
+  })
+
+  // So a creator who was waiting on a payment stops waiting, rather than
+  // watching the order sit there and eventually appear in the stale list as if
+  // it were their negligence.
+  notify({
+    kind: 'order:cancelled',
+    link: '/account/selling',
+    title: result.order?.workTitle || '',
+    userId: result.order?.creatorId,
   })
 
   return sendData(response, { order: result.order })
@@ -3481,6 +3540,141 @@ app.post(
 // and non-existent profile all share one response. This is intentional: it
 // avoids leaking through the error code whether a given handle actually exists,
 // so the endpoints cannot be used to enumerate registered users.
+// ── Notifications ──────────────────────────────────────────────────────────
+
+// The bell. Two counts and nothing else, because this runs on every page for
+// every signed-in visitor.
+app.get(
+  '/api/account/notifications/unread',
+  requireVisitor,
+  requireNotificationsStore,
+  async (request, response) =>
+    sendData(response, { unread: await notificationsStore.countUnread(request.visitorUser.id) }),
+)
+
+// Personal notifications and published announcements, merged and newest first.
+app.get(
+  '/api/account/notifications',
+  requireVisitor,
+  requireNotificationsStore,
+  async (request, response) => {
+    const limit = Math.min(50, Math.max(1, Number(request.query.limit || 30)))
+    return sendData(response, await notificationsStore.listInbox(request.visitorUser.id, { limit }))
+  },
+)
+
+// Opening the bell means you have seen them. Per-item read state exists in the
+// tables and can be surfaced later if it earns its way; one action is how
+// people actually use a bell.
+app.post(
+  '/api/account/notifications/read',
+  requireVisitor,
+  requireNotificationsStore,
+  async (request, response) => {
+    await notificationsStore.markAllRead(request.visitorUser.id)
+    return sendData(response, { ok: true })
+  },
+)
+
+// ── Creator notices: a creator posting to whoever visits their profile ──────
+
+app.get(
+  '/api/account/notices',
+  requireVisitor,
+  requireNotificationsStore,
+  async (request, response) =>
+    sendData(response, {
+      notices: await notificationsStore.listCreatorNotices(request.visitorUser.id),
+    }),
+)
+
+app.post(
+  '/api/account/notices',
+  requireVisitor,
+  requireNotificationsStore,
+  async (request, response) => {
+    const body = String(request.body?.body ?? '').trim().slice(0, 600)
+    if (!body) {
+      return sendError(response, API_ERROR_CODES.VALIDATION_ERROR, 'A notice needs some text.', 400)
+    }
+
+    const notice = await notificationsStore.createCreatorNotice(request.visitorUser.id, body)
+    return sendData(response, { notice }, 201)
+  },
+)
+
+app.delete(
+  '/api/account/notices/:id',
+  requireVisitor,
+  requireNotificationsStore,
+  async (request, response) => {
+    // The creator id is part of the delete, not just a check before it:
+    // knowing an id must not be enough to remove somebody else's notice.
+    const removed = await notificationsStore.deleteCreatorNotice(
+      request.visitorUser.id,
+      request.params.id,
+    )
+    if (!removed) {
+      return sendError(response, API_ERROR_CODES.RESOURCE_FORBIDDEN, 'Notice not found.', 404)
+    }
+    return sendData(response, { ok: true })
+  },
+)
+
+// ── Announcements, for the operator ────────────────────────────────────────
+
+app.get('/api/admin/announcements', requireAdmin, requireNotificationsStore, async (_request, response) =>
+  sendData(response, {
+    announcements: await notificationsStore.listAnnouncements({ includeDrafts: true }),
+  }),
+)
+
+app.post('/api/admin/announcements', requireAdmin, requireNotificationsStore, async (request, response) => {
+  const title = String(request.body?.title ?? '').trim().slice(0, 120)
+  if (!title) {
+    return sendError(response, API_ERROR_CODES.VALIDATION_ERROR, 'An announcement needs a title.', 400)
+  }
+
+  const announcement = await notificationsStore.createAnnouncement({
+    body: String(request.body?.body ?? '').trim().slice(0, 2000),
+    link: String(request.body?.link ?? '').trim().slice(0, 300),
+    published: request.body?.published === true,
+    title,
+  })
+  return sendData(response, { announcement }, 201)
+})
+
+app.patch(
+  '/api/admin/announcements/:id',
+  requireAdmin,
+  requireNotificationsStore,
+  async (request, response) => {
+    const announcement = await notificationsStore.updateAnnouncement(request.params.id, {
+      body: request.body?.body === undefined ? undefined : String(request.body.body).trim().slice(0, 2000),
+      link: request.body?.link === undefined ? undefined : String(request.body.link).trim().slice(0, 300),
+      published: typeof request.body?.published === 'boolean' ? request.body.published : undefined,
+      title: request.body?.title === undefined ? undefined : String(request.body.title).trim().slice(0, 120),
+    })
+    if (!announcement) {
+      return sendError(response, API_ERROR_CODES.RESOURCE_FORBIDDEN, 'Announcement not found.', 404)
+    }
+    return sendData(response, { announcement })
+  },
+)
+
+app.delete(
+  '/api/admin/announcements/:id',
+  requireAdmin,
+  requireNotificationsStore,
+  async (request, response) => {
+    const removed = await notificationsStore.deleteAnnouncement(request.params.id)
+    if (!removed) {
+      return sendError(response, API_ERROR_CODES.RESOURCE_FORBIDDEN, 'Announcement not found.', 404)
+    }
+    return sendData(response, { ok: true })
+  },
+)
+
 app.get('/api/users/:handle', async (request, response) => {
   if (!authStore) {
     return sendError(response, API_ERROR_CODES.RESOURCE_FORBIDDEN, 'User profile not found.', 404)
@@ -3507,7 +3701,21 @@ app.get('/api/users/:handle', async (request, response) => {
     return sendData(response, { profile: { handle, profilePublic: false } })
   }
 
-  return sendData(response, { profile: stripInternalPublicProfile(profile) })
+  // The creator's own notices ride along with the profile rather than needing a
+  // second request: they render in the same block, and a profile page that
+  // paints and then jumps when a second response lands is worse than one that
+  // waits. Soft-fails -- a profile without its notices is still a profile.
+  //
+  // internalId is what stripInternalPublicProfile removes below, so the lookup
+  // has to happen before it does.
+  let notices = []
+  if (notificationsStore && profile.internalId) {
+    notices = await notificationsStore
+      .listCreatorNotices(profile.internalId, { limit: 10 })
+      .catch(() => [])
+  }
+
+  return sendData(response, { notices, profile: stripInternalPublicProfile(profile) })
 })
 
 app.get('/api/users/:handle/resources', async (request, response) => {

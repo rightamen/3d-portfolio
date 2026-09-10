@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 
 import AccountMenuBar from '../components/AccountMenuBar'
+import NotificationBell from '../components/NotificationBell'
 import { languages } from '../lib/i18n'
 
 // The one top bar, on every page.
@@ -13,9 +14,10 @@ import { languages } from '../lib/i18n'
 // happen to share a domain.
 //
 // Shaped on a browsing art site: brand, a short nav, search, the publish
-// action, and the account menu. Deliberately no notification bell, no cart:
-// this site has neither, and an icon that does nothing teaches people not to
-// trust the rest of the bar.
+// action, the bell and the account menu. Still deliberately no cart -- this
+// site has no basket, and an icon that does nothing teaches people not to trust
+// the rest of the bar. The bell was left out for the same reason until there
+// was something behind it; there is now.
 
 const LanguageSwitch = ({ copy, language, onLanguageChange }) => (
   <div className="language-switch" aria-label={copy.toggleLanguage}>
@@ -89,6 +91,11 @@ const Navbar = ({
             {copy.navPublish}
           </Link>
           <LanguageSwitch copy={copy} language={language} onLanguageChange={onLanguageChange} />
+          {/* The bell round fifty-four deliberately left out, now that there is
+              something behind it. It renders nothing at all for a visitor who is
+              not signed in -- an icon that does nothing is still the thing that
+              teaches people not to trust the bar. */}
+          <NotificationBell authToken={visitorToken} copy={copy} />
           <AccountMenuBar copy={copy} onSignOut={onVisitorLogout} visitorUser={visitorUser} />
         </div>
 

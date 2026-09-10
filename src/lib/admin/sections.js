@@ -20,6 +20,7 @@ export const sections = [
   { group: 'moderation', icon: 'messages', key: 'messages' },
   { group: 'people', icon: 'visitors', key: 'visitors' },
   { group: 'people', icon: 'likes', key: 'likes' },
+  { group: 'operations', icon: 'messages', key: 'announcements' },
   { group: 'operations', icon: 'security', key: 'security' },
   { group: 'operations', icon: 'system', key: 'system' },
 ]

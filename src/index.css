@@ -2164,6 +2164,97 @@ select option:checked {
   @apply flex justify-end gap-2;
 }
 
+/* The bell, and the panel behind it. */
+.topbar-notify {
+  @apply relative;
+}
+
+.topbar-bell {
+  @apply relative flex size-10 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-neutral-300 transition duration-200 hover:border-aqua/50 hover:text-white;
+}
+
+/* Never zero: the badge only exists when there is a count, so an empty bell
+   stays an empty bell rather than one wearing a 0. */
+.topbar-bell-dot {
+  @apply absolute -right-0.5 -top-0.5 flex min-w-5 items-center justify-center rounded-full px-1 text-[0.62rem] font-bold text-[#031014];
+  background: var(--color-aqua, #33c2cc);
+}
+
+.topbar-notify-panel {
+  @apply absolute right-0 top-[calc(100%+0.6rem)] z-50 flex max-h-[70vh] w-80 flex-col overflow-y-auto rounded-lg border border-white/10 py-2 shadow-2xl;
+  background: #0d1122;
+}
+
+.topbar-notify-head {
+  @apply px-4 pb-2 pt-1 text-sm font-semibold text-white;
+}
+
+.topbar-notify-empty {
+  @apply px-4 py-3 text-sm text-neutral-500;
+}
+
+.topbar-notify-panel a,
+.topbar-notify-panel > div[role='menuitem'] {
+  @apply grid gap-0.5 px-4 py-2.5 text-left transition-colors duration-150;
+}
+
+.topbar-notify-panel a:hover {
+  @apply bg-white/[0.07];
+}
+
+.topbar-notify-unread {
+  border-left: 2px solid var(--color-aqua, #33c2cc);
+}
+
+.topbar-notify-kind {
+  @apply text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-aqua;
+}
+
+.topbar-notify-panel strong {
+  @apply truncate text-sm font-semibold text-white;
+}
+
+.topbar-notify-body {
+  @apply truncate text-xs text-neutral-400;
+}
+
+.topbar-notify-panel time {
+  @apply text-[0.68rem] text-neutral-500;
+}
+
+/* A creator's notices, at the top of their profile. */
+.creator-notices ul {
+  @apply grid gap-2;
+}
+
+.creator-notices li {
+  @apply grid gap-1 rounded-lg border border-white/10 p-4;
+  background: linear-gradient(180deg, rgba(51, 194, 204, 0.12), rgba(17, 23, 42, 0.8));
+}
+
+.creator-notices p {
+  @apply whitespace-pre-line leading-relaxed text-neutral-200;
+}
+
+.creator-notices time {
+  @apply text-xs text-neutral-500;
+}
+
+/* The announcement composer in the admin console. */
+.admin-announcement-form {
+  @apply mb-4 grid gap-2 rounded-lg border border-white/10 bg-white/[0.03] p-4;
+}
+
+.admin-announcement-form input,
+.admin-announcement-form textarea {
+  @apply min-h-10 w-full rounded-md border border-white/10 bg-white/[0.05] px-3 py-2 text-sm text-white outline-none placeholder:text-neutral-500;
+}
+
+.admin-announcement-form input:focus,
+.admin-announcement-form textarea:focus {
+  @apply border-aqua/50;
+}
+
 /* A creator's own About / Toolkit / Timeline, on their profile. */
 .creator-profile-content h2 {
   @apply mb-1;

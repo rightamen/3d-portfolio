@@ -755,6 +755,93 @@ export const ensureSchema = async (pool) => {
 
     CREATE INDEX IF NOT EXISTS order_events_order_idx
       ON order_events (order_id, created_at);
+
+    -- ── Notifications ────────────────────────────────────────────────────
+    --
+    -- Three kinds were asked for, and they are three tables rather than one
+    -- with a kind column, because they are not the same shape:
+    --
+    --   announcements    one row, every reader          -> read state is per
+    --                                                      (row, reader)
+    --   notifications    one row, one reader            -> read state is a
+    --                                                      column on the row
+    --   creator_notices  public content on a profile    -> no reader, no read
+    --                                                      state at all
+    --
+    -- Forcing them together means a nullable user_id that means "everyone", a
+    -- read_at that is meaningless for half the rows, and a public post sitting
+    -- in an inbox table. The bell merges the first two at query time, which is
+    -- the only place they actually belong together.
+
+    -- Published by an operator, read by everyone.
+    CREATE TABLE IF NOT EXISTS announcements (
+      id text PRIMARY KEY,
+      title text NOT NULL,
+      body text NOT NULL DEFAULT '',
+      link text,
+      -- NULL means drafted but not published. A draft is invisible to
+      -- everybody, which is what makes it safe to write one in advance.
+      published_at timestamptz,
+      created_by text REFERENCES admin_users(id) ON DELETE SET NULL,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    );
+
+    CREATE INDEX IF NOT EXISTS announcements_published_idx
+      ON announcements (published_at DESC)
+      WHERE published_at IS NOT NULL;
+
+    -- Per-reader read state for a row that has many readers. A row here means
+    -- "this person has seen it"; its absence means unread, so nothing has to be
+    -- written when an announcement is published.
+    CREATE TABLE IF NOT EXISTS announcement_reads (
+      announcement_id text NOT NULL REFERENCES announcements(id) ON DELETE CASCADE,
+      user_id text NOT NULL REFERENCES visitor_users(id) ON DELETE CASCADE,
+      read_at timestamptz NOT NULL DEFAULT now(),
+      PRIMARY KEY (announcement_id, user_id)
+    );
+
+    -- The platform telling one person something happened.
+    --
+    -- This is the gap that made the marketplace quietly lossy: a creator had no
+    -- way to learn a stranger had ordered their work. They had to go and look.
+    CREATE TABLE IF NOT EXISTS notifications (
+      id text PRIMARY KEY,
+      user_id text NOT NULL REFERENCES visitor_users(id) ON DELETE CASCADE,
+      -- 'order:placed' | 'order:paid' | 'order:cancelled' | 'work:approved' |
+      -- 'work:rejected'. Free text rather than a CHECK: a new event type must
+      -- not need a migration before it can be sent, and an unknown kind renders
+      -- with its stored title either way.
+      kind text NOT NULL,
+      title text NOT NULL,
+      body text NOT NULL DEFAULT '',
+      -- Where to go when it is clicked. Always a path on this site.
+      link text,
+      read_at timestamptz,
+      created_at timestamptz NOT NULL DEFAULT now()
+    );
+
+    CREATE INDEX IF NOT EXISTS notifications_user_idx
+      ON notifications (user_id, created_at DESC);
+
+    -- Counting unread is the query the bell runs on every page, so it gets its
+    -- own partial index rather than scanning a person's whole history.
+    CREATE INDEX IF NOT EXISTS notifications_unread_idx
+      ON notifications (user_id)
+      WHERE read_at IS NULL;
+
+    -- A creator posting to whoever visits their profile. Public content, not an
+    -- inbox item: there is no recipient and nothing to mark read.
+    CREATE TABLE IF NOT EXISTS creator_notices (
+      id text PRIMARY KEY,
+      creator_id text NOT NULL REFERENCES visitor_users(id) ON DELETE CASCADE,
+      body text NOT NULL,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    );
+
+    CREATE INDEX IF NOT EXISTS creator_notices_creator_idx
+      ON creator_notices (creator_id, created_at DESC);
   `)
 
   // A ticket that names neither a project nor a work authorises nothing and

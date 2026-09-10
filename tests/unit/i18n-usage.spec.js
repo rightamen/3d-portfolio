@@ -58,6 +58,7 @@ describe('site dictionary keys referenced from the code', () => {
       'accountContact',
       'accountStudioStatus',
       'communityTopic',
+      'notificationKind',
     ])
   })
 

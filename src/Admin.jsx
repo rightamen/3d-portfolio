@@ -20,6 +20,10 @@ import {
   getAdminDownloadRequests,
   getAdminOrderEvents,
   getAdminOrders,
+  getAdminAnnouncements,
+  createAdminAnnouncement,
+  updateAdminAnnouncement,
+  deleteAdminAnnouncement,
   getAdminStaleOrders,
   updateAdminOrderStatus,
   getAdminLikes,
@@ -52,6 +56,7 @@ import AdminIcon from './components/admin/AdminIcon'
 import AdminLikesSection from './components/admin/AdminLikesSection'
 import AdminMembersSection from './components/admin/AdminMembersSection'
 import AdminMessagesSection from './components/admin/AdminMessagesSection'
+import AdminAnnouncementsSection from './components/admin/AdminAnnouncementsSection'
 import AdminOrdersSection from './components/admin/AdminOrdersSection'
 import AdminProjectEditor from './components/admin/AdminProjectEditor'
 import AdminProjectsSection from './components/admin/AdminProjectsSection'
@@ -126,6 +131,7 @@ const Admin = () => {
     orders: [],
     projects: [],
     requests: [],
+    announcements: [],
     staleOrders: [],
     visitors: [],
     visitorPagination: { page: 1, pages: 1, total: 0 },
@@ -195,6 +201,7 @@ const Admin = () => {
         requestsPayload,
         ordersPayload,
         staleOrdersPayload,
+        announcementsPayload,
         projectsPayload,
         visitorsPayload,
         overviewPayload,
@@ -212,6 +219,7 @@ const Admin = () => {
           // should cost the operator the orders list, not the whole console.
           getAdminOrders(activeToken).catch(() => ({ orders: [] })),
           getAdminStaleOrders(activeToken).catch(() => ({ orders: [] })),
+          getAdminAnnouncements(activeToken).catch(() => ({ announcements: [] })),
           getAdminProjects(activeToken),
           getAdminVisitors(activeToken, visitorFilters),
           // Soft-fails on purpose. A server that predates this route, or a
@@ -221,6 +229,7 @@ const Admin = () => {
         ])
 
       setData({
+        announcements: announcementsPayload.announcements || [],
         comments: commentsPayload.comments || [],
         communityComments: communityCommentsPayload.comments || [],
         communityPosts: communityPostsPayload.posts || [],
@@ -472,6 +481,16 @@ const Admin = () => {
     setActionMessage('')
     try {
       await updateAdminOrderStatus(token, id, nextStatus)
+      await loadAdminData(token)
+    } catch (error) {
+      setActionMessage(error.message || t('shell.requestFailed'))
+    }
+  }
+
+  const runAnnouncementAction = async (task) => {
+    setActionMessage('')
+    try {
+      await task()
       await loadAdminData(token)
     } catch (error) {
       setActionMessage(error.message || t('shell.requestFailed'))
@@ -1342,6 +1361,23 @@ const Admin = () => {
               onUpdateStatus={updateOrderStatus}
               orders={data.orders}
               staleOrders={data.staleOrders}
+            />
+          )}
+
+          {activeSection === 'announcements' && (
+            <AdminAnnouncementsSection
+              announcements={data.announcements}
+              onCreate={(fields) =>
+                runAnnouncementAction(() => createAdminAnnouncement(token, fields))
+              }
+              onDelete={(announcement) =>
+                deleteItem('entity.announcement', () =>
+                  deleteAdminAnnouncement(token, announcement.id),
+                )
+              }
+              onUpdate={(id, fields) =>
+                runAnnouncementAction(() => updateAdminAnnouncement(token, id, fields))
+              }
             />
           )}
 

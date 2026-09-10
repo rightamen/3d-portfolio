@@ -70,6 +70,7 @@ const createProfileForm = (profile = {}) => ({
 
 // Only ever mounted while someone is actually cropping, which is a rare
 // moment in a long-lived page.
+const CreatorNoticesPanel = lazy(() => import('../components/CreatorNoticesPanel'))
 const CreatorProfileEditor = lazy(() => import('../components/CreatorProfileEditor'))
 const ImageCropDialog = lazy(() => import('../components/ImageCropDialog'))
 const SellerPanel = lazy(() => import('../components/SellerPanel'))
@@ -83,6 +84,7 @@ const accountTabs = [
   { key: 'community', labelKey: 'accountNavCommunity' },
   { key: 'works', labelKey: 'accountNavWorks' },
   { key: 'selling', labelKey: 'accountNavSelling' },
+  { key: 'notices', labelKey: 'accountNavNotices' },
   { key: 'settings', labelKey: 'accountNavSettings' },
   { key: 'security', labelKey: 'accountSecurityTitle' },
 ]
@@ -1606,6 +1608,12 @@ const AccountPage = ({
           // nobody visiting /account for a download needs any of them.
           <Suspense fallback={<p className="text-neutral-400">{copy.loading}</p>}>
             <SellerPanel authToken={authToken} copy={copy} />
+          </Suspense>
+        )
+      case 'notices':
+        return (
+          <Suspense fallback={<p className="text-neutral-400">{copy.loading}</p>}>
+            <CreatorNoticesPanel authToken={authToken} copy={copy} language={language} />
           </Suspense>
         )
       case 'settings':
