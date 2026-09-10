@@ -1,6 +1,94 @@
 # mrright.blog 项目进度记录
 
-## 下次从这里继续（截至 2026-09-10 第六十轮收工）
+## 下次从这里继续（截至 2026-09-10 第六十一轮收工）
+
+### 2026-09-10（第六十一轮）：通知模块，三种一起
+
+你要的三种全部建好并上线。
+
+⚠️ **三张表，不是一张带 `kind` 列的表**，因为它们不是同一种形状：
+
+| 表 | 行与读者 | 已读状态 |
+|---|---|---|
+| `announcements` | 一行，所有人读 | 在 `(行, 读者)` 上 |
+| `notifications` | 一行，一个人读 | 是行上的一列 |
+| `creator_notices` | 主页上的公开内容 | **没有读者，也没有已读** |
+
+硬塞成一张的代价是：一个「NULL 表示所有人」的 `user_id`、
+一个对一半行毫无意义的 `read_at`、一条公开帖子躺在收件箱表里。
+铃铛在**查询时**把前两种合并——那是它们唯一真正该在一起的地方。
+
+⚠️ **`notifications` 是市集真正缺的那一块。** 在此之前，创作者
+**没有任何途径知道有陌生人下了单**，只能自己去订单页碰运气。
+没人告知的成交，就是这个站悄悄丢掉的成交。
+现在五件事会通知到人：下单（创作者）、确认收款/退款（买家）、取消（创作者）。
+
+⚠️ **通知是附赠品，绝不能拖累它所报告的动作。** 每次调用都是
+fire-and-forget，store 内部再吞一次异常。通知失败绝不能回滚那笔订单。
+
+⚠️ **铃铛**：第 54 轮我特意没做它，理由是「一个点了没反应的图标会教会
+用户不要相信这条栏里的其它东西」。**那个理由没变，变的是它后面现在有东西了。**
+未登录完全不渲染；没有未读时不显示角标。购物车依然没有——本站没有购物车。
+
+⚠️ **公告有草稿。** 公告是这个控制台上唯一一次触达所有账号的东西，
+在「写」的框里同时「发」，正是半截话发向全站的方式。撤回会清掉
+`published_at`，公告从所有人的收件箱里消失——这才是撤回的意义。
+
+⚠️ **`deleteCreatorNotice` 把 `creator_id` 放进 WHERE**，而不是先查后删：
+**知道一个 id 不能等于可以删掉别人的公告。**
+
+⚠️ **验证脚本抓到一个 build/lint/类型检查都看不见的真 bug**：
+`updateAnnouncement` 在解析期就失败（42P08，`$5` 类型无法确定）。
+有意思的是为什么 `createAnnouncement` 里长得一模一样的 CASE 没事——
+那里参数先被 `WHEN` 用到，`WHEN` 要求布尔值，于是类型被钉住了；
+这里 `IS NULL` 在前，而 `IS NULL` 接受任何东西，Postgres 无从推断。
+**只有真的调用这条路径才会暴露**，所以才需要这个脚本。
+
+完成内容：
+
+- `server/postgres/schema.js`：4 张新表 + 3 个索引（含未读用的部分索引）
+- `server/postgres/notificationsStore.js`：新增
+- `server/postgresStores.js` / `server/index.js`：注册；12 条路由；5 个触发点
+- `src/components/NotificationBell.jsx`：新增，顶栏铃铛
+- `src/components/CreatorNoticesPanel.jsx`：新增，创作者公告编辑
+- `src/components/admin/AdminAnnouncementsSection.jsx`：新增，站点公告
+- `src/sections/Navbar.jsx` / `src/pages/{AccountPage,PublicProfilePage}.jsx` / `src/Admin.jsx`：接线
+- `src/lib/api.js`：11 个接口；`src/lib/admin/sections.js`：新导航项
+- `src/index.css` / `src/lib/i18n.js` / `src/lib/admin/i18nAdmin.js`：样式与 35 键 × 3 语言
+- `scripts/verify-notifications.mjs`：新增，`npm run test:notifications`
+- `tests/unit/i18n-usage.spec.js`、`tests/unit/admin-logic.spec.js`：前缀与分组清单
+
+commit：`bb78a3c`（模块）、`8e0ab93`（42P08 修复）
+
+验证结果：
+
+- `npm run build` / `lint`：通过
+- `npm run test:unit`：348 通过
+- `npm run test:api:db`：196 通过
+- `npm run test:schema-migration`：通过，干净且幂等
+- **`npm run test:notifications`：23 项全过**（一次性集群，不碰生产）
+- ⚠️ 管理台的分组断言抓到我一个真错误：新导航项写着 operations 组，
+  却夹在 moderation 那几项中间——那条断言就是为这个钉住的
+- VPS 部署：成功；线上确认 4 张表 + 7 个索引就位
+- 鉴权：`/api/account/notifications` 与 `/api/admin/announcements`
+  不带 token 均返回 **401**
+- 接口验证：`CLAUDE.md` 第 9 条完整清单全过，含 301、`qrUrl`/`methods`（各 0）、
+  thumbnail（4/4 ✓）；`/api/users/mrright` 已带 `notices` 字段
+
+备份路径：应用见部署日志；本轮无数据库写入
+
+待办事项：
+
+- 通知的**端到端**（真下单 → 铃铛出现红点）还没在浏览器里走过，
+  需要两个真实账号；store 层 23 项已验证，UI 层是 stub 会话验证过的
+- 站主的 en/ja 自我介绍目前不渲染（第 60 轮记录），要恢复得手工贴进编辑器
+- 需要你的账号：外部 uptime 服务
+- 需要主体资质：平台收款
+- 全站 4 件作品、1 个创作者
+
+---
+
+## 2026-09-10（第六十轮）
 
 ### 2026-09-10（第六十轮）：创作者写自己的主页（通知模块待做）
 
