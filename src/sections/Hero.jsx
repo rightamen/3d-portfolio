@@ -8,7 +8,7 @@ import ModelErrorBoundary from '../components/ModelErrorBoundary'
 import { Astronaut } from '../three/objects/Astronaut'
 import ParallaxBackground from '../three/scenes/ParallaxBackground'
 
-const Hero = ({ copy, language, ownerHandle, profile, status }) => {
+const Hero = ({ copy, language, visitorToken }) => {
   const [dpr, setDpr] = useState(1.5)
   const isMobile = useMediaQuery({ maxWidth: 853 })
   const prefersReducedMotion = useMediaQuery({ query: '(prefers-reduced-motion: reduce)' })
@@ -20,7 +20,7 @@ const Hero = ({ copy, language, ownerHandle, profile, status }) => {
   // screen.
   return (
     <section className="hero-stage c-space relative flex min-h-[68vh] items-start justify-center overflow-hidden md:min-h-[74vh] md:justify-start">
-      <HeroText copy={copy} language={language} ownerHandle={ownerHandle} profile={profile} status={status} />
+      <HeroText copy={copy} language={language} visitorToken={visitorToken} />
       <ParallaxBackground />
       <figure
         className="pointer-events-none absolute inset-0"

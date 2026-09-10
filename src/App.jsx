@@ -1,10 +1,9 @@
-import { Suspense, lazy, useCallback, useEffect, useState } from 'react'
+import { Suspense, lazy, useEffect, useState } from 'react'
 import {
   BrowserRouter,
   Route,
   Routes,
   useLocation,
-  useMatch,
   useNavigationType,
 } from 'react-router-dom'
 import {
@@ -23,7 +22,6 @@ import {
 } from './lib/api'
 import { getCopy, getInitialLanguage } from './lib/i18n'
 import Navbar from './sections/Navbar'
-import PublishCta from './components/PublishCta'
 
 const AuthPage = lazy(() => import('./pages/AuthPage'))
 const AccountPage = lazy(() => import('./pages/AccountPage'))
@@ -65,50 +63,14 @@ const ScrollToTop = () => {
   return null
 }
 
-// A shared project link opens the detail panel on top of the homepage. The
-// panel is 9 KB of chunk; the 3D hero behind it pulls 971 KB of three.js, and
-// on HTTP/2 those requests are multiplexed -- the engine nobody is looking at
-// takes bandwidth from the thing the link was shared for.
+// The hero deferral that used to live here is gone.
 //
-// Measured against production with scripts/measure-project-link.mjs, five
-// interleaved pairs: 10.1s median normally, 7.2s with three.js held back, and
-// the spread collapses from 7.4-17.7s to 6.7-8.0s.
-//
-// So on a *cold load* of a project URL the hero waits until the panel it sits
-// behind has actually rendered. Only a cold load: arriving from the grid means
-// the hero is already mounted, and unmounting it there would tear down the 3D
-// scene that round twenty-four kept alive on purpose.
-//
-// The signal comes up from ProjectDetail rather than from a page-level event,
-// and that is the part worth keeping. Round twenty-six tried requestIdleCallback
-// and measured nothing; the first attempt at this round tried `document
-// .readyState` and the window load event, and also deferred nothing -- because
-// React's first render is scheduled, so by the time HomePage mounts the load
-// event has usually already fired. The only thing that reliably means "the
-// panel is up" is the panel saying so.
-const useDeferredHero = () => {
-  const projectRoute = useMatch('/projects/:slug')
-  const [ready, setReady] = useState(() => !projectRoute)
-  // Stable, so the effect that calls it in ProjectDetail runs once.
-  const release = useCallback(() => setReady(true), [])
-
-  useEffect(() => {
-    // One-way: once the hero is in, it stays in.
-    if (ready) return undefined
-
-    // Ceiling, for the case where the panel never arrives at all. It is
-    // deliberately long: the first version used 6s and a production waterfall
-    // caught it firing at 11.3s on a slow link while the panel landed at 12.9s
-    // -- releasing the hero into the middle of the fetch it was supposed to
-    // stay out of, on exactly the connection where that costs most. The slower
-    // the link, the longer the hero should wait, so this only exists to stop
-    // the deferral from being permanent.
-    const timer = window.setTimeout(release, 15000)
-    return () => window.clearTimeout(timer)
-  }, [ready, release])
-
-  return [ready, release]
-}
+// It held the 3D hero back on a cold load of /projects/:slug so the detail
+// panel could have the bandwidth -- measured, and it worked: 10.1s median down
+// to 7.2s. Then that route started answering 301 at the server and nothing
+// links to it any more, so `useMatch` never matched and `ready` started true
+// on every render. Dead since then, and kept one round longer only so it would
+// be removed deliberately rather than rediscovered as a mystery.
 
 // The homepage owns its own data. It used to live in App behind a
 // `pathname !== '/'` guard, which existed only because every route shared one
@@ -124,16 +86,6 @@ const HomePage = ({ copy, language, visitorToken }) => {
     experience: [],
   })
   const [status, setStatus] = useState('loading')
-  // Only the flag now. `release` was handed to Projects, which no longer has a
-  // detail panel to signal from.
-  //
-  // ⚠️ The whole deferral is in fact inert: it exists to hold the 3D hero back
-  // while a /projects/:slug panel loads, and that route 301s at the server
-  // with nothing linking to it, so useMatch never matches and `ready` starts
-  // true. Left in place rather than ripped out mid-redesign; noted so it is
-  // removed deliberately rather than discovered again.
-  const [heroReady] = useDeferredHero()
-
   useEffect(() => {
     let isMounted = true
 
@@ -190,39 +142,31 @@ const HomePage = ({ copy, language, visitorToken }) => {
 
   return (
     <div id="home" className="site-home min-h-screen overflow-hidden">
-      {heroReady ? (
-        <Suspense fallback={<SectionFallback title="Hero" copy={copy} />}>
-          <Hero
-            copy={copy}
-            language={language}
-            ownerHandle={siteData.ownerHandle}
-            profile={siteData.profile}
-            status={status}
-          />
-        </Suspense>
-      ) : (
-        // The same placeholder the Suspense boundary uses, so the deferred case
-        // holds the same space rather than the page jumping when it arrives.
-        <SectionFallback title="Hero" copy={copy} />
-      )}
+      <Suspense fallback={<SectionFallback title="Hero" copy={copy} />}>
+        {/* No profile prop: the front door stopped being one person's
+            introduction. */}
+        <Hero copy={copy} language={language} visitorToken={visitorToken} />
+      </Suspense>
       <main className="relative z-10 mx-auto max-w-7xl">
-        <Suspense fallback={<SectionFallback title="About" copy={copy} />}>
-        </Suspense>
+        {/* The publish banner that used to sit here is gone: the hero's second
+            button and the top bar's Publish already say it, and three calls to
+            publish inside 800px is the same "more site than there is" problem
+            as a toolbar icon that does nothing. It stays on /explore, which has
+            no hero to carry it. */}
         <Suspense fallback={<SectionFallback title="Projects" copy={copy} />}>
-          <PublishCta authToken={visitorToken} copy={copy} />
-
+          {/* status, so the grid can tell "nobody has published in this
+              category" apart from "the catalogue did not load" -- an empty grid
+              with a cheerful empty state is how a fetch failure looks like a
+              quiet site. */}
           <Projects
             copy={copy}
             language={language}
             projects={siteData.projects}
+            status={status}
           />
         </Suspense>
         <Suspense fallback={<SectionFallback title="Community" copy={copy} />}>
-          <Community copy={copy} />
-        </Suspense>
-        <Suspense fallback={<SectionFallback title="Experience" copy={copy} />}>
-        </Suspense>
-        <Suspense fallback={<SectionFallback title="Contact" copy={copy} />}>
+          <Community copy={copy} language={language} />
         </Suspense>
         <Suspense fallback={null}>
           <Footer profile={siteData.profile} copy={copy} />

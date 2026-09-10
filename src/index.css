@@ -150,10 +150,6 @@ select option:checked {
   @apply hover:-translate-y-1 duration-200;
 }
 
-.section-space {
-  @apply min-h-screen mt-20 md:mt-30;
-}
-
 .text-heading {
   @apply font-bold text-3xl md:text-4xl max-w-3xl;
 }
@@ -972,41 +968,29 @@ select option:checked {
   @apply text-xs text-neutral-500;
 }
 
-.community-entry-card {
-  @apply mt-8 grid gap-6 rounded-lg border border-white/10 bg-[#101321]/80 p-6 md:grid-cols-[1.1fr_0.9fr] md:p-8;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+/* Real posts, not a panel describing that posts exist. */
+.community-feed {
+  @apply mt-8 grid gap-2 md:grid-cols-2;
 }
 
-.community-entry-copy {
-  @apply grid content-start gap-4;
+.community-feed li a {
+  @apply grid gap-1 rounded-lg border border-white/10 bg-[#101321]/80 p-4 transition duration-200 hover:-translate-y-0.5 hover:border-aqua/40;
 }
 
-.community-entry-copy h3 {
-  @apply text-2xl font-semibold text-white;
+.community-feed-topic {
+  @apply text-xs font-semibold uppercase tracking-[0.16em] text-aqua;
 }
 
-.community-entry-copy p {
-  @apply leading-relaxed text-neutral-400;
+.community-feed li strong {
+  @apply truncate text-base font-semibold text-white;
+}
+
+.community-feed-meta {
+  @apply text-xs text-neutral-500;
 }
 
 .community-entry-actions {
-  @apply mt-2 flex flex-wrap gap-3;
-}
-
-.community-entry-highlights {
-  @apply grid content-start gap-3;
-}
-
-.community-entry-highlights li {
-  @apply grid gap-1 rounded-lg border border-white/10 bg-black/20 p-4;
-}
-
-.community-entry-highlights strong {
-  @apply text-sm font-semibold text-white;
-}
-
-.community-entry-highlights span {
-  @apply text-xs leading-relaxed text-neutral-400;
+  @apply mt-6 flex flex-wrap gap-3;
 }
 
 .community-page {
@@ -2226,8 +2210,12 @@ select option:checked {
   @apply p-6 bg-gradient-to-b from-storm to-indigo rounded-2xl;
 }
 
+/* Was from-royal to-lavender -- a bright purple card in the middle of an
+   aqua-on-near-black site, inherited from the template this project started
+   from. It read as a different site's component. */
 .grid-special-color {
-  @apply p-6 bg-gradient-to-b from-royal to-lavender rounded-2xl;
+  @apply p-6 rounded-2xl;
+  background: linear-gradient(180deg, rgba(51, 194, 204, 0.22), rgba(31, 30, 57, 0.9));
 }
 
 .grid-black-color {
@@ -2750,8 +2738,7 @@ body {
 .asset-category-summary,
 .project-card,
 .timeline-panel,
-.contact-panel,
-.community-entry-card {
+.contact-panel {
   background: linear-gradient(180deg, rgba(17, 23, 42, 0.76), rgba(7, 10, 24, 0.68));
   border-color: rgba(255, 255, 255, 0.11);
   box-shadow:

@@ -1,17 +1,42 @@
 import { Link } from 'react-router-dom'
 import { motion as Motion } from 'motion/react'
 import { FlipWords } from './FlipWords'
-import { pickLocalized } from '../lib/i18n'
 
-const HeroText = ({ copy, language, ownerHandle, profile, status }) => {
-  const words = copy.heroWords
-  const name = profile?.name || 'Right'
-  const title = pickLocalized(profile, 'title', language) || copy.heroTitle
-
+// The front door.
+//
+// It used to read "Hi, I am Right" -- a personal portfolio greeting, on the
+// homepage of a place anyone can register, publish and sell in. A stranger
+// landing here was told about one person instead of what the site is, and the
+// second button sent them to that person's contact form.
+//
+// The personal introduction did not disappear; it moved to /u/mrright with the
+// rest of the owner's sections, which is where it belongs and where it now
+// reads correctly. This says what the site is and offers the two things there
+// are to do: look at work, or put work up.
+//
+// It takes no profile prop any more. The homepage hero no longer depends on
+// one account's data at all -- which is the actual shape of the pivot, not
+// just its wording.
+const HeroText = ({ copy, language, visitorToken }) => {
   const variants = {
     hidden: { opacity: 0, x: -50 },
     visible: { opacity: 1, x: 0 },
   }
+
+  // Publishing needs an account, so an anonymous visitor is sent to sign in
+  // rather than to a page that will tell them to sign in.
+  const publishTo = visitorToken ? '/account/works' : '/login?mode=login'
+
+  const actions = (
+    <>
+      <Link className="primary-action" to="/explore">
+        {copy.heroBrowse}
+      </Link>
+      <Link className="secondary-action" to={publishTo}>
+        {copy.heroPublish}
+      </Link>
+    </>
+  )
 
   return (
     <div className="hero-copy relative z-10 mt-20 max-w-4xl rounded-3xl bg-clip-text text-center drop-shadow-[0_3px_18px_rgba(0,0,0,0.65)] md:mt-40 md:text-left">
@@ -21,135 +46,86 @@ const HeroText = ({ copy, language, ownerHandle, profile, status }) => {
           variants={variants}
           initial="hidden"
           animate="visible"
-          transition={{ delay: 0.8 }}
+          transition={{ delay: 0.6 }}
         >
-          mrright.blog / {copy.projectsKicker}
+          {copy.heroEyebrow}
         </Motion.span>
-        <Motion.h1
-          className="hero-greeting text-4xl font-medium"
-          variants={variants}
-          initial="hidden"
-          animate="visible"
-          transition={{ delay: 1 }}
-        >
-          {copy.heroGreeting} {name}
-        </Motion.h1>
 
         <div className="flex flex-col items-start">
-          <Motion.p
-            className="hero-statement mt-5 text-5xl font-medium text-neutral-300"
+          <Motion.h1
+            className="hero-statement text-5xl font-medium text-neutral-100"
             variants={variants}
             initial="hidden"
             animate="visible"
-            transition={{ delay: 1.2 }}
+            transition={{ delay: 0.8 }}
           >
-            {copy.heroLine1}
+            {copy.heroHeadline1}
             <br />
-            {copy.heroLine2}
-          </Motion.p>
+            {copy.heroHeadline2}
+          </Motion.h1>
 
+          {/* The words are the site's real asset categories, and every one of
+              them is a filter that returns something. */}
           <Motion.div
             className="hero-flip"
             variants={variants}
             initial="hidden"
             animate="visible"
-            transition={{ delay: 1.5 }}
+            transition={{ delay: 1.1 }}
           >
-            <FlipWords key={language} words={words} className="text-6xl font-black text-white" />
+            <FlipWords key={language} words={copy.heroWords} className="text-6xl font-black text-white" />
           </Motion.div>
 
           <Motion.p
-            className="hero-subtitle mt-3 max-w-2xl text-2xl font-medium leading-relaxed text-neutral-300"
+            className="hero-subtitle mt-3 max-w-2xl text-xl font-medium leading-relaxed text-neutral-300"
             variants={variants}
             initial="hidden"
             animate="visible"
-            transition={{ delay: 1.8 }}
+            transition={{ delay: 1.4 }}
           >
-            {title}
+            {copy.heroLead}
           </Motion.p>
+
           <Motion.div
             className="mt-7 flex items-center gap-3"
             variants={variants}
             initial="hidden"
             animate="visible"
-            transition={{ delay: 2 }}
+            transition={{ delay: 1.6 }}
           >
-            <a href="#projects" className="primary-action">
-              {copy.heroProjects}
-            </a>
-            {/* Contact moved to the owner's profile with the rest of their
-                personal sections. Rendered only when there is a profile to send
-                someone to -- a button that scrolls to a section which no longer
-                exists is worse than no button. */}
-            {ownerHandle && (
-              <Link className="secondary-action" to={`/u/${ownerHandle}`}>
-                {copy.heroContact}
-              </Link>
-            )}
+            {actions}
           </Motion.div>
         </div>
       </div>
 
       <div className="hero-mobile-copy flex max-w-[21rem] flex-col space-y-4 md:hidden">
-        <span className="hero-eyebrow">mrright.blog / {copy.projectsKicker}</span>
-        <Motion.p
-          className="text-3xl font-medium"
-          variants={variants}
-          initial="hidden"
-          animate="visible"
-          transition={{ delay: 1 }}
-        >
-          {copy.heroGreeting} {name}
-        </Motion.p>
+        <span className="hero-eyebrow">{copy.heroEyebrow}</span>
 
         <div>
           <Motion.p
-            className="text-3xl font-black text-neutral-300"
+            className="text-3xl font-medium text-neutral-100"
             variants={variants}
             initial="hidden"
             animate="visible"
-            transition={{ delay: 1.2 }}
+            transition={{ delay: 0.8 }}
           >
-            {copy.heroMobileLine}
+            {copy.heroHeadline1}
           </Motion.p>
 
           <Motion.div
             variants={variants}
             initial="hidden"
             animate="visible"
-            transition={{ delay: 1.5 }}
+            transition={{ delay: 1.1 }}
           >
-            <FlipWords key={language} words={words} className="text-4xl font-bold text-white" />
+            <FlipWords key={language} words={copy.heroWords} className="text-4xl font-bold text-white" />
           </Motion.div>
-
-          <Motion.p
-            className="text-2xl font-black text-neutral-300"
-            variants={variants}
-            initial="hidden"
-            animate="visible"
-            transition={{ delay: 1.8 }}
-          >
-            {copy.heroMobileSubtitle}
-          </Motion.p>
         </div>
-        <p className="mx-auto max-w-xs text-sm leading-relaxed text-neutral-200">
-          {status === 'error'
-            ? copy.heroError
-            : title}
-        </p>
-        <div className="hero-mobile-actions" aria-label={copy.heroProjects}>
-          <a href="#projects" className="primary-action">
-            {copy.heroProjects}
-          </a>
-          {/* Contact moved to the owner's profile with the rest of their
-              personal sections. Rendered only when there is a profile to send
-              someone to -- a button that scrolls to a section which no longer
-              exists is worse than no button. */}
-          {ownerHandle && (
-            <Link className="secondary-action" to={`/u/${ownerHandle}`}>
-              {copy.heroContact}
-            </Link>
-          )}
+
+        <p className="mx-auto max-w-xs text-sm leading-relaxed text-neutral-200">{copy.heroLead}</p>
+
+        <div className="hero-mobile-actions" aria-label={copy.heroBrowse}>
+          {actions}
         </div>
       </div>
     </div>

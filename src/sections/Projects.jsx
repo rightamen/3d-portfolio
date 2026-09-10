@@ -15,7 +15,7 @@ import { assetCategoryProfiles, getAssetCategoryProfile } from '../lib/assetCate
 // The model viewer moved with it. It lives on the work page, which is where
 // somebody who has chosen a work is -- rather than on every tile of a grid
 // they are still scanning.
-const Projects = ({ copy, language, projects = [] }) => {
+const Projects = ({ copy, language, projects = [], status = 'ready' }) => {
   const [activeCategory, setActiveCategory] = useState('all')
 
   const categoryCounts = useMemo(() => {
@@ -39,8 +39,13 @@ const Projects = ({ copy, language, projects = [] }) => {
     [activeCategory, language, projects],
   )
 
+  // Not `section-space` any more. That is `min-h-screen mt-20`, so this
+  // section reserved a whole viewport whatever it contained: measured at
+  // 1440px it was 900px tall around a 213px grid, leaving 561px of nothing
+  // between the last work and the community below. A browse page with four
+  // works should be short, not padded out to look busy.
   return (
-    <section id="projects" className="c-space section-space">
+    <section id="projects" className="c-space mt-16 md:mt-20">
       <div className="section-kicker">{copy.projectsKicker}</div>
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <h2 className="text-heading">{copy.projectsTitle}</h2>
@@ -105,7 +110,9 @@ const Projects = ({ copy, language, projects = [] }) => {
           to a category nobody has published in and a grid with no message is a
           page that looks broken rather than empty. The i18n usage test is what
           noticed, by reporting its two strings as unrendered. */}
-      {visibleProjects.length === 0 ? (
+      {status === 'error' ? (
+        <p className="text-coral">{copy.exploreLoadError}</p>
+      ) : visibleProjects.length === 0 ? (
         <div className="asset-empty-state">
           <strong>{copy.emptyCategoryTitle}</strong>
           <span>{copy.emptyCategoryBody}</span>

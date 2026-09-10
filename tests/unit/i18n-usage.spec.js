@@ -57,7 +57,6 @@ describe('site dictionary keys referenced from the code', () => {
     expect(dynamicPrefixes.sort()).toEqual([
       'accountContact',
       'accountStudioStatus',
-      'communityEntry',
       'communityTopic',
     ])
   })
