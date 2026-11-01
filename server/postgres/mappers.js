@@ -410,12 +410,21 @@ export const toWorkCreator = (row) =>
       }
     : null
 
+const toWorkCuration = (row) => ({
+  score: row.curation_score == null ? null : Number(row.curation_score),
+  recommended: row.exhibition_recommended === true,
+  reviewedAt: row.curation_updated_at?.toISOString?.() || row.curation_updated_at || null,
+})
+
 export const toWork = (row, { assets = null, includeProtected = false } = {}) => ({
   assetCategory: row.asset_category || '',
   ...(assets ? { assets: assets.map((asset) => toWorkAsset(asset, { includeProtected })) } : {}),
   createdAt: row.created_at?.toISOString?.() || row.created_at,
   creator: toWorkCreator(row),
   currency: row.currency || 'usd',
+  curation: toWorkCuration(row),
+  contentVersion: Number(row.rating_version || 1),
+  ratings: row.rating_summary || { count: 0, average: 0, recommendations: 0 },
   downloadPolicy: row.download_policy || '',
   downloadPolicyEn: row.download_policy_en,
   downloadPolicyJa: row.download_policy_ja,
@@ -471,6 +480,9 @@ export const toWorkSummary = (row) => ({
   createdAt: row.created_at?.toISOString?.() || row.created_at,
   creator: toWorkCreator(row),
   currency: row.currency || 'usd',
+  curation: toWorkCuration(row),
+  contentVersion: Number(row.rating_version || 1),
+  ratings: row.rating_summary || { count: 0, average: 0, recommendations: 0 },
   id: row.id,
   image: row.image || '',
   // Falls back to the full cover: a row from before thumbnails exist, or one
@@ -498,6 +510,13 @@ export const toWorkSummary = (row) => ({
 // works' own, and the failure that produces is very hard to see.
 export const workColumns = `
   works.id, works.creator_id, works.slug, works.status,
+  works.curation_score, works.exhibition_recommended, works.curation_updated_at, works.rating_version,
+  (SELECT json_build_object(
+     'count', count(*)::int, 'average', COALESCE(avg(r.score), 0)::float,
+     'recommendations', count(*) FILTER (WHERE r.recommended)::int
+   ) FROM work_ratings r JOIN visitor_users voter ON voter.id = r.user_id
+   WHERE r.work_id = works.id AND r.work_version = works.rating_version AND voter.email_verified_at IS NOT NULL
+     AND r.user_id <> works.creator_id) AS rating_summary,
   works.title, works.title_zh, works.title_en, works.title_ja,
   works.summary, works.summary_zh, works.summary_en, works.summary_ja,
   works.workflow, works.workflow_zh, works.workflow_en, works.workflow_ja,

@@ -19,6 +19,21 @@ import { createId, toOrder, toOrderEvent } from './mappers.js'
 // answer to "may this person have the file". Every download path asks it.
 
 export const createOrdersStore = ({ pool }) => {
+  const transaction = async (action) => {
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
+      const result = await action(client)
+      await client.query('COMMIT')
+      return result
+    } catch (error) {
+      await client.query('ROLLBACK')
+      throw error
+    } finally {
+      client.release()
+    }
+  }
+
   const ordersStore = {
     // The question every download asks. A free work needs no order at all --
     // free is a price, and charging a buyer an order row for it would mean an
@@ -51,8 +66,8 @@ export const createOrdersStore = ({ pool }) => {
       return { entitled: false, reason: 'unpaid' }
     },
 
-    getOrder: async (id) => {
-      const result = await pool.query(
+    getOrder: async (id, client = pool) => {
+      const result = await client.query(
         `SELECT orders.*, works.slug AS work_slug, works.title AS work_title,
                 visitor_users.handle AS creator_handle
          FROM orders
@@ -67,8 +82,8 @@ export const createOrdersStore = ({ pool }) => {
     // An open order for this buyer and work, if there is one. Clicking buy
     // twice should land on the same order and the same instructions, not mint
     // a second one the operator then has to reconcile.
-    findOpenOrder: async (buyerId, workId) => {
-      const result = await pool.query(
+    findOpenOrder: async (buyerId, workId, client = pool) => {
+      const result = await client.query(
         `SELECT orders.*, works.slug AS work_slug, works.title AS work_title,
                 visitor_users.handle AS creator_handle
          FROM orders
@@ -89,11 +104,18 @@ export const createOrdersStore = ({ pool }) => {
     // The fee is forced to zero for `direct`, not merely defaulted: the
     // platform cannot take a share of money that never passes through it, and
     // an order claiming otherwise would be a number nobody can collect.
-    createOrder: async ({ buyerId, feeBasisPoints = 0, paymentSnapshot, provider = 'direct', workId }) => {
+    createOrder: async ({ buyerId, feeBasisPoints = 0, paymentSnapshot, provider = 'direct', workId }) => transaction(async (client) => {
+      // Serialize creation for this work. Checking for an open order outside
+      // the transaction lets two simultaneous requests both insert one.
+      const locked = await client.query('SELECT id FROM works WHERE id = $1 FOR UPDATE', [workId])
+      if (!locked.rows[0]) return { order: null, created: false }
+      const existing = await ordersStore.findOpenOrder(buyerId, workId, client)
+      if (existing) return { order: existing, created: false }
+
       const id = createId()
       const fee = platformFeeBasisPoints(provider, feeBasisPoints)
 
-      const result = await pool.query(
+      const result = await client.query(
         `INSERT INTO orders (id, buyer_id, work_id, creator_id, amount_cents,
                              platform_fee_cents, currency, provider, provider_reference,
                              payment_snapshot)
@@ -105,25 +127,25 @@ export const createOrdersStore = ({ pool }) => {
         [id, buyerId, workId, fee, provider, JSON.stringify(paymentSnapshot || { methods: [] })],
       )
 
-      if (!result.rows[0]) return null
+      if (!result.rows[0]) return { order: null, created: false }
 
       await ordersStore.recordEvent(id, {
         actorId: buyerId,
         actorKind: 'buyer',
         event: 'placed',
         toStatus: 'pending',
-      })
+      }, client)
 
-      return ordersStore.getOrder(id)
-    },
+      return { order: await ordersStore.getOrder(id, client), created: true }
+    }),
 
     // Append-only. There is deliberately no update or delete for these: a
     // record that can be rewritten is not a record, and this one exists to be
     // read back during an argument.
-    recordEvent: async (orderId, { actorId = null, actorKind, event, fromStatus = null, note = null, toStatus = null }) => {
-      await pool.query(
-        `INSERT INTO order_events (id, order_id, actor_kind, actor_id, event, from_status, to_status, note)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+    recordEvent: async (orderId, { actorId = null, actorKind, event, fromStatus = null, note = null, toStatus = null }, client = pool) => {
+      await client.query(
+        `INSERT INTO order_events (id, order_id, actor_kind, actor_id, event, from_status, to_status, note, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, clock_timestamp())`,
         [createId(), orderId, actorKind, actorId, event, fromStatus, toStatus, note],
       )
     },
@@ -187,8 +209,8 @@ export const createOrdersStore = ({ pool }) => {
     // What the buyer says they paid with. Recorded on the order rather than
     // mailed anywhere, so the operator confirming it is looking at the buyer's
     // own words next to the amount.
-    setBuyerNote: async (orderId, buyerId, note) => {
-      const result = await pool.query(
+    setBuyerNote: async (orderId, buyerId, note) => transaction(async (client) => {
+      const result = await client.query(
         `UPDATE orders SET buyer_note = $3, updated_at = now()
          WHERE id = $1 AND buyer_id = $2 AND status = 'pending'
          RETURNING id`,
@@ -203,10 +225,10 @@ export const createOrdersStore = ({ pool }) => {
         actorKind: 'buyer',
         event: 'claimed-payment',
         note,
-      })
+      }, client)
 
       return true
-    },
+    }),
 
     // The order a creator may act on: their own sale, loaded with the check
     // built in rather than left to the caller to remember.
@@ -252,39 +274,57 @@ export const createOrdersStore = ({ pool }) => {
      * turns a 500 into an answer the console can show.
      */
     settleOrder: async (orderId, status, { actorId = null, actorKind = 'admin', note = null, settledBy = null } = {}) => {
-      const before = await pool.query('SELECT status FROM orders WHERE id = $1', [orderId])
-      if (!before.rows[0]) return { order: null }
-      const fromStatus = before.rows[0].status
-
       try {
-        const result = await pool.query(
-          `UPDATE orders
-           SET status = $2,
-               settled_note = COALESCE($3, settled_note),
-               settled_by = COALESCE($4, settled_by),
-               purchased_at = CASE WHEN $2 = 'paid' THEN COALESCE(purchased_at, now())
-                                   ELSE purchased_at END,
-               refunded_at = CASE WHEN $2 = 'refunded' THEN now() ELSE refunded_at END,
-               updated_at = now()
-           WHERE id = $1
-           RETURNING id`,
-          [orderId, status, note, settledBy],
-        )
-        if (!result.rows[0]) return { order: null }
+        return await transaction(async (client) => {
+          const before = await client.query(
+            'SELECT status, buyer_id, creator_id FROM orders WHERE id = $1 FOR UPDATE',
+            [orderId],
+          )
+          const row = before.rows[0]
+          if (!row) return { order: null }
+          // Recheck after acquiring the lock: the route's pending read may
+          // already be stale because the creator confirmed receipt meanwhile.
+          if (actorKind === 'buyer' &&
+              (row.buyer_id !== actorId || row.status !== 'pending' || status !== 'cancelled')) {
+            return { order: null }
+          }
+          if (actorKind === 'creator' && row.creator_id !== actorId) return { order: null }
+          const fromStatus = row.status
+          if (fromStatus === status) {
+            return { order: await ordersStore.getOrder(orderId, client), changed: false }
+          }
 
-        await ordersStore.recordEvent(orderId, {
-          actorId,
-          actorKind,
-          event: `settled:${status}`,
-          fromStatus,
-          note,
-          toStatus: status,
+          const result = await client.query(
+            `UPDATE orders
+             SET status = $2,
+                 settled_note = COALESCE($3, settled_note),
+                 settled_by = COALESCE($4, settled_by),
+                 purchased_at = CASE WHEN $2 = 'paid' THEN COALESCE(purchased_at, now())
+                                     ELSE purchased_at END,
+                 refunded_at = CASE WHEN $2 = 'refunded' THEN now() ELSE refunded_at END,
+                 updated_at = now()
+             WHERE id = $1
+             RETURNING id`,
+            [orderId, status, note, settledBy],
+          )
+          if (!result.rows[0]) return { order: null }
+
+          await ordersStore.recordEvent(orderId, {
+            actorId,
+            actorKind,
+            event: `settled:${status}`,
+            fromStatus,
+            note,
+            toStatus: status,
+          }, client)
+
+          return { order: await ordersStore.getOrder(orderId, client), changed: true }
         })
-
-        return { order: await ordersStore.getOrder(orderId) }
       } catch (error) {
         // 23505 is unique_violation: orders_paid_entitlement_unique_idx.
-        if (error.code === '23505') return { conflict: 'already-owned' }
+        if (error.code === '23505' && error.constraint === 'orders_paid_entitlement_unique_idx') {
+          return { conflict: 'already-owned' }
+        }
         throw error
       }
     },

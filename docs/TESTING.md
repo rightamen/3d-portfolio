@@ -17,7 +17,8 @@ So the column that matters below is the second one.
 | --- | --- | --- |
 | `test:unit` | Pure logic: i18n resolution, SEO routes, themes, payment info, image profiles, crop arithmetic, profile bounds, admin nav. Fast, no I/O. | Anything that needs a database, a browser, or a request. A function can be perfect and never be called. |
 | `test:api` | The HTTP contract against a server with **no** database — envelope shape, error codes, auth refusals. | Anything that needs stored rows: entitlement, orders, notifications, publishing. |
-| `test:api:db` | The same contract against a **disposable PostgreSQL**: register → verify → publish → order → download, 196 checks. | The browser. Every one of these calls the API directly, so a broken button, a wrong selector or an unrendered string all pass. |
+| `test:api:db` | The same contract against a **disposable PostgreSQL**: register → verify → publish → order → download plus order concurrency/rollback, 214 checks. | The browser. Every one of these calls the API directly, so a broken button, a wrong selector or an unrendered string all pass. |
+| `test:marketplace-ui` | The built frontend in local Chromium with controlled API responses: independent homepage loading, empty/error/loading states, order snapshot amounts, closed orders, session recovery, stale account responses, translated category filters, and mobile overflow. Run `npm run build` first. | Real API authorization and SQL. Its responses are fixtures; pair it with `test:api:db` and the real notification journey. |
 | `test:schema-migration` | That `ensureSchema()` migrates an **existing** database, not just builds an empty one — the path production actually takes — and that it is idempotent. | Whether the new columns are ever read or written by anything. |
 | `test:notifications` | The notification queries: who counts as unread, that marking read is per-person, that unpublishing empties every inbox, that one account cannot delete another's notice. | **The UI entirely.** A missing i18n key, a bell that never polls, a badge that never clears. This is the gap that shipped. |
 | `test:notification-journey` | The whole chain in a real browser: a throwaway cluster, the real server, the real built frontend, **two accounts in two separate browser contexts**, a real price, a real click. | Anything not on that one path. It is one journey, not coverage. |
@@ -29,7 +30,17 @@ So the column that matters below is the second one.
 | `test:deploy-script` | `bash -n` over the remote half of the deploy. The remote half is the part with no undo: by the time bash reports a syntax error, the env file is backed up and the service is restarting. | Whether the commands are *right* — only that they parse. |
 | `check:production` | The live site from outside over real TLS, **including the certificate**, which nothing else checks. It exists because the certificate expired on 2026-09-04 and every visitor got a browser warning. | Anything behind a login. |
 
+2026-10-31: the local marketplace browser suite has 22 cases, including manual
+and reconnect-driven session recovery, confirmed expiry, account switching,
+login/logout, category persistence and three-language labels.
+
 ## Rules that follow from the table
+
+2026-10-30: `test:api:db` now runs **203 checks**. Seven in
+`tests/api/orders-store.db.spec.js` additionally exercise concurrent order
+creation, cancellation blocked behind a real row lock, serialized settlement
+history, duplicate confirmation, and rollback after deliberately failed audit
+inserts. They use only the disposable database provisioned by the runner.
 
 1. **A green suite answers its own question, not yours.** Before trusting a
    green, name what it exercises. "The queries are right" is not "the feature
@@ -62,3 +73,67 @@ Named because an unwritten gap is indistinguishable from a covered one:
   docs).
 - Every visual judgement. Layout, density and contrast are measured ad hoc in a
   browser and recorded in `PROJECT_PROGRESS.md`, not asserted anywhere.
+
+2026-10-31 spatial UI update: test:marketplace-ui now has 26 cases, adding
+keyboard/button work selection, grid/spatial switching without refetch, WebGL
+fallback, and isolation of one failed texture. Actual pointer rotation and wheel
+zoom were additionally checked in the local public design preview.
+
+
+2026-10-31 atelier UI update: test:marketplace-ui now has 28 passing cases.
+Two additional regressions cover immersive view initial focus, Tab trapping,
+Escape focus restoration and body scroll unlock, including navigation from the
+immersive view to work details. The shared dialog helper now preserves its
+initial focus target when that target is also the original trigger. Actual
+hover/click interactions and desktop/390px zh-CN/en/ja immersive layouts were
+also checked in the read-only public design preview; these do not establish
+real server authorization or native model rendering.
+
+
+2026-11-01 lighting UI update: test:marketplace-ui has 30 passing cases.
+New checks cover lighting selection across image/3D mode changes without
+replacing the canvas or changing the selected work, and keyboard navigation
+through 12 thumbnails on a narrow phone with the selected item fully visible
+without scrolling the page. Public preview checks additionally confirm actual
+canvas pixel changes between lighting presets, and three-language portrait
+and landscape immersive layouts. These checks use public covers, not native
+source-model geometry.
+
+
+2026-11-01 infinite exhibition update: the full marketplace UI suite passed
+33 cases. Three new cases cover pointer direction and settling on leave,
+bounded tile counts and one catalogue request, reduced-motion opt-out,
+keyboard/reset/grid/category behavior, and drag-versus-navigation semantics.
+Existing homepage layout assertions now target the default infinite view.
+After the mobile row arrangement adjustment, all three wall cases passed
+again. Read-only public preview checks additionally exercised long-distance
+wrapping, real touch pointer events and native artwork link navigation;
+one final batch encountered a transient public-data connection failure and
+its touch check passed separately after the endpoint recovered. Screenshots
+cover zh-CN/en/ja at 390px. These are cover-browsing checks, not source-model
+rendering or server authorization tests.
+
+
+2026-11-01 exhibition effects update: the existing 33 browser cases passed.
+A 34th case verifies pointer illumination and a live reduced-motion change;
+it passed separately after setting its desktop viewport explicitly to keep
+the simulated pointer inside the screen. Product code was unchanged between
+those runs. Design QA additionally confirms actual pixel changes, perspective
+transforms, click-through navigation and zh/en/ja touch dragging. The public
+catalogue was read once and replayed for those design checks. Pure-logic unit
+tests were not repeated for this CSS/pointer-effect update.
+
+
+2026-11-01 curated exhibition update: 214 disposable-database checks and 38
+marketplace browser regressions passed. Eleven DB cases cover real ratings,
+curator admission, duplicate/concurrent replacement, verified-account and
+self-vote restrictions, raw-average thresholds, withdrawn recommendations,
+content-version invalidation, forged creator fields, atomic asset rollback,
+and real admin/mobile-user browser journeys. New UI checks exclude ordinary
+works, distinguish both sources, prevent catalogue fallback, and prevent a
+rating for a version newer than the content visible on the page. Three
+admission checks passed again after final empty-state control cleanup.
+The migration checker now seeds an existing work and confirms it remains
+unscored and unrecommended after the upgrade; repeat initialization passed.
+The local public preview is read-only and uses the old live API, so it has no
+new rating records. Synthetic scores used in layout screenshots are test-only.

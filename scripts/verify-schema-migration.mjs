@@ -65,8 +65,10 @@ const expected = {
     ],
     visitor_users: ['creator_enabled_at', 'payout_state', 'stripe_account_id', 'theme'],
     work_assets: ['checksum', 'file_name', 'file_size', 'file_type', 'file_url', 'kind', 'sort_order', 'work_id'],
+    work_ratings: ['work_id', 'user_id', 'score', 'recommended', 'work_version'],
     work_comments: ['message', 'parent_id', 'pinned_at', 'status', 'user_id', 'work_id'],
     works: [
+      'curation_score', 'exhibition_recommended', 'curation_updated_at', 'rating_version',
       'asset_category',
       'creator_id',
       'currency',
@@ -90,6 +92,7 @@ const expected = {
     'work_comments_work_created_idx',
     'works_creator_slug_unique_idx',
     'works_status_published_idx',
+    'works_exhibition_idx', 'work_ratings_version_idx',
   ],
   tables: [
     'orders',
@@ -98,6 +101,7 @@ const expected = {
     'work_comment_likes',
     'work_comments',
     'work_likes',
+    'work_ratings',
     'works',
   ],
 }
@@ -147,6 +151,8 @@ try {
      VALUES ('u-schema-check', 'schema-check@example.test', 'Schema Check', 'x')`,
   )
   log('Seeded a visitor_users row so the ALTERs run against real data.')
+  await pool.query("INSERT INTO works(id,creator_id,slug,title,status) VALUES('w-curation-migrate','u-schema-check','curation-migrate','Existing work','published')")
+
 
   log('Upgrading to the working tree schema...')
   const { ensureSchema } = await import(
@@ -156,6 +162,9 @@ try {
 
   log('Running it a second time (it must be idempotent)...')
   await ensureSchema(pool)
+
+  const migratedWork = (await pool.query("SELECT curation_score,exhibition_recommended,rating_version FROM works WHERE id='w-curation-migrate'")).rows[0]
+  check(migratedWork.curation_score === null && migratedWork.exhibition_recommended === false && migratedWork.rating_version === 1, 'existing works are not automatically admitted')
 
   const tables = new Set(
     (

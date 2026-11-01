@@ -174,7 +174,9 @@ const AccountPage = ({
   language,
   onLanguageChange,
   onLogout,
+  onRetrySession,
   visitorLoading,
+  visitorSessionError,
   visitorUser,
 }) => {
   // The tab lives in the URL, not only in state. It was component state,
@@ -470,6 +472,21 @@ const AccountPage = ({
         progress: 0,
       })
     }
+  }
+
+  if (visitorSessionError) {
+    return (
+      <AccountShell>
+        <section className="account-state-card" role="alert">
+          <p className="section-kicker">{copy.account}</p>
+          <h1>{copy.sessionUnavailableTitle}</h1>
+          <p>{copy.sessionUnavailableBody}</p>
+          <button className="primary-action" type="button" onClick={onRetrySession}>
+            {copy.sessionRetry}
+          </button>
+        </section>
+      </AccountShell>
+    )
   }
 
   if (visitorLoading) {

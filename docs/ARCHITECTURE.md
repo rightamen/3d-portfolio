@@ -1,13 +1,13 @@
 # mrright.blog Architecture
 
-Status: architecture direction for API-first platform migration. Updated
-2026-09-07, when the site stopped being one person's portfolio.
+Status: implementation checkpoint updated 2026-10-31. Both review rounds are
+deployed; see docs/DEPLOY_2026-10-31.md and PROJECT_PROGRESS.md.
 
 mrright.blog is moving from a Web application into an API-first platform that can support the current Web client and a future C++ native App. The website remains the priority product surface, but the backend API should become the long-lived contract.
 
 ⚠️ **The product changed shape on 2026-09-07.** It is no longer a personal 3D
 portfolio with a community area attached; it is a marketplace where anyone
-publishes works and, once phase 7 lands, sells them. The architecture below
+publishes works and sells them through creator-direct orders. The architecture below
 still holds — the change is what the API is *about*, not how it is built. See
 `docs/adr/ADR_PLATFORM_PIVOT.md` for the decisions and their reasoning.
 
@@ -479,20 +479,33 @@ silently.
 
 Future server improvements should focus on response helpers, error code normalization, and asset normalization before large feature additions.
 
-## Current API Drift
+## Current API Boundary and Remaining Gaps
 
-The current API is production-usable but not yet API-first:
+The helpers in server/responses.js already provide data/pagination/error.
+Legacy /api endpoints retain compatibility fields; /api/v1 uses only the strict
+envelope. The Web parser understands both forms. These helpers are implemented.
+Remaining work includes unified asset metadata, pagination for older lists, and
+OpenAPI coverage of the evolving marketplace surface. The freeze checklist
+still defines what is promised to compiled clients.
 
-- Success responses use resource-specific top-level keys.
-- Errors often use raw `{ error: "message" }`.
-- Only some errors expose stable `code`.
-- Pagination shape exists for admin visitors, but is not globally standardized.
-- Upload responses are not normalized into the Asset Model.
-- Frontend API client reads `payload.error` as message and `payload.code` separately.
+## Web Session Recovery (2026-10-31, local)
 
-These are expected migration targets, not blockers for the current site.
+src/hooks/useVisitorSession.js owns the visitor token, identity and check status.
+Network failures, timeouts, server errors and malformed responses preserve the
+credential and expose retry. Reconnect/focus/visibility retries a failed check.
+A confirmed null user or 401/INVALID_TOKEN clears it. Changing accounts clears
+the previous identity immediately; superseded requests cannot replace the new
+result. The server continues to make every authorization decision.
 
-## Migration Phases
+Discovery uses the existing six-category taxonomy, independently of the current
+page's results. Labels change language without another request. Unknown shared
+category values remain visible and removable.
+
+## Original Migration Plan (historical)
+
+Response helpers and strict v1 routing are already implemented. cpp-app contains
+an SDK and opt-in Qt/QML auth prototypes; cache/download integration remains
+separate work. Read cpp-app/README.md and the freeze checklist for current status.
 
 ### Phase 1: Documentation and contract
 
@@ -541,7 +554,7 @@ Status: this document set.
 - Build a small C++ client prototype against the stable API.
 - Start with login, project list, project detail, asset download, and local cache.
 
-## Non-goals For This Round
+## Non-goals of the Original Documentation Round (historical)
 
 - No UI changes.
 - No new business features.
@@ -550,3 +563,17 @@ Status: this document set.
 - No authentication logic changes.
 - No new dependencies.
 - No C++ implementation yet.
+
+
+### Curated exhibition (2026-11-01, local)
+
+The homepage owns separate ordinary and exhibition requests. The latter uses
+GET /api/works?exhibition=true, with server SQL enforcing published status and
+either verified community recommendation thresholds or curator approval.
+Shared pure rules are in server/exhibition.js; the client also fails closed
+if an older API ignores the new parameter. Ratings are aggregated live from
+one row per verified user/work and the current content version. Curator fields
+are admin-only. Editable content and asset mutations invalidate stale quality
+decisions; file changes revoke admission atomically. The ordinary infinite
+wall continues to consume the existing catalogue. See
+CURATED_EXHIBITION_2026-11-01.md for contracts, migration and verification.

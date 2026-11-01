@@ -1,3 +1,4 @@
+import { COMMUNITY_MIN_AVERAGE, COMMUNITY_MIN_RECOMMENDATIONS, EXHIBITION_MIN_SCORE } from '../exhibition.js'
 import {
   createId,
   toWork,
@@ -67,12 +68,27 @@ export const createWorksStore = ({ pool }) => {
     listPublishedWorks: async ({
       category = '',
       creatorHandle = '',
+      exhibition = false,
       limit = 24,
       offset = 0,
       query = '',
     } = {}) => {
       const conditions = [`works.status = 'published'`]
       const params = []
+
+      if (exhibition) {
+        params.push(EXHIBITION_MIN_SCORE, COMMUNITY_MIN_AVERAGE, COMMUNITY_MIN_RECOMMENDATIONS)
+        conditions.push(`(
+          (works.exhibition_recommended = true AND works.curation_score >= $1)
+          OR EXISTS (
+            SELECT 1 FROM work_ratings r JOIN visitor_users voter ON voter.id = r.user_id
+            WHERE r.work_id = works.id AND r.work_version = works.rating_version
+              AND voter.email_verified_at IS NOT NULL AND r.user_id <> works.creator_id
+            GROUP BY r.work_id
+            HAVING avg(r.score) >= $2 AND count(*) >= $3 AND count(*) FILTER (WHERE r.recommended) >= $3
+          )
+        )`)
+      }
 
       if (creatorHandle) {
         params.push(creatorHandle.toLowerCase())
@@ -102,7 +118,7 @@ export const createWorksStore = ({ pool }) => {
         `SELECT ${workColumns} FROM works
          JOIN visitor_users ON visitor_users.id = works.creator_id
          WHERE ${where}
-         ORDER BY works.published_at DESC NULLS LAST, works.created_at DESC
+         ORDER BY ${exhibition ? 'GREATEST(CASE WHEN works.exhibition_recommended THEN works.curation_score ELSE 0 END, (SELECT COALESCE(avg(r.score),0)*20 FROM work_ratings r JOIN visitor_users voter ON voter.id=r.user_id WHERE r.work_id=works.id AND r.work_version=works.rating_version AND voter.email_verified_at IS NOT NULL AND r.user_id<>works.creator_id)) DESC, works.id ASC' : 'works.published_at DESC NULLS LAST, works.created_at DESC'}
          LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
         [...params, limit, offset],
       )
@@ -316,12 +332,27 @@ export const createWorksStore = ({ pool }) => {
       if (!assignments.length) return worksStore.getWorkById(id, { includeProtected: true })
 
       const result = await pool.query(
-        `UPDATE works SET ${assignments.join(', ')}, updated_at = now()
+        `UPDATE works SET ${assignments.join(', ')},
+           curation_score = NULL, exhibition_recommended = false, curation_updated_at = NULL,
+           rating_version = rating_version + 1, updated_at = now()
          WHERE id = $1 RETURNING id`,
         values,
       )
       if (!result.rows[0]) return null
 
+      return worksStore.getWorkById(id, { includeProtected: true })
+    },
+
+    // Only the admin route calls this; creator edits never accept these fields.
+    setWorkCuration: async (id, { score, recommended, version }) => {
+      const result = await pool.query(
+        `UPDATE works SET curation_score = $2, exhibition_recommended = $3,
+             curation_updated_at = now(), updated_at = now()
+         WHERE id = $1 AND (status = 'published' OR NOT $3) AND rating_version = $4
+         RETURNING id`,
+        [id, score, recommended, version],
+      )
+      if (!result.rows[0]) return null
       return worksStore.getWorkById(id, { includeProtected: true })
     },
 
@@ -332,6 +363,7 @@ export const createWorksStore = ({ pool }) => {
       const result = await pool.query(
         `UPDATE works
          SET status = $2,
+             exhibition_recommended = CASE WHEN $2 = 'published' THEN exhibition_recommended ELSE false END,
              published_at = CASE WHEN $2 = 'published' THEN COALESCE(published_at, now())
                                  ELSE published_at END,
              moderated_at = CASE WHEN $2 IN ('published', 'rejected', 'hidden') THEN now()
@@ -382,25 +414,55 @@ export const createWorksStore = ({ pool }) => {
     },
 
     addAsset: async (workId, asset) => {
-      const id = createId()
+      const client = await pool.connect()
+      try {
+        await client.query('BEGIN')
+        await client.query(
+          'UPDATE works SET curation_score=NULL,exhibition_recommended=false,curation_updated_at=NULL,rating_version=rating_version+1 WHERE id=$1',
+          [workId],
+        )
+        const result = await client.query(
+          `INSERT INTO work_assets(id,work_id,kind,file_name,file_type,file_url,file_size,checksum,sort_order)
+           VALUES($1,$2,$3,$4,$5,$6,$7,$8,COALESCE((SELECT max(sort_order)+1 FROM work_assets WHERE work_id=$2),0))
+           RETURNING *`,
+          [createId(),workId,asset.kind,asset.fileName,asset.fileType||'',asset.fileUrl,asset.fileSize||0,asset.checksum||null],
+        )
+        await client.query('COMMIT')
+        return toWorkAsset(result.rows[0], { includeProtected: true })
+      } catch (error) { await client.query('ROLLBACK'); throw error }
+      finally { client.release() }
+    },
+
+    getWorkRating: async (workId, userId) => {
       const result = await pool.query(
-        `INSERT INTO work_assets
-           (id, work_id, kind, file_name, file_type, file_url, file_size, checksum, sort_order)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8,
-                 COALESCE((SELECT max(sort_order) + 1 FROM work_assets WHERE work_id = $2), 0))
-         RETURNING *`,
-        [
-          id,
-          workId,
-          asset.kind,
-          asset.fileName,
-          asset.fileType || '',
-          asset.fileUrl,
-          asset.fileSize || 0,
-          asset.checksum || null,
-        ],
+        `SELECT r.score, r.recommended FROM work_ratings r JOIN works w ON w.id=r.work_id
+         WHERE r.work_id=$1 AND r.user_id=$2 AND r.work_version=w.rating_version`,
+        [workId, userId],
       )
-      return toWorkAsset(result.rows[0], { includeProtected: true })
+      return result.rows[0] || null
+    },
+
+    rateWork: async (workId, userId, { score, recommended, version }) => {
+      const client = await pool.connect()
+      try {
+        await client.query('BEGIN')
+        const result = await client.query('SELECT creator_id, status, rating_version FROM works WHERE id=$1 FOR UPDATE', [workId])
+        const work = result.rows[0]
+        if (!work || work.status !== 'published' || work.creator_id === userId || work.rating_version !== version) {
+          await client.query('ROLLBACK')
+          return null
+        }
+        await client.query(
+          `INSERT INTO work_ratings(work_id,user_id,score,recommended,work_version)
+           VALUES($1,$2,$3,$4,$5)
+           ON CONFLICT(work_id,user_id) DO UPDATE SET score=EXCLUDED.score,
+             recommended=EXCLUDED.recommended,work_version=EXCLUDED.work_version,updated_at=now()`,
+          [workId,userId,score,recommended,version],
+        )
+        await client.query('COMMIT')
+        return { score, recommended }
+      } catch (error) { await client.query('ROLLBACK'); throw error }
+      finally { client.release() }
     },
 
     // Likes on the work itself. Keyed on visitor_id like project_likes, not on
@@ -651,12 +713,13 @@ export const createWorksStore = ({ pool }) => {
 
     removeAsset: async (workId, assetId) => {
       const result = await pool.query(
-        'DELETE FROM work_assets WHERE work_id = $1 AND id = $2 RETURNING file_url',
+        `WITH removed AS (DELETE FROM work_assets WHERE work_id=$1 AND id=$2 RETURNING file_url)
+         UPDATE works SET curation_score=NULL,exhibition_recommended=false,curation_updated_at=NULL,rating_version=rating_version+1
+         WHERE id=$1 AND EXISTS(SELECT 1 FROM removed)
+         RETURNING (SELECT file_url FROM removed) AS file_url`,
         [workId, assetId],
       )
-      const row = result.rows[0]
-      if (!row) return null
-      return { fileUrl: row.file_url }
+      return result.rows[0] ? { fileUrl: result.rows[0].file_url } : null
     },
   }
 

@@ -1,4 +1,4 @@
-import { mkdir, rm, stat } from 'node:fs/promises'
+import { mkdir, rm, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
@@ -20,6 +20,17 @@ const execFileAsync = promisify(execFile)
 const archivePath = path.resolve('.deploy-tools', 'mrright-portfolio-release.tar.gz')
 
 await assertNoUploadsInBuild(process.cwd())
+
+// A release must correspond to an already committed tree. The public manifest
+// lets operators map the running frontend back to its exact GitHub revision.
+const gitStatus = await execFileAsync('git', ['status', '--porcelain'])
+if (gitStatus.stdout.trim()) throw new Error('Commit all source changes before packaging a traceable release.')
+const gitCommit = (await execFileAsync('git', ['rev-parse', 'HEAD'])).stdout.trim()
+const gitBranch = (await execFileAsync('git', ['branch', '--show-current'])).stdout.trim()
+await writeFile(path.resolve('dist', 'release.json'), JSON.stringify({
+  formatVersion: 1, gitCommit, gitBranch, builtAt: new Date().toISOString(), sourceClean: true,
+}, null, 2) + '\n')
+
 await mkdir(path.dirname(archivePath), { recursive: true })
 await rm(archivePath, { force: true })
 await execFileAsync('tar', ['-czf', archivePath, ...archiveItems])

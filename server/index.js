@@ -1,4 +1,5 @@
 import cors from 'cors'
+import { isContentVersion, readCuration } from './exhibition.js'
 import express from 'express'
 import rateLimit from 'express-rate-limit'
 import helmet from 'helmet'
@@ -1847,7 +1848,7 @@ app.post(
     const existing = await ordersStore.findOpenOrder(request.visitorUser.id, work.id)
     if (existing) return sendData(response, { order: existing })
 
-    const order = await ordersStore.createOrder({
+    const { order, created } = await ordersStore.createOrder({
       buyerId: request.visitorUser.id,
       // Snapshotted, so a creator changing their code later cannot erase what
       // the buyer was told to pay.
@@ -1858,6 +1859,7 @@ app.post(
     if (!order) {
       return sendError(response, API_ERROR_CODES.WORK_NOT_FOUND, 'Work not found.', 404)
     }
+    if (!created) return sendData(response, { order })
 
     // ⚠️ The gap that made the marketplace quietly lossy. Until this, a creator
     // had no way to learn a stranger had ordered their work -- they had to go
@@ -1981,7 +1983,7 @@ app.patch(
     // The buyer paid a stranger directly and then waited. This is the moment
     // they find out it landed -- and, if it went the other way, that it did
     // not.
-    notify({
+    if (result.changed) notify({
       kind: `order:${status}`,
       link: '/account/downloads',
       title: result.order.workTitle,
@@ -2043,6 +2045,10 @@ app.patch('/api/orders/:id/cancel', requireVisitor, requireOrdersStore, async (r
     actorKind: 'buyer',
     note: String(request.body?.note ?? '').trim().slice(0, 400) || null,
   })
+
+  if (!result.order) {
+    return sendError(response, API_ERROR_CODES.RESOURCE_FORBIDDEN, 'Order not found.', 404)
+  }
 
   // So a creator who was waiting on a payment stops waiting, rather than
   // watching the order sit there and eventually appear in the stale list as if
@@ -2291,6 +2297,7 @@ app.get('/api/works', requireWorksStore, async (request, response) => {
   const { limit, offset, page } = normalizePagination(request.query, 24, 60)
   const result = await worksStore.listPublishedWorks({
     category: String(request.query.category ?? '').trim().slice(0, 60),
+    exhibition: request.query.exhibition === 'true',
     creatorHandle: String(request.query.creator ?? '').trim().replace(/^@/, '').slice(0, 30),
     limit,
     offset,
@@ -2314,6 +2321,32 @@ app.get('/api/works/:handle/:slug', requireWorksStore, async (request, response)
   }
 
   return sendData(response, { work })
+})
+
+app.get('/api/works/:handle/:slug/rating', requireWorksStore, async (request, response) => {
+  const work = await worksStore.getWorkByHandleAndSlug(request.params.handle, request.params.slug)
+  if (!work) return sendError(response, API_ERROR_CODES.WORK_NOT_FOUND, 'Work not found.', 404)
+  const user = await getOptionalUser(request)
+  const mine = user ? await worksStore.getWorkRating(work.id, user.id) : null
+  return sendData(response, { ratings: work.ratings, mine, contentVersion: work.contentVersion })
+})
+
+app.put('/api/works/:handle/:slug/rating', requireVisitor, requireWorksStore, async (request, response) => {
+  const user = request.visitorUser
+  if (!user.emailVerified) return sendError(response, API_ERROR_CODES.EMAIL_NOT_VERIFIED, 'Verify your email before rating.', 403)
+  const { score, recommended, version } = request.body || {}
+  if (!Number.isInteger(score) || score < 1 || score > 5 || typeof recommended !== 'boolean' ||
+      (recommended && score < 4) || !isContentVersion(version)) {
+    return sendError(response, API_ERROR_CODES.VALIDATION_ERROR, 'Use a 1-5 integer score; recommendation requires 4+ stars and the current version.', 400)
+  }
+  const work = await worksStore.getWorkByHandleAndSlug(request.params.handle, request.params.slug)
+  if (!work) return sendError(response, API_ERROR_CODES.WORK_NOT_FOUND, 'Work not found.', 404)
+  if (work.creator.id === user.id) return sendError(response, API_ERROR_CODES.VALIDATION_ERROR, 'Authors cannot rate their own work.', 403)
+  const mine = await worksStore.rateWork(work.id, user.id, { score, recommended, version })
+  if (!mine) return sendError(response, API_ERROR_CODES.VALIDATION_ERROR, 'Work changed. Reload before rating.', 409)
+  const updated = await worksStore.getWorkById(work.id)
+  if (!updated || updated.contentVersion !== version) return sendError(response, API_ERROR_CODES.VALIDATION_ERROR, 'Work changed. Reload before rating.', 409)
+  return sendData(response, { mine, ratings: updated.ratings, contentVersion: updated.contentVersion })
 })
 
 app.get('/api/account/works', requireVisitor, requireWorksStore, async (request, response) => {
@@ -2872,6 +2905,19 @@ app.get('/api/admin/works', requireAdmin, requireWorksStore, async (request, res
   const payload = toPaginatedPayload(result, page, limit)
 
   return sendPage(response, { works: payload.items }, payload.pagination)
+})
+
+app.patch('/api/admin/works/:id/curation', requireAdmin, requireWorksStore, async (request, response) => {
+  const result = readCuration(request.body)
+  if (result.error) return sendError(response, API_ERROR_CODES.VALIDATION_ERROR, result.error, 400)
+  const existing = await worksStore.getWorkById(request.params.id)
+  if (!existing) return sendError(response, API_ERROR_CODES.WORK_NOT_FOUND, 'Work not found.', 404)
+  if (result.value.recommended && existing.status !== 'published') {
+    return sendError(response, API_ERROR_CODES.VALIDATION_ERROR, 'Only published works can be recommended.', 400)
+  }
+  const work = await worksStore.setWorkCuration(request.params.id, result.value)
+  if (!work || work.contentVersion !== result.value.version) return sendError(response, API_ERROR_CODES.VALIDATION_ERROR, 'Work status changed. Reload and review again.', 409)
+  return sendData(response, { work })
 })
 
 app.patch('/api/admin/works/:id/status', requireAdmin, requireWorksStore, async (request, response) => {

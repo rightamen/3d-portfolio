@@ -7,20 +7,18 @@ import {
   useNavigationType,
 } from 'react-router-dom'
 import {
-  getCurrentVisitor,
-  getExperience,
   getProfile,
-  getProjects,
   getWorks,
   loginVisitor,
-  logoutVisitor,
   registerVisitor,
   requestPasswordReset,
   resendVisitorVerification,
   resetVisitorPassword,
   verifyVisitorEmail,
 } from './lib/api'
+import { isExhibitionEligible } from '../server/exhibition.js'
 import { getCopy, getInitialLanguage } from './lib/i18n'
+import { useVisitorSession } from './hooks/useVisitorSession'
 import Navbar from './sections/Navbar'
 
 const AuthPage = lazy(() => import('./pages/AuthPage'))
@@ -33,8 +31,6 @@ const Hero = lazy(() => import('./sections/Hero'))
 const Projects = lazy(() => import('./sections/Projects'))
 const Community = lazy(() => import('./sections/Community'))
 const Footer = lazy(() => import('./sections/Footer'))
-const visitorTokenKey = 'mrright-visitor-token'
-const getStoredVisitorToken = () => window.localStorage.getItem(visitorTokenKey) || ''
 
 const SectionFallback = ({ title, copy }) => (
   <section className="c-space flex min-h-screen items-center">
@@ -77,62 +73,33 @@ const ScrollToTop = () => {
 // component; now the fetch simply does not mount anywhere else.
 // Auth and language props went with the navbar when it moved above the
 // routes: the homepage no longer renders any chrome of its own.
-const HomePage = ({ copy, language, visitorToken }) => {
-  const [siteData, setSiteData] = useState({
-    ownerHandle: '',
-    profile: null,
-    skills: [],
-    projects: [],
-    experience: [],
-  })
+const HomePage = ({ copy, language, profile, visitorToken }) => {
+  const [projects, setProjects] = useState([])
+  const [exhibition, setExhibition] = useState({ works: [], status: 'loading', demo: false })
   const [status, setStatus] = useState('loading')
   useEffect(() => {
     let isMounted = true
 
-    Promise.all([
-      getProfile(),
-      getProjects(),
-      getExperience(),
-      // The homepage catalogue is the MARKETPLACE, not the owner's four legacy
-      // projects. Until this it showed only their works and would have gone on
-      // doing so however many creators joined. Soft-fails: a catalogue that
-      // cannot be read should cost the visitor that section, not the homepage.
-      getWorks({ limit: 12 }).catch(() => ({ works: [] })),
-    ])
-      .then(([profilePayload, projectsPayload, experiencePayload, worksPayload]) => {
+    // The catalogue depends only on works. A slow owner profile must not hold
+    // up the grid, and an API failure must not masquerade as a legacy catalogue.
+    getWorks({ limit: 12 })
+      .then((worksPayload) => {
         if (!isMounted) return
-
-        // A work carries the project field names -- that is why the mapper
-        // kept them -- so the catalogue section renders one without a
-        // translation layer. `url` becomes `workUrl` because that is the name
-        // the section's link already reads.
-        const works = (worksPayload.works || []).map((work) => ({
-          ...work,
-          workUrl: work.url,
-        }))
-
-        setSiteData({
-          ownerHandle: profilePayload.ownerHandle || '',
-          profile: profilePayload.profile,
-          skills: profilePayload.skills,
-          // Falls back to the legacy catalogue when the marketplace is empty:
-          // a fresh install, or a database that predates works, should still
-          // show the bundled projects rather than an empty homepage.
-          projects: works.length
-            ? works
-            : // The bundled fallback has no work URL, and the tile links by
-              // `url`. Giving it the project address keeps those links real
-              // rather than rendering `to={undefined}`.
-              (projectsPayload.projects || []).map((project) => ({
-                ...project,
-                url: project.workUrl || `/projects/${project.slug}`,
-              })),
-          experience: experiencePayload.experience,
-        })
+        setProjects(worksPayload.works || [])
         setStatus('ready')
       })
       .catch(() => {
         if (isMounted) setStatus('error')
+      })
+
+    // Selection has its own server-filtered request: an older qualifying work
+    // must not disappear just because it is outside the newest twelve.
+    getWorks({ exhibition: true, limit: 8 })
+      .then(payload => {
+        if (isMounted) setExhibition({ works: (payload.works || []).filter(isExhibitionEligible), status: 'ready', demo: import.meta.env.DEV && payload.previewDemo === true })
+      })
+      .catch(() => {
+        if (isMounted) setExhibition({ works: [], status: 'error' })
       })
 
     return () => {
@@ -145,7 +112,7 @@ const HomePage = ({ copy, language, visitorToken }) => {
       <Suspense fallback={<SectionFallback title="Hero" copy={copy} />}>
         {/* No profile prop: the front door stopped being one person's
             introduction. */}
-        <Hero copy={copy} language={language} visitorToken={visitorToken} />
+        <Hero copy={copy} language={language} visitorToken={visitorToken} works={exhibition.works} status={exhibition.status} demo={exhibition.demo} />
       </Suspense>
       <main className="relative z-10 mx-auto max-w-7xl">
         {/* The publish banner that used to sit here is gone: the hero's second
@@ -161,7 +128,7 @@ const HomePage = ({ copy, language, visitorToken }) => {
           <Projects
             copy={copy}
             language={language}
-            projects={siteData.projects}
+            projects={projects}
             status={status}
           />
         </Suspense>
@@ -169,7 +136,7 @@ const HomePage = ({ copy, language, visitorToken }) => {
           <Community copy={copy} language={language} />
         </Suspense>
         <Suspense fallback={null}>
-          <Footer profile={siteData.profile} copy={copy} />
+          <Footer profile={profile} copy={copy} />
         </Suspense>
       </main>
     </div>
@@ -179,93 +146,16 @@ const HomePage = ({ copy, language, visitorToken }) => {
 const App = () => {
   const [language, setLanguage] = useState(getInitialLanguage)
   const copy = getCopy(language)
-  const [visitorToken, setVisitorToken] = useState(getStoredVisitorToken)
-  const [visitorUser, setVisitorUser] = useState(null)
-  const [visitorSessionChecked, setVisitorSessionChecked] = useState(() => !getStoredVisitorToken())
+  const {
+    visitorToken, visitorUser, visitorLoading, visitorSessionError, retrySession,
+    saveSession: saveVisitorSession, logout: handleVisitorLogout,
+  } = useVisitorSession()
   const [authStatus, setAuthStatus] = useState('idle')
-  const visitorLoading = !visitorSessionChecked
 
   useEffect(() => {
     window.localStorage.setItem('mrright-language', language)
     document.documentElement.lang = language === 'zh' ? 'zh-CN' : language === 'ja' ? 'ja' : 'en'
   }, [language])
-
-  useEffect(() => {
-    const syncVisitorToken = () => {
-      const storedToken = getStoredVisitorToken()
-
-      setVisitorToken((currentToken) => {
-        if (currentToken === storedToken) return currentToken
-        if (!storedToken) {
-          setVisitorUser(null)
-          setVisitorSessionChecked(true)
-        } else {
-          setVisitorSessionChecked(false)
-        }
-        return storedToken
-      })
-    }
-
-    const handleStorage = (event) => {
-      if (event.key === visitorTokenKey) syncVisitorToken()
-    }
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') syncVisitorToken()
-    }
-
-    window.addEventListener('storage', handleStorage)
-    window.addEventListener('focus', syncVisitorToken)
-    window.addEventListener('pageshow', syncVisitorToken)
-    document.addEventListener('visibilitychange', handleVisibilityChange)
-
-    return () => {
-      window.removeEventListener('storage', handleStorage)
-      window.removeEventListener('focus', syncVisitorToken)
-      window.removeEventListener('pageshow', syncVisitorToken)
-      document.removeEventListener('visibilitychange', handleVisibilityChange)
-    }
-  }, [])
-
-  useEffect(() => {
-    let isMounted = true
-
-    if (!visitorToken) {
-      return () => {
-        isMounted = false
-      }
-    }
-
-    getCurrentVisitor(visitorToken)
-      .then((payload) => {
-        if (!isMounted) return
-        setVisitorUser(payload.user)
-        if (!payload.user) {
-          window.localStorage.removeItem(visitorTokenKey)
-          setVisitorToken('')
-        }
-      })
-      .catch(() => {
-        if (!isMounted) return
-        window.localStorage.removeItem(visitorTokenKey)
-        setVisitorToken('')
-        setVisitorUser(null)
-      })
-      .finally(() => {
-        if (isMounted) setVisitorSessionChecked(true)
-      })
-
-    return () => {
-      isMounted = false
-    }
-  }, [visitorToken])
-
-  const saveVisitorSession = (payload) => {
-    window.localStorage.setItem(visitorTokenKey, payload.session.token)
-    setVisitorToken(payload.session.token)
-    setVisitorUser(payload.user)
-    setVisitorSessionChecked(true)
-  }
 
   const handleVisitorLogin = async (payload) => {
     setAuthStatus('saving')
@@ -345,19 +235,6 @@ const App = () => {
     }
   }
 
-  const handleVisitorLogout = async () => {
-    const token = visitorToken
-    window.localStorage.removeItem(visitorTokenKey)
-    setVisitorToken('')
-    setVisitorUser(null)
-    setVisitorSessionChecked(true)
-    if (token) logoutVisitor(token).catch(() => {})
-  }
-
-  const homePage = (
-    <HomePage copy={copy} language={language} visitorToken={visitorToken} />
-  )
-
   const communityPage = (
     <Suspense fallback={<SectionFallback title="Community" copy={copy} />}>
       <CommunityPage
@@ -370,16 +247,13 @@ const App = () => {
     </Suspense>
   )
 
-  // The bar's link to the owner's profile needs their handle, and the bar is
-  // on every page now. HomePage keeps fetching its own data -- see the note on
-  // it -- so this duplicates one small request there and is the only one
-  // elsewhere.
-  const [ownerHandle, setOwnerHandle] = useState('')
+  // Share one profile response between the navbar and footer.
+  const [siteProfile, setSiteProfile] = useState(null)
   useEffect(() => {
     let isMounted = true
     getProfile()
       .then((payload) => {
-        if (isMounted) setOwnerHandle(payload.ownerHandle || '')
+        if (isMounted) setSiteProfile(payload)
       })
       // A bar that loses one link is better than a bar that fails to render.
       .catch(() => {})
@@ -389,8 +263,13 @@ const App = () => {
     }
   }, [])
 
+  const homePage = (
+    <HomePage copy={copy} language={language} profile={siteProfile?.profile} visitorToken={visitorToken} />
+  )
+
   return (
     <BrowserRouter>
+      <div className="studio-app">
       <ScrollToTop />
       {/* One bar, above the routes, so every page has the same chrome and the
           same way home. Each page used to carry its own header -- a logo and a
@@ -401,9 +280,12 @@ const App = () => {
         language={language}
         onLanguageChange={setLanguage}
         onVisitorLogout={handleVisitorLogout}
-        ownerHandle={ownerHandle}
+        onRetrySession={retrySession}
+        ownerHandle={siteProfile?.ownerHandle || ''}
         visitorToken={visitorToken}
         visitorUser={visitorUser}
+        visitorLoading={visitorLoading}
+        visitorSessionError={visitorSessionError}
       />
       <Routes>
         <Route
@@ -429,12 +311,15 @@ const App = () => {
           element={
             <Suspense fallback={<SectionFallback title="Account" copy={copy} />}>
               <AccountPage
+                key={visitorToken}
                 authToken={visitorToken}
                 copy={copy}
                 language={language}
                 onLanguageChange={setLanguage}
                 onLogout={handleVisitorLogout}
+                onRetrySession={retrySession}
                 visitorLoading={visitorLoading}
+                visitorSessionError={visitorSessionError}
                 visitorUser={visitorUser}
               />
             </Suspense>
@@ -486,6 +371,7 @@ const App = () => {
             homepage. */}
         <Route path="*" element={homePage} />
       </Routes>
+    </div>
     </BrowserRouter>
   )
 }

@@ -7,7 +7,7 @@
 - mrright-ops：VPS root SSH 与 PostgreSQL 操作
 
 项目：
-- 本地目录：/mnt/g/Code/3d-portfolio
+- 本地目录：/root/Code/3d-portfolio
 - 域名：https://mrright.blog
 - VPS：147.79.20.232
 - 服务名：mrright-portfolio

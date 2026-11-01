@@ -25,8 +25,11 @@ const useDialogAccessibility = ({ dialogRef, initialFocusRef, onClose, open = tr
     const previousActiveElement = document.activeElement
     const dialog = dialogRef.current
     const focusInitial = () => {
-      initialFocusRef.current?.focus?.()
-      if (document.activeElement === previousActiveElement) {
+      const initialTarget = initialFocusRef.current
+      initialTarget?.focus?.()
+      // The trigger may remain the same element when an embedded surface
+      // expands into a dialog. Already focusing it is a successful result.
+      if (document.activeElement !== initialTarget) {
         dialog?.querySelector(focusableSelector)?.focus?.()
       }
     }

@@ -5,8 +5,8 @@ Date: 2026-09-06
 Status: Accepted, and largely built. Phases 1, 2, 3 and 5 shipped on
 2026-09-07 along with phase 4's redirect; phase 6 and phase 7's core on
 2026-09-08. What remains is a real payment provider (blocked on a business
-entity, see §6) and phase 4's visual rebuild. See §7 for what each one
-actually delivered and where the plan was departed from.
+entity, see §6). Phase 4's homepage copy and interface work landed by
+2026-09-10; see §7 and PROJECT_PROGRESS.md for the completed work.
 
 ## 1. What is changing
 
@@ -319,7 +319,7 @@ constraint that makes a pivot this size survivable on a live site.
 | 1 | Creator + work data model, migration | — | Schema, stores, migration of the 4 works | **Shipped** 2026-09-07 |
 | 2 | Publishing flow | 1 | Multi-file upload, draft→review→published | **Shipped** 2026-09-07 |
 | 3 | Discovery | 2 | Browse, search, filter, creator pages | **Shipped** 2026-09-07 |
-| 4 | New interface shell | 3 | The rebuilt frontend, 3D per §5's split | **Shipped** 2026-09-09, except the hero copy (see below) |
+| 4 | New interface shell | 3 | The rebuilt frontend, 3D per §5's split | **Shipped** 2026-09-10, including the marketplace hero copy |
 | 5 | Comments | 2 | Threaded, sorted, moderated | **Shipped** 2026-09-07 |
 | 6 | Themes | 3 | Per-user theme, stored and rendered | **Shipped** 2026-09-08 |
 | 7 | Payments | 2, 6 | Orders, entitlement, gated download | **Core shipped** 2026-09-08 (manual provider; see §6) |
@@ -363,11 +363,11 @@ the first work at 440px, on a 6046px page. On a portfolio that was a
 statement about craft; on a catalogue it is six essays in front of the thing
 people came for. Now 330px, with the text one chip away.
 
-⚠️ **What is deliberately NOT done: the hero copy.** It still reads "Hi, I am
-Right / Creating Next-Gen Props / 3D model and game art asset creator" --
-a personal portfolio hero on a marketplace, so a visitor landing there is
-told nothing about what the site is. That is the owner's name and tagline and
-the change is theirs to make, so it was raised rather than taken.
+**Resolved 2026-09-10: the hero copy.** The homepage now introduces the
+marketplace and offers browsing or publishing. The owner's personal introduction
+lives on their profile. HeroText no longer depends on owner profile data; see
+PROJECT_PROGRESS.md round 58. The earlier note that this was waiting for the
+owner's decision is historical.
 
 **Themes are three knobs, not CSS.** The ADR said "per-user theme" without
 saying what a theme is. It is an accent colour and two presets, applied to the

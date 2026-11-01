@@ -12,6 +12,7 @@
 export const sections = [
   { group: 'overview', icon: 'dashboard', key: 'overview' },
   { group: 'catalogue', icon: 'projects', key: 'projects' },
+  { group: 'catalogue', icon: 'projects', key: 'curation' },
   { group: 'catalogue', icon: 'search', key: 'content-health' },
   { group: 'catalogue', icon: 'community', key: 'community' },
   { group: 'moderation', icon: 'comments', key: 'comments' },

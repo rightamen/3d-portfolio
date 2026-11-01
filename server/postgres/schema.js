@@ -537,6 +537,36 @@ export const ensureSchema = async (pool) => {
       updated_at timestamptz NOT NULL DEFAULT now()
     );
 
+    -- Existing works remain unscored and not recommended until reviewed.
+    ALTER TABLE works
+      ADD COLUMN IF NOT EXISTS curation_score integer CHECK (curation_score BETWEEN 0 AND 100),
+      ADD COLUMN IF NOT EXISTS exhibition_recommended boolean NOT NULL DEFAULT false,
+      ADD COLUMN IF NOT EXISTS curation_updated_at timestamptz,
+      ADD COLUMN IF NOT EXISTS rating_version integer NOT NULL DEFAULT 1;
+    CREATE TABLE IF NOT EXISTS work_ratings (
+      work_id text NOT NULL REFERENCES works(id) ON DELETE CASCADE,
+      user_id text NOT NULL REFERENCES visitor_users(id) ON DELETE CASCADE,
+      score smallint NOT NULL CHECK (score BETWEEN 1 AND 5),
+      recommended boolean NOT NULL DEFAULT false CHECK (NOT recommended OR score >= 4),
+      work_version integer NOT NULL,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now(),
+      PRIMARY KEY (work_id, user_id)
+    );
+    CREATE INDEX IF NOT EXISTS work_ratings_version_idx ON work_ratings(work_id, work_version);
+    DO $$ BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid = 'works'::regclass AND conname = 'works_recommendation_score_check'
+      ) THEN
+        ALTER TABLE works ADD CONSTRAINT works_recommendation_score_check
+          CHECK (NOT exhibition_recommended OR (curation_score IS NOT NULL AND curation_score >= 90));
+      END IF;
+    END $$;
+    CREATE INDEX IF NOT EXISTS works_exhibition_idx
+      ON works (curation_score DESC, curation_updated_at DESC, id)
+      WHERE status = 'published' AND exhibition_recommended = true;
+
     -- /w/:handle/:slug, so the slug only has to be unique to its creator.
     CREATE UNIQUE INDEX IF NOT EXISTS works_creator_slug_unique_idx
       ON works (creator_id, lower(slug));

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, NavLink, useNavigate } from 'react-router-dom'
 
 import AccountMenuBar from '../components/AccountMenuBar'
 import NotificationBell from '../components/NotificationBell'
@@ -40,9 +40,12 @@ const Navbar = ({
   language,
   onLanguageChange,
   onVisitorLogout,
+  onRetrySession,
   ownerHandle,
   visitorToken,
   visitorUser,
+  visitorLoading,
+  visitorSessionError,
 }) => {
   const [open, setOpen] = useState(false)
   const navigate = useNavigate()
@@ -66,14 +69,15 @@ const Navbar = ({
     <header className="topbar">
       <div className="topbar-inner">
         <Link className="topbar-brand" onClick={() => setOpen(false)} to="/">
-          mrright.blog
+          <span className="studio-brand-mark" aria-hidden="true">m</span>
+          <span>mrright<span className="studio-brand-domain">.blog</span></span>
         </Link>
 
         <nav className="topbar-links">
           {links.map((item) => (
-            <Link key={item.to} onClick={() => setOpen(false)} to={item.to}>
+            <NavLink key={item.to} onClick={() => setOpen(false)} to={item.to}>
               {item.label}
-            </Link>
+            </NavLink>
           ))}
         </nav>
 
@@ -95,8 +99,12 @@ const Navbar = ({
               something behind it. It renders nothing at all for a visitor who is
               not signed in -- an icon that does nothing is still the thing that
               teaches people not to trust the bar. */}
-          <NotificationBell authToken={visitorToken} copy={copy} />
-          <AccountMenuBar copy={copy} onSignOut={onVisitorLogout} visitorUser={visitorUser} />
+          <NotificationBell authToken={visitorToken} copy={copy} key={visitorToken} />
+          <AccountMenuBar
+            copy={copy} key={`account:${visitorToken}`} onSignOut={onVisitorLogout}
+            onRetrySession={onRetrySession} visitorUser={visitorUser}
+            visitorLoading={visitorLoading} visitorSessionError={visitorSessionError}
+          />
         </div>
 
         <button

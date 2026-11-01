@@ -1,22 +1,16 @@
 import { useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 
 import WorkCard from '../components/WorkCard'
+import InfiniteWorks from '../components/InfiniteWorks'
 import { assetCategoryProfiles, getAssetCategoryProfile } from '../lib/assetCategories'
 
-// The homepage catalogue.
-//
-// It used to be a grid of rich cards -- category badge, year, format, title,
-// summary paragraph, stack pills, a model-preview button and a details link --
-// which is a product listing rather than a thumbnail. It is now the same tile
-// /explore and the creator profiles use, for two reasons: a browsing art site
-// shows work, not descriptions of work; and two implementations of one card
-// drift apart, which these two already had.
-//
-// The model viewer moved with it. It lives on the work page, which is where
-// somebody who has chosen a work is -- rather than on every tile of a grid
-// they are still scanning.
+// The catalogue is fetched once by the homepage; both views and all category
+// filters reuse it. Infinite mode repeats these real works in a bounded tile
+// pool, while grid mode keeps a conventional list for focused browsing.
 const Projects = ({ copy, language, projects = [], status = 'ready' }) => {
   const [activeCategory, setActiveCategory] = useState('all')
+  const [view, setView] = useState('infinite')
 
   const categoryCounts = useMemo(() => {
     const counts = new Map(assetCategoryProfiles.map((category) => [category.value, 0]))
@@ -39,24 +33,22 @@ const Projects = ({ copy, language, projects = [], status = 'ready' }) => {
     [activeCategory, language, projects],
   )
 
-  // Not `section-space` any more. That is `min-h-screen mt-20`, so this
-  // section reserved a whole viewport whatever it contained: measured at
-  // 1440px it was 900px tall around a 213px grid, leaving 561px of nothing
-  // between the last work and the community below. A browse page with four
-  // works should be short, not padded out to look busy.
   return (
     <section id="projects" className="c-space mt-16 md:mt-20">
       <div className="section-kicker">{copy.projectsKicker}</div>
-      <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+      <div className="studio-section-heading">
         <h2 className="text-heading">{copy.projectsTitle}</h2>
-        <p className="max-w-xl text-neutral-400">{copy.projectsIntro}</p>
+        <p className="studio-section-intro">{copy.projectsIntro}</p>
+        <Link className="studio-view-all" to="/explore">{copy.studioViewAll}<span aria-hidden="true">↗</span></Link>
       </div>
 
+      <div className="exhibit-browse-bar">
       <div className="asset-filter-panel">
         <button
           type="button"
           className={activeCategory === 'all' ? 'asset-filter-active' : 'asset-filter'}
           onClick={() => setActiveCategory('all')}
+          aria-pressed={activeCategory === 'all'}
         >
           <span>{copy.allWork}</span>
           <strong>{projects.length}</strong>
@@ -71,12 +63,19 @@ const Projects = ({ copy, language, projects = [], status = 'ready' }) => {
               className={activeCategory === category.value ? 'asset-filter-active' : 'asset-filter'}
               style={{ '--category-accent': category.accent }}
               onClick={() => setActiveCategory(category.value)}
+              aria-pressed={activeCategory === category.value}
             >
               <span>{category.shortLabel}</span>
               <strong>{categoryCounts.get(category.value) || 0}</strong>
             </button>
           )
         })}
+      </div>
+
+      <div className="exhibit-view-toggle" role="group" aria-label={copy.infiniteView}>
+        <button type="button" aria-pressed={view === 'infinite'} onClick={() => setView('infinite')}><span aria-hidden="true">∞</span>{copy.infiniteView}</button>
+        <button type="button" aria-pressed={view === 'grid'} onClick={() => setView('grid')}><span aria-hidden="true">▦</span>{copy.spatialGrid}</button>
+      </div>
       </div>
 
       {/* Only for the category actually chosen. Rendering all six on "all" put
@@ -110,17 +109,21 @@ const Projects = ({ copy, language, projects = [], status = 'ready' }) => {
           to a category nobody has published in and a grid with no message is a
           page that looks broken rather than empty. The i18n usage test is what
           noticed, by reporting its two strings as unrendered. */}
-      {status === 'error' ? (
+      {status === 'loading' ? (
+        <p className="text-neutral-400" role="status">{copy.exploreLoading}</p>
+      ) : status === 'error' ? (
         <p className="text-coral">{copy.exploreLoadError}</p>
       ) : visibleProjects.length === 0 ? (
         <div className="asset-empty-state">
           <strong>{copy.emptyCategoryTitle}</strong>
           <span>{copy.emptyCategoryBody}</span>
         </div>
+      ) : view === 'infinite' ? (
+        <InfiniteWorks key={activeCategory} works={visibleProjects} copy={copy} language={language} />
       ) : (
         <div className="explore-grid">
           {visibleProjects.map((work) => (
-            <WorkCard copy={copy} key={work.slug} language={language} work={work} />
+            <WorkCard copy={copy} key={work.id || work.url} language={language} work={work} />
           ))}
         </div>
       )}

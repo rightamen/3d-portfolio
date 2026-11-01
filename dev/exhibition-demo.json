@@ -1,0 +1,105 @@
+{
+  "enabled": true,
+  "notice": "Local development samples only. Ratings and recommendations are illustrative; never write them to production.",
+  "works": [
+    {
+      "id": "1788787205428-ymmx98",
+      "slug": "crimson-rune-greatsword",
+      "url": "/w/mrright/crimson-rune-greatsword",
+      "status": "published",
+      "title": "赤焰符文长剑",
+      "titleZh": "赤焰符文长剑",
+      "titleEn": "Crimson Rune Greatsword",
+      "titleJa": "紅炎ルーン大剣",
+      "image": "/uploads/images/1781583835117-tl-jian.png",
+      "thumbnail": "/uploads/thumbnails/1788976105399-c33232bd-1781583835117-tl-jian-thumb.webp",
+      "assetCategory": "hand-painted-scene",
+      "priceCents": 0,
+      "currency": "usd",
+      "creator": {
+        "avatarUrl": "/uploads/avatars/1788976106144-aefda42b-1788677164353-43732322ef6f-avatar.webp",
+        "displayName": "Right",
+        "handle": "mrright",
+        "id": "1780828897117-bn3hw8",
+        "profilePublic": true
+      },
+      "contentVersion": 1,
+      "curation": {
+        "score": 96,
+        "recommended": true,
+        "reviewedAt": null
+      },
+      "ratings": {
+        "average": 0,
+        "count": 0,
+        "recommendations": 0
+      }
+    },
+    {
+      "id": "1788787205432-laimmo",
+      "slug": "md-leimu",
+      "url": "/w/mrright/md-leimu",
+      "status": "published",
+      "title": "MD Leimu",
+      "titleZh": "MD 雷姆",
+      "titleEn": "MD Leimu",
+      "titleJa": "MD レイム",
+      "image": "/uploads/images/1780997894761-md-leimu-final.png",
+      "thumbnail": "/uploads/thumbnails/1788976105820-7a52445b-1780997894761-md-leimu-final-thumb.webp",
+      "assetCategory": "hand-painted-character",
+      "priceCents": 0,
+      "currency": "usd",
+      "creator": {
+        "avatarUrl": "/uploads/avatars/1788976106144-aefda42b-1788677164353-43732322ef6f-avatar.webp",
+        "displayName": "Right",
+        "handle": "mrright",
+        "id": "1780828897117-bn3hw8",
+        "profilePublic": true
+      },
+      "contentVersion": 1,
+      "curation": {
+        "score": 92,
+        "recommended": false,
+        "reviewedAt": null
+      },
+      "ratings": {
+        "average": 4.8,
+        "count": 25,
+        "recommendations": 22
+      }
+    },
+    {
+      "id": "1788787205417-fpwijb",
+      "slug": "shadow-altar-candle-shrine",
+      "url": "/w/mrright/shadow-altar-candle-shrine",
+      "status": "published",
+      "title": "暗影祭坛烛台",
+      "titleZh": "暗影祭坛烛台",
+      "titleEn": "Shadow Altar Candle Shrine",
+      "titleJa": "影の祭壇キャンドル shrine",
+      "image": "/uploads/images/1781587765165-sc-jitan.png",
+      "thumbnail": "/uploads/thumbnails/1788976104913-4b209a5e-1781587765165-sc-jitan-thumb.webp",
+      "assetCategory": "hand-painted-scene",
+      "priceCents": 0,
+      "currency": "usd",
+      "creator": {
+        "avatarUrl": "/uploads/avatars/1788976106144-aefda42b-1788677164353-43732322ef6f-avatar.webp",
+        "displayName": "Right",
+        "handle": "mrright",
+        "id": "1780828897117-bn3hw8",
+        "profilePublic": true
+      },
+      "contentVersion": 1,
+      "curation": {
+        "score": 92,
+        "recommended": true,
+        "reviewedAt": null
+      },
+      "ratings": {
+        "average": 0,
+        "count": 0,
+        "recommendations": 0
+      }
+    }
+  ]
+}

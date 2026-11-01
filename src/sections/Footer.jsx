@@ -1,12 +1,9 @@
-const Footer = ({ profile, copy }) => {
-  return (
-    <footer id="footer" className="c-space border-t border-white/10 py-8 text-sm text-neutral-500">
-      <div className="mx-auto flex max-w-7xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <p>{profile?.domain || 'mrright.blog'}</p>
-        <p>{copy.footerLine}</p>
-      </div>
-    </footer>
-  )
-}
-
+import { Link } from 'react-router-dom'
+const Footer = ({ profile, copy }) => (
+  <footer id="footer" className="studio-footer c-space">
+    <div><Link className="studio-footer-brand" to="/">mrright<span>.blog</span></Link><p>{copy.footerLine}</p></div>
+    <nav aria-label={copy.studioFooterNav}><Link to="/explore">{copy.navExplore}</Link><Link to="/community">{copy.navCommunity}</Link><Link to="/account">{copy.account}</Link></nav>
+    <small>© {new Date().getFullYear()} {profile?.domain || 'mrright.blog'}</small>
+  </footer>
+)
 export default Footer

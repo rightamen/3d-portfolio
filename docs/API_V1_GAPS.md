@@ -185,11 +185,10 @@ moving. Until then the contract tests are the specification, and
 `API_ERROR_CODES` already carries `WORK_NOT_FOUND` and `WORK_SLUG_TAKEN` so
 the error surface stays enumerated even while the payloads do not.
 
-⚠️ Related staleness worth fixing separately: `API_V1_FREEZE_PLAN.md` §7 says
-the frozen error-code set is 26 codes, "`API_ERROR_CODES` in full". It has not
-been in full for several rounds -- the set is now 39. Either the plan's number
-follows the constant, or §7 needs to name the 26 explicitly; right now it
-claims something that is not true.
+Resolved documentation discrepancy: API_V1_FREEZE_PLAN.md §7 explicitly
+names the original 26-code frozen subset. It no longer claims that subset is
+the full API_ERROR_CODES registry. Use the registry and OpenAPI enum validation
+for the current complete set.
 
 ## 7. Endpoints intentionally excluded from the C++ SDK surface
 

@@ -36,7 +36,7 @@ const WorkCard = ({ copy, language, showCreator = true, work }) => {
 
   return (
     <article className="work-tile">
-      <Link className="work-tile-media" to={work.url}>
+      <Link className="work-tile-media" to={work.url} aria-label={localizedWorkField(work, 'title', language)}>
         {/* The thumbnail, falling back to the full cover for rows that predate
             thumbnails. A grid pulling full-size covers is how four tiles came
             to weigh 15.31MB -- the tiles were not empty, the pictures had not
@@ -48,6 +48,7 @@ const WorkCard = ({ copy, language, showCreator = true, work }) => {
         )}
         {/* A badge on the image, not a row beneath it: price is something you
             check while scanning, not after committing to a tile. */}
+        <span className="studio-card-category">{assetCategoryLabel(work.assetCategory, language)}</span>
         <span className="work-tile-price">{formatWorkPrice(work, copy)}</span>
       </Link>
 

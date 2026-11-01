@@ -11,7 +11,7 @@ import { initials } from '../lib/initials'
 // they were just several clicks deep. Nothing is a placeholder: an icon that
 // does nothing teaches people not to trust the bar.
 
-const AccountMenuBar = ({ copy, onSignOut, visitorUser }) => {
+const AccountMenuBar = ({ copy, onSignOut, onRetrySession, visitorUser, visitorLoading, visitorSessionError }) => {
   const [open, setOpen] = useState(false)
   const holder = useRef(null)
 
@@ -34,6 +34,18 @@ const AccountMenuBar = ({ copy, onSignOut, visitorUser }) => {
       document.removeEventListener('keydown', onKey)
     }
   }, [open])
+
+  if (visitorSessionError) {
+    return (
+      <button className="topbar-signin" type="button" onClick={onRetrySession} title={copy.sessionUnavailableBody}>
+        {copy.sessionRetry}
+      </button>
+    )
+  }
+
+  if (visitorLoading && !visitorUser) {
+    return <span className="topbar-signin" role="status">{copy.loading}</span>
+  }
 
   if (!visitorUser) {
     return (

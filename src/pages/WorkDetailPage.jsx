@@ -1,6 +1,7 @@
 import { Suspense, lazy, useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 
+import WorkRatings from '../components/WorkRatings'
 import WorkComments from '../components/WorkComments'
 import WorkPurchase from '../components/WorkPurchase'
 import { getWork, getWorkLikes, toggleWorkLike } from '../lib/api'
@@ -33,7 +34,8 @@ const WorkDetailPage = ({ authToken, copy, language, visitorUser }) => {
   // is derived rather than assigned. That keeps the effect free of a
   // synchronous setState and means navigating between two works never shows
   // the previous one under the new URL.
-  const requestKey = `${handle}/${slug}`
+  // Drafts and protected asset URLs depend on the session as well as the URL.
+  const requestKey = JSON.stringify([handle, slug, authToken])
   const [loaded, setLoaded] = useState({ key: '', message: '', status: 'loading', work: null })
   const [viewerOpen, setViewerOpen] = useState(false)
 
@@ -282,6 +284,8 @@ const WorkDetailPage = ({ authToken, copy, language, visitorUser }) => {
           )}
         </div>
       </div>
+
+      {work.status === 'published' && <WorkRatings key={JSON.stringify([work.id, authToken])} work={work} handle={handle} slug={slug} authToken={authToken} visitorUser={visitorUser} copy={copy} />}
 
       {/* Only on a published work: a draft has nothing public to discuss, and
           the API refuses comments on one anyway. */}

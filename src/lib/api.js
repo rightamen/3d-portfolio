@@ -155,8 +155,9 @@ export const getExperience = () => request('/api/experience')
 // The marketplace catalogue. Params are optional and only sent when set, so
 // a bare getWorks() asks for the unfiltered first page rather than for
 // `?creator=&category=&query=`, which the server would have to strip anyway.
-export const getWorks = ({ category, creator, limit, page, query } = {}) => {
+export const getWorks = ({ category, creator, exhibition, limit, page, query } = {}) => {
   const params = new URLSearchParams()
+  if (exhibition) params.set('exhibition', 'true')
   if (creator) params.set('creator', String(creator).replace(/^@/, ''))
   if (category) params.set('category', category)
   if (query) params.set('query', query)
@@ -983,3 +984,20 @@ export const updateAdminAnnouncement = (token, id, fields) =>
 
 export const deleteAdminAnnouncement = (token, id) =>
   adminRequest(`/api/admin/announcements/${id}`, token, { method: 'DELETE' })
+
+
+export const getWorkRating = (handle, slug, token) =>
+  request(workCommentsPath(handle, slug).replace(/comments$/, 'rating'), { cache: 'no-store', headers: token ? authHeaders(token) : undefined })
+
+export const saveWorkRating = (handle, slug, fields, token) =>
+  request(workCommentsPath(handle, slug).replace(/comments$/, 'rating'), {
+    method: 'PUT', headers: authHeaders(token, { 'Content-Type': 'application/json' }), body: JSON.stringify(fields),
+  })
+
+export const getAdminWorks = (token, { page = 1, status = 'published' } = {}) =>
+  request('/api/admin/works?' + new URLSearchParams({ page, status, limit: 12 }), { cache: 'no-store', headers: authHeaders(token) })
+
+export const saveAdminCuration = (token, id, fields) =>
+  request('/api/admin/works/' + encodeURIComponent(id) + '/curation', {
+    method: 'PATCH', headers: authHeaders(token, { 'Content-Type': 'application/json' }), body: JSON.stringify(fields),
+  })

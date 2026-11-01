@@ -1,6 +1,14 @@
 # mrright.blog API Contract
 
-Status: draft target contract for API-first migration.
+Status: target contract with historical migration notes. Checkpoint: 2026-10-31.
+
+The shared response envelope and strict /api/v1 routing are implemented. Legacy
+/api deliberately retains compatibility mirrors. Older migration lists below
+record the original plan, not a fresh audit of unfinished work. Marketplace
+payloads are not all frozen yet; consult the freeze checklist and contract tests.
+A failed session check is not proof of expiry: preserve credentials on network
+or server failures and offer retry. Clear on confirmed null user or invalid
+authentication; the Web client retries failed checks on reconnect.
 
 This document defines the stable API shape that the Web client and future C++ native clients should consume. It is a target contract, not a statement that every current endpoint already follows it. Current drift and follow-up migration work are listed below.
 
@@ -438,9 +446,10 @@ Migration needs:
 - Admin upload responses should adopt the Asset Model.
 - Admin moderation and audit operations must keep server-side authorization and audit writing.
 
-## Current Response Drift
+## Historical Response Drift
 
-The current implementation has these response styles:
+This table records pre-helper shapes and targets. Current responses use the
+shared envelope, with intentional compatibility mirrors under /api:
 
 | Style | Example | Migration target |
 | --- | --- | --- |
@@ -451,7 +460,7 @@ The current implementation has these response styles:
 | String error | `{ "error": "Project not found." }` | `{ "data": null, "pagination": {}, "error": { "code": "PROJECT_NOT_FOUND", "message": "Project not found." } }` |
 | Mixed code error | `{ "code": "PROFILE_ADMIN_DISABLED", "error": "..." }` | `{ "data": null, "pagination": {}, "error": { "code": "PROFILE_ADMIN_DISABLED", "message": "..." } }` |
 
-## Migration Plan
+## Original Migration Plan (historical)
 
 Recommended implementation order:
 
@@ -486,3 +495,26 @@ Future C++ clients should:
 - Never directly access the database.
 - Cache assets using `url`, `checksum`, `size`, and `createdAt`.
 - Expect permissions to be determined by server responses, not local heuristics.
+
+
+### 2026-11-01: curated exhibition and verified ratings (local implementation)
+
+GET /api/works accepts exhibition=true for a server-filtered selection.
+Published works qualify through either curator score >=90/100 plus explicit
+recommendation, or current-version verified-email ratings with average >=4.5,
+at least 10 ratings and at least 10 recommendations. Unrounded averages apply.
+
+Work objects now contain contentVersion, curation {score,recommended,reviewedAt},
+and ratings {count,average,recommendations}. GET /api/works/:handle/:slug/rating
+returns ratings, mine (null for anonymous/no current vote), and contentVersion.
+PUT the same path requires a verified visitor, integer score 1–5, boolean
+recommended (true only at 4+), and the version being reviewed. Authors cannot
+vote for themselves; one row per user/work is updated rather than duplicated.
+PATCH /api/admin/works/:id/curation requires administrator authorization and
+score (null or integer 0–100), recommended, version. A stale version returns 409.
+Unpublished works cannot receive a curator recommendation.
+
+Changes to editable work content or files invalidate old-version exhibition
+decisions. Source-file privacy and ordinary catalogue visibility are unchanged.
+Existing response envelopes and error codes are reused. These endpoints and
+schema additions have not yet been deployed.

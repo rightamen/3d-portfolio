@@ -23,7 +23,7 @@ import { formatWorkPrice } from '../lib/works'
 
 const EMPTY_ORDER = { events: [], order: null, paymentMethods: [] }
 
-const WorkPurchase = ({ authToken, copy, handle, isOwner, slug, work }) => {
+const WorkPurchaseSession = ({ authToken, copy, handle, isOwner, slug, work }) => {
   const [loaded, setLoaded] = useState(EMPTY_ORDER)
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
@@ -38,36 +38,52 @@ const WorkPurchase = ({ authToken, copy, handle, isOwner, slug, work }) => {
   // The order id is remembered per work, so returning to the page picks the
   // pending order back up instead of looking like nothing happened.
   const storageKey = useMemo(() => `mrright-order:${handle}/${slug}`, [handle, slug])
+  const [remembered] = useState(() => {
+    try {
+      return authToken ? window.localStorage.getItem(storageKey) || '' : ''
+    } catch {
+      return ''
+    }
+  })
+  const [restoreStatus, setRestoreStatus] = useState(remembered ? 'loading' : 'ready')
+  const [restoreAttempt, setRestoreAttempt] = useState(0)
 
   useEffect(() => {
-    if (!authToken) return undefined
-    let remembered = ''
-    try {
-      remembered = window.localStorage.getItem(storageKey) || ''
-    } catch {
-      // A browser that refuses storage still works; it just forgets.
-    }
     if (!remembered) return undefined
 
     let isMounted = true
     getOrder(remembered, authToken)
       .then((payload) => {
-        if (isMounted) setLoaded({ events: payload.events || [], order: payload.order, paymentMethods: payload.paymentMethods || [] })
+        if (!isMounted) return
+        // Closed orders must not reopen a payment panel after a reload.
+        if (payload.order?.workId === work.id && ['pending', 'paid'].includes(payload.order.status)) {
+          setLoaded({ events: payload.events || [], order: payload.order, paymentMethods: payload.paymentMethods || [] })
+          setNote(payload.order.buyerNote || '')
+        } else {
+          try { window.localStorage.removeItem(storageKey) } catch { /* storage is optional */ }
+        }
+        setRestoreStatus('ready')
       })
-      .catch(() => {
-        // A remembered order that no longer resolves is not an error worth
-        // showing: the buy button is the right thing to see.
+      .catch((error) => {
+        if (!isMounted) return
+        // Losing connectivity is not evidence that the order disappeared.
+        // Keep it and offer a retry instead of inviting another payment.
+        if (![401, 403, 404].includes(error.status)) {
+          setRestoreStatus('error')
+          return
+        }
         try {
           window.localStorage.removeItem(storageKey)
         } catch {
           /* nothing to clean up */
         }
+        setRestoreStatus('ready')
       })
 
     return () => {
       isMounted = false
     }
-  }, [authToken, storageKey])
+  }, [authToken, remembered, restoreAttempt, storageKey, work.id])
 
   const remember = useCallback(
     (payload) => {
@@ -119,6 +135,22 @@ const WorkPurchase = ({ authToken, copy, handle, isOwner, slug, work }) => {
     )
   }
 
+  if (restoreStatus !== 'ready') {
+    return (
+      <div className="work-purchase">
+        <p role="status">{restoreStatus === 'loading' ? copy.loading : copy.buyOrderLoadFailed}</p>
+        {restoreStatus === 'error' && (
+          <button className="secondary-action" type="button" onClick={() => {
+            setRestoreStatus('loading')
+            setRestoreAttempt((attempt) => attempt + 1)
+          }}>
+            {copy.buyRetry}
+          </button>
+        )}
+      </div>
+    )
+  }
+
   // The creator, and anyone who has bought it, get the file. The API decides;
   // this only chooses what to render.
   if (isFree || isOwner || isPaid) {
@@ -133,7 +165,7 @@ const WorkPurchase = ({ authToken, copy, handle, isOwner, slug, work }) => {
     )
   }
 
-  if (!canBePaid) {
+  if (!canBePaid && !loaded.order) {
     return (
       <div className="work-purchase">
         <p className="text-neutral-400">{copy.buyNotSelling}</p>
@@ -163,7 +195,7 @@ const WorkPurchase = ({ authToken, copy, handle, isOwner, slug, work }) => {
     <div className="work-purchase work-purchase-open">
       <h3>{copy.buyPayTitle}</h3>
       <p className="work-purchase-amount">
-        {copy.buyPayAmount}: <strong>{formatWorkPrice(work, copy)}</strong>
+        {copy.buyPayAmount}: <strong>{formatWorkPrice({ priceCents: loaded.order.amountCents, currency: loaded.order.currency }, copy)}</strong>
       </p>
 
       {/* Deliberately before the payment codes, and deliberately not a link to
@@ -250,5 +282,11 @@ const WorkPurchase = ({ authToken, copy, handle, isOwner, slug, work }) => {
     </div>
   )
 }
+
+// A different work or session gets fresh private state, including pending
+// requests and the acknowledgement of the payment instructions.
+const WorkPurchase = (props) => (
+  <WorkPurchaseSession key={JSON.stringify([props.authToken, props.work.id])} {...props} />
+)
 
 export default WorkPurchase

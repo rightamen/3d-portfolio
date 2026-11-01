@@ -2,9 +2,9 @@
 
 ## 项目信息
 
-- 本地目录：/mnt/g/Code/3d-portfolio
+- 本地目录：/root/Code/3d-portfolio
 - GitHub 仓库：rightamen/3d-portfolio
-- 当前分支：codex/check-project-and-fix-errors
+- 工作分支：每次以 git status --short --branch 为准（2026-10-31 为 main）
 - 域名：https://mrright.blog
 - VPS：147.79.20.232
 - 线上目录：/opt/mrright-portfolio

@@ -60,6 +60,7 @@ import AdminAnnouncementsSection from './components/admin/AdminAnnouncementsSect
 import AdminOrdersSection from './components/admin/AdminOrdersSection'
 import AdminProjectEditor from './components/admin/AdminProjectEditor'
 import AdminProjectsSection from './components/admin/AdminProjectsSection'
+import AdminCurationSection from './components/admin/AdminCurationSection'
 import AdminSystemPanel from './components/admin/AdminSystemPanel'
 import {
   appendKeyword,
@@ -1277,6 +1278,8 @@ const Admin = () => {
               systemLabel={loadedAt ? t('dash.dataAsOf', { age: fmt.formatAge(loadedAt) }) : ''}
             />
           )}
+
+          {activeSection === 'curation' && <AdminCurationSection key={token} token={token} />}
 
           {activeSection === 'content-health' && (
             <AdminContentHealth onNavigate={openSection} token={token} />
