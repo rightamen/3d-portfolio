@@ -17,7 +17,7 @@ So the column that matters below is the second one.
 | --- | --- | --- |
 | `test:unit` | Pure logic: i18n resolution, SEO routes, themes, payment info, image profiles, crop arithmetic, profile bounds, admin nav. Fast, no I/O. | Anything that needs a database, a browser, or a request. A function can be perfect and never be called. |
 | `test:api` | The HTTP contract against a server with **no** database — envelope shape, error codes, auth refusals. | Anything that needs stored rows: entitlement, orders, notifications, publishing. |
-| `test:api:db` | The same contract against a **disposable PostgreSQL**: register → verify → publish → order → download plus order concurrency/rollback, 214 checks. | The browser. Every one of these calls the API directly, so a broken button, a wrong selector or an unrendered string all pass. |
+| `test:api:db` | The same contract against a **disposable PostgreSQL**: register → verify → publish → order → download plus order concurrency/rollback, 214 checks, including targeted admin and mobile-user exhibition journeys. | Most UI behavior and visual quality; the two exhibition journeys exercise only their paths. Pair with marketplace UI and notification journey checks. |
 | `test:marketplace-ui` | The built frontend in local Chromium with controlled API responses: independent homepage loading, empty/error/loading states, order snapshot amounts, closed orders, session recovery, stale account responses, translated category filters, and mobile overflow. Run `npm run build` first. | Real API authorization and SQL. Its responses are fixtures; pair it with `test:api:db` and the real notification journey. |
 | `test:schema-migration` | That `ensureSchema()` migrates an **existing** database, not just builds an empty one — the path production actually takes — and that it is idempotent. | Whether the new columns are ever read or written by anything. |
 | `test:notifications` | The notification queries: who counts as unread, that marking read is per-person, that unpublishing empties every inbox, that one account cannot delete another's notice. | **The UI entirely.** A missing i18n key, a bell that never polls, a badge that never clears. This is the gap that shipped. |
@@ -147,3 +147,12 @@ desktop and 390px smoke checks passed with no page errors. TLS checks had
 14 passes, zero failures and two legacy /projects/ sitemap warnings; the
 actual /w/ detail route was checked separately. No ratings or curator choices
 were seeded in production. See RELEASE_2026-11-01.md for backup locations.
+
+
+2026-11-01 documentation checkpoint: GET-only production follow-up also
+confirmed /w/mrright/md-leimu 200, its legacy /projects/md-leimu 301 target,
+non-empty catalogue thumbnails, absence of private payment fields in public
+works and email/internalId in public creator data, and 401 for all four
+anonymous notification/announcement endpoints. No code suites were repeated
+for this documentation-only checkpoint. Next steps are in
+HANDOFF_2026-11-01.md.

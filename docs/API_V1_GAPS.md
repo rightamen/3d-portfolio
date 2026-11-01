@@ -162,6 +162,16 @@ Added 2026-09-07/08 with phases 5, 6 and 7:
   `GET /api/admin/orders/stale`, `GET /api/admin/orders/{id}/events` — the
   evidence trail
 
+Added 2026-11-01 with the curated exhibition release:
+
+- GET /api/works?exhibition=true — server-filtered community/curator admission.
+- GET/PUT /api/works/{handle}/{slug}/rating — verified ratings and recommendation.
+- PATCH /api/admin/works/{id}/curation — admin-only score and recommendation.
+- Work DTO adds contentVersion, ratings and curation. Current behavior is
+  documented in CURATED_EXHIBITION_2026-11-01.md and exercised in
+  tests/api/exhibition.db.spec.js. These fields and endpoints are not yet
+  promised as part of the frozen C++ surface.
+
 ⚠️ **Two of these carry rules that must not be relaxed when they are finally
 written into the spec**, because the spec is where a future client learns what
 to expect:
