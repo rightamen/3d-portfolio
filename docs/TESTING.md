@@ -137,3 +137,13 @@ The migration checker now seeds an existing work and confirms it remains
 unscored and unrecommended after the upgrade; repeat initialization passed.
 The local public preview is read-only and uses the old live API, so it has no
 new rating records. Synthetic scores used in layout screenshots are test-only.
+
+
+2026-11-01 release verification: source commit c6d3334 and fixed tag
+release-2026-11-01 were pushed before deployment. Production checks confirm
+174 shipped file hashes, unchanged env/systemd/nginx and 13 upload hashes,
+health/admin summary/curation metadata and nine public routes. Real Chromium
+desktop and 390px smoke checks passed with no page errors. TLS checks had
+14 passes, zero failures and two legacy /projects/ sitemap warnings; the
+actual /w/ detail route was checked separately. No ratings or curator choices
+were seeded in production. See RELEASE_2026-11-01.md for backup locations.

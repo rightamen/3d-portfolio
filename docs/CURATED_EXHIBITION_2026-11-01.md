@@ -30,7 +30,7 @@
 - PATCH /api/admin/works/:id/curation：管理员提交 score(0–100 或 null)、recommended、version。
 - 作品 DTO 新增 contentVersion、ratings{count,average,recommendations}、curation{score,recommended,reviewedAt}。
 - 增加 works 的 curation_score、exhibition_recommended、curation_updated_at、rating_version 及索引；新增 work_ratings，唯一键(work_id,user_id)，含 work_version。
-- 迁移为增量、可重复执行，旧作品保持未评选。生产库尚未执行本轮迁移。
+- 迁移为增量、可重复执行，旧作品保持未评选；已随 release-2026-11-01 在生产完成初始化。
 
 核心文件：server/exhibition.js、server/index.js、server/postgres/{schema,mappers,worksStore}.js；
 src/components/{WorkRatings,SpatialGallery}.jsx、src/components/admin/AdminCurationSection.jsx；
@@ -45,16 +45,16 @@ src/lib/api.js、站点/后台文案、后台导航、src/studio.css。
 - 完整 38 项本地浏览器回归通过；最后空展控件收整后 3 项相关回归再次通过。
 - 从 HEAD 旧 schema 升级，有实际旧作品行，默认不入展，二次运行幂等，检查通过。
 - 中英日桌面、390px 双推荐来源和手机沉浸视图无溢出、0 脚本异常。选中作品布局截图使用仅限测试的合成评分；未写入真实作品。截图在忽略目录 .deploy-tools/curation-ui/。
-- 公开只读设计预览 http://localhost:5174/ 仍读取线上旧服务端，现有作品没有新评分数据，因此显示待展。该预览不提供真实评分或管理写入；完整写入流程已在临时数据库验证。
+- 公开只读设计预览 http://localhost:5174/ 支持仅本地的演示覆盖，不提供真实评分或管理写入。线上已提供真实评分及后台评选接口，现有作品默认尚未评选。
 
-未 commit、未 push、未部署，基线仍为 7005b60 加此前修改。无生产业务写入；VPS 备份不适用。后续部署需沿用备份、构建和线上验证流程，并执行增量 schema 初始化。
+已提交并上线于 c6d3334（release-2026-11-01）。应用、配置、数据库均先备份后部署，增量 schema 初始化通过；未写入演示评分。实际版本与备份路径见 RELEASE_2026-11-01.md。
 
 
 ## 后续：本地演示精选
 
 用户随后要求先添加作品查看效果。5174 的只读预览现通过忽略目录
-.deploy-tools/exhibition-demo.json 临时选入长剑、雷姆和祭坛烛台三件作品，
+dev/exhibition-demo.json 临时选入长剑、雷姆和祭坛烛台三件作品，
 模拟两种推荐来源。前端只在开发环境识别 previewDemo，并显示三语演示提示。
 这些分数和票数不代表真实评价，未写入生产或开发数据库；不改变入展门槛，
-配置和样本不会进入发布包。设 enabled=false 即恢复真实空展。
+配置和样本已纳入 GitHub，仍不会进入生产发布包。npm run dev:showcase 启动只读预览；设 enabled=false 即读取真实精选目录。
 build/lint、348 单测以及桌面 3D/手机演示展示检查通过。
