@@ -218,3 +218,16 @@ Read-only public design checks covered home/explore/community on desktop and
 home/explore/community/login at 390px with no overflow or page exceptions.
 No API/schema/server changes or database writes were made; DB suites were
 not repeated. See MODULE_EFFECTS_2026-11-01.md and .deploy-tools/modules-ui/.
+
+
+2026-11-01 studio production release: source 765242f and fixed tag
+release-2026-11-01-studio were pushed before packaging/deployment. All 176 shipped
+file hashes matched, config hashes and 13 uploads were preserved, and stored
+account themes were unchanged. Health/admin summary/admin works, nine public
+routes, ten trilingual presets, legacy 301, privacy/thumbnail and anonymous
+401 checks passed. Real Chromium desktop and six 390px mobile routes passed
+with zero page exceptions or overflow, including profile theme trial/restore,
+wall, sticky navigation/back-top and module effects. No production theme save,
+rating, order or announcement was created; temporary admin sessions were
+revoked. This documentation update did not rerun code checks or redeploy.
+See RELEASE_2026-11-01_STUDIO.md for artifact and rollback references.

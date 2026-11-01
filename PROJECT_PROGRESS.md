@@ -1,5 +1,32 @@
 # mrright.blog 项目进度记录
 
+## 下次从这里继续（2026-11-01：个人展厅、主题与动效已推送并上线）
+
+按用户要求先提交并原子推送 main/标签，再打包和部署。
+代码 765242f92cbe6147fdaa45bc861a07cfe635f41b，标签 release-2026-11-01-studio，完成 2026-11-01 21:48:55 Asia/Shanghai。
+28 个文件的完整改动已上 GitHub：个人无限展厅、10 套主题、个人滚动与全站动效。
+本次结果另作后续文档提交推送，固定代码标签不移动。
+
+发布前 build/lint、部署脚本与备份检查通过；351 单测、63 浏览器、215 临时库检查通过。
+176 个发布文件逐项匹配，公网 release.json/前端入口一致；健康/后台概要/管理作品、
+九个页面、10 套三语主题、301/隐私/缩略图/匿名 401 均通过。
+真实 Chromium 桌面/390px 手机的主题试用/恢复、个人展墙、导航/回顶、详情及动效通过，
+无溢出、0 页面脚本异常，无生产演示提示或真实业务写入。
+
+应用备份 /opt/mrright-portfolio.backup-20261101-134849；配置备份 /etc/mrright-portfolio.env.backup-20261101-134848；
+数据库备份 /var/backups/mrright-portfolio/releases/before-765242f-20261101-134849.dump。
+全部历史备份保留，env/systemd/nginx 哈希、13 个上传与账号主题指纹不变；
+作品/访客/管理员维持 4/3/1，评分与策展推荐 0/0，无 schema 变更。
+部署/核验短期管理会话均撤销，用户自己的会话保留。
+
+详情 docs/RELEASE_2026-11-01_STUDIO.md；接续 docs/HANDOFF_2026-11-01.md 与四份专项文档。
+证据 .deploy-tools/studio-deploy.log、studio-verification.json、checkpoint-public-studio.json、
+release-studio-20261101/smoke.json。当前 main，运行代码由固定标签与 release.json 对应。
+最后只补文档，不重复构建或部署。后续发布检查器、部署入口统一、代理链、
+监控、邮件与 API v1 等待办保留，继续前先查看工作区。
+
+---
+
 ## 发布准备（2026-11-01：个人展厅、主题与动效先推送再上线）
 
 用户明确授权提交 GitHub 并上线。已核对所有累计改动与文档，计划固定代码标签
