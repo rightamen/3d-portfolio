@@ -20,6 +20,7 @@ import { isExhibitionEligible } from '../server/exhibition.js'
 import { getCopy, getInitialLanguage } from './lib/i18n'
 import { useVisitorSession } from './hooks/useVisitorSession'
 import Navbar from './sections/Navbar'
+import ModuleEffects from './components/ModuleEffects'
 
 const AuthPage = lazy(() => import('./pages/AuthPage'))
 const AccountPage = lazy(() => import('./pages/AccountPage'))
@@ -287,6 +288,7 @@ const App = () => {
         visitorLoading={visitorLoading}
         visitorSessionError={visitorSessionError}
       />
+      <ModuleEffects>
       <Routes>
         <Route
           path="/login/*"
@@ -371,6 +373,7 @@ const App = () => {
             homepage. */}
         <Route path="*" element={homePage} />
       </Routes>
+      </ModuleEffects>
     </div>
     </BrowserRouter>
   )

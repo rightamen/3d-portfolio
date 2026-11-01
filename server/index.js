@@ -14,9 +14,7 @@ import { createContentHealthHeadline } from './contentHealthHeadline.js'
 import { experience, profile, projects as staticProjects, skills } from './content.js'
 import { normalizePaymentInfo, readStoredPaymentInfo } from './paymentInfo.js'
 import {
-  DEFAULT_THEME,
-  THEME_FONTS,
-  THEME_SURFACES,
+  getThemeCatalogue,
   normalizeTheme,
   readStoredTheme,
   themeToTokens,
@@ -2258,15 +2256,7 @@ app.get('/api/works/:handle/:slug/download', requireWorksStore, async (request, 
 app.get('/api/theme-options', (_request, response) =>
   // The client builds its picker from this rather than hardcoding a copy that
   // can fall out of step with what the server will accept.
-  sendData(response, {
-    defaults: DEFAULT_THEME,
-    fonts: Object.entries(THEME_FONTS).map(([value, item]) => ({ label: item.label, value })),
-    surfaces: Object.entries(THEME_SURFACES).map(([value, item]) => ({
-      background: item.background,
-      label: item.label,
-      value,
-    })),
-  }),
+  sendData(response, getThemeCatalogue()),
 )
 
 app.get('/api/account/theme', requireVisitor, async (request, response) =>

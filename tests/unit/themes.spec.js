@@ -4,6 +4,9 @@ import {
   DEFAULT_THEME,
   MINIMUM_ACCENT_CONTRAST,
   THEME_FONTS,
+  THEME_PRESETS,
+  getThemeCatalogue,
+  relativeLuminance,
   THEME_SURFACES,
   contrastRatio,
   normalizeTheme,
@@ -73,14 +76,14 @@ describe('normalizeTheme', () => {
   it('judges the same accent against the surface it is actually on', () => {
     // The whole reason the two are validated together: a mid-tone can be fine
     // on one preset and unreadable on another.
-    const results = Object.keys(THEME_SURFACES).map((surface) => ({
+    const results = Object.keys(THEME_SURFACES).filter(surface => relativeLuminance(THEME_SURFACES[surface].background) < .5).map((surface) => ({
       ok: normalizeTheme({ accent: '#3f4b5c', surface }).errors.length === 0,
       surface,
     }))
 
     expect(results.some((entry) => entry.ok)).toBe(false)
     // ...while a bright accent clears every one of them.
-    for (const surface of Object.keys(THEME_SURFACES)) {
+    for (const surface of Object.keys(THEME_SURFACES).filter(surface => relativeLuminance(THEME_SURFACES[surface].background) < .5)) {
       expect(normalizeTheme({ accent: '#7dd3fc', surface }).errors, surface).toEqual([])
     }
   })
@@ -89,7 +92,7 @@ describe('normalizeTheme', () => {
     // A preset nobody can pass validation on is a preset that should not be
     // offered at all.
     for (const [surface, item] of Object.entries(THEME_SURFACES)) {
-      const { errors } = normalizeTheme({ accent: '#ffffff', surface })
+      const { errors } = normalizeTheme({ accent: relativeLuminance(item.background) > .5 ? '#202020' : '#ffffff', surface })
       expect(errors, `${surface} (${item.background})`).toEqual([])
     }
   })
@@ -118,8 +121,15 @@ describe('themeToTokens', () => {
     expect(Object.keys(themeToTokens(DEFAULT_THEME)).sort()).toEqual([
       '--theme-accent',
       '--theme-font',
+      '--theme-line',
+      '--theme-muted',
       '--theme-on-accent',
+      '--theme-panel',
+      '--theme-raised',
+      '--theme-soft',
+      '--theme-stage',
       '--theme-surface',
+      '--theme-text',
     ])
   })
 
@@ -217,5 +227,38 @@ describe('themeToTokens', () => {
     // Documented as a deliberate choice rather than a number someone tuned
     // until their favourite colour passed.
     expect(MINIMUM_ACCENT_CONTRAST).toBe(3)
+  })
+})
+
+
+describe('complete creator themes', () => {
+  it('offers ten distinct valid trilingual combinations with matching tokens', () => {
+    const catalogue = getThemeCatalogue()
+    expect(catalogue.presets).toHaveLength(10)
+    expect(new Set(catalogue.presets.map(item => item.id)).size).toBe(10)
+    expect(new Set(catalogue.presets.map(item => JSON.stringify(item.theme))).size).toBe(10)
+    for (const item of catalogue.presets) {
+      expect(normalizeTheme(item.theme).errors, item.id).toEqual([])
+      expect(item.themeTokens).toEqual(themeToTokens(item.theme))
+      for (const language of ['zh', 'en', 'ja']) {
+        expect(item.labels[language]).toBeTruthy()
+        expect(item.descriptions[language]).toBeTruthy()
+      }
+    }
+  })
+  it('keeps text readable on every theme surface and panel, including the two light themes', () => {
+    expect(THEME_PRESETS.filter(item => relativeLuminance(THEME_SURFACES[item.theme.surface].background) > .5)).toHaveLength(2)
+    for (const preset of THEME_PRESETS) {
+      const tokens = themeToTokens(preset.theme)
+      for (const surface of ['--theme-surface', '--theme-panel', '--theme-raised', '--theme-stage']) {
+        expect(contrastRatio(tokens['--theme-text'], tokens[surface]), preset.id + surface).toBeGreaterThanOrEqual(4.5)
+        expect(contrastRatio(tokens['--theme-muted'], tokens[surface]), preset.id + surface).toBeGreaterThanOrEqual(4.5)
+      }
+    }
+  })
+  it('rejects inherited property names as surface or font presets', () => {
+    for (const field of ['surface', 'font']) for (const name of ['__proto__', 'constructor', 'toString']) {
+      expect(normalizeTheme({ [field]: name }).theme).toBeNull()
+    }
   })
 })

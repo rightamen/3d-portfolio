@@ -17,7 +17,7 @@ So the column that matters below is the second one.
 | --- | --- | --- |
 | `test:unit` | Pure logic: i18n resolution, SEO routes, themes, payment info, image profiles, crop arithmetic, profile bounds, admin nav. Fast, no I/O. | Anything that needs a database, a browser, or a request. A function can be perfect and never be called. |
 | `test:api` | The HTTP contract against a server with **no** database — envelope shape, error codes, auth refusals. | Anything that needs stored rows: entitlement, orders, notifications, publishing. |
-| `test:api:db` | The same contract against a **disposable PostgreSQL**: register → verify → publish → order → download plus order concurrency/rollback, 214 checks, including targeted admin and mobile-user exhibition journeys. | Most UI behavior and visual quality; the two exhibition journeys exercise only their paths. Pair with marketplace UI and notification journey checks. |
+| `test:api:db` | The same contract against a **disposable PostgreSQL**: register → verify → publish → order → download plus order concurrency/rollback, 215 checks, including theme isolation and targeted admin/mobile-user exhibition journeys. | Most UI behavior and visual quality; the two exhibition journeys exercise only their paths. Pair with marketplace UI and notification journey checks. |
 | `test:marketplace-ui` | The built frontend in local Chromium with controlled API responses: independent homepage loading, empty/error/loading states, order snapshot amounts, closed orders, session recovery, stale account responses, translated category filters, and mobile overflow. Run `npm run build` first. | Real API authorization and SQL. Its responses are fixtures; pair it with `test:api:db` and the real notification journey. |
 | `test:schema-migration` | That `ensureSchema()` migrates an **existing** database, not just builds an empty one — the path production actually takes — and that it is idempotent. | Whether the new columns are ever read or written by anything. |
 | `test:notifications` | The notification queries: who counts as unread, that marking read is per-person, that unpublishing empties every inbox, that one account cannot delete another's notice. | **The UI entirely.** A missing i18n key, a bell that never polls, a badge that never clears. This is the gap that shipped. |
@@ -156,3 +156,65 @@ works and email/internalId in public creator data, and 401 for all four
 anonymous notification/announcement endpoints. No code suites were repeated
 for this documentation-only checkpoint. Next steps are in
 HANDOFF_2026-11-01.md.
+
+
+2026-11-01 creator studio update: build/lint, 348 unit checks and all 46
+marketplace browser cases passed. Eight new creator-page regressions cover
+pointer movement with bounded pooling, persistent views across tabs,
+server-side creator/category pagination, preserving loaded works on failure,
+retrying the same page, exposing all 48 loaded works in the looping pool,
+activity failures independent of the gallery, private-profile/activity
+boundaries, profile retry, three-language mobile keyboard use and isolation
+of late responses/theme tokens when navigating between creators. Visual QA
+used real public works read-only at 1440px and 390px in zh/en/ja, including
+real touch input; no overflow or page exceptions were seen. These checks do
+not validate production authorization or native model geometry. No server,
+API or schema changes were made. See CREATOR_STUDIO_2026-11-01.md.
+
+
+2026-11-01 theme expansion: build/lint, 351 unit tests, the full 55-case
+marketplace browser suite and 215 disposable-database cases passed. Nine
+new browser cases verify all ten temporary public trials with zero saves,
+restoring the creator palette, draft preview before explicit save, reload
+persistence and propagation to real profile/detail components, default/reset
+and discard semantics, invalid contrast, failed save/load recovery, zh/en/ja
+phone layouts, language changes without losing a draft, and ignoring a late
+save response after session replacement. Unit checks also cover light/dark
+text contrast and reject inherited object-property names as theme choices.
+The new DB case saves all ten presets, reads them back from the account and
+public profile APIs, and checks another verified account remains unchanged.
+After final comment/rating palette cleanup, build/lint and 17 relevant theme
+and creator-page browser cases passed again, including the old white-text
+notice, timeline, contact and comment metadata regressions. ResizeObserver
+layout is now awaited before counting the bounded pool, rather than using the
+initial zero-size layout. Real public artwork preview screenshots covered ten
+desktop palettes and selected phone variants with no overflow or page errors.
+No schema changes or production writes occurred; the disposable cluster was
+cleaned up. Theme preview on port 5174 remains read-only. See
+CREATOR_THEMES_2026-11-01.md.
+
+
+2026-11-01 profile scroll effects: build/lint, 351 unit checks and the full
+58-case marketplace browser suite passed. Three additional cases exercise
+actual banner movement, sticky navigation boundaries and progress, returning
+to the top with focus restoration, once-only entrance animations, fully
+visible keyboard-focused forms, a live reduced-motion change and a true
+coarse-pointer mobile context. Real public artwork checks also exercised
+dark/light palettes and 390px layout with zero page errors or overflow.
+The wall itself is not transformed by scrolling. No API/schema or server
+changes were made; database suites were not repeated for this visual change.
+See CREATOR_SCROLL_2026-11-01.md and .deploy-tools/scroll-ui/.
+
+
+2026-11-01 public module effects: build/lint, 351 unit checks and all 63
+marketplace browser cases passed. Five new checks cover late lazy/data
+content without extra catalogue requests, keeping canvases/walls and purchase
+controls outside reveal transforms, delegated pointer lighting and click
+navigation across explore/work/community routes, cleanup on route changes,
+live reduced-motion cancellation and readable filtered cards, account/login
+form stability in separate browser contexts, and real coarse-pointer mobile
+layout. The old card hover lift is now disabled under reduced motion too.
+Read-only public design checks covered home/explore/community on desktop and
+home/explore/community/login at 390px with no overflow or page exceptions.
+No API/schema/server changes or database writes were made; DB suites were
+not repeated. See MODULE_EFFECTS_2026-11-01.md and .deploy-tools/modules-ui/.

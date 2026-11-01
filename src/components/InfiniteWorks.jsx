@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { assetCategoryLabel, formatWorkPrice, localizedWorkField } from '../lib/works'
 
@@ -8,6 +8,7 @@ const wrap = (value, size) => ((value % size) + size) % size
 // or requests more copies of the catalogue.
 const InfiniteWorks = ({ works, copy, language }) => {
   const navigate = useNavigate()
+  const helpId = useId()
   const viewportRef = useRef(null)
   const nodes = useRef([])
   const controls = useRef(null)
@@ -24,9 +25,9 @@ const InfiniteWorks = ({ works, copy, language }) => {
     const stepX = width + (narrow ? 26 : 46)
     const stepY = height + (narrow ? 32 : 44)
     const cols = Math.ceil(size.width / stepX) + 2
-    const rows = Math.ceil(size.height / stepY) + 3
+    const rows = Math.max(Math.ceil(size.height / stepY) + 3, Math.ceil(works.length / cols))
     return { width, height, stepX, stepY, cols, rows, periodX: cols * stepX, periodY: rows * stepY }
-  }, [size])
+  }, [size, works.length])
   const tiles = useMemo(() => Array.from({ length: layout.cols * layout.rows }, (_, index) => ({
     column: index % layout.cols,
     row: Math.floor(index / layout.cols),
@@ -160,7 +161,7 @@ const InfiniteWorks = ({ works, copy, language }) => {
           <button type="button" onClick={reset}>{copy.spatialReset}<span aria-hidden="true">↺</span></button>
         </div>
       </div>
-      <div className="infinite-viewport" ref={viewportRef} tabIndex={0} role="region" aria-label={copy.infiniteLabel} aria-describedby="infinite-help" data-effects={reducedMotion ? 'reduced' : 'full'}
+      <div className="infinite-viewport" ref={viewportRef} tabIndex={0} role="region" aria-label={copy.infiniteLabel} aria-describedby={helpId} data-effects={reducedMotion ? 'reduced' : 'full'}
         onPointerEnter={(event) => { if (event.pointerType === 'mouse') motion.current.inside = true }}
         onPointerMove={(event) => {
           const state = motion.current
@@ -243,7 +244,7 @@ const InfiniteWorks = ({ works, copy, language }) => {
         <div className="infinite-corner" aria-hidden="true">∞</div>
       </div>
       <div className="infinite-exhibit-footer">
-        <p id="infinite-help">{copy.infiniteHint}</p>
+        <p id={helpId}>{copy.infiniteHint}</p>
         {selected && <Link to={selected.url} className="infinite-current" aria-label={copy.infiniteOpen.replace('{title}', localizedWorkField(selected, 'title', language))}><span>{localizedWorkField(selected, 'title', language)}</span><i aria-hidden="true">↗</i></Link>}
       </div>
     </div>

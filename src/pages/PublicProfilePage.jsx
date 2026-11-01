@@ -1,7 +1,9 @@
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import CreatorProfileContent from '../components/CreatorProfileContent'
-import WorkCard from '../components/WorkCard'
+import CreatorWorksGallery from '../components/CreatorWorksGallery'
+import CreatorThemeBrowser from '../components/CreatorThemeBrowser'
+import { THEME_PRESETS, themeToTokens } from '../../server/themes.js'
 
 // The site owner's own pages. They used to sit on the homepage, which stopped
 // making sense once the front door became a marketplace: an about-me, a career
@@ -12,17 +14,15 @@ import WorkCard from '../components/WorkCard'
 // them, and nobody visiting somebody else's page should pay for the code.
 const Contact = lazy(() => import('../sections/Contact'))
 import {
-  getExperience,
   getProfile,
   getPublicUserActivity,
   getPublicUserPosts,
   getPublicUserProfile,
   getPublicUserResources,
-  getWorks,
 } from '../lib/api'
 import { initials } from '../lib/initials'
-import { getApiErrorMessage } from '../lib/i18n'
 import { applyTheme } from '../lib/theme'
+import { useCreatorScrollEffects } from '../hooks/useCreatorScrollEffects'
 
 const publicProfileTabs = [
   { key: 'overview', labelKey: 'publicProfileTabOverview' },
@@ -45,82 +45,49 @@ const privateActivityTabs = [
 
 const formatDate = (value) => (value ? new Date(value).toLocaleDateString() : '')
 
-const PublicProfilePage = ({ copy, language }) => {
-  const { handle = '' } = useParams()
+const CreatorProfile = ({ copy, language, handle }) => {
   const [activeTab, setActiveTab] = useState('overview')
+  const [previewTheme, setPreviewTheme] = useState('')
   const [profile, setProfile] = useState(null)
   const [notices, setNotices] = useState([])
   const [activity, setActivity] = useState({ comments: [], posts: [], resources: [] })
-  const [works, setWorks] = useState({ error: '', items: [], loaded: false })
+  const [worksTotal, setWorksTotal] = useState(null)
+  const [profileAttempt, setProfileAttempt] = useState(0)
+  const [activityAttempt, setActivityAttempt] = useState(0)
+  const [activityStatus, setActivityStatus] = useState('loading')
   const [status, setStatus] = useState(() => `loading:${handle}`)
   const [message, setMessage] = useState('')
 
   useEffect(() => {
-    let isMounted = true
-
+    let current = true
     getPublicUserProfile(handle)
-      .then(async (payload) => {
-        if (!isMounted) return
+      .then(payload => {
+        if (!current) return
         setProfile(payload.profile)
         setNotices(payload.notices || [])
-
-        if (payload.profile?.profilePublic === false) {
-          setActivity({ comments: [], posts: [], resources: [] })
-          setStatus('private')
-          return
-        }
-
-        if (payload.profile?.activityPublic === false) {
-          setActivity({ comments: [], posts: [], resources: [] })
-          setActiveTab((current) =>
-            ['resources', 'posts', 'comments'].includes(current) ? 'overview' : current,
-          )
-          setStatus('ready')
-          return
-        }
-
-        const [resourcesPayload, postsPayload, activityPayload] = await Promise.all([
-          getPublicUserResources(handle),
-          getPublicUserPosts(handle),
-          getPublicUserActivity(handle),
-        ])
-        if (!isMounted) return
-        setActivity({
-          comments: activityPayload.comments || [],
-          posts: postsPayload.posts || activityPayload.posts || [],
-          resources: resourcesPayload.resources || activityPayload.resources || [],
-        })
-        setStatus('ready')
+        setStatus(payload.profile?.profilePublic === false ? 'private' : 'ready')
       })
-      .catch((error) => {
-        if (!isMounted) return
+      .catch(error => {
+        if (!current) return
         setStatus(error.code === 'PROFILE_ADMIN_DISABLED' ? 'admin-disabled' : 'error')
-        setMessage(error.code ? getApiErrorMessage(error, copy) : copy.publicProfileLoadError)
+        setMessage(error.status === 404 ? 'missing' : 'unavailable')
       })
+    return () => { current = false }
+  }, [handle, profileAttempt])
 
-    return () => {
-      isMounted = false
-    }
-  }, [copy, handle])
-
-  // Its own effect on purpose. /api/works is public and does not depend on the
-  // profile lookup; folding it into that chain would mean one failure takes
-  // both down, and a private-activity profile would silently lose its works.
+  // A failed activity service must not hide a creator or their published work.
   useEffect(() => {
-    let isMounted = true
-
-    getWorks({ creator: handle, limit: 24 })
-      .then((payload) => {
-        if (isMounted) setWorks({ error: '', items: payload.works || [], loaded: true })
+    if (!profile || profile.profilePublic === false || profile.activityPublic === false) return undefined
+    let current = true
+    Promise.all([getPublicUserResources(handle), getPublicUserPosts(handle), getPublicUserActivity(handle)])
+      .then(([resources, posts, activity]) => {
+        if (!current) return
+        setActivity({ comments: activity.comments || [], posts: posts.posts || activity.posts || [], resources: resources.resources || activity.resources || [] })
+        setActivityStatus('ready')
       })
-      .catch(() => {
-        if (isMounted) setWorks({ error: copy.publicProfileWorksLoadError, items: [], loaded: true })
-      })
-
-    return () => {
-      isMounted = false
-    }
-  }, [copy, handle])
+      .catch(() => { if (current) setActivityStatus('error') })
+    return () => { current = false }
+  }, [activityAttempt, handle, profile])
 
   // The static content.js record, fetched only for the one profile it belongs
   // to. `siteOwner` is decided by the server, by matching the account's email
@@ -132,13 +99,11 @@ const PublicProfilePage = ({ copy, language }) => {
     if (!isSiteOwner) return undefined
     let isMounted = true
 
-    Promise.all([getProfile(), getExperience()])
-      .then(([profilePayload, experiencePayload]) => {
+    getProfile()
+      .then((profilePayload) => {
         if (!isMounted) return
         setOwnerContent({
-          experience: experiencePayload.experience || [],
           profile: profilePayload.profile,
-          skills: profilePayload.skills || [],
         })
       })
       // Soft-fails: a profile without its about section is still a profile.
@@ -151,7 +116,11 @@ const PublicProfilePage = ({ copy, language }) => {
 
   // Scoped to this page, not :root, so it cannot follow the visitor onward.
   const pageRef = useRef(null)
-  const themeTokens = profile?.themeTokens
+  useCreatorScrollEffects(pageRef, status === 'ready')
+  const themeTokens = useMemo(() => {
+    const preset = THEME_PRESETS.find(item => item.id === previewTheme)
+    return preset ? themeToTokens(preset.theme) : profile?.themeTokens
+  }, [previewTheme, profile?.themeTokens])
   useEffect(() => applyTheme(pageRef.current, themeTokens), [themeTokens])
 
   const isLoading = status === `loading:${handle}`
@@ -209,24 +178,6 @@ const PublicProfilePage = ({ copy, language }) => {
         renderEmpty(copy.publicProfileNoResourcesTitle, copy.publicProfileNoResourcesBody)}
     </div>
   )
-
-  const renderWorks = () => {
-    if (works.error) return <p className="text-coral">{works.error}</p>
-    if (!works.loaded) return <p className="text-neutral-400">{copy.exploreLoading}</p>
-    if (works.items.length === 0) {
-      return renderEmpty(copy.publicProfileNoWorksTitle, copy.publicProfileNoWorksBody)
-    }
-
-    return (
-      <div className="explore-grid">
-        {works.items.map((work) => (
-          // showCreator off: every card here has the same author, and saying
-          // so once per card is noise on the author's own page.
-          <WorkCard copy={copy} key={work.id} language={language} showCreator={false} work={work} />
-        ))}
-      </div>
-    )
-  }
 
   const renderPosts = () => (
     <div className="admin-table">
@@ -303,66 +254,33 @@ const PublicProfilePage = ({ copy, language }) => {
   )
 
   const renderTab = () => {
-    if (!activityPublic) {
-      if (activeTab === 'works') return renderWorks()
-      if (activeTab === 'about') return renderAbout()
-      return (
-        <div className="account-section-stack">
-          <section className="admin-section">
-            <div className="admin-section-header">
-              <h2>{copy.publicProfileOverview}</h2>
-            </div>
-            {renderPrivateActivity()}
-          </section>
-          <section className="admin-section">{renderWorks()}</section>
-        </div>
-      )
-    }
-
-    if (activeTab === 'works') return renderWorks()
+    if (activeTab === 'works') return null
+    if (activeTab === 'about') return renderAbout()
+    if (!activityPublic) return renderPrivateActivity()
+    if (activityStatus === 'loading') return <p role="status">{copy.loading}</p>
+    if (activityStatus === 'error') return (
+      <div className="profile-activity-state" role="status">
+        <p>{copy.profileActivityError}</p>
+        <button className="secondary-action" type="button" onClick={() => { setActivityStatus('loading'); setActivityAttempt(value => value + 1) }}>{copy.profileRetry}</button>
+      </div>
+    )
     if (activeTab === 'resources') return renderResources()
     if (activeTab === 'posts') return renderPosts()
     if (activeTab === 'comments') return renderComments()
-    if (activeTab === 'about') return renderAbout()
     return (
-      <div className="account-section-stack">
-        <section className="admin-section">
-          <div className="admin-section-header">
-            <h2>{copy.publicProfileOverview}</h2>
-          </div>
-          <div className="account-stat-grid">
-            <article className="account-center-card">
-              <span>{copy.accountStatWorks}</span>
-              <strong>{works.items.length}</strong>
-            </article>
-            <article className="account-center-card">
-              <span>{copy.accountStatResources}</span>
-              <strong>{stats.uploadCount}</strong>
-            </article>
-            <article className="account-center-card">
-              <span>{copy.accountStatPosts}</span>
-              <strong>{stats.postCount}</strong>
-            </article>
-            <article className="account-center-card">
-              <span>{copy.accountStatComments}</span>
-              <strong>{stats.commentCount}</strong>
-            </article>
-            <article className="account-center-card">
-              <span>{copy.accountStatLikes}</span>
-              <strong>{stats.likeCount}</strong>
-            </article>
-          </div>
-        </section>
-        {/* Works first: on a marketplace profile they are what someone came
-            for, and the community resource list is the older, smaller thing. */}
-        <section className="admin-section">{renderWorks()}</section>
-        <section className="admin-section">{renderResources()}</section>
-      </div>
+      <section className="profile-activity-preview">
+        <div className="profile-section-heading"><h2>{copy.profileActivityTitle}</h2><button type="button" onClick={() => setActiveTab('resources')}>{copy.publicProfileTabResources}<span aria-hidden="true">↗</span></button></div>
+        <div className="profile-activity-metrics">
+          {[['resources', copy.accountStatResources, stats.uploadCount], ['posts', copy.accountStatPosts, stats.postCount], ['comments', copy.accountStatComments, stats.commentCount]].map(([key, label, count]) => (
+            <button key={key} type="button" onClick={() => setActiveTab(key)}><span>{label}</span><strong>{count}</strong><i aria-hidden="true">↗</i></button>
+          ))}
+        </div>
+      </section>
     )
   }
 
   return (
-    <main className="admin-shell public-profile-shell work-page-themed" ref={pageRef}>
+    <main className="admin-shell public-profile-shell creator-studio work-page-themed" ref={pageRef}>
       {isLoading && (
         <section className="account-state-card">
           <p className="section-kicker">{copy.publicProfileKicker}</p>
@@ -373,8 +291,9 @@ const PublicProfilePage = ({ copy, language }) => {
       {status === 'error' && (
         <section className="account-state-card">
           <p className="section-kicker">{copy.publicProfileKicker}</p>
-          <h1>{copy.publicProfileMissingTitle}</h1>
-          <p>{message || copy.publicProfileMissingBody}</p>
+          <h1>{message === 'missing' ? copy.publicProfileMissingTitle : copy.profileUnavailableTitle}</h1>
+          <p>{message === 'missing' ? copy.publicProfileMissingBody : copy.publicProfileLoadError}</p>
+          {message !== 'missing' && <button type="button" className="primary-action" onClick={() => { setStatus('loading:' + handle); setProfileAttempt(value => value + 1) }}>{copy.profileRetry}</button>}
           <Link to="/" className="secondary-action">
             {copy.accountBackHome}
           </Link>
@@ -413,6 +332,7 @@ const PublicProfilePage = ({ copy, language }) => {
               }
             >
               <div className="public-profile-banner-glow" />
+              <div className="profile-banner-caption"><span>{copy.profileStudioKicker}</span><span aria-hidden="true">PORTFOLIO / ∞</span></div>
             </div>
             <div className="public-profile-head">
               {profile.avatarUrl ? (
@@ -428,7 +348,8 @@ const PublicProfilePage = ({ copy, language }) => {
                 </span>
               )}
               <div className="public-profile-title">
-                <h1>{profile.displayName}</h1>
+                <span className="profile-identity-label">{copy.publicProfileKicker}</span>
+                <h1 tabIndex={-1}>{profile.displayName}</h1>
                 <div className="public-profile-meta-line">
                   <span>@{profile.handle}</span>
                   {profile.location && <span>{profile.location}</span>}
@@ -448,15 +369,23 @@ const PublicProfilePage = ({ copy, language }) => {
                   ))}
                 </div>
               </div>
+              <div className="profile-hero-summary">
+                <div><strong>{worksTotal ?? '—'}</strong><span>{copy.accountStatWorks}</span></div>
+                {activityPublic && <div><strong>{stats.likeCount}</strong><span>{copy.accountStatLikes}</span></div>}
+              </div>
             </div>
           </section>
 
-          <nav className="admin-tabs public-profile-tabs">
+          <CreatorThemeBrowser copy={copy} language={language} selectedId={previewTheme} onSelect={setPreviewTheme} />
+
+          <nav className="admin-tabs public-profile-tabs" aria-label={copy.profileNavigation}>
+            <span className="profile-scroll-progress" aria-hidden="true" />
             {visibleTabs.map((tab) => (
               <button
                 key={tab.key}
                 type="button"
                 className={activeTab === tab.key ? 'admin-tab-active' : 'admin-tab'}
+                aria-current={activeTab === tab.key ? 'page' : undefined}
                 onClick={() => setActiveTab(tab.key)}
               >
                 {copy[tab.labelKey]}
@@ -464,7 +393,19 @@ const PublicProfilePage = ({ copy, language }) => {
             ))}
           </nav>
 
-          <section className="public-profile-content">{renderTab()}</section>
+          <section className="public-profile-content">
+            <div className="profile-work-panel" hidden={!['overview', 'works'].includes(activeTab)}>
+              <CreatorWorksGallery handle={handle} copy={copy} language={language} onTotal={setWorksTotal} />
+            </div>
+            {renderTab()}
+          </section>
+
+          <button className="profile-back-top" type="button" aria-label={copy.profileBackTop} title={copy.profileBackTop} onClick={() => {
+            const page = pageRef.current
+            const headerHeight = document.querySelector('.topbar')?.getBoundingClientRect().height || 0
+            page?.querySelector('.public-profile-title h1')?.focus({ preventScroll: true })
+            window.scrollTo({ top: Math.max(0, window.scrollY + page.getBoundingClientRect().top - headerHeight), behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' })
+          }}><span aria-hidden="true">↑</span></button>
 
           {/* Below the tabs rather than inside one: these are not activity,
               they are who this person is, and burying them behind a tab is how
@@ -506,6 +447,13 @@ const PublicProfilePage = ({ copy, language }) => {
       )}
     </main>
   )
+}
+
+// Remount on creator navigation so late responses, themes and selected tabs
+// from the previous profile cannot appear under a new handle.
+const PublicProfilePage = props => {
+  const { handle = '' } = useParams()
+  return <CreatorProfile key={handle} {...props} handle={handle} />
 }
 
 export default PublicProfilePage

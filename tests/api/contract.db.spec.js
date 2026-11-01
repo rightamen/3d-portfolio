@@ -3020,7 +3020,7 @@ test.describe('themes', () => {
     const { payload, response } = await getJson('/api/theme-options')
 
     expect(response.status).toBe(200)
-    expectContractShape(payload, { legacyKeys: ['defaults', 'fonts', 'surfaces'] })
+    expectContractShape(payload, { legacyKeys: ['defaults', 'fonts', 'surfaces', 'presets'] })
     expect(payload.data.surfaces.length).toBeGreaterThan(1)
     expect(payload.data.fonts.length).toBeGreaterThan(1)
     // The defaults have to be something the same API would accept.
@@ -3031,6 +3031,32 @@ test.describe('themes', () => {
       visitorA.sessionToken,
     )
     expect(saved.response.status).toBe(200)
+  })
+
+  test('all ten theme presets persist without changing another creator and reach public pages', async () => {
+    const options = await getJson('/api/theme-options')
+    expect(options.payload.data.presets).toHaveLength(10)
+    const handle = ('palette-' + randomBytes(4).toString('hex')).slice(0, 30)
+    await sendJson('PUT', '/api/account/profile', { displayName: 'Palette Creator', handle }, visitorA.sessionToken)
+    const otherEmail = 'palette-' + randomBytes(4).toString('hex') + '@example.test'
+    const other = await registerVisitor('Palette isolation', otherEmail)
+    const verified = await sendJson('POST', '/api/auth/verify-email', { email: otherEmail, code: other.devCode })
+    expect(verified.response.status).toBe(200)
+    const otherSession = verified.payload.data.session.token
+    const otherBefore = await getJson('/api/account/theme', otherSession)
+    expect(otherBefore.response.status).toBe(200)
+    for (const preset of options.payload.data.presets) {
+      const result = await sendJson('PUT', '/api/account/theme', { theme: preset.theme }, visitorA.sessionToken)
+      expect(result.response.status, preset.id).toBe(200)
+      expect(result.payload.data.theme).toEqual(preset.theme)
+      const read = await getJson('/api/account/theme', visitorA.sessionToken)
+      expect(read.payload.data.themeTokens).toEqual(preset.themeTokens)
+      const profile = await getJson('/api/users/' + handle)
+      expect(profile.payload.data.profile.themeTokens).toEqual(preset.themeTokens)
+    }
+    const otherAfter = await getJson('/api/account/theme', otherSession)
+    expect(otherAfter.response.status).toBe(200)
+    expect(otherAfter.payload.data).toEqual(otherBefore.payload.data)
   })
 
   test('a theme round-trips, resolved into tokens', async () => {

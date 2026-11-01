@@ -640,3 +640,110 @@ test('the rating form cannot endorse a newer version than the work visible on th
   await expect(section.getByText('This work changed. Refresh to rate the current version.', { exact: true })).toBeVisible()
   await expect(section.getByRole('radio', { name: '5 stars', exact: true })).toBeDisabled()
 })
+
+
+const motionPost = { id: 'motion-post', title: 'A community study', message: 'A creative conversation.', topic: 'showcase', createdAt: '2026-11-01', user: { displayName: 'Creator' } }
+const motionCommunityHandlers = {
+  '/api/community/uploads': route => respond(route, { uploads: [] }),
+  '/api/community/posts': route => respond(route, { posts: [motionPost] }),
+  '/api/community/posts/motion-post': route => respond(route, { post: motionPost }),
+}
+
+test('module effects observe late homepage sections without animating the wall or fetching extra data', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  let release
+  const gate = new Promise(resolve => { release = resolve })
+  const requests = await setup(page, { handlers: { '/api/works': async route => { await gate; return respond(route, { works: [work] }) } } })
+  try {
+    await page.goto('/')
+    await expect(page.locator('.module-motion-surface')).toHaveAttribute('data-module-motion', 'full')
+    await expect(page.locator('.atelier-heading h1')).toHaveAttribute('data-module-reveal', 'entered')
+    release()
+    await expect(page.locator('.infinite-viewport')).toBeVisible()
+    expect(await page.locator('.infinite-viewport').evaluate(node => node.closest('[data-module-reveal]') === null)).toBe(true)
+    expect(await page.locator('.curated-exhibition').evaluate(node => !node.hasAttribute('data-module-reveal'))).toBe(true)
+    await page.locator('#community .section-heading').scrollIntoViewIfNeeded()
+    await expect(page.locator('#community .section-heading')).toHaveAttribute('data-module-reveal', 'entered')
+    expect(requests.filter(path => path === '/api/works')).toHaveLength(2)
+  } finally { release() }
+})
+
+test('card lighting follows the pointer and route changes clean it up across discovery, work and community', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  await setup(page, { handlers: motionCommunityHandlers })
+  await page.goto('/explore')
+  const card = page.locator('.work-tile-media').first()
+  await expect(card).toBeVisible()
+  await card.scrollIntoViewIfNeeded()
+  const box = await card.boundingBox()
+  await page.mouse.move(box.x + 35, box.y + 35)
+  await expect(card).toHaveAttribute('data-module-lit', 'true')
+  const first = await card.evaluate(node => node.style.getPropertyValue('--module-light-x'))
+  await page.mouse.move(box.x + box.width * .7, box.y + box.height * .6)
+  await expect.poll(() => card.evaluate(node => node.style.getPropertyValue('--module-light-x'))).not.toBe(first)
+  await card.click()
+  await expect(page).toHaveURL(new RegExp(work.url + '$'))
+  await expect(page.locator('.module-motion-surface')).toHaveAttribute('data-module-kind', 'work')
+  await expect(page.locator('.work-info h1')).toHaveAttribute('data-module-reveal', 'entered')
+  expect(await page.locator('.work-purchase').evaluate(node => node.closest('[data-module-reveal]') === null)).toBe(true)
+  await page.locator('.topbar-links a[href="/community"]').click()
+  await expect(page.locator('.community-post-card')).toHaveAttribute('data-module-reveal', 'entered')
+  await page.locator('.community-post-card').first().click()
+  await expect(page.locator('.community-detail-title')).toHaveAttribute('data-module-reveal', 'entered')
+  await expect(page.locator('[data-module-lit=true]')).toHaveCount(0)
+})
+
+test('live reduced motion stops module effects and late filtered cards remain fully readable', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  await setup(page)
+  await page.goto('/explore')
+  const card = page.locator('.work-tile-media').first()
+  await card.hover()
+  await expect(card).toHaveAttribute('data-module-lit', 'true')
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await expect(page.locator('.module-motion-surface')).toHaveAttribute('data-module-motion', 'reduced')
+  await expect(page.locator('[data-module-lit=true]')).toHaveCount(0)
+  await page.locator('.explore-filters select').selectOption('next-gen-prop')
+  await expect(page.locator('.work-tile')).toHaveAttribute('data-module-reveal', 'entered')
+  await expect(page.locator('.work-tile')).toHaveCSS('opacity', '1')
+  expect(await page.locator('.work-tile').evaluate(node => node.getAnimations().length)).toBe(0)
+  await card.focus()
+  await expect(page.locator('.work-tile')).toHaveCSS('transform', 'none')
+})
+
+test('account and login introductions animate without moving editable form controls', async ({ page, browser }) => {
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  await setup(page, { signedIn: true })
+  await page.goto('/account')
+  await expect(page.locator('.module-motion-surface')).toHaveAttribute('data-module-kind', 'account')
+  await page.locator('.account-center-card').first().scrollIntoViewIfNeeded()
+  await expect(page.locator('.account-center-card').first()).toHaveAttribute('data-module-reveal', 'entered')
+  const context = await browser.newContext({ reducedMotion: 'no-preference' })
+  try {
+    const login = await context.newPage()
+    await setup(login)
+    await login.goto('/login?mode=login')
+    await expect(login.locator('.module-motion-surface')).toHaveAttribute('data-module-kind', 'auth')
+    await login.locator('.account-form input[type=email]').focus()
+    expect(await login.locator('.account-form input[type=email]').evaluate(node => node.closest('[data-module-reveal]') === null)).toBe(true)
+  } finally { await context.close() }
+})
+
+test('touch catalogue and community keep module effects readable without mouse lighting or overflow', async ({ browser }) => {
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, reducedMotion: 'no-preference' })
+  try {
+    const page = await context.newPage(), errors = []
+    page.on('pageerror', error => errors.push(error.message))
+    await setup(page, { handlers: motionCommunityHandlers })
+    for (const path of ['/explore', '/community', '/login?mode=login']) {
+      await page.goto(path)
+      await expect(page.locator('.module-motion-surface')).toHaveAttribute('data-module-motion', 'full')
+      if (path === '/explore') await expect(page.locator('.work-tile')).toHaveAttribute('data-module-reveal', 'entered')
+      if (path === '/community') await page.locator('.community-post-card').first().scrollIntoViewIfNeeded()
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+      await expect(page.locator('[data-module-lit=true]')).toHaveCount(0)
+    }
+    expect(errors).toEqual([])
+  } finally { await context.close() }
+})

@@ -1070,7 +1070,7 @@ const AccountPage = ({
           and nobody visiting /account for a download needs either. */}
       <section className="admin-section">
         <Suspense fallback={<p className="text-neutral-400">{copy.loading}</p>}>
-          <ThemeEditor authToken={authToken} copy={copy} />
+          <ThemeEditor authToken={authToken} copy={copy} language={language} profile={profileForm} />
         </Suspense>
       </section>
       <section className="admin-section">

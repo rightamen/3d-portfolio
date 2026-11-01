@@ -164,6 +164,12 @@ Added 2026-09-07/08 with phases 5, 6 and 7:
 
 Added 2026-11-01 with the curated exhibition release:
 
+- GET /api/theme-options now includes ten presets and trilingual labels;
+  themeTokens adds seven palette properties for text, muted text, panels,
+  borders and the gallery stage. The saved theme is still {accent, font,
+  surface}; GET/PUT /api/account/theme authentication is unchanged. This is
+  additive and remains outside the frozen C++ surface; see
+  CREATOR_THEMES_2026-11-01.md.
 - GET /api/works?exhibition=true — server-filtered community/curator admission.
 - GET/PUT /api/works/{handle}/{slug}/rating — verified ratings and recommendation.
 - PATCH /api/admin/works/{id}/curation — admin-only score and recommendation.
