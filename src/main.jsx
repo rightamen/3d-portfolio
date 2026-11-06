@@ -2,6 +2,7 @@ import { Component, StrictMode, Suspense, lazy } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import './studio.css'
+import './creator-console.css'
 import App from './App.jsx'
 import { getCopy, getInitialLanguage } from './lib/i18n'
 

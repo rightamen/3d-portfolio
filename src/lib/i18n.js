@@ -1,3 +1,5 @@
+import { creatorCopy } from './creatorCopy'
+
 export const languages = [
   { code: 'zh', label: '中文', shortLabel: '中' },
   { code: 'en', label: 'English', shortLabel: 'EN' },
@@ -8,6 +10,7 @@ export const defaultLanguage = 'zh'
 
 const copy = {
   zh: {
+    ...creatorCopy.zh,
     profileBackTop: "回到个人主页顶部",
     themeBrowse: "预览主题",
     themeBrowseHint: "10 种气质，随心试选",
@@ -712,6 +715,7 @@ const copy = {
     footerLine: '角色、道具、场景与材质贴图作品。',
   },
   en: {
+    ...creatorCopy.en,
     profileBackTop: "Back to profile top",
     themeBrowse: "Try a theme",
     themeBrowseHint: "10 moods to explore",
@@ -1436,6 +1440,7 @@ const copy = {
     footerLine: 'Characters, props, scenes, materials, and texture work.',
   },
   ja: {
+    ...creatorCopy.ja,
     profileBackTop: "プロフィールの先頭へ戻る",
     themeBrowse: "テーマを試す",
     themeBrowseHint: "10の雰囲気から選ぶ",

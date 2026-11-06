@@ -2339,6 +2339,45 @@ app.put('/api/works/:handle/:slug/rating', requireVisitor, requireWorksStore, as
   return sendData(response, { mine, ratings: updated.ratings, contentVersion: updated.contentVersion })
 })
 
+// Account-private creator console and saved works. Identity always comes from
+// requireVisitor; query/body ids cannot change the owner of a report or bookmark.
+app.get('/api/account/analytics', requireVisitor, requireWorksStore, async (request, response) => {
+  const days = Number(request.query.days ?? 30)
+  if (![7,30,90].includes(days)) return sendError(response, API_ERROR_CODES.VALIDATION_ERROR, 'Choose 7, 30 or 90 days.', 400)
+  const {limit,offset,page} = normalizePagination(request.query,20,50)
+  const analytics = await worksStore.getCreatorAnalytics(request.visitorUser.id,{days,limit,offset})
+  const payload = toPaginatedPayload({items:analytics.works,total:analytics.total},page,limit)
+  response.set('Cache-Control','private, no-store')
+  return sendPage(response,{analytics},payload.pagination)
+})
+
+app.get('/api/account/favorites', requireVisitor, requireWorksStore, async (request, response) => {
+  const {limit,offset,page} = normalizePagination(request.query,24,60)
+  const result = await worksStore.listFavorites(request.visitorUser.id,{limit,offset})
+  const payload = toPaginatedPayload(result,page,limit)
+  response.set('Cache-Control','private, no-store')
+  return sendPage(response,{favorites:payload.items},payload.pagination)
+})
+
+app.delete('/api/account/favorites/:workId', requireVisitor, requireWorksStore, async (request,response) => {
+  await worksStore.removeFavorite(request.params.workId,request.visitorUser.id)
+  return sendData(response,{saved:false})
+})
+
+app.get('/api/works/:handle/:slug/favorite', requireVisitor, requireWorksStore, async (request,response) => {
+  const work = await worksStore.getWorkByHandleAndSlug(request.params.handle,request.params.slug)
+  if (!work) return sendError(response,API_ERROR_CODES.WORK_NOT_FOUND,'Work not found.',404)
+  response.set('Cache-Control','private, no-store')
+  return sendData(response,{saved:await worksStore.getFavorite(work.id,request.visitorUser.id)})
+})
+
+app.put('/api/works/:handle/:slug/favorite', requireVisitor, requireWorksStore, async (request,response) => {
+  if (request.body?.saved !== true) return sendError(response,API_ERROR_CODES.VALIDATION_ERROR,'Use saved:true; remove through your account favorites.',400)
+  const work = await worksStore.getWorkByHandleAndSlug(request.params.handle,request.params.slug)
+  if (!work || !await worksStore.saveFavorite(work.id,request.visitorUser.id)) return sendError(response,API_ERROR_CODES.WORK_NOT_FOUND,'Work not found.',404)
+  return sendData(response,{saved:true})
+})
+
 app.get('/api/account/works', requireVisitor, requireWorksStore, async (request, response) => {
   const { limit, offset, page } = normalizePagination(request.query, 50, 100)
   const result = await worksStore.listWorksByCreator(request.visitorUser.id, { limit, offset })

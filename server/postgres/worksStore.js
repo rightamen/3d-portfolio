@@ -1,3 +1,4 @@
+import { createCreatorStore } from './creatorStore.js'
 import { COMMUNITY_MIN_AVERAGE, COMMUNITY_MIN_RECOMMENDATIONS, EXHIBITION_MIN_SCORE } from '../exhibition.js'
 import {
   createId,
@@ -62,6 +63,7 @@ export const createWorksStore = ({ pool }) => {
   }
 
   const worksStore = {
+    ...createCreatorStore({ pool }),
     // Public browse. Published only, newest first. The filters are all
     // optional and all parameterised -- `query` reaches SQL as a bound value,
     // never as interpolated text.

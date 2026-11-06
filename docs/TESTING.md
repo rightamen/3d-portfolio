@@ -17,7 +17,7 @@ So the column that matters below is the second one.
 | --- | --- | --- |
 | `test:unit` | Pure logic: i18n resolution, SEO routes, themes, payment info, image profiles, crop arithmetic, profile bounds, admin nav. Fast, no I/O. | Anything that needs a database, a browser, or a request. A function can be perfect and never be called. |
 | `test:api` | The HTTP contract against a server with **no** database — envelope shape, error codes, auth refusals. | Anything that needs stored rows: entitlement, orders, notifications, publishing. |
-| `test:api:db` | The same contract against a **disposable PostgreSQL**: register → verify → publish → order → download plus order concurrency/rollback, 215 checks, including theme isolation and targeted admin/mobile-user exhibition journeys. | Most UI behavior and visual quality; the two exhibition journeys exercise only their paths. Pair with marketplace UI and notification journey checks. |
+| `test:api:db` | The same contract against a **disposable PostgreSQL**: register → verify → publish → order → download plus order concurrency/rollback, 224 checks, including creator analytics, private favorites, theme isolation and targeted admin/mobile-user exhibition journeys. | Most UI behavior and visual quality; the two exhibition journeys exercise only their paths. Pair with marketplace UI and notification journey checks. |
 | `test:marketplace-ui` | The built frontend in local Chromium with controlled API responses: independent homepage loading, empty/error/loading states, order snapshot amounts, closed orders, session recovery, stale account responses, translated category filters, and mobile overflow. Run `npm run build` first. | Real API authorization and SQL. Its responses are fixtures; pair it with `test:api:db` and the real notification journey. |
 | `test:schema-migration` | That `ensureSchema()` migrates an **existing** database, not just builds an empty one — the path production actually takes — and that it is idempotent. | Whether the new columns are ever read or written by anything. |
 | `test:notifications` | The notification queries: who counts as unread, that marking read is per-person, that unpublishing empties every inbox, that one account cannot delete another's notice. | **The UI entirely.** A missing i18n key, a bell that never polls, a badge that never clears. This is the gap that shipped. |
@@ -239,3 +239,15 @@ checker now discovers canonical /w/:handle/:slug URLs and checks real work title
 and JSON-LD, plus the exact legacy 301 Location; account works, explore and creator
 routes are included. The real HTTPS run returned 22 passes, zero warnings/failures.
 This tooling change did not deploy application code or modify production data.
+
+2026-11-06 creator console and bookmarks: build/lint, 354 unit checks, the
+existing-database migration/idempotency runner, all 224 disposable-database API
+checks and all 72 marketplace browser checks passed. Nine new DB cases cover
+visitor auth, concurrent idempotent saves, account isolation, unavailable-work
+redaction, pagination, current-version ratings, multi-currency paid-only totals,
+zero-filled UTC series, a non-UTC PostgreSQL session, and real mobile save/remove
+and creator-dashboard journeys. Nine new browser cases cover retry, keyboard
+save/remove, late old-account reports, final-page removal, zh/en/ja mobile layouts,
+accessible daily data and anonymous gating. Theme/marketplace fixtures now also
+model the new private favorite-state read. Screenshot figures are controlled test
+data. Production has not been migrated or deployed by this feature work.

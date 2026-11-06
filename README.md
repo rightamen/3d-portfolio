@@ -239,3 +239,15 @@ For `mrright.blog`, point:
 
 After the VPS service is running behind port 80/443, keep Cloudflare proxy
 enabled for the root and `www` records.
+
+
+### Creator dashboard and saved works
+
+The account center includes a private creator console at /account/dashboard:
+owned-work metrics, separate-currency confirmed sales, 7/30/90-day UTC activity,
+and a paginated work-performance table. Save a published work from its detail
+page, then return to your private collection at /account/favorites. Unpublished
+saved works are redacted placeholders that can still be removed.
+
+See [creator console and bookmark rules](docs/CREATOR_DASHBOARD_2026-11-06.md)
+for metric definitions, incremental migration and verification scope.

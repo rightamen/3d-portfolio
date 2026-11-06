@@ -885,4 +885,16 @@ export const ensureSchema = async (pool) => {
     EXCEPTION WHEN duplicate_object THEN NULL;
     END $$;
   `)
+  // Account bookmarks are private, unique per work/account and cascade with either.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS work_favorites (
+      work_id text NOT NULL REFERENCES works(id) ON DELETE CASCADE,
+      user_id text NOT NULL REFERENCES visitor_users(id) ON DELETE CASCADE,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      PRIMARY KEY (work_id, user_id)
+    );
+    CREATE INDEX IF NOT EXISTS work_favorites_user_created_idx
+      ON work_favorites (user_id, created_at DESC, work_id);
+  `)
+
 }

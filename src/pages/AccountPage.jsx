@@ -77,7 +77,12 @@ const SellerPanel = lazy(() => import('../components/SellerPanel'))
 const WorksPanel = lazy(() => import('../components/WorksPanel'))
 const ThemeEditor = lazy(() => import('../components/ThemeEditor'))
 
+const CreatorDashboard = lazy(() => import('../components/CreatorDashboard'))
+const FavoritesPanel = lazy(() => import('../components/FavoritesPanel'))
+
 const accountTabs = [
+  { key: 'dashboard', labelKey: 'accountNavDashboard' },
+  { key: 'favorites', labelKey: 'accountNavFavorites' },
   { key: 'overview', labelKey: 'accountNavOverview' },
   { key: 'downloads', labelKey: 'accountNavDownloads' },
   { key: 'comments', labelKey: 'accountNavComments' },
@@ -1602,6 +1607,10 @@ const AccountPage = ({
 
   const renderActiveTab = () => {
     switch (activeTab) {
+      case 'dashboard':
+        return <Suspense fallback={<p role="status">{copy.loading}</p>}><CreatorDashboard key={authToken} authToken={authToken} copy={copy} language={language} /></Suspense>
+      case 'favorites':
+        return <Suspense fallback={<p role="status">{copy.loading}</p>}><FavoritesPanel key={authToken} authToken={authToken} copy={copy} language={language} /></Suspense>
       case 'downloads':
         return renderDownloads()
       case 'comments':
@@ -1643,7 +1652,7 @@ const AccountPage = ({
   }
 
   return (
-    <main className="admin-shell account-shell">
+    <main className={'admin-shell account-shell'+(['dashboard','favorites'].includes(activeTab) ? ' account-console-shell' : '')}>
       <header className="admin-header account-studio-hero">
         <div>
           <p className="section-kicker mb-1">{copy.accountCenterKicker}</p>
@@ -1653,6 +1662,7 @@ const AccountPage = ({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
+          <Link to="/account/dashboard" className="primary-action">{copy.accountNavDashboard}</Link>
           <LanguageSwitch language={language} onLanguageChange={onLanguageChange} copy={copy} />
           <Link to="/" className="secondary-action">
             {copy.accountBackHome}
@@ -1663,7 +1673,7 @@ const AccountPage = ({
         </div>
       </header>
 
-      <section className="admin-metrics account-studio-metrics">
+      {!['dashboard','favorites'].includes(activeTab) && <section className="admin-metrics account-studio-metrics">
         {metrics.map(([tab, label, value], index) => (
           <button
             key={`${label}-${index}`}
@@ -1675,15 +1685,16 @@ const AccountPage = ({
             <strong>{value}</strong>
           </button>
         ))}
-      </section>
+      </section>}
 
       <div className="account-layout account-studio-layout">
-        <nav className="account-nav admin-tabs">
+        <nav className="account-nav admin-tabs" aria-label={copy.accountCenter}>
           {accountTabs.map((tab) => (
             <button
               key={tab.key}
               type="button"
               className={activeTab === tab.key ? 'admin-tab-active' : 'admin-tab'}
+              aria-current={activeTab === tab.key ? 'page' : undefined}
               onClick={() => setActiveTab(tab.key)}
             >
               {copy[tab.labelKey]}

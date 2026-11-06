@@ -9,6 +9,16 @@ the spec either omits the field or points here.
 Companion: `docs/API_V1_MODEL_MAPPING.md` (TS/C++ model mapping),
 `docs/API_V1_FREEZE_PLAN.md` (frozen contract + checklist).
 
+## 2026-11-06：创作者工作台与私人收藏（新增，未冻结）
+
+新增 account/analytics、account/favorites、works/:handle/:slug/favorite 与收藏移除接口，
+含现有 /api/v1 双挂载。全部要求 visitor session，私有 GET 禁止共享缓存；
+聚合只读当前账号作品，收藏者名单不公开，不可用作品返回 work=null 占位。
+完整字段、分页上限、当前版本评分、多币种和 UTC 趋势口径见
+[创作者工作台专项](CREATOR_DASHBOARD_2026-11-06.md)。
+真实临时库及浏览器专项验证其成功/拒绝路径；正式 OpenAPI/TS/C++ 模型冻结仍待后续统一。
+旧接口和错误码未改，不将这些新字段自动视为已冻结契约。
+
 ## 1. Endpoints missing a DB-backed sample
 
 These routes are wired and tested for auth/error paths in

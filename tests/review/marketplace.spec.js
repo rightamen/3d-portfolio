@@ -42,6 +42,7 @@ const setup = async (page, { signedIn = false, remembered = false, handlers = {}
     if (path === '/api/account/orders/review-order') return respond(route, { order, paymentMethods: methods, events: [] })
     if (path === '/api/works/reviewer/review-work') return respond(route, { work })
     if (path.endsWith('/rating')) return respond(route, { ratings: work.ratings, mine: null, contentVersion: 1 })
+    if (path.endsWith('/favorite')) return respond(route, { saved: false })
     if (path.endsWith('/likes')) return respond(route, { liked: false, likeCount: 0 })
     if (path.endsWith('/comments')) return respond(route, { comments: [] })
     if (path === '/api/community/posts') return respond(route, { posts: [] })

@@ -1,6 +1,38 @@
 # mrright.blog 项目进度记录
 
-## 下次从这里继续（2026-11-06：发布工具与公网检查已收整）
+## 下次从这里继续（2026-11-07：创作者数据工作台与收藏已完成，尚未上线）
+
+用户要求个人中心增加类似后台的数据监控和收藏。从干净 main / 9173ecc 接续。
+2026-11-06 开始，2026-11-07 完成验证（Asia/Shanghai）。
+新增 /account/dashboard：个人侧栏、4 个核心指标、多币种成交额、待处理订单、
+互动汇总、7/30/90 天 UTC 趋势、每日明细与分页作品表现。
+新增 /account/favorites 与详情收藏按钮；账号持久收藏、幂等保存/移除，
+下架占位不泄露草稿内容。访客 token 授权和账号隔离保持，新增三语与手机适配。
+
+数据来自真实作品、互动、订单和下载记录。收藏/点赞为当前保留数，评分按当前版本有效票，
+下载为授权源文件下载发起，成交金额只计当前 paid 并按币种分别统计；无虚构浏览量。
+新增 work_favorites 表/索引，迁移为增量幂等。新增私有 analytics/favorites/favorite 接口，
+GET 为 private/no-store，v1 双挂载 envelope 保持；SQL 身份只取当前会话，不接受他人 id。
+
+build/lint 无警告通过；354 单测、224 真实临时库 API、72 完整市场浏览器回归、
+旧库增量迁移/幂等通过。覆盖跨时区 UTC 边界、并发重复收藏、跨账号、下架、分页、
+多币种/退款/版本评分、真实手机收藏和工作台、失败重试、键盘及三语溢出。
+中途修正两处测试定位/模拟缺口及新测试语法，最终完整套件均通过。
+
+修改：server/postgres/creatorStore.js、worksStore.js、schema.js、server/index.js；
+CreatorDashboard/FavoritesPanel/FavoriteButton/AccountMenuBar、AccountPage/WorkDetailPage；
+api/i18n/creatorCopy、creator-console.css/main.jsx，迁移/API/浏览器测试与项目文档。
+专项 docs/CREATOR_DASHBOARD_2026-11-06.md；证据 .deploy-tools/creator-console-checks/，
+最终 database-utc.log、browser-complete.log，桌面/三语手机截图为受控测试数据。
+
+本轮未部署 VPS、未执行生产 SQL，无新生产备份；线上仍为 765242f / release-2026-11-01-studio。
+既有备份 /opt/mrright-portfolio.backup-20261101-134849；
+/etc/mrright-portfolio.env.backup-20261101-134848；
+/var/backups/mrright-portfolio/releases/before-765242f-20261101-134849.dump。
+代码提交/推送结果随后补记；正式上线继续先 GitHub，再备份/制品/部署与线上验证。
+后续可按真实创作者使用情况扩展数据；浏览量埋点、收藏分组和长期 API v1 冻结仍未实现。
+
+## 上一检查点（2026-11-06：发布工具与公网检查已收整）
 
 从 main 425436e 接续，直接使用 Ubuntu。新增共享干净构建/Git SHA 清单/制品 SHA-256；
 自动部署要求对应提交已推送 origin；两入口共用远端脚本，默认保留全部备份。

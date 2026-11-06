@@ -65,6 +65,7 @@ const expected = {
     ],
     visitor_users: ['creator_enabled_at', 'payout_state', 'stripe_account_id', 'theme'],
     work_assets: ['checksum', 'file_name', 'file_size', 'file_type', 'file_url', 'kind', 'sort_order', 'work_id'],
+    work_favorites: ['work_id', 'user_id', 'created_at'],
     work_ratings: ['work_id', 'user_id', 'score', 'recommended', 'work_version'],
     work_comments: ['message', 'parent_id', 'pinned_at', 'status', 'user_id', 'work_id'],
     works: [
@@ -92,7 +93,7 @@ const expected = {
     'work_comments_work_created_idx',
     'works_creator_slug_unique_idx',
     'works_status_published_idx',
-    'works_exhibition_idx', 'work_ratings_version_idx',
+    'works_exhibition_idx', 'work_ratings_version_idx', 'work_favorites_user_created_idx',
   ],
   tables: [
     'orders',
@@ -101,6 +102,7 @@ const expected = {
     'work_comment_likes',
     'work_comments',
     'work_likes',
+    'work_favorites',
     'work_ratings',
     'works',
   ],
