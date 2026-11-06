@@ -51,3 +51,17 @@ VPS_DRY_RUN 只输出脚本，全零 SHA-256 为占位符，不能直接拿去�
 - 回访线上首页/创作者/详情的桌面与手机交互，依据实际问题继续优化。
 - 精选展由真实管理员评选，不给生产作品填充演示评分。
 - API v1、资源模型与受控下载契约继续按 API_V1_GAPS.md 推进。
+
+## 提交与完整制品验收
+
+工具提交 504c7561249657a21c4a10384fa9d9f622b533ab 已推送 GitHub main：
+https://github.com/rightamen/3d-portfolio/commit/504c7561249657a21c4a10384fa9d9f622b533ab
+
+推送之后从该干净提交实际运行 release:vps，重新构建并生成 178 个文件的制品。
+manifest 的 gitCommit 与上述提交一致、sourceClean=true；未打入本地上传或 env。
+制品 SHA-256：b5bfef77d20c58c9112c379427bcfece141a937a5fcbbd75c08c4d903fcf29a0。
+sidecar、手工脚本中的实际校验值及 bash -n 全部通过。两实际 CLI 在脏源码时拒绝执行，
+在重新构建或连接 VPS 前退出。未执行生产部署。
+
+忽略目录证据：release-tooling-20261106.log、release-tooling-artifact-20261106.json。
+验收结果作为后续文档提交，不移动已有发布标签，也不为文档重新部署应用。

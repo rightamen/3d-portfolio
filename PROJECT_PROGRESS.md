@@ -18,7 +18,12 @@ package.json 与 README/部署/备份/测试/交接文档。
 /var/backups/mrright-portfolio/releases/before-765242f-20261101-134849.dump。
 详情 docs/RELEASE_TOOLING_2026-11-06.md；证据 .deploy-tools/checkpoint-20261106.json。
 接下来核实代理链/监控、回访真实交互体验；精选评选及 API v1 待办保留。
-本节所在提交为本轮工具改动；提交/推送及完整制品验收结果在完成后补记。
+工具提交 504c7561249657a21c4a10384fa9d9f622b533ab 已推送 GitHub main。
+随后从该干净提交实际执行 release:vps：178 个发布文件，manifest 与提交一致，
+SHA-256 b5bfef77d20c58c9112c379427bcfece141a937a5fcbbd75c08c4d903fcf29a0，
+sidecar 校验、手工脚本校验值及 bash -n 通过；未上传/部署。两实际 CLI 脏源码拒绝也通过。
+制品验收记录 .deploy-tools/release-tooling-artifact-20261106.json；结果另作文档提交推送，
+不为文档再次打包或部署。
 
 ## 上一检查点（2026-11-01：个人展厅、主题与动效已推送并上线）
 
