@@ -39,6 +39,7 @@ import {
   evaluateBaseUrlScheme,
   evaluateCertificate,
   evaluateHealthBody,
+  evaluateLegacyRedirect,
   evaluateProjectHead,
   evaluateRobots,
   evaluateRouteStatus,
@@ -70,7 +71,7 @@ const get = async (path) => {
       redirect: 'manual',
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     })
-    return { body: await response.text(), status: response.status, url }
+    return { body: await response.text(), status: response.status, location: response.headers.get('location'), url }
   } catch (error) {
     // An expired, self-signed or wrong-host certificate lands here, because
     // verification is on. That is the point: the failure is loud instead of
@@ -133,7 +134,7 @@ if (scheme.severity === 'pass') {
 }
 
 // --- 3. robots.txt and the sitemap ----------------------------------------------
-// Fetched before the route list because the sitemap is where the seventh route
+// Fetched before the route list because the sitemap is where the work route
 // comes from: production's catalogue lives in the database, so a hardcoded slug
 // would go stale the first time a project is renamed.
 const robots = await get('/robots.txt')
@@ -149,7 +150,7 @@ if (!sitemap.error && sitemap.status === 200) {
   if (result.projectUrls.length) projectPath = new URL(result.projectUrls[0]).pathname
 }
 
-// --- 4. the seven routes ---------------------------------------------------------
+// --- 4. the required public routes ---------------------------------------------------------
 for (const path of REQUIRED_PATHS) {
   const response = await get(path)
   record(`GET ${path}`, evaluateRouteStatus(response))
@@ -159,7 +160,7 @@ for (const path of REQUIRED_PATHS) {
   }
 }
 
-// --- 5. the seventh route, and its per-route <head> -------------------------------
+// --- 5. a real work route, and its per-route <head> -------------------------------
 if (projectPath) {
   const project = await get(projectPath)
   record(`GET ${projectPath}`, evaluateRouteStatus(project))
@@ -173,10 +174,13 @@ if (projectPath) {
   // Never a silent pass. If no project URL could be discovered, the head checks
   // did not run, and the report says so rather than staying quiet.
   record('project route', {
-    detail: 'not checked -- no /projects/ URL could be discovered from the sitemap',
+    detail: 'not checked -- no /w/:handle/:slug URL could be discovered from the sitemap',
     severity: 'warn',
   })
 }
+
+const legacy = await get('/projects/md-leimu')
+record('legacy project redirect', evaluateLegacyRedirect({ ...legacy, baseUrl }))
 
 // --- report ----------------------------------------------------------------------
 const summary = summarize(checks)

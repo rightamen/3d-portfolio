@@ -11,13 +11,13 @@
     "admin:user": "node scripts/admin-user.mjs",
     "build": "vite build",
     "check:production": "node scripts/check-production.mjs",
-    "deploy:vps": "npm run build && node scripts/deploy-vps.mjs",
+    "deploy:vps": "node scripts/deploy-vps.mjs",
     "dev": "vite",
     "dev:full": "concurrently \"npm:dev\" \"npm:dev:server\"",
     "dev:server": "node server/index.js",
     "lint": "eslint .",
     "preview": "vite preview",
-    "release:vps": "npm run build && node scripts/package-vps-release.mjs",
+    "release:vps": "node scripts/package-vps-release.mjs",
     "start": "node server/index.js",
     "test:admin-totp": "node scripts/verify-admin-totp.mjs",
     "test:api": "playwright test --config=playwright.api.config.js",
@@ -36,7 +36,8 @@
     "test:unit": "vitest run",
     "test:unit:watch": "vitest",
     "verify:visitor-studio": "node scripts/verify-visitor-studio.mjs",
-    "dev:showcase": "vite --config vite.preview.config.js"
+    "dev:showcase": "vite --config vite.preview.config.js",
+    "test:release": "node scripts/verify-release.mjs"
   },
   "dependencies": {
     "cors": "^2.8.6",

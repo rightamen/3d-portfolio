@@ -155,7 +155,7 @@ sudo -u postgres dropdb mrright_restore_drill
 
 | 变量 | 默认值 | 说明 |
 | --- | --- | --- |
-| `VPS_BACKUP_RETAIN` | `3` | 保留最近 N 份应用备份，更旧的在部署验证通过后删除 |
+| `VPS_BACKUP_RETAIN` | `0` | 2026-11-06 起默认全部保留；显式正数才启用原有保留 N 份逻辑 |
 | `VPS_BACKUP_RETAIN=0` | — | 关闭自动裁剪，永不删除（仍然享受硬链接省空间） |
 
 裁剪的三个约束：

@@ -7,6 +7,20 @@
 远端脚本再 `ssh bash -s`** 完成的。能拼对是因为脚本片段是 import 来的，但那条路径没有固化、
 没有测试，也没人能保证下次拼得一样。这份文档描述的就是把它固化之后的样子。
 
+## 2026-11-06：统一制品入口
+
+`release:vps` 和 `deploy:vps` 现在共用 `scripts/lib/create-release.mjs`：
+先拒绝未提交源码，再重新 build，写 Git SHA 清单、按白名单打包，并生成 SHA-256 sidecar。
+构建/打包期间若源码变脏或 HEAD/分支改变则拒绝发布，保留上一份制品。
+自动部署还通过 `git ls-remote origin` 确认对应分支上的提交与制品 SHA 完全一致，
+失败发生在建立 VPS 连接之前。打包命令不连接 VPS；手工上传前也必须先 push GitHub。
+
+两条路径共用同一个远端脚本生成器；远端先验制品 SHA-256，才备份配置、替换程序。
+应用备份默认全部保留（`VPS_BACKUP_RETAIN=0`）。数据库备份仍需按
+[备份文档](OPERATIONS_BACKUP.md)单独创建并验证，这次未改变数据库备份机制。
+
+先按项目要求运行 build/lint、提交并推送，再执行下面的部署命令。
+
 ## 日常部署
 
 ```sh
@@ -15,15 +29,16 @@ npm run deploy:vps
 
 默认走**密钥认证**，默认目标是 `147.79.20.232`。整条流程：
 
-1. `vite build`
-2. 打包 `dist server scripts package.json package-lock.json` → `.deploy-tools/portfolio.tar.gz`
-3. 生成远端脚本 → `.deploy-tools/mrright-portfolio-deploy.sh`
-4. 上传制品与脚本到 `/tmp/`
-5. 远端执行脚本（输出实时回显）
+1. 检查 Git 干净、读取当前提交和分支，再 `npm run build`
+2. 打包 `dist server scripts package.json package-lock.json` → `.deploy-tools/mrright-portfolio-release.tar.gz`
+3. 写 `dist/release.json`、制品旁的 `.sha256`；验证打包前后源码仍为同一干净提交
+4. 验证相同 origin 分支已推送该提交；生成包含制品校验值的远端脚本
+5. 上传制品与脚本到 `/tmp/`，远端执行并实时回显
 6. 收尾再查一次 `/api/health`
 
 远端脚本自己会做的事，按顺序：
 
+- 校验上传制品 SHA-256，错误立即退出，不备份/替换任何线上文件
 - 检查 `/etc/mrright-portfolio.env` 里 `DATABASE_URL`、`ADMIN_TOKEN` **有值**（不打印值），
   缺了就直接退出，**永远不会重写这个文件**
 - 备份 env 与 `/opt/mrright-portfolio`（**硬链接备份**，见 `OPERATIONS_BACKUP.md`）
@@ -31,7 +46,7 @@ npm run deploy:vps
 - **轮询**等 `/api/health` 起来（最多 30 次，每次间隔 1 秒）
 - 用 `ADMIN_TOKEN` 换一个**短时会话**去查 `/api/admin/summary`，**用完必定吊销**
   （见 `OPERATIONS_ADMIN_AUTH.md`）
-- 只有在服务已经健康之后，才裁剪超出保留份数的旧备份
+- 默认保留全部应用备份；只有显式设置正数保留份数时，才在健康后启用已有裁剪逻辑
 
 nginx vhost 与 systemd unit **只在缺失时才写**。默认不重写是有原因的：生成的模板是
 HTTP-only 的，而线上 443 是与机场节点共用的 nginx stream 分流，**重写 vhost 会丢 TLS**
@@ -43,7 +58,7 @@ HTTP-only 的，而线上 443 是与机场节点共用的 nginx stream 分流，
 VPS_DRY_RUN=true npm run deploy:vps   # 打印将在 VPS 上执行的完整脚本后退出
 ```
 
-不连接、不打包、不需要先 build。远端那半段是**没有撤销键**的部分（报错时 env 已备份、
+不连接、不打包、不需要先 build；打印脚本里的全零 SHA-256 是占位值，不能用于真实发布。远端那半段是**没有撤销键**的部分（报错时 env 已备份、
 制品已解包、服务正要重启），能先读一遍是有意义的。
 
 ## 环境变量
@@ -60,7 +75,7 @@ VPS_DRY_RUN=true npm run deploy:vps   # 打印将在 VPS 上执行的完整脚�
 | `VPS_SERVICE` | `mrright-portfolio` | |
 | `VPS_ENV_FILE` | `/etc/mrright-portfolio.env` | |
 | `VPS_APP_ORIGIN` | `http://127.0.0.1:4173` | 服务在 VPS 本机上的监听地址 |
-| `VPS_BACKUP_RETAIN` | `3` | 保留最近几份应用备份；`0` 关闭裁剪 |
+| `VPS_BACKUP_RETAIN` | `0` | 默认全部保留；显式正数启用已有裁剪逻辑 |
 | `VPS_REWRITE_NGINX` / `VPS_REWRITE_SERVICE` | `false` | 重写 vhost / unit（先读上面的警告） |
 
 ## 开启收款
@@ -101,7 +116,8 @@ VPS_DRY_RUN=true npm run deploy:vps   # 打印将在 VPS 上执行的完整脚�
 
 | 文件 | 职责 |
 | --- | --- |
-| `scripts/deploy-vps.mjs` | 读环境变量、打包、上传、驱动流程 |
+| `scripts/deploy-vps.mjs` | 读环境变量、校验 GitHub 已推送、上传、驱动流程 |
+| `scripts/lib/create-release.mjs` | 两入口共用：干净 Git、重新构建、manifest、制品与 SHA-256 |
 | `scripts/lib/deploy-remote-script.mjs` | **生成远端脚本**（两种认证方式共用同一份） |
 | `scripts/lib/ssh-transport.mjs` | 两种传输方式，同一个接口（`run` / `upload` / `end`） |
 | `scripts/lib/deploy-backup-script.mjs` | 备份 / 健康检查 / admin 校验 的 shell 片段 |
@@ -119,6 +135,7 @@ VPS_DRY_RUN=true npm run deploy:vps   # 打印将在 VPS 上执行的完整脚�
 ## 测试
 
 ```sh
+npm run test:release          # 临时 Git 仓库、构建、tar、校验、未推送拒绝
 npm run test:deploy-script    # 不连服务器
 npm run test:deploy-backup    # 真 bash + 临时目录
 ```
@@ -151,4 +168,4 @@ npm run release:vps
 ```
 
 打出制品并打印一份可以手工粘贴执行的等价脚本（`scripts/package-vps-release.mjs`，
-同样 import 那几段 shell 片段，不会和自动路径漂移）。
+与自动路径共用 create-release 和 buildRemoteScript，不再维护第二份 shell 正文）。

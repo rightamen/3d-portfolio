@@ -1,13 +1,9 @@
-import { mkdir, rm, stat, writeFile } from 'node:fs/promises'
+import { writeFile } from 'node:fs/promises'
 import path from 'node:path'
-import { execFile } from 'node:child_process'
-import { promisify } from 'node:util'
 
 import { buildRemoteScript, shellQuote } from './lib/deploy-remote-script.mjs'
-import { archiveItems, assertNoUploadsInBuild } from './lib/release-contents.mjs'
+import { assertPushedRelease, createTraceableRelease } from './lib/create-release.mjs'
 import { createTransport } from './lib/ssh-transport.mjs'
-
-const execFileAsync = promisify(execFile)
 
 const host = process.env.VPS_HOST || '147.79.20.232'
 const port = Number(process.env.VPS_PORT || 22)
@@ -23,7 +19,6 @@ const domain = process.env.VPS_DOMAIN || 'mrright.blog'
 const envFile = process.env.VPS_ENV_FILE || `/etc/${serviceName}.env`
 // Where the unit listens, as seen from the VPS itself. nginx proxies to it.
 const appOrigin = process.env.VPS_APP_ORIGIN || 'http://127.0.0.1:4173'
-const archivePath = path.resolve('.deploy-tools', 'portfolio.tar.gz')
 // Prints the exact script that would run on the VPS and exits without
 // connecting or packaging anything. The remote half is the part that is hard to
 // inspect once a deploy is under way, so it is worth being able to read it
@@ -38,16 +33,9 @@ const dryRun = process.env.VPS_DRY_RUN === 'true'
 // the caller explicitly opts in to a rewrite for this one deploy.
 const rewriteNginx = process.env.VPS_REWRITE_NGINX === 'true'
 const rewriteService = process.env.VPS_REWRITE_SERVICE === 'true'
-// Every deploy used to leave behind a full copy of $REMOTE_DIR. Most of that
-// copy is public/uploads (252M of the 351M as of 2026-08-11), which is byte for
-// byte identical across deploys, so fifteen rollback points cost fifteen copies
-// of the same uploads and filled the disk to 78%. The backup is now built with
-// hardlinks, which makes an unchanged file cost one directory entry instead of
-// its size, and old backups past VPS_BACKUP_RETAIN are pruned once the deploy
-// has proven healthy. Set VPS_BACKUP_RETAIN=0 to keep every backup forever
-// (the pre-2026-08-12 behaviour, minus the duplicated bytes).
+// Retain all rollback points unless the operator explicitly opts into pruning.
 const backupRetainRaw = process.env.VPS_BACKUP_RETAIN
-const backupRetain = backupRetainRaw === undefined ? 3 : Number(backupRetainRaw)
+const backupRetain = backupRetainRaw === undefined ? 0 : Number(backupRetainRaw)
 
 if (!Number.isInteger(backupRetain) || backupRetain < 0) {
   throw new Error('VPS_BACKUP_RETAIN must be a non-negative integer (0 disables pruning).')
@@ -55,12 +43,15 @@ if (!Number.isInteger(backupRetain) || backupRetain < 0) {
 
 const remoteArchivePath = `/tmp/${serviceName}.tar.gz`
 const remoteScriptPath = `/tmp/${serviceName}-deploy.sh`
+const release = dryRun ? { sha256: '0'.repeat(64) } : await createTraceableRelease()
+if (!dryRun) await assertPushedRelease(process.cwd(), release)
 const remoteScript = buildRemoteScript({
   remoteDir,
   envFile,
   serviceName,
   domain,
   archivePath: remoteArchivePath,
+  archiveSha256: release.sha256,
   backupRetain,
   appOrigin,
   rewriteNginx,
@@ -68,17 +59,13 @@ const remoteScript = buildRemoteScript({
 })
 
 if (dryRun) {
-  console.log(`# VPS_DRY_RUN: script that would run on ${username}@${host}:${port}`)
+  console.log(`# VPS_DRY_RUN: zero checksum is a placeholder; no artifact built. Script for ${username}@${host}:${port}`)
   console.log(remoteScript)
   process.exit(0)
 }
 
-await assertNoUploadsInBuild(process.cwd())
-await mkdir(path.dirname(archivePath), { recursive: true })
-await rm(archivePath, { force: true })
-await execFileAsync('tar', ['-czf', archivePath, ...archiveItems])
-const archive = await stat(archivePath)
-console.log(`Packaged ${archivePath} (${(archive.size / 1024 / 1024).toFixed(2)} MB)`)
+const { archivePath } = release
+console.log('Packaged ' + archivePath + ' (SHA-256 ' + release.sha256 + ')')
 
 const localScriptPath = path.resolve('.deploy-tools', `${serviceName}-deploy.sh`)
 await writeFile(localScriptPath, `${remoteScript}\n`, { mode: 0o700 })

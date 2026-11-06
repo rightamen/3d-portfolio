@@ -36,6 +36,7 @@ const baseOptions = {
   serviceName: 'mrright-portfolio',
   domain: 'mrright.blog',
   archivePath: '/tmp/mrright-portfolio.tar.gz',
+  archiveSha256: 'a'.repeat(64),
   backupRetain: 3,
   appOrigin: 'http://127.0.0.1:4173',
 }
@@ -116,6 +117,7 @@ check(
   stripHeader(keyRun) === stripHeader(passwordRun),
   'key and password auth would send different remote scripts',
 )
+check(keyRun.includes('BACKUP_RETAIN=0'), 'default deploy must retain all backups')
 check(!passwordRun.includes('not-used-in-dry-run'), 'the dry run printed the VPS_PASSWORD value')
 
 // 5. Transport selection, without connecting. createKeyTransport is lazy (it

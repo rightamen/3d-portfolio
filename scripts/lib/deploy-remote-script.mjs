@@ -39,12 +39,14 @@ export const buildRemoteScript = ({
   serviceName,
   domain,
   archivePath,
+  archiveSha256,
   backupRetain,
   appOrigin,
   rewriteNginx = false,
   rewriteService = false,
-}) =>
-  [
+}) => {
+  if (!/^[a-f0-9]{64}$/.test(archiveSha256 || '')) throw new Error('A SHA-256 release checksum is required.')
+  return [
     'set -euo pipefail',
     `REMOTE_DIR=${shellQuote(remoteDir)}`,
     `ENV_FILE=${shellQuote(envFile)}`,
@@ -54,6 +56,12 @@ export const buildRemoteScript = ({
     `BACKUP_RETAIN=${backupRetain}`,
     `APP_ORIGIN=${shellQuote(appOrigin)}`,
     'HEALTH_URL="$APP_ORIGIN/api/health"',
+    `ARCHIVE_SHA256=${shellQuote(archiveSha256)}`,
+    'if ! printf "%s  %s\\n" "$ARCHIVE_SHA256" "$ARCHIVE" | sha256sum --check --status; then',
+    '  echo "Release archive SHA-256 mismatch; deployment stopped before backup/extraction." >&2',
+    '  exit 1',
+    'fi',
+    'echo "Release archive SHA-256 verified."',
     PRUNE_FUNCTION,
     'if [ ! -f "$ENV_FILE" ]; then',
     '  echo "Missing $ENV_FILE. Create it manually before deploying." >&2',
@@ -162,3 +170,4 @@ export const buildRemoteScript = ({
     'df -h "$REMOTE_DIR" | tail -n 1',
     'systemctl --no-pager --full status "$SERVICE_NAME"',
   ].join('\n')
+}

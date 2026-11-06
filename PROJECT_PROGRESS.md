@@ -1,6 +1,26 @@
 # mrright.blog 项目进度记录
 
-## 下次从这里继续（2026-11-01：个人展厅、主题与动效已推送并上线）
+## 下次从这里继续（2026-11-06：发布工具与公网检查已收整）
+
+从 main 425436e 接续，直接使用 Ubuntu。新增共享干净构建/Git SHA 清单/制品 SHA-256；
+自动部署要求对应提交已推送 origin；两入口共用远端脚本，默认保留全部备份。
+公网检查器已识别 /w/:handle/:slug，恢复真实作品 SEO 检查并验证旧链接 301。
+
+build/lint、354 单测、8 组制品场景、部署脚本和备份专项均通过；
+真实 HTTPS 在线检查 22 项通过、0 警告、0 失败。无 API/schema/前端布局变更。
+修改 scripts/check-production.mjs、scripts/lib/production-health.mjs、两发布入口、
+scripts/lib/create-release.mjs、scripts/lib/deploy-remote-script.mjs、发布/健康测试、
+package.json 与 README/部署/备份/测试/交接文档。
+
+本轮未部署 VPS、未执行 SQL，无新生产备份；线上仍为 765242f / release-2026-11-01-studio。
+既有备份：/opt/mrright-portfolio.backup-20261101-134849；
+/etc/mrright-portfolio.env.backup-20261101-134848；
+/var/backups/mrright-portfolio/releases/before-765242f-20261101-134849.dump。
+详情 docs/RELEASE_TOOLING_2026-11-06.md；证据 .deploy-tools/checkpoint-20261106.json。
+接下来核实代理链/监控、回访真实交互体验；精选评选及 API v1 待办保留。
+本节所在提交为本轮工具改动；提交/推送及完整制品验收结果在完成后补记。
+
+## 上一检查点（2026-11-01：个人展厅、主题与动效已推送并上线）
 
 按用户要求先提交并原子推送 main/标签，再打包和部署。
 代码 765242f92cbe6147fdaa45bc861a07cfe635f41b，标签 release-2026-11-01-studio，完成 2026-11-01 21:48:55 Asia/Shanghai。

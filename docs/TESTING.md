@@ -26,6 +26,7 @@ So the column that matters below is the second one.
 | `test:openapi` | That `docs/openapi/api-v1.yaml`'s error-code enum matches the server's actual codes. | Whether any route matches its documented shape. |
 | `test:content-health` | The content-health checker, by handing it each failure on purpose. A checker nobody has fed a failure to is a checker that reports green either way. | Whether the site has any of those problems right now. |
 | `test:admin-totp` | The hand-written TOTP against the standard, not against itself. A self-consistent implementation that generates and verifies its own wrong codes passes every self-test. | Everything else about admin auth. |
+| `test:release` | Real disposable Git repositories, fresh build and tar: dirty/untracked/concurrently changed source refusal, exact Git manifest, SHA-256, upload/env exclusion, unpushed commit refusal and remote corruption gate (8 scenarios). No network to the VPS. | Production disk state, database backups, real SSH and service replacement. |
 | `test:deploy-backup` | The deploy's hardlink-and-delete logic against a real filesystem, in a scratch directory. | Whether the real `/opt` is in the state it assumes. |
 | `test:deploy-script` | `bash -n` over the remote half of the deploy. The remote half is the part with no undo: by the time bash reports a syntax error, the env file is backed up and the service is restarting. | Whether the commands are *right* — only that they parse. |
 | `check:production` | The live site from outside over real TLS, **including the certificate**, which nothing else checks. It exists because the certificate expired on 2026-09-04 and every visitor got a browser warning. | Anything behind a login. |
@@ -231,3 +232,10 @@ wall, sticky navigation/back-top and module effects. No production theme save,
 rating, order or announcement was created; temporary admin sessions were
 revoked. This documentation update did not rerun code checks or redeploy.
 See RELEASE_2026-11-01_STUDIO.md for artifact and rollback references.
+
+2026-11-06 release tooling: build/lint, all 354 unit tests, 8 disposable release
+scenarios, deploy-script and deploy-backup checks passed. The read-only production
+checker now discovers canonical /w/:handle/:slug URLs and checks real work titles
+and JSON-LD, plus the exact legacy 301 Location; account works, explore and creator
+routes are included. The real HTTPS run returned 22 passes, zero warnings/failures.
+This tooling change did not deploy application code or modify production data.

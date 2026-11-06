@@ -6,6 +6,7 @@ import {
   evaluateBaseUrlScheme,
   evaluateCertificate,
   evaluateHealthBody,
+  evaluateLegacyRedirect,
   evaluateProjectHead,
   evaluateRobots,
   evaluateRouteStatus,
@@ -286,13 +287,25 @@ describe('evaluateSitemap', () => {
       sitemap([
         'https://mrright.blog/',
         'https://mrright.blog/community',
-        'https://mrright.blog/projects/md-leimu',
+        'https://mrright.blog/w/mrright/md-leimu',
         'https://mrright.blog/community/1781534266556-atb11d',
       ]),
     )
 
     expect(result.severity).toBe('pass')
-    expect(result.projectUrls).toEqual(['https://mrright.blog/projects/md-leimu'])
+    expect(result.projectUrls).toEqual(['https://mrright.blog/w/mrright/md-leimu'])
+  })
+
+  it('does not count legacy, partial, extra-segment or non-HTTP URLs as canonical works', () => {
+    const result = evaluateSitemap(sitemap([
+      'https://mrright.blog/projects/md-leimu',
+      'https://mrright.blog/w/mrright',
+      'https://mrright.blog/w/mrright/md-leimu/edit',
+      'ftp://mrright.blog/w/mrright/md-leimu',
+      'not-a-url',
+    ]))
+    expect(result.projectUrls).toEqual([])
+    expect(result.severity).toBe('warn')
   })
 
   // The sitemap's project entries come from a live catalogue read that
@@ -410,5 +423,26 @@ describe('parseArgs', () => {
 
   it('recognises --json', () => {
     expect(parseArgs(['--json'], {}).json).toBe(true)
+  })
+})
+
+describe('legacy project migration', () => {
+  it('accepts relative and absolute 301 destinations on the checked origin', () => {
+    for (const location of ['/w/mrright/md-leimu', 'https://mrright.blog/w/mrright/md-leimu']) {
+      expect(evaluateLegacyRedirect({ status: 301, location }).severity).toBe('pass')
+    }
+    expect(evaluateLegacyRedirect({ baseUrl: 'https://staging.example.com', status: 301,
+      location: 'https://staging.example.com/w/mrright/md-leimu' }).severity).toBe('pass')
+  })
+
+  it('fails wrong status, missing/wrong/external Location and transport errors', () => {
+    for (const response of [
+      { status: 200 }, { status: 302 }, { status: 301 },
+      { status: 301 },
+      { status: 301, location: '/w/other/md-leimu' },
+      { status: 301, location: 'https://other.example/w/mrright/md-leimu' },
+      { status: 301, location: '/w/mrright/md-leimu?redirect=1' },
+      { error: 'timeout' },
+    ]) expect(evaluateLegacyRedirect(response).severity).toBe('fail')
   })
 })

@@ -44,7 +44,7 @@ export const SITE_DEFAULT_TITLE = 'mrright.blog | 3D Portfolio'
 
 export const DEFAULT_BASE_URL = 'https://mrright.blog'
 
-// The six paths CLAUDE.md requires after every deploy. The seventh, a project
+// The fixed public paths required after every deploy. An additional work
 // detail page, is not a constant: production's catalogue lives in the database
 // and does not match the bundled content.js, so the script discovers a real
 // project URL from the sitemap instead of hardcoding a slug that may have been
@@ -56,6 +56,9 @@ export const REQUIRED_PATHS = [
   '/admin',
   '/login?mode=login',
   '/account',
+  '/account/works',
+  '/explore',
+  '/u/mrright',
 ]
 
 const SEVERITY_ORDER = { pass: 0, warn: 1, fail: 2 }
@@ -250,7 +253,8 @@ export const extractSitemapUrls = (xml) => [
 export const extractProjectUrls = (xml) =>
   extractSitemapUrls(xml).filter((url) => {
     try {
-      return new URL(url).pathname.startsWith('/projects/')
+      const parsed = new URL(url)
+      return /^https?:$/.test(parsed.protocol) && /^\/w\/[^/]+\/[^/]+\/?$/.test(parsed.pathname)
     } catch {
       return false
     }
@@ -272,7 +276,7 @@ export const evaluateSitemap = (xml) => {
   const projectUrls = extractProjectUrls(text)
   if (!projectUrls.length) {
     return {
-      detail: `${extractSitemapUrls(text).length} URLs listed, none of them a /projects/ page`,
+      detail: `${extractSitemapUrls(text).length} URLs listed, none of them a /w/:handle/:slug page`,
       projectUrls,
       severity: 'warn',
     }
@@ -282,6 +286,22 @@ export const evaluateSitemap = (xml) => {
     detail: `${extractSitemapUrls(text).length} URLs listed, ${projectUrls.length} of them projects`,
     projectUrls,
     severity: 'pass',
+  }
+}
+
+// A followed redirect would hide a missing migration. Check the original 301
+// and its exact same-origin destination before fetching any detail page.
+export const evaluateLegacyRedirect = ({ baseUrl = DEFAULT_BASE_URL, error, location, status } = {}) => {
+  const result = evaluateRouteStatus({ error, status, expectedStatus: 301 })
+  if (result.severity !== 'pass') return result
+  try {
+    if (!location) throw new Error('missing Location')
+    const actual = new URL(location, baseUrl)
+    const expected = new URL('/w/mrright/md-leimu', baseUrl)
+    if (actual.href !== expected.href) throw new Error('unexpected Location')
+    return { detail: 'HTTP 301 → ' + actual.pathname, severity: 'pass' }
+  } catch {
+    return { detail: '301 must point to /w/mrright/md-leimu on the checked origin', severity: 'fail' }
   }
 }
 
