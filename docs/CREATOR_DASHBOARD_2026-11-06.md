@@ -82,3 +82,12 @@ server/postgres/creatorStore.js、worksStore.js、schema.js、server/index.js；
 src/components/CreatorDashboard.jsx、FavoritesPanel.jsx、FavoriteButton.jsx、AccountMenuBar.jsx；
 src/pages/AccountPage.jsx、WorkDetailPage.jsx、src/lib/api.js、creatorCopy.js、i18n.js；
 src/creator-console.css、main.jsx；数据库/迁移/市场界面/主题测试与相关项目文档。
+
+## GitHub 检查点（2026-11-07）
+
+完整功能提交 1d52a3e90929cd717c8a055e2aab49d16afa61e3，26 个文件，已推送 main：
+https://github.com/rightamen/3d-portfolio/commit/1d52a3e90929cd717c8a055e2aab49d16afa61e3
+
+提交结果单独补记为文档提交；未打包、上传或部署此功能，线上仍为 765242f。
+原始界面验收截图另复制到本机 D:/Codex/artifacts/creator-console-2026-11-06/，
+含 desktop 与 zh-mobile，数据为临时受控测试数据。

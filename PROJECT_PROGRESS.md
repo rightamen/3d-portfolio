@@ -29,7 +29,8 @@ api/i18n/creatorCopy、creator-console.css/main.jsx，迁移/API/浏览器测试
 既有备份 /opt/mrright-portfolio.backup-20261101-134849；
 /etc/mrright-portfolio.env.backup-20261101-134848；
 /var/backups/mrright-portfolio/releases/before-765242f-20261101-134849.dump。
-代码提交/推送结果随后补记；正式上线继续先 GitHub，再备份/制品/部署与线上验证。
+代码提交 1d52a3e90929cd717c8a055e2aab49d16afa61e3（26 文件）已推送 GitHub main。
+本条提交结果另作后续文档提交；正式上线继续先 GitHub，再备份/制品/部署与线上验证。
 后续可按真实创作者使用情况扩展数据；浏览量埋点、收藏分组和长期 API v1 冻结仍未实现。
 
 ## 上一检查点（2026-11-06：发布工具与公网检查已收整）
