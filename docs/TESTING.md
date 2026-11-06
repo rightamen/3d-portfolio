@@ -251,3 +251,15 @@ save/remove, late old-account reports, final-page removal, zh/en/ja mobile layou
 accessible daily data and anonymous gating. Theme/marketplace fixtures now also
 model the new private favorite-state read. Screenshot figures are controlled test
 data. Production has not been migrated or deployed by this feature work.
+
+2026-11-07 creator release: the fixed clean c113caf artifact is live. Preflight
+build/lint, release-artifact, remote-script and backup checks passed; prior
+354 unit / 224 disposable DB / 72 UI checks cover the unchanged product source.
+All 181 shipped files, 13 original uploads, config and eight existing business
+table fingerprints match. Real verified HTTPS checks returned 22 passes with no
+warnings, 11 public pages returned 200 and seven anonymous private reads returned
+401. Real short-lived creator sessions exercised analytics, favorites, favorite
+state, strict v1 and desktop/390px touch UI. Zero page errors and overflow; no
+production favorites/orders/ratings written. Temporary admin and visitor sessions
+were revoked, private credential files removed. Full release/backups and probe
+waiting correction: RELEASE_2026-11-07_CREATOR.md.

@@ -1,6 +1,37 @@
 # mrright.blog 项目进度记录
 
-## 下次从这里继续（2026-11-07：创作者数据工作台与收藏已完成，尚未上线）
+## 下次从这里继续（2026-11-07：创作者工作台与收藏已提交并上线）
+
+用户明确要求 GitHub、部署上线、更新文档。完整功能 1d52a3e 已推送，
+本次从干净 c113caff787243724b1e0975b4cbdf8e3e4568e4 打包，先推送固定标签
+release-2026-11-07-creator 后上线，完成 2026-11-07 00:34:45 Asia/Shanghai。
+入口 /account/dashboard、/account/favorites 与详情收藏按钮已上线；增量收藏表/索引已建立。
+统一制品/版本清单/哈希校验与新版公网检查工具亦在本次制品中。
+
+发布前复核 build/lint、8 组制品、部署脚本与备份检查通过；沿用同产品代码已通过的
+354 单测、224 临时库 API、72 浏览器回归和旧库增量迁移，无新业务代码变更。
+线上服务 active、health 第 2 次成功，admin_summary/管理作品 200；181 文件全部匹配，
+13 上传、环境/systemd/nginx 与八张既有业务表完整指纹在验收后保持一致。
+收藏迁移与 10 套主题正常；基线作品/访客/管理员 4/3/1，评分/推荐/收藏 0/0/0。
+公网 HTTPS 22 项通过、0 警告/失败；11 页面 200、7 匿名私有接口 401、旧链接精确 301，
+公开隐私与缩略图检查通过。真实临时创作者会话的 API 与桌面/390px 手机通过，
+无页面异常/溢出；没有写入真实收藏、订单或评分，临时管理/访客会话与凭据文件已清理。
+首次按钮探针未等加载完成，改为按状态等待后通过，未改代码或重复部署。
+
+制品 SHA-256 c0c2469151481e8065b86aceb165826e1216a90e7669fb689ee81657d0559378。
+应用备份 /opt/mrright-portfolio.backup-20261106-163437；
+配置备份 /etc/mrright-portfolio.env.backup-20261106-163437；
+数据库备份 /var/backups/mrright-portfolio/releases/before-c113caf-20261106-163437.dump。
+备份名使用服务器 UTC，custom pg_dump 目录检查通过，全部旧备份保留。
+
+本轮仅新增/更新 docs/RELEASE_2026-11-07_CREATOR.md、功能专项、TESTING、HANDOFF 与本进度；
+运行代码未再修改。发布结果另作后续文档提交推送，不为文档再次部署。
+证据 .deploy-tools/creator-deploy.log、creator-deployment.json、creator-server-verification.json、
+creator-production-check.json、release-creator-20261107/smoke.json；完整回溯见正式发布文档。
+接续见 docs/HANDOFF_2026-11-01.md。浏览量埋点/收藏分组、代理链/监控、邮件真实送达及
+长期 API v1 仍待推进，生产策展继续使用真实评分与推荐。
+
+## 上一检查点（2026-11-07：创作者数据工作台与收藏已完成，尚未上线）
 
 用户要求个人中心增加类似后台的数据监控和收藏。从干净 main / 9173ecc 接续。
 2026-11-06 开始，2026-11-07 完成验证（Asia/Shanghai）。
