@@ -86,3 +86,8 @@ shipping-social.json、expected-release-files-social.json、social-deploy.log、
 social-server-verification.json、social-production-check.json、social-final-data.json；
 social-live-smoke.log、social-live-smoke-exit.json、release-social-20261107/smoke.json 与真实桌面/手机截图。
 临时凭据不作为验收材料提交或保留。
+
+## 后续入口修正
+
+用户反馈缺少易发现的关注/好友入口，已由 cdfc64f / release-2026-11-07-social-entry 修正上线。
+当前运行和备份见 [入口修正发布](RELEASE_2026-11-07_SOCIAL_ENTRY.md)，本页保留原批次证据。

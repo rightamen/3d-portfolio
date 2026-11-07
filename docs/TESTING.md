@@ -346,3 +346,10 @@ retry, paper theme and mobile navigation. Legacy payment/rating mocks now
 provide the new author relationship read; order behavior is unchanged.
 Visual screenshots were inspected; production read-only verification follows
 the fixed release, and actual relationship writes stay in disposable data.
+
+Social entry production verification: 17 routes, 14 anonymous authorization
+denials, 22 HTTPS checks, real desktop/mobile creator-directory and author/menu
+entries pass. All 196 source files match, 13 uploads and configuration hashes
+are unchanged, and all 14 business-table fingerprints match both after deploy
+and after UI verification. Temporary visitor/admin sessions were revoked and
+checked as unauthorized; credential files removed. No business data was written.
