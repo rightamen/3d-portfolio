@@ -1,0 +1,1 @@
+export const reportReasons=copy=>[['spam',copy.reportSpam],['harassment',copy.reportHarassment],['copyright',copy.reportCopyright],['inappropriate',copy.reportInappropriate],['fraud',copy.reportFraud],['other',copy.reportOther]]

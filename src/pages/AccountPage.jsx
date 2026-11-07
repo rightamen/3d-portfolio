@@ -81,9 +81,13 @@ const ThemeEditor = lazy(() => import('../components/ThemeEditor'))
 const CreatorDashboard = lazy(() => import('../components/CreatorDashboard'))
 const FavoritesPanel = lazy(() => import('../components/FavoritesPanel'))
 
+const ConnectionsPanel = lazy(() => import('../components/ConnectionsPanel'))
+const ReportsPanel = lazy(() => import('../components/ReportsPanel'))
 const InterfaceSettings = lazy(() => import('../components/InterfaceSettings'))
 
 const accountTabs = [
+  {key:'connections',labelKey:'socialConnections'},
+  {key:'reports',labelKey:'reportMine'},
   { key: 'system', labelKey: 'systemSettings' },
   { key: 'dashboard', labelKey: 'accountNavDashboard' },
   { key: 'favorites', labelKey: 'accountNavFavorites' },
@@ -1603,6 +1607,10 @@ const AccountPage = ({
 
   const renderActiveTab = () => {
     switch (activeTab) {
+      case 'connections':
+        return <Suspense fallback={<p role="status">{copy.loading}</p>}><ConnectionsPanel key={authToken} authToken={authToken} copy={copy}/></Suspense>
+      case 'reports':
+        return <Suspense fallback={<p role="status">{copy.loading}</p>}><ReportsPanel key={authToken} authToken={authToken} copy={copy} language={language}/></Suspense>
       case 'system':
         return <Suspense fallback={<p role="status">{copy.loading}</p>}><InterfaceSettings language={language} /></Suspense>
       case 'dashboard':

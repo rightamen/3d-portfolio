@@ -66,6 +66,11 @@ const expected = {
     visitor_users: ['creator_enabled_at', 'payout_state', 'stripe_account_id', 'theme'],
     work_assets: ['checksum', 'file_name', 'file_size', 'file_type', 'file_url', 'kind', 'sort_order', 'work_id'],
     work_favorites: ['work_id', 'user_id', 'created_at'],
+    user_follows: ['follower_id','followed_id'],
+    user_friendships: ['user_low','user_high','requester_id','status'],
+    favorite_collections: ['user_id','name','description'],
+    favorite_collection_items: ['collection_id','user_id','work_id'],
+    user_reports: ['reporter_id','target_type','target_id','status','resolution','resolved_by'],
     work_ratings: ['work_id', 'user_id', 'score', 'recommended', 'work_version'],
     work_comments: ['message', 'parent_id', 'pinned_at', 'status', 'user_id', 'work_id'],
     works: [
@@ -88,6 +93,8 @@ const expected = {
     ],
   },
   indexes: [
+    'user_follows_received_idx','user_friendships_low_idx','user_friendships_high_idx',
+    'favorite_collections_name_idx','favorite_collection_items_favorite_idx','user_reports_open_unique_idx','user_reports_queue_idx',
     'orders_payment_intent_unique_idx',
     'work_assets_work_idx',
     'work_comments_work_created_idx',
@@ -96,6 +103,7 @@ const expected = {
     'works_exhibition_idx', 'work_ratings_version_idx', 'work_favorites_user_created_idx',
   ],
   tables: [
+    'user_follows','user_friendships','favorite_collections','favorite_collection_items','user_reports',
     'orders',
     'payouts',
     'work_assets',

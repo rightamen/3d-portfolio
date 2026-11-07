@@ -1,3 +1,4 @@
+import ReportButton from '../components/ReportButton'
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { assetCategoryProfiles, getAssetCategoryProfile } from '../lib/assetCategories'
@@ -104,6 +105,7 @@ const PostDetail = ({ authToken, copy, language, postId, visitorUser }) => {
         <small className="community-detail-author">
           {post.user?.displayName || copy.accountGuest}
         </small>
+        <ReportButton authToken={authToken} copy={copy} targetType="post" targetId={post.id}/>
       </article>
 
       <Suspense fallback={<p className="text-sm text-neutral-500">{copy.loading}</p>}>
@@ -528,6 +530,7 @@ const PostList = ({ authToken, copy, language, visitorUser }) => {
                   >
                     {copy.communityOpenFile}
                   </a>
+                  <ReportButton authToken={authToken} copy={copy} targetType="resource" targetId={upload.id}/>
                 </div>
               </article>
             )

@@ -1,3 +1,4 @@
+import ReportButton from './ReportButton'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 
@@ -146,6 +147,7 @@ const WorkComments = ({ authToken, copy, handle, isOwner, slug, visitorUser }) =
           </div>
           <p>{comment.message}</p>
           <div className="work-comment-actions">
+              <ReportButton authToken={authToken} copy={copy} targetType="workComment" targetId={comment.id}/>
             <button
               className={comment.liked ? 'work-comment-liked' : undefined}
               disabled={!authToken || busy}

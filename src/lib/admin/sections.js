@@ -16,6 +16,7 @@ export const sections = [
   { group: 'catalogue', icon: 'search', key: 'content-health' },
   { group: 'catalogue', icon: 'community', key: 'community' },
   { group: 'moderation', icon: 'comments', key: 'comments' },
+  {group:'moderation',icon:'security',key:'reports'},
   { group: 'moderation', icon: 'downloads', key: 'downloads' },
   { group: 'moderation', icon: 'orders', key: 'orders' },
   { group: 'moderation', icon: 'messages', key: 'messages' },

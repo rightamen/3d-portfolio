@@ -17,7 +17,7 @@ So the column that matters below is the second one.
 | --- | --- | --- |
 | `test:unit` | Pure logic: i18n resolution, SEO routes, themes, payment info, image profiles, crop arithmetic, profile bounds, admin nav. Fast, no I/O. | Anything that needs a database, a browser, or a request. A function can be perfect and never be called. |
 | `test:api` | The HTTP contract against a server with **no** database — envelope shape, error codes, auth refusals. | Anything that needs stored rows: entitlement, orders, notifications, publishing. |
-| `test:api:db` | The same contract against a **disposable PostgreSQL**: register → verify → publish → order → download plus order concurrency/rollback, 225 checks, including creator analytics, private favorites, theme isolation and targeted admin/mobile-user exhibition journeys. | Most UI behavior and visual quality; the two exhibition journeys exercise only their paths. Pair with marketplace UI and notification journey checks. |
+| `test:api:db` | The same contract against a **disposable PostgreSQL**: register → verify → publish → order → download plus order concurrency/rollback, 240 checks, including social consent, reports, folder ownership, creator analytics, private favorites, theme isolation and targeted admin/mobile-user exhibition journeys. | Most UI behavior and visual quality; the two exhibition journeys exercise only their paths. Pair with marketplace UI and notification journey checks. |
 | `test:marketplace-ui` | The built frontend in local Chromium with controlled API responses: independent homepage loading, empty/error/loading states, order snapshot amounts, closed orders, session recovery, stale account responses, translated category filters, and mobile overflow. Run `npm run build` first. | Real API authorization and SQL. Its responses are fixtures; pair it with `test:api:db` and the real notification journey. |
 | `test:schema-migration` | That `ensureSchema()` migrates an **existing** database, not just builds an empty one — the path production actually takes — and that it is idempotent. | Whether the new columns are ever read or written by anything. |
 | `test:notifications` | The notification queries: who counts as unread, that marking read is per-person, that unpublishing empties every inbox, that one account cannot delete another's notice. | **The UI entirely.** A missing i18n key, a bell that never polls, a badge that never clears. This is the gap that shipped. |
@@ -295,3 +295,25 @@ light appearance/accent, motion controls, reload persistence and mobile drawer.
 No page errors or overflow. No production favorite, author-theme, order or rating
 writes; temporary visitor/admin sessions were revoked and credential files removed.
 See RELEASE_2026-11-07_INTERFACE.md for backup paths, source and evidence.
+
+2026-11-07 social/folders update: final build/lint, 362 unit checks, all 240
+full disposable-database checks, all 94 marketplace browser cases and the
+existing-schema migration/idempotency runner passed. Four new unit cases bound
+malformed folder/report metadata, allowed categories, useful Other details and
+markup-as-text. Fifteen new DB cases cover visitor/admin auth, concurrent
+idempotent follows, explicit receiver consent (including crossed requests),
+privacy redaction, stale request IDs after cooldown, folder ownership/quota races,
+composite foreign keys, multi-folder assignment and cascades, unpublished work
+redaction, literal search, report visibility/deduplication/budgets, all target types,
+conditional admin decisions and v1 envelopes. One case uses separate real creator
+and moderator browser contexts through the full follow/friend/folder/report/result
+chain; this caught a Router-dependent link rendered outside the admin router.
+Eleven new browser cases cover relationships/search, folder create/edit/filter/delete,
+assignment retry and focus restoration, report validation/results, anonymous entry,
+zh/en/ja light mobile dialogs, empty later-page recovery and old-account response
+isolation. Existing theme fixtures now explicitly include relationship reads.
+Migration assertions include all five new tables/columns and queue/ownership indexes.
+Screenshots are controlled test data; all clusters were destroyed. No production
+SQL, relationship/report/collection creation or deployment occurred. Existing
+notifications were unchanged; no private messages/email/push were added.
+See SOCIAL_COLLECTIONS_2026-11-07.md for contracts, bounds and evidence.

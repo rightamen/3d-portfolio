@@ -333,7 +333,7 @@ const App = () => {
           path="/u/:handle/*"
           element={
             <Suspense fallback={<SectionFallback title="Profile" copy={copy} />}>
-              <PublicProfilePage copy={copy} language={language} />
+              <PublicProfilePage copy={copy} language={language} authToken={visitorToken} visitorUser={visitorUser} />
             </Suspense>
           }
         />

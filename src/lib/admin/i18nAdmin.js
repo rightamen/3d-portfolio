@@ -19,6 +19,7 @@ const adminLanguageKey = 'mrright-admin-language'
 const siteLanguageKey = 'mrright-language'
 
 const zh = {
+  'section.reports': '举报处理',
   'section.curation': '精选展管理',
   'curation.title': '评分与展览推荐',
   'curation.rules': '用户：均分 ≥4.5/5 且至少 10 位有效评分及推荐；策展：评分 ≥90/100 且明确推荐。任一路径达标即可入展。',
@@ -598,6 +599,7 @@ const zh = {
 }
 
 const en = {
+  'section.reports': 'Reports',
   'section.curation': 'Curated exhibition',
   'curation.title': 'Scores and exhibition recommendations',
   'curation.rules': 'Community: average ≥4.5/5 with at least 10 verified ratings and recommendations. Curator: score ≥90/100 and an explicit recommendation. Either path qualifies.',
@@ -1174,6 +1176,7 @@ const en = {
 }
 
 const ja = {
+  'section.reports': '通報管理',
   'section.curation': '厳選展示の管理',
   'curation.title': '評価と展示推薦',
   'curation.rules': 'ユーザー：平均4.5/5以上、認証済み評価と推薦が各10件以上。キュレーター：90/100以上かつ明示的な推薦。どちらかを満たすと展示されます。',

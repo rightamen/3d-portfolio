@@ -36,6 +36,7 @@ const setup = async (page, { signedIn = true, language = 'en', failSave = false,
     if (path === '/api/works/artist/piece') return respond(route, { work: { ...work, creator: { ...creator, themeTokens: themeToTokens(state.theme) } } })
     if (path.endsWith('/likes')) return respond(route, { liked: false, likeCount: 0 })
     if (path.endsWith('/comments')) return respond(route, { comments: [{ id: 'sample', author: 'Another artist', message: 'Readable comment body', pinned: true, status: 'published', likeCount: 0, createdAt: '2026-11-01' }] })
+    if(path.endsWith('/relationship'))return respond(route,{self:true,following:false,friendship:null,followers:0,followingCount:0})
     if (path.endsWith('/favorite')) return respond(route, { saved: false })
     if (path.endsWith('/rating')) return respond(route, { ratings: { count: 0, average: 0, recommendations: 0 }, mine: null, contentVersion: 1 })
     throw new Error('Unexpected request: ' + path)

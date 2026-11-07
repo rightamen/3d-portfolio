@@ -1,3 +1,5 @@
+import SocialActions from '../components/SocialActions'
+import ReportButton from '../components/ReportButton'
 import { readInterfaceMotion } from '../hooks/useInterfacePreferences'
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
@@ -46,7 +48,7 @@ const privateActivityTabs = [
 
 const formatDate = (value) => (value ? new Date(value).toLocaleDateString() : '')
 
-const CreatorProfile = ({ copy, language, handle }) => {
+const CreatorProfile = ({ copy, language, handle, authToken, visitorUser }) => {
   const [activeTab, setActiveTab] = useState('overview')
   const [previewTheme, setPreviewTheme] = useState('')
   const [profile, setProfile] = useState(null)
@@ -356,6 +358,8 @@ const CreatorProfile = ({ copy, language, handle }) => {
                   {profile.location && <span>{profile.location}</span>}
                 </div>
                 {profile.bio && <p>{profile.bio}</p>}
+                <SocialActions key={authToken+handle} handle={handle} authToken={authToken} copy={copy}/>
+                {visitorUser?.handle!==handle && <ReportButton authToken={authToken} copy={copy} targetType="user" targetId={handle}/>}
                 <div className="public-profile-links">
                   {profile.website && (
                     <a href={profile.website} target="_blank" rel="noreferrer">

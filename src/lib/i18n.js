@@ -1,3 +1,4 @@
+import { socialCopy } from './socialCopy'
 import { interfaceCopy } from './interfaceCopy'
 import { creatorCopy } from './creatorCopy'
 
@@ -13,6 +14,7 @@ const copy = {
   zh: {
     ...creatorCopy.zh,
     ...interfaceCopy.zh,
+    ...socialCopy.zh,
     profileBackTop: "回到个人主页顶部",
     themeBrowse: "预览主题",
     themeBrowseHint: "10 种气质，随心试选",
@@ -719,6 +721,7 @@ const copy = {
   en: {
     ...creatorCopy.en,
     ...interfaceCopy.en,
+    ...socialCopy.en,
     profileBackTop: "Back to profile top",
     themeBrowse: "Try a theme",
     themeBrowseHint: "10 moods to explore",
@@ -1445,6 +1448,7 @@ const copy = {
   ja: {
     ...creatorCopy.ja,
     ...interfaceCopy.ja,
+    ...socialCopy.ja,
     profileBackTop: "プロフィールの先頭へ戻る",
     themeBrowse: "テーマを試す",
     themeBrowseHint: "10の雰囲気から選ぶ",

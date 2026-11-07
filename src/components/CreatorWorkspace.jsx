@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import useDialogAccessibility from '../hooks/useDialogAccessibility'
 import { initials } from '../lib/initials'
 
-const paths={dashboard:'M3 3h6v6H3z M15 3h6v6h-6z M3 15h6v6H3z M15 15h6v6h-6z',works:'m12 3 9 5-9 5-9-5 9-5 M3 8v9l9 5 9-5V8 M12 13v9',favorites:'M5 3h14v18l-7-5-7 5V3',selling:'M5 3h14v18l-3-2-4 2-4-2-3 2V3 M9 8h6 M9 12h6',community:'M3 5h18v12H9l-6 4V5',notices:'M3 10h5l10-6v16L8 14H3v-4 M8 14l2 7',downloads:'M12 3v12 M7 10l5 5 5-5 M4 16v5h16v-5',comments:'M3 4h18v14H9l-6 3V4',settings:'M12 12m-8 0a8 8 0 1 0 16 0a8 8 0 1 0-16 0 M7 19v-2a5 5 0 0 1 10 0v2 M12 7a3 3 0 1 0 0 6a3 3 0 1 0 0-6',system:'M4 6h16 M4 12h16 M4 18h16 M8 3v6 M16 9v6 M10 15v6',security:'m12 3 8 3v7c0 4-8 8-8 8s-8-4-8-8V6l8-3 M8 12l3 3 5-6',overview:'M3 20h18 M6 16V9 M12 16V4 M18 16v-6'}
+const paths={dashboard:'M3 3h6v6H3z M15 3h6v6h-6z M3 15h6v6H3z M15 15h6v6h-6z',works:'m12 3 9 5-9 5-9-5 9-5 M3 8v9l9 5 9-5V8 M12 13v9',connections:'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M9 3a4 4 0 1 0 0 8a4 4 0 1 0 0-8 M20 8v6 M17 11h6',reports:'M4 21V3 M4 4h14l-3 5 3 5H4',favorites:'M5 3h14v18l-7-5-7 5V3',selling:'M5 3h14v18l-3-2-4 2-4-2-3 2V3 M9 8h6 M9 12h6',community:'M3 5h18v12H9l-6 4V5',notices:'M3 10h5l10-6v16L8 14H3v-4 M8 14l2 7',downloads:'M12 3v12 M7 10l5 5 5-5 M4 16v5h16v-5',comments:'M3 4h18v14H9l-6 3V4',settings:'M12 12m-8 0a8 8 0 1 0 16 0a8 8 0 1 0-16 0 M7 19v-2a5 5 0 0 1 10 0v2 M12 7a3 3 0 1 0 0 6a3 3 0 1 0 0-6',system:'M4 6h16 M4 12h16 M4 18h16 M8 3v6 M16 9v6 M10 15v6',security:'m12 3 8 3v7c0 4-8 8-8 8s-8-4-8-8V6l8-3 M8 12l3 3 5-6',overview:'M3 20h18 M6 16V9 M12 16V4 M18 16v-6'}
 const Icon=({name})=><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={paths[name] || paths.dashboard}/></svg>
 const CreatorWorkspace=({activeTab,tabs,copy,language,onLanguageChange,onNavigate,onLogout,visitorUser,handle,children})=>{
  const [open,setOpen]=useState(false),[query,setQuery]=useState('')
@@ -17,7 +17,7 @@ const CreatorWorkspace=({activeTab,tabs,copy,language,onLanguageChange,onNavigat
   window.addEventListener('resize',resize)
   return()=>{observer.disconnect();window.removeEventListener('resize',resize)}
  },[])
- const groups=[['workspaceOverview',['dashboard','overview']],['workspaceContent',['works','selling','community','notices']],['workspacePersonal',['favorites','downloads','comments','settings']],['workspacePreferences',['system','security']]]
+ const groups=[['workspaceOverview',['dashboard','overview']],['workspaceContent',['works','selling','community','notices']],['workspacePersonal',['connections','favorites','reports','downloads','comments','settings']],['workspacePreferences',['system','security']]]
  const matches=tabs.filter(tab=>copy[tab.labelKey]?.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()))
  const active=tabs.find(tab=>tab.key===activeTab)
  return <div className="creator-workspace account-shell" ref={root}>

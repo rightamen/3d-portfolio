@@ -1,3 +1,4 @@
+import { ensureSocialSchema } from './socialSchema.js'
 // Every CREATE TABLE / ADD COLUMN the service needs, run once at startup.
 // Additive only -- `IF NOT EXISTS` throughout -- so deploying a newer build
 // against an older database migrates it, and rolling back leaves the extra
@@ -896,5 +897,7 @@ export const ensureSchema = async (pool) => {
     CREATE INDEX IF NOT EXISTS work_favorites_user_created_idx
       ON work_favorites (user_id, created_at DESC, work_id);
   `)
+
+  await ensureSocialSchema(pool)
 
 }

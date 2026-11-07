@@ -27,13 +27,13 @@ export const createCreatorStore = ({ pool }) => ({
   removeFavorite: async (workId, userId) => {
     await pool.query('DELETE FROM work_favorites WHERE work_id=$1 AND user_id=$2', [workId,userId])
   },
-  listFavorites: async (userId, {limit=24,offset=0}={}) => {
-    const total = await pool.query('SELECT count(*)::int AS count FROM work_favorites WHERE user_id=$1', [userId])
+  listFavorites: async (userId, {limit=24,offset=0,collectionId=null}={}) => {
+    const total = await pool.query('SELECT count(*)::int AS count FROM work_favorites f WHERE user_id=$1 AND ($2::text IS NULL OR EXISTS(SELECT 1 FROM favorite_collection_items i WHERE i.user_id=f.user_id AND i.work_id=f.work_id AND i.collection_id=$2))', [userId,collectionId])
     const result = await pool.query(`SELECT ${workColumns}, f.work_id AS favorite_work_id, f.created_at AS saved_at
       FROM work_favorites f
       LEFT JOIN works ON works.id=f.work_id AND works.status='published'
       LEFT JOIN visitor_users ON visitor_users.id=works.creator_id
-      WHERE f.user_id=$1 ORDER BY f.created_at DESC, f.work_id ASC LIMIT $2 OFFSET $3`, [userId,limit,offset])
+      WHERE f.user_id=$1 AND ($2::text IS NULL OR EXISTS(SELECT 1 FROM favorite_collection_items i WHERE i.user_id=f.user_id AND i.work_id=f.work_id AND i.collection_id=$2)) ORDER BY f.created_at DESC, f.work_id ASC LIMIT $3 OFFSET $4`, [userId,collectionId,limit,offset])
     return {total:total.rows[0].count,items:result.rows.map(row=>({
       workId:row.favorite_work_id, savedAt:row.saved_at.toISOString(), available:Boolean(row.id),
       work:row.id ? toWorkSummary(row) : null,

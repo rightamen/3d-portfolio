@@ -1,6 +1,40 @@
 # mrright.blog 项目进度记录
 
-## 下次从这里继续（2026-11-07：统一动效、创作者工作区与系统设置已上线）
+## 下次从这里继续（2026-11-07：关注、好友、举报与私有收藏夹，本地完成待发布）
+
+用户要求加入关注、好友、举报和可自定义收藏夹。从干净 main / 5192d52 接续，直接在 Ubuntu 开发。
+公开主页新增单向关注和双向确认好友；/account/connections 提供好友、关注、粉丝、收到/发出申请和公开用户搜索。
+好友支持接收者接受/拒绝、发起者撤回、双方解除；交叉申请不自动同意，24 小时重发冷却，新请求更换 ID 防旧页误接受。
+/account/favorites 可新建、编辑、删除私有收藏夹，作品可多重分类；删除收藏夹保留全部收藏，取消收藏级联清理分类。
+作品详情和收藏卡片可直接整理。旧收藏不需迁移或重新保存，下架作品继续安全占位。
+作品/用户/帖子/两类评论/通过审核资源有举报入口；/account/reports 查进度，/admin“举报处理”记录可见结果。
+后台处理状态不自动下架或封号，仍由管理员核查内容；未新增私信、邮件或推送，既有通知流程未改。
+新模块接入八主题、作者主题、动效/静态、手机和中英日。
+
+新增 user_follows、user_friendships、favorite_collections、favorite_collection_items、user_reports 五张增量表和索引。
+服务端只取 session 身份，私人 GET no-store；组合外键保证分类同时属于文件夹/收藏所有者。
+事务/锁处理并发关注、双向申请、好友动作、收藏夹限额/分类与举报去重；管理员只处理 open，防迟到覆盖。
+好友 100 新申请/天、举报 20/天，收藏夹 50 个，名字 50、简介 300、举报正文 2000/其他至少 10、处理说明 1000 字符。
+搜索为 2–60 字符字面子串，不将百分号/下划线作为通配符。私有/管理隐藏用户不在搜索，关系列表只给不可用占位。
+
+build/lint、362 单测、旧库增量升级/幂等（含五表/索引）通过；240 完整临时库检查、94 完整浏览器回归全部通过。
+真实三浏览器上下文验证创作者 A 关注/申请，B 接受/收藏归类/举报，管理员处理，再由 B 查看结果；无页面异常。
+临时数据库已销毁。本轮未执行生产 SQL、未创建真实关系/举报/收藏夹，未部署 VPS，无新生产备份。
+线上仍为 70697f7 / release-2026-11-07-interface；保留发布/备份见 docs/RELEASE_2026-11-07_INTERFACE.md。
+
+回归中修复：关注布尔状态被统计字段同名覆盖；举报共享组件在独立后台不能使用依赖 Router 的链接；
+归类后刷新不能替换触发按钮导致焦点丢失，文件夹计数同步刷新；空末页仍提供上一页。
+异步复选框测试按提交后的真实状态等待，旧主题模拟补 relationship 请求，举报选择框使用角色/可访问名定位。
+证据 .deploy-tools/social-checks/ 的 database-final.log/json、browser-final.log/json、migration-verified、unit/build/lint 与截图。
+
+新文件：server/postgres/socialSchema/socialStore/collectionsStore/reportsStore.js、server/socialRoutes.js、socialValidation.js；
+ConnectionsPanel/SocialActions/SocialDialog/ReportButton/ReportsPanel/CollectionLibrary、useSocialResource、socialCopy/reportReasons/social.css；
+接入 schema/worksStore/creatorStore/index、App/Admin/账号/主页/作品/社区/评论/收藏及导航，扩展增量迁移和 API/浏览器/单测。
+专项 docs/SOCIAL_COLLECTIONS_2026-11-07.md 记录权限、行为、边界和 API，提交/推送结果随后补记。
+最终桌面/三语手机、收藏夹和真实后台截图已检查，预览保存 D:/Codex/artifacts/social-2026-11-07/。
+下一步发布仍先 GitHub、固定制品、备份和升级验收；当前新增功能尚未上线。
+
+## 上一检查点（2026-11-07：统一动效、创作者工作区与系统设置已上线）
 
 用户明确要求“部署上线”。先确认 GitHub main 干净且已推送，将 70697f7820e1686be4ec73f98fbf9a8c4698d238
 固定为 release-2026-11-07-interface 并推送，再构建、备份、上线，切换完成于 2026-11-07 15:58:19 Asia/Shanghai。

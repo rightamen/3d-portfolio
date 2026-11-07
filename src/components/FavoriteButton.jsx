@@ -1,3 +1,4 @@
+import { CollectionPicker } from './CollectionLibrary'
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { getWorkFavorite, removeWorkFavorite, saveWorkFavorite } from '../lib/api'
@@ -6,6 +7,7 @@ import { getApiErrorMessage } from '../lib/i18n'
 const Bookmark = ({ filled=false }) => <svg aria-hidden="true" width="17" height="19" viewBox="0 0 20 22" fill={filled ? 'currentColor' : 'none'}><path d="M4 2h12v18l-6-4-6 4V2Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" /></svg>
 
 const FavoriteButton = ({authToken,copy,handle,slug,workId}) => {
+  const [organize,setOrganize]=useState(false)
   const [retry,setRetry] = useState(0)
   const [loaded,setLoaded] = useState({key:-1,saved:false,error:null})
   const [busy,setBusy] = useState(false)
@@ -36,6 +38,8 @@ const FavoriteButton = ({authToken,copy,handle,slug,workId}) => {
         <Bookmark filled={!loading && loaded.saved} />{loading || busy ? copy.loading : loaded.saved ? copy.favoriteSaved : copy.favoriteSave}
       </button>}
     {!loading && loaded.saved && <Link className="creator-favorites-link" to="/account/favorites">{copy.accountNavFavorites} ↗</Link>}
+    {!loading && loaded.saved && <button className="collection-organize" type="button" onClick={()=>setOrganize(true)}>{copy.collectionOrganize}</button>}
+    {organize && <CollectionPicker key={authToken+workId} authToken={authToken} copy={copy} workId={workId} onClose={()=>setOrganize(false)}/>}
     {actionError && <p role="alert">{getApiErrorMessage(actionError,copy,copy.favoriteActionError)}</p>}
   </div>
 }

@@ -1006,11 +1006,17 @@ export const saveAdminCuration = (token, id, fields) =>
 // Private creator dashboard and durable account bookmarks.
 export const getCreatorAnalytics = (token, {days=30,page=1}={}) =>
   request('/api/account/analytics?days='+days+'&page='+page+'&limit=20', {cache:'no-store',headers:authHeaders(token)})
-export const getAccountFavorites = (token, page=1) =>
-  request('/api/account/favorites?page='+page+'&limit=24', {cache:'no-store',headers:authHeaders(token)})
+export const getAccountFavorites = (token, page=1, collectionId=null) =>
+  request('/api/account/favorites?page='+page+'&limit=24'+(collectionId?'&collection='+encodeURIComponent(collectionId):''), {cache:'no-store',headers:authHeaders(token)})
 export const getWorkFavorite = (handle,slug,token) =>
   request('/api/works/'+encodeURIComponent(handle)+'/'+encodeURIComponent(slug)+'/favorite', {cache:'no-store',headers:authHeaders(token)})
 export const saveWorkFavorite = (handle,slug,token) =>
   request('/api/works/'+encodeURIComponent(handle)+'/'+encodeURIComponent(slug)+'/favorite', {method:'PUT',headers:authHeaders(token,{'Content-Type':'application/json'}),body:JSON.stringify({saved:true})})
 export const removeWorkFavorite = (workId,token) =>
   request('/api/account/favorites/'+encodeURIComponent(workId), {method:'DELETE',headers:authHeaders(token)})
+
+// Authenticated social and collection operations retain the shared error envelope.
+export const getPrivateSocial=(path,token)=>request(path,{cache:'no-store',headers:authHeaders(token)})
+export const writePrivateSocial=(path,token,method,body)=>request(path,{method,headers:authHeaders(token,{'Content-Type':'application/json'}),...(body===undefined?{}:{body:JSON.stringify(body)})})
+export const getAdminReports=(token,status,page)=>adminRequest('/api/admin/reports?limit=20&page='+page+(status?'&status='+status:''),token)
+export const resolveAdminReport=(token,id,body)=>adminRequest('/api/admin/reports/'+encodeURIComponent(id),token,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})

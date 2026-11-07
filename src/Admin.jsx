@@ -1,3 +1,5 @@
+import ReportsPanel from './components/ReportsPanel'
+import { getCopy } from './lib/i18n'
 import PageEffects from './components/PageEffects'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
@@ -1279,6 +1281,8 @@ const Admin = () => {
               systemLabel={loadedAt ? t('dash.dataAsOf', { age: fmt.formatAge(loadedAt) }) : ''}
             />
           )}
+
+          {activeSection === 'reports' && <ReportsPanel key={token} authToken={token} copy={getCopy(language)} language={language} admin/>}
 
           {activeSection === 'curation' && <AdminCurationSection key={token} token={token} />}
 

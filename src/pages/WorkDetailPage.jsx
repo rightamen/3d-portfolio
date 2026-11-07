@@ -1,3 +1,4 @@
+import ReportButton from '../components/ReportButton'
 import FavoriteButton from '../components/FavoriteButton'
 import { Suspense, lazy, useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
@@ -192,6 +193,7 @@ const WorkDetailPage = ({ authToken, copy, language, visitorUser }) => {
           </div>
 
           {work.status === 'published' && <FavoriteButton key={requestKey} authToken={authToken} copy={copy} handle={handle} slug={slug} workId={work.id} />}
+          {work.status==='published' && <ReportButton authToken={authToken} copy={copy} targetType="work" targetId={work.id}/>}
 
           {/* Immediately under the price, because that is the question the
               price raises. */}

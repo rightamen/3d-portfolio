@@ -5,6 +5,7 @@ import './index.css'
 import './studio.css'
 import './creator-console.css'
 import './interface.css'
+import './social.css'
 import App from './App.jsx'
 import { getCopy, getInitialLanguage } from './lib/i18n'
 

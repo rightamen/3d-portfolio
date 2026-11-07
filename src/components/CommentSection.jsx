@@ -1,3 +1,4 @@
+import ReportButton from './ReportButton'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
@@ -164,6 +165,7 @@ const CommentSection = ({ authToken, copy, language, postId, visitorUser }) => {
           </div>
           <p className="yt-comment-text">{comment.message}</p>
           <div className="yt-comment-actions">
+              <ReportButton authToken={authToken} copy={copy} targetType="comment" targetId={comment.id}/>
             <button
               type="button"
               className={comment.liked ? 'yt-like-active' : 'yt-like'}

@@ -1,3 +1,4 @@
+import { registerSocialRoutes } from './socialRoutes.js'
 import cors from 'cors'
 import { isContentVersion, readCuration } from './exhibition.js'
 import express from 'express'
@@ -2351,9 +2352,13 @@ app.get('/api/account/analytics', requireVisitor, requireWorksStore, async (requ
   return sendPage(response,{analytics},payload.pagination)
 })
 
+registerSocialRoutes({app,store:worksStore,requireVisitor,requireAdmin,requireWorksStore,sendData,sendPage,sendError,codes:API_ERROR_CODES,normalizePagination,toPaginatedPayload,limiter:createLimiter({windowMs:minutes(10),limit:120,message:'Too many social requests. Please try again later.'})})
+
 app.get('/api/account/favorites', requireVisitor, requireWorksStore, async (request, response) => {
   const {limit,offset,page} = normalizePagination(request.query,24,60)
-  const result = await worksStore.listFavorites(request.visitorUser.id,{limit,offset})
+  const collectionId=typeof request.query.collection==='string'?request.query.collection:null
+  if(collectionId && !(await worksStore.listCollections(request.visitorUser.id)).some(c=>c.id===collectionId))return sendError(response,API_ERROR_CODES.RESOURCE_FORBIDDEN,'Folder not found.',404)
+  const result = await worksStore.listFavorites(request.visitorUser.id,{limit,offset,collectionId})
   const payload = toPaginatedPayload(result,page,limit)
   response.set('Cache-Control','private, no-store')
   return sendPage(response,{favorites:payload.items},payload.pagination)
