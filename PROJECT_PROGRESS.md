@@ -1,9 +1,9 @@
 # mrright.blog 项目进度记录
 
-## 下次从这里继续（2026-11-07：多格式资源发布待上线）
+## 下次从这里继续（2026-11-07：多格式资源发布已上线）
 
 用户要求除模型外可上传图片、视频、素材等；沿用已确认的“GitHub 提交先于部署、完成后直接上线”流程。
-从干净 main / b3d2ee0 接续，直接 Ubuntu。生产仍是 11bfe22 / release-2026-11-07-communication-r2，尚未部署本批。
+从干净 main / b3d2ee0 接续，直接 Ubuntu。本批功能5edf2bdcd18c3e43dc2c60048225e3c770c24d99 / release-2026-11-07-resources，已于2026-11-07 23:16:07 Asia/Shanghai上线。
 
 /account/works 新增七种资源类型（model/image/video/audio/material/document/other），按类型上传封面、公开预览和原文件，可批量顺序上传并显示进度、保留部分成功。
 图片图集、原生视频/音频播放器、类型筛选及卡片标识，三语、系统主题和手机适配。
@@ -15,10 +15,21 @@ JPG/PNG/WebP 原件另生成展示图；显式封面可替换它。GIF/TIFF/PSD/
 
 build/lint、368 单测、264 完整一次性库检查、旧库从 b3d2ee0 升级/幂等、原通知与双人通知闭环通过。
 资源30次重复浏览器检查通过；最终浅色主题修正后的127全站浏览器检查通过。
-制品追溯8场景、部署脚本语法和真实备份逻辑检查通过。下一步推送功能提交与 release-2026-11-07-resources 标签、打包备份上线。
+制品追溯8场景、部署脚本语法和真实备份逻辑检查通过。GitHub功能提交和发布标签先于打包、备份与上线。
 真实 PNG/WebM/WAV 上传/浏览器解码/原件逐字节下载及票据不可切换已验证。
 线上只做编辑器/筛选只读验收，不上传夹具或修改已有作品。
-细节 docs/RESOURCES_2026-11-07.md；证据 .deploy-tools/resources-checks/。发布完成后补固定提交、备份和数据保全结果。
+细节 docs/RESOURCES_2026-11-07.md；证据 .deploy-tools/resources-checks/。发布详情 docs/RELEASE_2026-11-07_RESOURCES.md。
+线上206个制品文件逐项匹配、13上传原样保留，env/nginx/systemd不变；20表既有字段摘要在部署后及界面验收后均一致。
+新增resource_type列另行逐作品核对，旧4作品保持model；新约束/票据外键/索引正常。
+19页面200、18匿名私有读取401、公网HTTPS22项零警告/失败，health/admin_summary正常。
+七类筛选和桌面/390px发布入口只读检查通过，无作品/上传/下载事件或社交数据测试写入，零页面异常/横向溢出。
+临时visitor/admin会话已撤销并复核401，本地/远端凭据移除，用户原会话保留。
+制品9effe3132d182200bc8f4f812a915bfc0673a0d84450c166b060928d490b0ab2，15,940,926 bytes。
+备份（UTC）：/opt/mrright-portfolio.backup-20261107-151601；
+/etc/mrright-portfolio.env.backup-20261107-151601；
+/var/backups/mrright-portfolio/releases/before-5edf2bd-20261107-151601.dump。
+custom dump目录检查通过，全部旧备份保留，未执行生产恢复。
+本次发布结果另作文档提交，不为文档重部署，线上运行提交仍为5edf2bd。
 
 ## 上一检查点（2026-11-07：私聊与关注动态含慢网络保护已上线）
 
