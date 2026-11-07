@@ -52,3 +52,8 @@ health、admin_summary、管理作品与举报队列正常，旧链接 301/公�
 communication-deploy.log、communication-deployment.json、communication-server-verification.json、
 communication-final-data.json、communication-production-check.json、communication-live-smoke-exit.json
 及 release-communication-20261107/smoke.json 与桌面/手机截图。
+
+## 后续慢网络加载修正
+
+当前运行 11bfe2213d9a1be3583d142578928933895bf3bf / release-2026-11-07-communication-r2，首次读取期间暂停轮询/聚焦刷新，117 浏览器全套通过。
+首版证据保留；最终运行与第二次备份见 [加载补丁发布](RELEASE_2026-11-07_COMMUNICATION_R2.md)。

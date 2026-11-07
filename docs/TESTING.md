@@ -380,3 +380,11 @@ checks pass. A new clock-controlled ten-second response verifies that initial
 loading is not restarted by periodic/focus refresh. This adds the fifteenth
 communication UI check. Server/schema are unchanged from the fully validated
 254-DB-check build; initial production evidence is preserved separately.
+
+Slow-loading patch production: 19 routes, 18
+anonymous private-read denials and 22 HTTPS checks pass.
+Desktop/mobile thread lists now wait for actual loaded data/empty state before
+screenshots and form checks. All 203 release files match, uploads and
+configuration hashes remain unchanged, and 20
+table fingerprints including communication data match before/after UI checks.
+No business messages or read markers were written; temporary sessions revoked.
