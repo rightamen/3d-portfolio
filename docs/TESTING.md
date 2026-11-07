@@ -17,7 +17,7 @@ So the column that matters below is the second one.
 | --- | --- | --- |
 | `test:unit` | Pure logic: i18n resolution, SEO routes, themes, payment info, image profiles, crop arithmetic, profile bounds, admin nav. Fast, no I/O. | Anything that needs a database, a browser, or a request. A function can be perfect and never be called. |
 | `test:api` | The HTTP contract against a server with **no** database — envelope shape, error codes, auth refusals. | Anything that needs stored rows: entitlement, orders, notifications, publishing. |
-| `test:api:db` | The same contract against a **disposable PostgreSQL**: register → verify → publish → order → download plus order concurrency/rollback, 224 checks, including creator analytics, private favorites, theme isolation and targeted admin/mobile-user exhibition journeys. | Most UI behavior and visual quality; the two exhibition journeys exercise only their paths. Pair with marketplace UI and notification journey checks. |
+| `test:api:db` | The same contract against a **disposable PostgreSQL**: register → verify → publish → order → download plus order concurrency/rollback, 225 checks, including creator analytics, private favorites, theme isolation and targeted admin/mobile-user exhibition journeys. | Most UI behavior and visual quality; the two exhibition journeys exercise only their paths. Pair with marketplace UI and notification journey checks. |
 | `test:marketplace-ui` | The built frontend in local Chromium with controlled API responses: independent homepage loading, empty/error/loading states, order snapshot amounts, closed orders, session recovery, stale account responses, translated category filters, and mobile overflow. Run `npm run build` first. | Real API authorization and SQL. Its responses are fixtures; pair it with `test:api:db` and the real notification journey. |
 | `test:schema-migration` | That `ensureSchema()` migrates an **existing** database, not just builds an empty one — the path production actually takes — and that it is idempotent. | Whether the new columns are ever read or written by anything. |
 | `test:notifications` | The notification queries: who counts as unread, that marking read is per-person, that unpublishing empties every inbox, that one account cannot delete another's notice. | **The UI entirely.** A missing i18n key, a bell that never polls, a badge that never clears. This is the gap that shipped. |
@@ -263,3 +263,22 @@ state, strict v1 and desktop/390px touch UI. Zero page errors and overflow; no
 production favorites/orders/ratings written. Temporary admin and visitor sessions
 were revoked, private credential files removed. Full release/backups and probe
 waiting correction: RELEASE_2026-11-07_CREATOR.md.
+
+2026-11-07 interface/workspace update: final build/lint, all 358 unit checks,
+225 disposable-database checks and all 83 marketplace browser checks passed.
+Four new unit checks cover preference normalization, every light/dark palette
+and accent edge against contrast bounds, live system palette resolution and
+reduced-motion priority. Eleven additional browser cases cover all eight
+interface choices, persistence/reset, cross-route styling without author-theme
+writes, system media changes, the fixed creator sidebar, 1280/1440px overflow,
+galaxy navigation and performance-section focus, mobile drawer focus/search/scroll
+locking, three-language phone settings, static mode across public/private routes,
+storage-event recovery and denied persistence, and admin sign-in. The real admin
+system-settings journey runs against existing authentication and a disposable DB.
+Independent Chromium/SwiftShader QA verified an actual WebGL canvas and changed
+orbit after dragging with no page exceptions; fallback screenshots alone would
+not prove this. Desktop and phone dark/light screenshots were inspected. The old
+bookmark keyboard test now waits for an enabled button before focus/Enter, and
+settings screenshots wait for lazy content and finish finite animations.
+Settings are device-local, not account-synchronized. No server/schema/API change,
+production SQL or deployment occurred. See INTERFACE_WORKSPACE_2026-11-07.md.

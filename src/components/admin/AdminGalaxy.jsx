@@ -1,3 +1,4 @@
+import { useInterfacePreferences } from '../../hooks/useInterfacePreferences'
 import { Suspense, lazy, useState } from 'react'
 import AdminIcon from './AdminIcon'
 import ModelErrorBoundary from '../ModelErrorBoundary'
@@ -74,6 +75,7 @@ const FlatMap = ({ busyLabel, idleLabel, nodes, onSelect }) => {
 const AdminGalaxy = ({ days = 30, nodes = [], onNavigate, total = 0 }) => {
   const { fmt, t } = useAdminI18n()
   const reducedMotion = usePrefersReducedMotion()
+  const preferences=useInterfacePreferences()
   const visible = useDocumentVisible()
   // Narrow stages get the same scene at a wider field of view and without the
   // permanent labels: six pills over a 400px-wide canvas overlap each other
@@ -160,8 +162,8 @@ const AdminGalaxy = ({ days = 30, nodes = [], onNavigate, total = 0 }) => {
                   valueLabel: idleLabel(node),
                 }))}
                 onSelect={select}
-                running={visible}
-                spin={!reducedMotion && visible}
+                running={visible && !reducedMotion && preferences.effects}
+                spin={!reducedMotion && visible && preferences.effects}
               />
             </Suspense>
           </ModelErrorBoundary>

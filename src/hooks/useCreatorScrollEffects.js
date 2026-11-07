@@ -1,3 +1,4 @@
+import { readInterfaceMotion,readInterfaceEffects } from './useInterfacePreferences'
 import { useEffect } from 'react'
 
 const revealSelector = '.creator-gallery-heading, .creator-gallery-filters, .profile-activity-preview, .creator-notices li, .creator-profile-about, .creator-profile-highlights > article, .creator-profile-skills, .timeline-item, .contact-panel, .public-profile-item, .public-profile-about > article, .admin-row'
@@ -10,6 +11,7 @@ export const useCreatorScrollEffects = (pageRef, enabled) => {
     const page = pageRef.current
     if (!enabled || !page) return undefined
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)')
+    const isReduced = () => reduced.matches || readInterfaceMotion()==='off'
     const finePointer = window.matchMedia('(hover: hover) and (pointer: fine)')
     const known = new WeakSet()
     const animations = new Map()
@@ -25,11 +27,11 @@ export const useCreatorScrollEffects = (pageRef, enabled) => {
       node.dataset.scrollReveal = 'entered'
       pending.delete(node)
       observer?.unobserve(node)
-      if (reduced.matches || document.hidden || typeof node.animate !== 'function') return
+      if (isReduced() || document.hidden || typeof node.animate !== 'function') return
       const animation = node.animate([
         { opacity: .3, transform: 'translate3d(0,' + (finePointer.matches ? 18 : 8) + 'px,0)' },
         { opacity: 1, transform: 'none' },
-      ], { duration: 650, easing: 'cubic-bezier(.2,.7,.2,1)' })
+      ], { duration: readInterfaceMotion()==='soft'?320:650, easing: 'cubic-bezier(.2,.7,.2,1)' })
       animations.set(node, animation)
       animation.onfinish = () => animations.delete(node)
     }
@@ -43,7 +45,7 @@ export const useCreatorScrollEffects = (pageRef, enabled) => {
         if (known.has(node)) return
         known.add(node)
         node.dataset.scrollReveal = 'waiting'
-        if (reduced.matches || !observer) enter(node)
+        if (isReduced() || !observer) enter(node)
         else { pending.add(node); observer.observe(node) }
       })
       pending.forEach(node => { if (!node.isConnected) { observer?.unobserve(node); pending.delete(node) } })
@@ -66,15 +68,15 @@ export const useCreatorScrollEffects = (pageRef, enabled) => {
       page.style.setProperty('--profile-progress', progress.toFixed(4))
       page.dataset.scrolled = bounds.top < -480 && bounds.bottom > headerHeight ? 'true' : 'false'
       page.dataset.navStuck = navTop <= headerHeight + 1 && bounds.top < 0 ? 'true' : 'false'
-      page.dataset.scrollMotion = reduced.matches ? 'reduced' : 'full'
+      page.dataset.scrollMotion = isReduced() ? 'reduced' : 'full'
       if (banner) {
-        const active = !reduced.matches && finePointer.matches && bannerBounds.bottom > headerHeight && bannerBounds.top < window.innerHeight
+        const active = !isReduced() && readInterfaceEffects() && finePointer.matches && bannerBounds.bottom > headerHeight && bannerBounds.top < window.innerHeight
         banner.style.setProperty('--profile-parallax', (active ? clamp((headerHeight - bannerBounds.top) * .12, 0, 24) : 0).toFixed(2) + 'px')
       }
     }
     const schedule = () => { if (!frame && !document.hidden) frame = requestAnimationFrame(paint) }
     const preferenceChange = () => {
-      if (reduced.matches) {
+      if (isReduced()) {
         cancelAnimations()
         page.querySelectorAll(revealSelector).forEach(enter)
       }
@@ -102,6 +104,7 @@ export const useCreatorScrollEffects = (pageRef, enabled) => {
     if (header) resize.observe(header)
     window.addEventListener('scroll', schedule, { passive: true })
     window.addEventListener('resize', schedule, { passive: true })
+    window.addEventListener('mrright-interface-change', preferenceChange)
     reduced.addEventListener('change', preferenceChange)
     finePointer.addEventListener('change', preferenceChange)
     document.addEventListener('visibilitychange', visibility)
@@ -117,6 +120,7 @@ export const useCreatorScrollEffects = (pageRef, enabled) => {
       resize.disconnect()
       window.removeEventListener('scroll', schedule)
       window.removeEventListener('resize', schedule)
+      window.removeEventListener('mrright-interface-change', preferenceChange)
       reduced.removeEventListener('change', preferenceChange)
       finePointer.removeEventListener('change', preferenceChange)
       document.removeEventListener('visibilitychange', visibility)

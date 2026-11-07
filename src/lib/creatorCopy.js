@@ -2,8 +2,6 @@ export const creatorCopy = {
   "zh": {
     "accountNavDashboard": "数据工作台",
     "accountNavFavorites": "我的收藏",
-    "creatorConsoleKicker": "CREATOR / CONTROL ROOM",
-    "creatorConsoleTitle": "让每一次创作，都有迹可循。",
     "creatorConsoleIntro": "作品、互动与成交，在这里一目了然。",
     "creatorLifetime": "累计数据",
     "creatorWorks": "作品总数",
@@ -60,8 +58,6 @@ export const creatorCopy = {
   "en": {
     "accountNavDashboard": "Creator dashboard",
     "accountNavFavorites": "Saved works",
-    "creatorConsoleKicker": "CREATOR / CONTROL ROOM",
-    "creatorConsoleTitle": "A clearer view of your creative work.",
     "creatorConsoleIntro": "Your work, engagement and sales, together in one place.",
     "creatorLifetime": "All-time metrics",
     "creatorWorks": "Total works",
@@ -118,8 +114,6 @@ export const creatorCopy = {
   "ja": {
     "accountNavDashboard": "クリエイターダッシュボード",
     "accountNavFavorites": "お気に入り",
-    "creatorConsoleKicker": "CREATOR / CONTROL ROOM",
-    "creatorConsoleTitle": "創作の歩みを、ひと目で。",
     "creatorConsoleIntro": "作品の反応と売上を、ひとつの場所で確認できます。",
     "creatorLifetime": "累計データ",
     "creatorWorks": "作品数",

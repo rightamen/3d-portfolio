@@ -1,3 +1,4 @@
+import { useInterfaceMotion } from '../../hooks/useInterfacePreferences'
 // Motion primitives for the console.
 //
 // The animation itself lives in CSS -- index.css already neutralises every
@@ -8,7 +9,6 @@
 
 import { useEffect, useRef, useState } from 'react'
 
-const reducedMotionQuery = '(prefers-reduced-motion: reduce)'
 
 // One subscription helper for both of the media questions this console asks:
 // may it move, and is there room. Both have to be live rather than read once
@@ -35,7 +35,7 @@ export const useMediaQuery = (query) => {
   return matches
 }
 
-export const usePrefersReducedMotion = () => useMediaQuery(reducedMotionQuery)
+export const usePrefersReducedMotion = () => useInterfaceMotion()!=='full'
 
 // True while the tab is in the foreground. The 3D scene reads this so a
 // backgrounded console stops asking for animation frames -- an admin page left

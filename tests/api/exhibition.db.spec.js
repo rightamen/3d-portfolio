@@ -166,3 +166,17 @@ test('verified user can rate and recommend from the real page and complete commu
   await expect(section.getByRole('radio',{name:'5 stars',exact:true})).toBeChecked()
   await expect(section.getByRole('checkbox',{name:'Recommend for exhibition (4+ stars)',exact:true})).toBeChecked()
 })
+
+test('administrator system settings share the interface palette and motion controls through real auth',async({page})=>{
+  await page.addInitScript(({token})=>{localStorage.setItem('mrright-admin-token',token);localStorage.setItem('mrright-admin-language','en')},{token:admin})
+  await page.goto(base+'/admin')
+  await page.locator('.admin-sidebar').getByRole('button',{name:'System',exact:true}).click()
+  await expect(page.getByRole('heading',{name:'Make this space your own.',exact:true})).toBeVisible()
+  await page.getByRole('button',{name:'Warm paper',exact:true}).click()
+  await expect(page.locator('html')).toHaveAttribute('data-ui-theme','paper')
+  await expect(page.locator('.admin-panel').first()).toHaveCSS('background-color','rgb(250, 248, 242)')
+  await page.getByRole('button',{name:'Static',exact:true}).click()
+  await expect(page.locator('html')).toHaveAttribute('data-ui-motion','off')
+  await expect.poll(()=>page.evaluate(()=>document.getAnimations().filter(animation=>animation.playState==='running').length)).toBe(0)
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true)
+})

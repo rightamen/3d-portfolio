@@ -172,7 +172,7 @@ const SectionNode = ({ compact, index, node, onSelect, spin, total }) => {
 
     const target = hovered ? 1.55 : 1
     body.current.scale.setScalar(
-      MathUtils.lerp(body.current.scale.x, target, Math.min(1, delta * 8)),
+      spin ? MathUtils.lerp(body.current.scale.x, target, Math.min(1, delta * 8)) : target,
     )
 
     if (busy && spin) {
@@ -307,7 +307,7 @@ const AdminGalaxyScene = ({ compact = false, nodes = [], onSelect, running = tru
       <OrbitControls
         autoRotate={spin}
         autoRotateSpeed={0.55}
-        enableDamping
+        enableDamping={spin}
         enablePan={false}
         enableZoom={false}
         maxPolarAngle={Math.PI / 1.75}

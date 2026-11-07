@@ -1,3 +1,4 @@
+import CreatorWorkspace from '../components/CreatorWorkspace'
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { assetCategoryProfiles, getAssetCategoryProfile } from '../lib/assetCategories'
@@ -80,7 +81,10 @@ const ThemeEditor = lazy(() => import('../components/ThemeEditor'))
 const CreatorDashboard = lazy(() => import('../components/CreatorDashboard'))
 const FavoritesPanel = lazy(() => import('../components/FavoritesPanel'))
 
+const InterfaceSettings = lazy(() => import('../components/InterfaceSettings'))
+
 const accountTabs = [
+  { key: 'system', labelKey: 'systemSettings' },
   { key: 'dashboard', labelKey: 'accountNavDashboard' },
   { key: 'favorites', labelKey: 'accountNavFavorites' },
   { key: 'overview', labelKey: 'accountNavOverview' },
@@ -191,11 +195,11 @@ const AccountPage = ({
   const location = useLocation()
   const navigate = useNavigate()
   const tabFromPath = location.pathname.replace(/^\/account\/?/, '').split('/')[0]
-  const activeTab = accountTabs.some((tab) => tab.key === tabFromPath) ? tabFromPath : 'overview'
+  const activeTab = accountTabs.some((tab) => tab.key === tabFromPath) ? tabFromPath : 'dashboard'
   const setActiveTab = (key) =>
     // replace, not push: flipping between tabs should not fill the Back
     // button with a trail of them.
-    navigate(key === 'overview' ? '/account' : `/account/${key}`, { replace: true })
+    navigate('/account/'+key, { replace: true })
   const [dashboard, setDashboard] = useState({ posts: [], uploads: [] })
   const [dashboardStatus, setDashboardStatus] = useState('idle')
   const [dashboardMessage, setDashboardMessage] = useState('')
@@ -526,14 +530,6 @@ const AccountPage = ({
       </AccountShell>
     )
   }
-
-  const metrics = [
-    ['overview', copy.accountStatLikes, likeCount],
-    ['comments', copy.accountStatComments, comments.length],
-    ['downloads', copy.accountStatDownloads, downloads.length],
-    ['community', copy.accountStatResources, dashboard.uploads.length],
-    ['community', copy.accountStatPosts, dashboard.posts.length],
-  ]
 
   const renderOverview = () => (
     <div className="account-section-stack">
@@ -1607,6 +1603,8 @@ const AccountPage = ({
 
   const renderActiveTab = () => {
     switch (activeTab) {
+      case 'system':
+        return <Suspense fallback={<p role="status">{copy.loading}</p>}><InterfaceSettings language={language} /></Suspense>
       case 'dashboard':
         return <Suspense fallback={<p role="status">{copy.loading}</p>}><CreatorDashboard key={authToken} authToken={authToken} copy={copy} language={language} /></Suspense>
       case 'favorites':
@@ -1651,61 +1649,9 @@ const AccountPage = ({
     }
   }
 
-  return (
-    <main className={'admin-shell account-shell'+(['dashboard','favorites'].includes(activeTab) ? ' account-console-shell' : '')}>
-      <header className="admin-header account-studio-hero">
-        <div>
-          <p className="section-kicker mb-1">{copy.accountCenterKicker}</p>
-          <h1 className="text-3xl font-semibold text-white">{copy.accountCenter}</h1>
-          <p className="account-studio-subtitle">
-            {profileForm.handle ? `@${profileForm.handle}` : visitorUser.email}
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <Link to="/account/dashboard" className="primary-action">{copy.accountNavDashboard}</Link>
-          <LanguageSwitch language={language} onLanguageChange={onLanguageChange} copy={copy} />
-          <Link to="/" className="secondary-action">
-            {copy.accountBackHome}
-          </Link>
-          <button type="button" className="danger-action" onClick={onLogout}>
-            {copy.accountSignOut}
-          </button>
-        </div>
-      </header>
-
-      {!['dashboard','favorites'].includes(activeTab) && <section className="admin-metrics account-studio-metrics">
-        {metrics.map(([tab, label, value], index) => (
-          <button
-            key={`${label}-${index}`}
-            type="button"
-            className={`admin-metric ${activeTab === tab ? 'admin-metric-active' : ''}`}
-            onClick={() => setActiveTab(tab)}
-          >
-            <span>{label}</span>
-            <strong>{value}</strong>
-          </button>
-        ))}
-      </section>}
-
-      <div className="account-layout account-studio-layout">
-        <nav className="account-nav admin-tabs" aria-label={copy.accountCenter}>
-          {accountTabs.map((tab) => (
-            <button
-              key={tab.key}
-              type="button"
-              className={activeTab === tab.key ? 'admin-tab-active' : 'admin-tab'}
-              aria-current={activeTab === tab.key ? 'page' : undefined}
-              onClick={() => setActiveTab(tab.key)}
-            >
-              {copy[tab.labelKey]}
-            </button>
-          ))}
-        </nav>
-
-        <div className="account-content">{renderActiveTab()}</div>
-      </div>
-    </main>
-  )
+  return <CreatorWorkspace activeTab={activeTab} tabs={accountTabs} copy={copy} language={language} onLanguageChange={onLanguageChange} onNavigate={setActiveTab} onLogout={onLogout} visitorUser={visitorUser} handle={profileForm.handle}>
+    {renderActiveTab()}
+  </CreatorWorkspace>
 }
 
 export default AccountPage

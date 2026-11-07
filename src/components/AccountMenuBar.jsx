@@ -108,6 +108,7 @@ const AccountMenuBar = ({ copy, onSignOut, onRetrySession, visitorUser, visitorL
 
           <hr />
 
+          <Link onClick={close} role="menuitem" to="/account/system">{copy.systemSettings}</Link>
           <Link onClick={close} role="menuitem" to="/account">
             {copy.menuSettings}
           </Link>

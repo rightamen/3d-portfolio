@@ -1,6 +1,41 @@
 # mrright.blog 项目进度记录
 
-## 下次从这里继续（2026-11-07：创作者工作台与收藏已提交并上线）
+## 下次从这里继续（2026-11-07：统一动效、创作者工作区与系统设置，本地完成待发布）
+
+用户要求个人中心像管理员后台，并将美观动画、可变主题和用户自定义设置覆盖全站。
+从干净 main / 987577a 接续，直接使用 Ubuntu，未通过 PowerShell 操作项目。
+新增 CreatorWorkspace 固定分组侧栏、快速导航、面包屑、手机焦点约束抽屉；
+/account 默认仪表盘，原概况在 /account/overview，原有各模块与访客授权保持。
+新增 CreatorGalaxy 复用管理后台 3D 场景，真实指标节点、模块/作品表现跳转与焦点定位，
+提供键盘链接和平面回退；屏幕外暂停、按需载入，静态模式取消自动转动与阻尼。
+
+新增 /settings、/account/system 与管理员系统页的共用界面设置：八种主题、自定义强调色、
+舒展/紧凑密度、沉浸/轻柔/静态、氛围光效、即时预览与重置。
+偏好保存当前浏览器设备，支持同源标签同步与失败提示；不支持账号跨设备同步。
+与作者已保存的公开主页主题独立，明确试选作者主题时优先；没有写作者主题接口。
+PageEffects/useModuleEffects 覆盖新增工作台/收藏/所有账号模块、系统设置、管理员登录与各分区，
+公共模块/作者滚动/无限墙/3D 星图同步响应偏好与系统减少动态。中英日文案齐全。
+
+最终 build/lint 无警告通过；358 单测、225 临时库集成检查、83 完整浏览器回归全部通过；
+真实 WebGL 星图渲染及拖拽图像变化通过，无页面异常。
+修复旧 account-shell width:100% 与固定侧栏相加的中宽桌面溢出，并加 1280/1440 检查；
+修复浅色顶部品牌/导航/语言/登录入口对比度、瓷白次要文字对比度。
+收藏键盘测试改为等按钮可用再 focus/Enter；预览截图等待实际设置内容并结束有限动效。
+截图数据为受控测试数据，不代表线上指标；SQL 流程只使用一次性临时库，已销毁。
+
+新增文件：CreatorWorkspace/CreatorGalaxy/InterfaceRoot/InterfaceSettings/PageEffects、
+useInterfacePreferences、interfacePreferences/interfaceCopy/interface.css 与偏好单测；
+接入 App/main/Admin、AccountPage/CreatorDashboard、导航和既有动效钩子，更新浏览器与真实管理流程回归。
+专项 docs/INTERFACE_WORKSPACE_2026-11-07.md；验证证据 .deploy-tools/interface-checks/：
+browser-verified.log/json、database-final.log/json、spatial-check.json 与 ui-verified/；
+中文桌面/手机预览另存 D:/Codex/artifacts/workspace-2026-11-07/。
+提交/推送结果完成后补记。本轮未部署 VPS、未执行生产 SQL、未改服务器/数据库/API contract。
+没有新 VPS 备份；线上仍为 c113caf / release-2026-11-07-creator，生产验证沿用上次发布记录，
+备份路径仍见 docs/RELEASE_2026-11-07_CREATOR.md。后续部署须先 GitHub，再备份/固定制品与验收。
+本地公开只读设计预览 http://localhost:5174/settings；私人工作区完整演示见中文截图。
+接续可推进账号级外观同步、浏览量埋点/收藏分组；本轮不声称已实现。
+
+## 上一检查点（2026-11-07：创作者工作台与收藏已提交并上线）
 
 用户明确要求 GitHub、部署上线、更新文档。完整功能 1d52a3e 已推送，
 本次从干净 c113caff787243724b1e0975b4cbdf8e3e4568e4 打包，先推送固定标签

@@ -1,3 +1,4 @@
+import InterfaceSettings from '../InterfaceSettings'
 import { useEffect, useState } from 'react'
 import AdminIcon from './AdminIcon'
 import { getAdminActions, getAdminDiagnostics, getAdminSessions } from '../../lib/api'
@@ -8,7 +9,7 @@ import { stagger } from '../../lib/admin/motion'
 // one of these answers lived somewhere the browser could not reach -- an SSH
 // session, a journal, a curl with a hand-minted session -- which meant nobody
 // looked at them between incidents.
-const AdminSystemPanel = ({ system = {}, token }) => {
+const AdminSystemPanel = ({ system = {}, token,language='zh' }) => {
   const { fmt, t } = useAdminI18n()
   const [state, setState] = useState({ actions: [], diagnostics: null, sessions: [] })
   const [status, setStatus] = useState('loading')
@@ -76,6 +77,7 @@ const AdminSystemPanel = ({ system = {}, token }) => {
 
   return (
     <section className="admin-dashboard">
+      <InterfaceSettings language={language} />
       <div className="admin-panel admin-animate-in">
         <div className="admin-panel-head">
           <h2>{t('system.runtime')}</h2>

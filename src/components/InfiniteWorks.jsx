@@ -1,3 +1,4 @@
+import { readInterfaceMotion } from '../hooks/useInterfacePreferences'
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { assetCategoryLabel, formatWorkPrice, localizedWorkField } from '../lib/works'
@@ -13,9 +14,9 @@ const InfiniteWorks = ({ works, copy, language }) => {
   const nodes = useRef([])
   const controls = useRef(null)
   const [size, setSize] = useState({ width: 0, height: 0 })
-  const [following, setFollowing] = useState(() => !window.matchMedia('(prefers-reduced-motion: reduce)').matches)
+  const [following, setFollowing] = useState(() => readInterfaceMotion()!=='off')
   const [selectedId, setSelectedId] = useState('')
-  const [reducedMotion, setReducedMotion] = useState(() => window.matchMedia('(prefers-reduced-motion: reduce)').matches)
+  const [reducedMotion, setReducedMotion] = useState(() => readInterfaceMotion()!=='full')
   const motion = useRef({ x: 0, y: 0, vx: 0, vy: 0, aimX: 0, aimY: 0, inside: false, down: null, dragged: false, pointerX: 0, pointerY: 0, pointerPresent: false })
   const selected = works.find(work => work.id === selectedId) || works[0]
   const layout = useMemo(() => {
@@ -38,15 +39,17 @@ const InfiniteWorks = ({ works, copy, language }) => {
   useEffect(() => {
     const media = window.matchMedia('(prefers-reduced-motion: reduce)')
     const update = () => {
-      setReducedMotion(media.matches)
-      if (media.matches) {
+      const reduced=media.matches || readInterfaceMotion()!=='full'
+      setReducedMotion(reduced)
+      if (reduced) {
         setFollowing(false)
         motion.current.inside = false
         motion.current.vx = 0; motion.current.vy = 0
       }
     }
     media.addEventListener('change', update)
-    return () => media.removeEventListener('change', update)
+    window.addEventListener('mrright-interface-change', update)
+    return () => {media.removeEventListener('change', update);window.removeEventListener('mrright-interface-change', update)}
   }, [])
 
   useEffect(() => {

@@ -1,3 +1,4 @@
+import { readInterfaceMotion } from '../hooks/useInterfacePreferences'
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import CreatorProfileContent from '../components/CreatorProfileContent'
@@ -280,7 +281,7 @@ const CreatorProfile = ({ copy, language, handle }) => {
   }
 
   return (
-    <main className="admin-shell public-profile-shell creator-studio work-page-themed" ref={pageRef}>
+    <main className="admin-shell public-profile-shell creator-studio work-page-themed" ref={pageRef} data-author-theme-preview={previewTheme?'true':undefined}>
       {isLoading && (
         <section className="account-state-card">
           <p className="section-kicker">{copy.publicProfileKicker}</p>
@@ -404,7 +405,7 @@ const CreatorProfile = ({ copy, language, handle }) => {
             const page = pageRef.current
             const headerHeight = document.querySelector('.topbar')?.getBoundingClientRect().height || 0
             page?.querySelector('.public-profile-title h1')?.focus({ preventScroll: true })
-            window.scrollTo({ top: Math.max(0, window.scrollY + page.getBoundingClientRect().top - headerHeight), behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' })
+            window.scrollTo({ top: Math.max(0, window.scrollY + page.getBoundingClientRect().top - headerHeight), behavior: readInterfaceMotion()==='off' ? 'instant' : 'smooth' })
           }}><span aria-hidden="true">↑</span></button>
 
           {/* Below the tabs rather than inside one: these are not activity,

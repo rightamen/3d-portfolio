@@ -1,3 +1,4 @@
+import PageEffects from './components/PageEffects'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   adminLogin,
@@ -933,7 +934,7 @@ const Admin = () => {
   if (!token || status === 'locked') {
     return (
       <AdminI18nContext.Provider value={i18n}>
-        <main className="admin-shell admin-login-shell">
+        <PageEffects kind="auth" identity="admin-login"><main className="admin-shell admin-login-shell">
           {/* Three drifting fields of light behind the form. Pure CSS, no
               canvas: the sign-in screen is the one view that must paint before
               anything else has loaded, and it must not pull three.js in to do
@@ -1061,7 +1062,7 @@ const Admin = () => {
               </button>
             </div>
           </form>
-        </main>
+        </main></PageEffects>
       </AdminI18nContext.Provider>
     )
   }
@@ -1142,7 +1143,7 @@ const Admin = () => {
 
   return (
     <AdminI18nContext.Provider value={i18n}>
-    <div className="admin-console">
+    <PageEffects kind="admin" identity={activeSection}><div className="admin-console">
       <aside className={navOpen ? 'admin-sidebar admin-sidebar-open' : 'admin-sidebar'}>
         <div className="admin-brand">
           <span className="admin-brand-mark">MR</span>
@@ -1286,7 +1287,7 @@ const Admin = () => {
           )}
 
           {activeSection === 'system' && (
-            <AdminSystemPanel system={overview?.system || {}} token={token} />
+            <AdminSystemPanel language={language} system={overview?.system || {}} token={token} />
           )}
 
           {searchableSections.has(activeSection) && (
@@ -1482,7 +1483,7 @@ const Admin = () => {
       {paletteOpen ? (
         <AdminCommandPalette commands={paletteCommands} onClose={() => setPaletteOpen(false)} />
       ) : null}
-    </div>
+    </div></PageEffects>
     </AdminI18nContext.Provider>
   )
 }

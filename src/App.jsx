@@ -23,6 +23,7 @@ import Navbar from './sections/Navbar'
 import ModuleEffects from './components/ModuleEffects'
 
 const AuthPage = lazy(() => import('./pages/AuthPage'))
+const InterfaceSettings = lazy(() => import('./components/InterfaceSettings'))
 const AccountPage = lazy(() => import('./pages/AccountPage'))
 const CommunityPage = lazy(() => import('./pages/CommunityPage'))
 const PublicProfilePage = lazy(() => import('./pages/PublicProfilePage'))
@@ -290,6 +291,7 @@ const App = () => {
       />
       <ModuleEffects>
       <Routes>
+        <Route path="/settings" element={<Suspense fallback={<SectionFallback title={copy.systemSettings} copy={copy} />}><InterfaceSettings language={language} standalone /></Suspense>} />
         <Route
           path="/login/*"
           element={

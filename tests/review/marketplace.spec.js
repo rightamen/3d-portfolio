@@ -34,6 +34,7 @@ const setup = async (page, { signedIn = false, remembered = false, handlers = {}
     if (path === '/api/works') return respond(route, { works: [work] })
     if (path === '/api/auth/me') return respond(route, { user: { id: 'buyer', displayName: 'Buyer' } })
     if (path === '/api/auth/logout') return respond(route, { ok: true })
+    if (path === '/api/account/analytics') return respond(route, { analytics: {generatedAt:new Date().toISOString(),timeZone:'UTC',days:30,totals:{works:0,published:0,drafts:0,review:0,offline:0,favorites:0,likes:0,comments:0,downloads:0,ratings:0,recommendations:0,orders:0,paid:0,pending:0},revenue:[],series:Array.from({length:30},(_,i)=>({date:'2026-11-'+String(i+1).padStart(2,'0'),orders:0,downloads:0})),works:[]} })
     if (path === '/api/account/profile') return respond(route, { profile: { id: 'buyer', displayName: 'Buyer', handle: 'buyer' } })
     if (path === '/api/account/community') return respond(route, { posts: [], uploads: [] })
     if (path === '/api/account/downloads') return respond(route, { requests: [], downloads: [] })
@@ -716,7 +717,7 @@ test('live reduced motion stops module effects and late filtered cards remain fu
 test('account and login introductions animate without moving editable form controls', async ({ page, browser }) => {
   await page.emulateMedia({ reducedMotion: 'no-preference' })
   await setup(page, { signedIn: true })
-  await page.goto('/account')
+  await page.goto('/account/overview')
   await expect(page.locator('.module-motion-surface')).toHaveAttribute('data-module-kind', 'account')
   await page.locator('.account-center-card').first().scrollIntoViewIfNeeded()
   await expect(page.locator('.account-center-card').first()).toHaveAttribute('data-module-reveal', 'entered')

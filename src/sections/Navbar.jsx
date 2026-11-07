@@ -99,6 +99,7 @@ const Navbar = ({
               something behind it. It renders nothing at all for a visitor who is
               not signed in -- an icon that does nothing is still the thing that
               teaches people not to trust the bar. */}
+          <Link className="topbar-interface-settings" to="/settings" aria-label={copy.systemSettings} title={copy.systemSettings}><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16M8 3v6M16 9v6M10 15v6"/></svg></Link>
           <NotificationBell authToken={visitorToken} copy={copy} key={visitorToken} />
           <AccountMenuBar
             copy={copy} key={`account:${visitorToken}`} onSignOut={onVisitorLogout}

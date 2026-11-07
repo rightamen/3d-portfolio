@@ -1,14 +1,17 @@
+import { readInterfaceMotion,readInterfaceEffects } from './useInterfacePreferences'
 import { useEffect } from 'react'
 
 const selectors = {
+  settings: '.interface-settings-header, .interface-setting-group, .interface-live-preview',
+  admin: '.admin-page-head, .admin-panel, .admin-galaxy-head, .admin-galaxy-readout, .admin-panel-head, .admin-row, .interface-settings-header, .interface-setting-group, .interface-live-preview',
   home: '.studio-eyebrow, .atelier-heading h1, .studio-hero-description, .studio-hero-types, .studio-hero-foot, .curated-exhibition-heading, .studio-section-heading, #projects > .section-kicker, #community .section-heading, .community-feed li, .studio-footer',
   explore: '.explore-header, .publish-cta > div, .work-tile',
   work: '.work-info h1, .work-info > p, .work-specs, .work-files, .work-ratings-heading, .work-rating-rule, .work-comments-head, .work-comment-body',
   community: '.community-page-heading h1, .community-page-heading > p, .community-hero-stats, .community-list-header, .community-post-card, .community-detail-title, .community-detail-author, .community-detail-message, .community-card',
-  account: '.account-studio-hero h1, .account-studio-hero p, .account-center-card, .account-section-intro, .account-channel-preview, .theme-preset',
-  auth: '.auth-brand-panel h1, .auth-brand-panel p, .auth-feature-row',
+  account: '.workspace-header, .creator-console-heading, .creator-console-metric, .creator-console-panel, .creator-saved-item, .creator-console-toolbar, .interface-settings-header, .interface-setting-group, .interface-live-preview, .account-state-card, .works-panel, .seller-panel, .account-studio-hero h1, .account-studio-hero p, .account-center-card, .account-section-intro, .account-channel-preview, .theme-preset',
+  auth: '.admin-login-head, .admin-login > p, .account-state-card, .auth-brand-panel h1, .auth-brand-panel p, .auth-feature-row',
 }
-const hoverSelector = '.work-tile-media, .community-post-card, .account-center-card, .publish-cta'
+const hoverSelector = '.creator-console-metric, .creator-console-panel, .creator-saved-item, .interface-setting-group, .admin-panel, .work-tile-media, .community-post-card, .account-center-card, .publish-cta'
 
 // This root follows the router, including late lazy/data content. It never
 // transforms a canvas, the infinite wall, a modal or a transactional form.
@@ -17,6 +20,7 @@ export const useModuleEffects = (rootRef, kind, routeKey) => {
     const root = rootRef.current, selector = selectors[kind]
     if (!root || !selector) return undefined
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)')
+    const isReduced = () => reduced.matches || readInterfaceMotion()==='off'
     const fine = window.matchMedia('(hover: hover) and (pointer: fine)')
     const known = new WeakSet(), pending = new Set(), animations = new Map()
     let observer, hovered = null, frame = 0, pointer = null, active = true
@@ -34,14 +38,14 @@ export const useModuleEffects = (rootRef, kind, routeKey) => {
       if (!active || !root.contains(node) || node.dataset.moduleReveal === 'entered') return
       node.dataset.moduleReveal = 'entered'
       observer?.unobserve(node); pending.delete(node)
-      if (!animate || reduced.matches || document.hidden || typeof node.animate !== 'function') return
+      if (!animate || isReduced() || document.hidden || typeof node.animate !== 'function') return
       // Cards fade in without a transform, leaving hover and pointer geometry
       // intact. Only editorial text moves a few pixels.
-      const card = node.matches('.work-tile, .community-post-card, .account-center-card, .community-card, .theme-preset, .work-comment-body')
+      const card = node.matches('.work-tile, .community-post-card, .account-center-card, .community-card, .theme-preset, .work-comment-body, .creator-console-metric, .creator-console-panel, .creator-saved-item, .interface-setting-group, .admin-panel, .admin-row')
       const animation = node.animate([
         { opacity: .35, transform: card ? 'none' : 'translate3d(0,' + (fine.matches ? 14 : 7) + 'px,0)' },
         { opacity: 1, transform: 'none' },
-      ], { duration: 580, delay: Math.min(order, 3) * 45, easing: 'cubic-bezier(.2,.7,.2,1)', fill: 'backwards' })
+      ], { duration: readInterfaceMotion()==='soft'?320:580, delay: readInterfaceMotion()==='soft'?0:Math.min(order, 3) * 45, easing: 'cubic-bezier(.2,.7,.2,1)', fill: 'backwards' })
       animations.set(node, animation)
       animation.onfinish = () => animations.delete(node)
     }
@@ -53,7 +57,7 @@ export const useModuleEffects = (rootRef, kind, routeKey) => {
       root.querySelectorAll(selector).forEach(node => {
         if (known.has(node)) return
         known.add(node); node.dataset.moduleReveal = 'waiting'
-        if (reduced.matches || !observer) enter(node, 0, false)
+        if (isReduced() || !observer) enter(node, 0, false)
         else { pending.add(node); observer.observe(node) }
       })
       pending.forEach(node => { if (!node.isConnected) { observer?.unobserve(node); pending.delete(node) } })
@@ -68,7 +72,7 @@ export const useModuleEffects = (rootRef, kind, routeKey) => {
       }
     }
     const move = event => {
-      if (reduced.matches || !fine.matches || event.pointerType !== 'mouse') return
+      if (isReduced() || !readInterfaceEffects() || !fine.matches || event.pointerType !== 'mouse') return
       const next = event.target.closest?.(hoverSelector)
       if (!next || !root.contains(next)) { clearHover(); return }
       if (hovered !== next) { clearHover(); hovered = next }
@@ -83,9 +87,9 @@ export const useModuleEffects = (rootRef, kind, routeKey) => {
       })
     }
     const preference = () => {
-      root.dataset.moduleMotion = reduced.matches ? 'reduced' : 'full'
-      if (reduced.matches) { cancel(); root.querySelectorAll(selector).forEach(node => enter(node, 0, false)) }
-      if (reduced.matches || !fine.matches) clearHover()
+      root.dataset.moduleMotion = isReduced() ? 'reduced' : 'full'
+      if (isReduced()) { cancel(); root.querySelectorAll(selector).forEach(node => enter(node, 0, false)) }
+      if (isReduced() || !readInterfaceEffects() || !fine.matches) clearHover()
     }
     const visibility = () => { if (document.hidden) { cancel(); clearHover() } }
     const mutations = new MutationObserver(discover)
@@ -95,6 +99,7 @@ export const useModuleEffects = (rootRef, kind, routeKey) => {
     root.addEventListener('pointerleave', clearHover)
     window.addEventListener('scroll', clearHover, { passive: true })
     document.addEventListener('visibilitychange', visibility)
+    window.addEventListener('mrright-interface-change', preference)
     reduced.addEventListener('change', preference)
     fine.addEventListener('change', preference)
     preference(); discover()
@@ -106,6 +111,7 @@ export const useModuleEffects = (rootRef, kind, routeKey) => {
       root.removeEventListener('pointerleave', clearHover)
       window.removeEventListener('scroll', clearHover)
       document.removeEventListener('visibilitychange', visibility)
+      window.removeEventListener('mrright-interface-change', preference)
       reduced.removeEventListener('change', preference)
       fine.removeEventListener('change', preference)
       root.querySelectorAll('[data-module-reveal]').forEach(node => delete node.dataset.moduleReveal)

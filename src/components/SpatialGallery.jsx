@@ -1,3 +1,4 @@
+import { readInterfaceMotion } from '../hooks/useInterfacePreferences'
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { exhibitionSources } from '../../server/exhibition.js'
 import { Link } from 'react-router-dom'
@@ -36,7 +37,7 @@ const SpatialGallery = ({ works = [], copy, language, status = 'ready', exhibiti
       const bounds = strip.getBoundingClientRect()
       const item = active.getBoundingClientRect()
       const left = item.left < bounds.left ? item.left - bounds.left - 2 : item.right > bounds.right ? item.right - bounds.right + 2 : 0
-      if (left) strip.scrollBy({ left, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })
+      if (left) strip.scrollBy({ left, behavior: readInterfaceMotion()==='off' ? 'auto' : 'smooth' })
     }
     reveal()
     const observer = new ResizeObserver(reveal)

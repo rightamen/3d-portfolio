@@ -1,3 +1,4 @@
+import { useInterfaceMotion } from '../../hooks/useInterfacePreferences'
 import { Suspense, useRef, useState } from 'react'
 import { Canvas, useFrame } from '@react-three/fiber'
 import { Environment, Image, Lightformer, OrbitControls, RoundedBox, useCursor } from '@react-three/drei'
@@ -10,7 +11,7 @@ const lightingPresets = {
 const ArtPanel = ({ work, at, selectedIndex, onSelect, totalCount, palette }) => {
   const group = useRef(null)
   const [hovered, setHovered] = useState(false)
-  const [reducedMotion] = useState(() => window.matchMedia('(prefers-reduced-motion: reduce)').matches)
+  const reducedMotion=useInterfaceMotion()!=='full'
   useCursor(hovered)
   let offset = at - selectedIndex
   if (offset > totalCount / 2) offset -= totalCount
