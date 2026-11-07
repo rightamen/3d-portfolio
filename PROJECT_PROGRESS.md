@@ -1,6 +1,39 @@
 # mrright.blog 项目进度记录
 
-## 下次从这里继续（2026-11-07：统一动效、创作者工作区与系统设置，本地完成待发布）
+## 下次从这里继续（2026-11-07：统一动效、创作者工作区与系统设置已上线）
+
+用户明确要求“部署上线”。先确认 GitHub main 干净且已推送，将 70697f7820e1686be4ec73f98fbf9a8c4698d238
+固定为 release-2026-11-07-interface 并推送，再构建、备份、上线，切换完成于 2026-11-07 15:58:19 Asia/Shanghai。
+产品功能提交为 96301199cd274a063f921370c0642e5decef8b50；实际运行清单 https://mrright.blog/release.json。
+/account 后台式工作区、3D 星图、/settings 与 /account/system、八主题及统一全站动效已发布。
+管理系统页同时提供界面设置；界面偏好仍为设备本地，不是账号跨设备同步。
+
+发布前重新 build/lint、8 组制品、部署脚本/备份检查全部通过；相同业务代码已通过
+358 单测、225 临时库集成检查、83 浏览器回归。打包时再次 fresh build，sourceClean=true。
+无新服务器/API/schema 修改，正常启动为现有幂等结构检查；未重写环境、nginx 或 systemd。
+
+制品 SHA-256 6d2bbf62797ffc4bdcda333de9029fe6684249e2bf57d54d2a938f6c2e6b051e，15,895,040 bytes。
+182 发布文件逐项匹配，13 原上传文件保持。九张业务表含 work_favorites 的完整数据指纹在
+发布前后及浏览器验收后均一致，作者主题不变，作品/访客/管理员仍 4/3/1，评分/策展推荐/收藏 0/0/0。
+服务 active，health 第 2 次通过，admin_summary/管理作品 200；公网 HTTPS 检查 22 项通过、零警告/失败。
+14 页面 200、7 匿名私有接口 401、旧作品链接精确 301、公开数据隐私与缩略图检查正常。
+真实创作者桌面和 390px 触屏：实际 API 指标、7/30 天趋势、WebGL 星图拖拽、收藏状态、
+浅色主题/强调色/三档动画、刷新保持、手机抽屉均通过，页面异常与横向溢出为零。
+临时 10 分钟访客会话已按精确 token/user 撤销且验证 401；管理交换会话撤销，本地/远端临时凭据移除。
+未改真实收藏、作者主题、作品、订单或评分。线上截图是真实只读账号数据。
+
+备份：/opt/mrright-portfolio.backup-20261107-075813；/etc/mrright-portfolio.env.backup-20261107-075813；
+/var/backups/mrright-portfolio/releases/before-70697f7-20261107-075813.dump。
+备份名使用服务器 UTC，custom pg_dump 目录检查通过，所有旧备份保留；未做生产数据库恢复演练。
+
+本轮修改文档：docs/RELEASE_2026-11-07_INTERFACE.md、INTERFACE_WORKSPACE_2026-11-07.md、
+HANDOFF_2026-11-01.md、TESTING.md 与本进度，作为发布结果后续文档提交推送，不为文档重复部署。
+证据：.deploy-tools/interface-release/、interface-deploy.log、interface-deployment.json、
+interface-server-verification.json、interface-production-check.json、interface-final-data.json、
+interface-live-smoke-exit.json 和 release-interface-20261107/smoke.json/截图。
+接续先读当前发布与交接；账户外观同步、浏览量埋点/收藏分组、代理链/监控、实际邮件送达仍待推进。
+
+## 上一检查点（2026-11-07：统一动效、创作者工作区与系统设置，本地完成待发布）
 
 用户要求个人中心像管理员后台，并将美观动画、可变主题和用户自定义设置覆盖全站。
 从干净 main / 987577a 接续，直接使用 Ubuntu，未通过 PowerShell 操作项目。

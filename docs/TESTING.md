@@ -282,3 +282,16 @@ bookmark keyboard test now waits for an enabled button before focus/Enter, and
 settings screenshots wait for lazy content and finish finite animations.
 Settings are device-local, not account-synchronized. No server/schema/API change,
 production SQL or deployment occurred. See INTERFACE_WORKSPACE_2026-11-07.md.
+
+2026-11-07 interface production release: the clean 70697f7 artifact and fixed
+release-2026-11-07-interface tag are live. Preflight build/lint, eight artifact
+scenarios, deploy-script and backup checks passed. All 182 release files,
+13 uploads, environment/nginx/systemd hashes and nine business-table fingerprints
+match before/after deployment and after UI verification. Real verified HTTPS
+returned 22 passes with no warnings; 14 pages returned 200 and seven anonymous
+private routes returned 401. Real short-lived creator sessions exercised API
+metrics, desktop/390px workspace, actual WebGL orbit dragging, favorites reads,
+light appearance/accent, motion controls, reload persistence and mobile drawer.
+No page errors or overflow. No production favorite, author-theme, order or rating
+writes; temporary visitor/admin sessions were revoked and credential files removed.
+See RELEASE_2026-11-07_INTERFACE.md for backup paths, source and evidence.
