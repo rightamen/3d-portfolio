@@ -388,3 +388,13 @@ screenshots and form checks. All 203 release files match, uploads and
 configuration hashes remain unchanged, and 20
 table fingerprints including communication data match before/after UI checks.
 No business messages or read markers were written; temporary sessions revoked.
+
+
+## Multi-format resource coverage — 2026-11-07
+
+New tests: tests/api/resources.db.spec.js (10 checks), tests/review/resources.spec.js (10 checks), tests/unit/work-resources.spec.js (3 checks).
+DB tests include real publisher uploads and two browser contexts: public WebM decoding and byte-exact owner download. Fixtures are actual PNG/WebM/WAV files generated locally.
+UI tests cover batch completion before selecting another batch, partial failure, gallery navigation, actual video/audio decoding, file-specific ticket requests/downloads, URL filters, and three-language phone layouts.
+The download check explicitly enables regular motion: cancelling a translated file-list entrance on focus previously moved the button between pointerdown and pointerup. The file list now fades without translation.
+Schema migration verifies resource_type, work_asset_id and its FK, resource indexes and video/audio kind constraints, including startup against the old schema and repeated startup.
+Production verification must use read-only list/editor/filter inspection, without creating works or uploading fixtures; do not turn local fixture success into a claim of production upload coverage.

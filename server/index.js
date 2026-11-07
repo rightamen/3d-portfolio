@@ -1,3 +1,4 @@
+import {RESOURCE_TYPES,WORK_RESOURCE_KINDS,allowedWorkExtension,workUploadExtensions,defaultDownloadAsset} from './workResources.js'
 import { registerCommunicationRoutes } from './communicationRoutes.js'
 import { registerSocialRoutes } from './socialRoutes.js'
 import cors from 'cors'
@@ -406,6 +407,15 @@ const uploadAccessGate = async (request, response, next) => {
   }
 
   const assetUrl = `/uploads${assetPath}`
+  const workAsset=await worksStore?.getWorkUploadAccess?.(assetUrl)
+  if(workAsset){
+   if(workAsset.kind!=='source')return next()
+   if(await resolveAdminAuth(request) || (await getOptionalUser(request))?.id===workAsset.user_id){
+    response.setHeader('Content-Disposition','attachment');response.setHeader('Content-Type','application/octet-stream');response.setHeader('Cache-Control','private, no-store');return next()
+   }
+   return response.status(404).end()
+  }
+  if(/^\/(resources|work-previews)\//.test(assetPath))return response.status(404).end()
   const upload = await lookupUploadByAssetUrl(assetUrl)
 
   if (upload) {
@@ -622,6 +632,20 @@ const upload = multer({
     error.code = 'INVALID_FILE_TYPE'
     callback(error, false)
   },
+})
+
+// Work originals and media use a separate allowlist from community/admin uploads.
+const workUpload=multer({
+ limits:{fileSize:120*1024*1024},
+ storage:multer.diskStorage({
+  destination:(req,_file,done)=>{const kind=req.query.kind ?? req.body?.kind,folder=path.join(uploadRoot,kind==='preview'?'images':kind==='model'?'models':'resources');mkdir(folder,{recursive:true}).then(()=>done(null,folder)).catch(done)},
+  filename:(_req,file,done)=>done(null,Date.now()+'-'+randomBytes(12).toString('hex')+path.extname(file.originalname).toLowerCase())
+ }),
+ fileFilter:(_req,file,done)=>{
+  const extension=path.extname(file.originalname).toLowerCase()
+  if(workUploadExtensions.has(extension))return done(null,true)
+  const error=new Error('Unsupported resource format for this upload slot.');error.code='INVALID_FILE_TYPE';done(error,false)
+ }
 })
 
 // In memory, not on disk. A profile image is never downloaded as a file -- it
@@ -1665,6 +1689,10 @@ const camelToSnake = (value) => value.replace(/[A-Z]/g, (letter) => `_${letter.t
 const readWorkFields = (body) => {
   const fields = {}
   const errors = []
+  if(body?.resourceType!==undefined){
+   if(!RESOURCE_TYPES.includes(body.resourceType))errors.push('Unknown resource type.')
+   else fields.resource_type=body.resourceType
+  }
 
   const put = (camel, max) => {
     if (body?.[camel] === undefined) return
@@ -2127,10 +2155,7 @@ app.patch(
 // history being an entitlement.
 // ---------------------------------------------------------------------------
 
-const sourceAssetFor = (work) =>
-  work.assets?.find((asset) => asset.kind === 'source') ||
-  work.assets?.find((asset) => asset.kind === 'model') ||
-  null
+const sourceAssetFor = defaultDownloadAsset
 
 app.post(
   '/api/works/:handle/:slug/download-ticket',
@@ -2156,7 +2181,9 @@ app.post(
         403,
       )
     }
-    if (!sourceAssetFor(work)) {
+    response.set('Cache-Control','private, no-store')
+    const selectedAsset=request.body?.assetId===undefined?sourceAssetFor(work):work.assets?.find(a=>a.id===request.body.assetId)
+    if (!selectedAsset) {
       return sendError(
         response,
         API_ERROR_CODES.WORK_NOT_FOUND,
@@ -2173,6 +2200,7 @@ app.post(
       tokenHash: hashToken(token),
       userId: request.visitorUser.id,
       workId: work.id,
+      assetId:selectedAsset.id,
     })
 
     return sendData(
@@ -2221,7 +2249,7 @@ app.get('/api/works/:handle/:slug/download', requireWorksStore, async (request, 
     )
   }
 
-  const asset = sourceAssetFor(work)
+  const asset = redeemed.assetId?work.assets?.find(a=>a.id===redeemed.assetId):sourceAssetFor(work)
   if (!asset?.fileUrl) {
     return sendError(response, API_ERROR_CODES.WORK_NOT_FOUND, 'File not available.', 404)
   }
@@ -2248,6 +2276,7 @@ app.get('/api/works/:handle/:slug/download', requireWorksStore, async (request, 
     }
   }
 
+  response.set('Cache-Control','private, no-store')
   return response.download(localPath, asset.fileName || path.basename(localPath))
 })
 
@@ -2286,8 +2315,12 @@ app.put('/api/account/theme', requireVisitor, async (request, response) => {
 })
 
 app.get('/api/works', requireWorksStore, async (request, response) => {
+  const resourceType=request.query.resourceType || ''
+  if(resourceType && !RESOURCE_TYPES.includes(resourceType))return sendError(response,API_ERROR_CODES.VALIDATION_ERROR,'Unknown resource type.',400)
+
   const { limit, offset, page } = normalizePagination(request.query, 24, 60)
   const result = await worksStore.listPublishedWorks({
+    resourceType,
     category: String(request.query.category ?? '').trim().slice(0, 60),
     exhibition: request.query.exhibition === 'true',
     creatorHandle: String(request.query.creator ?? '').trim().replace(/^@/, '').slice(0, 30),
@@ -2556,7 +2589,7 @@ app.delete('/api/account/works/:id', requireVisitor, requireWorksStore, async (r
 // A work is a bundle, not a file. `kind` says what each file is FOR; the
 // extension allowlist says what it may BE, and the two are independent -- a
 // source archive and a viewable model can both be .glb.
-const WORK_ASSET_KINDS = new Set(['preview', 'model', 'source', 'texture', 'image'])
+const WORK_ASSET_KINDS = new Set(WORK_RESOURCE_KINDS)
 
 const WORK_ASSET_LIMIT = 20
 
@@ -2588,7 +2621,7 @@ app.post(
   requireWorksStore,
   requireOwnWorkForUpload,
   enforceUploadQuota,
-  upload.single('file'),
+  workUpload.single('file'),
   async (request, response) => {
     const work = request.ownWork
 
@@ -2630,25 +2663,11 @@ app.post(
       )
     }
 
-    // kind and extension have to agree. Storing a .png as the viewable model
-    // would produce a work whose viewer fails at runtime with nothing in the
-    // data to explain why.
-    if (kind === 'model' && isImage) {
-      discard()
-      return sendError(response, API_ERROR_CODES.VALIDATION_ERROR, 'A model cannot be an image.', 400)
+    if(!allowedWorkExtension(kind,extension)){
+      await discard()
+      return sendError(response,API_ERROR_CODES.VALIDATION_ERROR,kind==='model' && isImage?'A model cannot be an image.':'The file format does not match this resource slot.',400)
     }
-    if ((kind === 'preview' || kind === 'image' || kind === 'texture') && !isImage) {
-      discard()
-      return sendError(
-        response,
-        API_ERROR_CODES.VALIDATION_ERROR,
-        `A ${kind} must be an image file.`,
-        400,
-      )
-    }
-
-    const folder = isImage ? 'images' : 'models'
-    const fileUrl = `/uploads/${folder}/${request.file.filename}`
+    const fileUrl='/uploads/'+path.basename(request.file.destination)+'/'+request.file.filename
 
     const asset = await worksStore.addAsset(work.id, {
       fileName: request.file.originalname,
@@ -2660,16 +2679,24 @@ app.post(
 
     // The first preview becomes the cover and the first model becomes the
     // viewable one, because a creator who uploads a preview and then finds the
-    // work still has no cover has been made to do the same thing twice. Only
-    // when the slot is empty -- replacing a cover is a deliberate edit.
+    // work still has no cover has been made to do the same thing twice.
+    // An explicit cover upload also replaces an automatically generated cover.
     const fill = {}
-    if (kind === 'preview' && !work.image) {
+    if (kind==='preview' || ['image','texture'].includes(kind) && !work.image) {
       fill.image = fileUrl
       // A separate small file. The uploaded preview is the creator's, listed
       // under "Files included" and downloaded as-is, so it is never rewritten.
       // Soft-fails: a work with a cover and no thumbnail still lists, using the
       // cover, which is exactly what every row did before this existed.
       fill.thumbnail = (await renderWorkThumbnail(request.file.path)) || ''
+    }
+    if(kind==='source' && isImage && !work.image){
+      try{
+        const bytes=await renderDerivative(await readFile(request.file.path),'workThumb')
+        const folder=path.join(uploadRoot,'work-previews');await mkdir(folder,{recursive:true})
+        const name=derivativeFileName('resource','preview');await writeFile(path.join(folder,name),bytes)
+        fill.image='/uploads/work-previews/'+name;fill.thumbnail=fill.image
+      }catch{/* Upload a separate cover when the source cannot be decoded. */}
     }
     if (kind === 'model' && !work.modelUrl) fill.model_url = fileUrl
 

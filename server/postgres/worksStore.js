@@ -22,6 +22,7 @@ import {
 // every draft on the site.
 
 const EDITABLE_COLUMNS = [
+  'resource_type',
   'title',
   'title_zh',
   'title_en',
@@ -68,6 +69,10 @@ export const createWorksStore = ({ pool }) => {
 
   const worksStore = {
     ...createCreatorStore({ pool }),
+    getWorkUploadAccess:async(fileUrl)=>{
+      const result=await pool.query("SELECT w.creator_id AS user_id,w.status,a.kind,CASE WHEN a.kind='source' THEN 0 ELSE 1 END AS priority FROM work_assets a JOIN works w ON w.id=a.work_id WHERE a.file_url=$1 UNION ALL SELECT creator_id,status,'preview',2 FROM works WHERE (image=$1 OR thumbnail=$1) AND $1 LIKE '/uploads/work-previews/%' ORDER BY priority LIMIT 1",[fileUrl])
+      return result.rows[0] || null
+    },
     ...createSocialStore({pool}),
     ...createCommunicationStore({pool}),
     ...createCollectionsStore({pool}),
@@ -76,6 +81,7 @@ export const createWorksStore = ({ pool }) => {
     // optional and all parameterised -- `query` reaches SQL as a bound value,
     // never as interpolated text.
     listPublishedWorks: async ({
+      resourceType = '',
       category = '',
       creatorHandle = '',
       exhibition = false,
@@ -104,6 +110,7 @@ export const createWorksStore = ({ pool }) => {
         params.push(creatorHandle.toLowerCase())
         conditions.push(`lower(visitor_users.handle) = $${params.length}`)
       }
+      if(resourceType){params.push(resourceType);conditions.push('works.resource_type = $'+params.length)}
       if (category) {
         params.push(category)
         conditions.push(`works.asset_category = $${params.length}`)

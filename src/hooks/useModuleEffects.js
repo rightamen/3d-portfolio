@@ -43,8 +43,9 @@ export const useModuleEffects = (rootRef, kind, routeKey) => {
       observer?.unobserve(node); pending.delete(node)
       if (!animate || isReduced() || document.hidden || typeof node.animate !== 'function') return
       // Cards fade in without a transform, leaving hover and pointer geometry
-      // intact. Only editorial text moves a few pixels.
-      const card = node.matches('.following-card, .following-aside, .creator-directory-card, .social-person, .social-report-card, .collection-folder, .collection-library, .work-tile, .community-post-card, .account-center-card, .community-card, .theme-preset, .work-comment-body, .creator-console-metric, .creator-console-panel, .creator-saved-item, .interface-setting-group, .admin-panel, .admin-row')
+      // intact. File controls also stay still when focus cancels an entrance
+      // animation between pointerdown and pointerup. Only editorial text moves.
+      const card = node.matches('.work-files, .following-card, .following-aside, .creator-directory-card, .social-person, .social-report-card, .collection-folder, .collection-library, .work-tile, .community-post-card, .account-center-card, .community-card, .theme-preset, .work-comment-body, .creator-console-metric, .creator-console-panel, .creator-saved-item, .interface-setting-group, .admin-panel, .admin-row')
       const animation = node.animate([
         { opacity: .35, transform: card ? 'none' : 'translate3d(0,' + (fine.matches ? 14 : 7) + 'px,0)' },
         { opacity: 1, transform: 'none' },

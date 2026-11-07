@@ -1,3 +1,4 @@
+import {resourceTypes,resourceLabels} from '../lib/resources'
 import { useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 
@@ -25,6 +26,7 @@ const ExplorePage = ({ authToken, copy, language }) => {
   const [view, setView] = useState('grid')
   const [searchParams, setSearchParams] = useSearchParams()
   const category = searchParams.get('category') || ''
+  const resourceType=searchParams.get('resourceType') || ''
   const requestedPage = Number(searchParams.get('page') || 1)
   const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1
   const queryParam = searchParams.get('query') || ''
@@ -33,13 +35,13 @@ const ExplorePage = ({ authToken, copy, language }) => {
   // them, so "still loading" is derived rather than assigned -- which keeps the
   // effect free of a synchronous setState and, more usefully, means a stale
   // result set can never be shown under a filter that did not produce it.
-  const requestKey = JSON.stringify([category, page, queryParam])
+  const requestKey = JSON.stringify([category, page, queryParam,resourceType])
   const [result, setResult] = useState({ key: '', error: null, pagination: null, status: 'loading', works: [] })
 
   useEffect(() => {
     let isMounted = true
 
-    getWorks({ category, page, query: queryParam })
+    getWorks({ category, page, query: queryParam,resourceType })
       .then((payload) => {
         if (!isMounted) return
         setResult({
@@ -64,7 +66,7 @@ const ExplorePage = ({ authToken, copy, language }) => {
     return () => {
       isMounted = false
     }
-  }, [category, page, queryParam, requestKey])
+  }, [category, page, queryParam, requestKey,resourceType])
 
   const status = result.key === requestKey ? result.status : 'loading'
   const works = result.key === requestKey ? result.works : EMPTY_WORKS
@@ -147,6 +149,7 @@ const ExplorePage = ({ authToken, copy, language }) => {
             </option>
           ))}
         </select>
+        <select aria-label={copy.resourceType} value={resourceType} onChange={e=>updateFilters({resourceType:e.target.value})}><option value="">{copy.resourceAll}</option>{resourceTypes.map(t=><option key={t} value={t}>{resourceLabels(copy)[t]}</option>)}</select>
       </form>
 
       {status === 'loading' && <p className="text-neutral-400">{copy.exploreLoading}</p>}

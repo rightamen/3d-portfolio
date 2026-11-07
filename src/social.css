@@ -27,3 +27,35 @@ html[data-ui-custom=true] .studio-app [data-author-theme-preview=true] .social-a
 .creators-search{margin-bottom:34px}.creator-directory-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px}.creator-directory-card{background:var(--ui-panel);border:1px solid var(--ui-line);border-radius:14px;padding:25px;min-width:0;overflow-wrap:anywhere;display:flex;flex-direction:column;align-items:stretch}.creator-directory-card>header{display:flex;align-items:center;gap:14px}.creator-directory-card>header>div{min-width:0}.creator-directory-card h2{font-size:19px;font-weight:600}.creator-directory-card header p{font-size:12px;margin-top:6px;color:var(--ui-muted)}.creator-directory-bio{font-size:12px;color:var(--ui-muted);line-height:1.9;margin-top:20px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}.creator-directory-meta{display:flex;flex-wrap:wrap;gap:14px;margin:20px 0;color:var(--ui-muted);font-size:11px}.creator-directory-meta b{color:var(--ui-text);margin-left:5px}.creator-directory-card .social-actions,.creator-directory-card .social-self-entry{margin-top:auto;padding-top:15px;border-top:1px solid var(--ui-line)}
 .creators-directory :is(.primary-action,.secondary-action),.social-self-entry .secondary-action{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:40px;padding:10px 16px;font-size:12px;border-radius:7px;border:1px solid var(--ui-line);background:var(--ui-soft);color:var(--ui-text)}.creators-directory .primary-action{background:var(--ui-accent);color:var(--ui-on-accent);border-color:transparent}.social-self-entry{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-top:15px}.social-self-entry small{font-size:11px;color:var(--theme-muted,var(--ui-muted))}.work-author-connections{margin:20px 0;padding:17px 0;border-top:1px solid var(--theme-line,var(--ui-line));border-bottom:1px solid var(--theme-line,var(--ui-line))}.work-author-connections>p{font-size:11px;color:var(--theme-muted,var(--ui-muted))}.work-author-connections .social-actions{margin-top:11px}.social-anonymous small{flex-basis:100%}.topbar-menu{max-height:calc(100dvh - 100px);overflow-y:auto}
 @media(max-width:1050px){.creator-directory-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:640px){.creators-directory{width:calc(100% - 40px);padding:34px 0 60px}.creators-heading{flex-wrap:wrap;gap:20px}.creator-directory-grid{grid-template-columns:1fr}.creator-directory-card{padding:22px}}
+
+/* Resource publishing and media previews follow the selected interface theme. */
+.resource-create-type{display:grid;gap:6px;min-width:200px;font-size:11px;color:var(--ui-muted);margin-left:auto}
+.resource-create-type select,.works-fields select{background:var(--ui-panel);color:var(--ui-text);border:1px solid var(--ui-line);border-radius:8px;padding:10px}
+.resource-upload-hint{font-size:12px;line-height:1.8;color:var(--ui-muted);margin:12px 0}.resource-upload-formats{display:block;font-size:10px;line-height:1.8;color:var(--ui-muted);overflow-wrap:anywhere;margin-top:10px}
+.works-asset-upload input{max-width:100%;font-size:12px}.works-asset{min-width:0}.resource-media{width:100%;min-width:0;height:100%;min-height:340px;display:grid;place-items:center;color:var(--theme-muted,var(--ui-muted));padding:18px}
+.resource-media video{display:block;width:100%;max-height:75dvh;border-radius:12px;background:#080a0d}
+.resource-audio{display:grid;gap:24px;justify-items:center;width:100%;padding:20px}.resource-audio img{width:min(100%,480px);max-height:420px;object-fit:contain;border-radius:12px}.resource-audio audio{width:min(100%,600px)}
+.resource-gallery{width:100%;display:grid;justify-items:center;gap:20px;min-width:0}.resource-gallery>img{width:100%;max-height:70dvh;object-fit:contain;border-radius:10px}
+.resource-gallery nav{display:flex;align-items:center;gap:20px;font-size:12px}.resource-gallery button{padding:9px 16px;border:1px solid var(--ui-line);border-radius:8px;color:var(--ui-text);background:var(--ui-soft)}
+.resource-type-label{color:var(--ui-accent);font-size:11px;margin-bottom:14px}.resource-file-download{display:grid;gap:8px;justify-items:start}.resource-file-download button{font-size:11px;color:var(--ui-accent);text-decoration:underline}.resource-file-download small{color:var(--ui-muted);font-size:10px}
+@media(max-width:640px){.resource-create-type{margin:0;min-width:0;width:100%}.resource-media{min-height:240px;padding:10px}.resource-upload-hint{font-size:11px}.resource-audio{padding:8px}}
+
+/* Publisher controls use theme colors in dark and paper interfaces. */
+.studio-app .resource-works-panel{color:var(--ui-text)}
+.studio-app .resource-works-panel .admin-section-header{display:grid;grid-template-columns:minmax(0,1fr) 200px auto;align-items:center;border-color:var(--ui-line)}
+.studio-app .resource-works-panel .admin-section-header h2,.studio-app .resource-works-panel .works-row strong{color:var(--ui-text)}
+.studio-app .resource-works-panel .resource-create-type{margin:0;min-width:0}
+.studio-app .resource-works-panel .resource-create-type>span{border:0;padding:0;color:var(--ui-muted)}
+.studio-app .resource-works-panel .admin-section-header>button{white-space:nowrap}
+.studio-app .resource-works-panel :is(.works-row small,.works-fields label>span,.works-fields small,.works-asset>span:first-child,.works-row-thumb-empty,.resource-upload-formats){color:var(--ui-muted)}
+.studio-app .resource-works-panel :is(.works-editor,.works-row,.works-row-thumb,.works-asset){border-color:var(--ui-line)}
+.studio-app .resource-works-panel :is(.works-editor,.works-asset-row,.works-row-thumb){background:var(--ui-soft)}
+.studio-app .resource-works-panel .works-asset-upload{color:var(--ui-text);min-width:0}
+.studio-app .resource-works-panel .works-asset-upload input::file-selector-button{background:var(--ui-panel);color:var(--ui-text);border:1px solid var(--ui-line);border-radius:7px;padding:8px 12px;margin-right:10px;cursor:pointer}
+@media(max-width:720px){
+.studio-app .resource-works-panel .admin-section-header{grid-template-columns:minmax(0,1fr) auto;gap:16px}
+.studio-app .resource-works-panel .admin-section-header>div{grid-column:1/-1}
+.studio-app .resource-works-panel .admin-section-header>button{min-width:96px}
+.studio-app .resource-works-panel .works-asset{align-items:flex-start;gap:12px}
+.studio-app .resource-works-panel .works-asset>span:first-child{flex-basis:100%}
+}

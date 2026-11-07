@@ -36,6 +36,24 @@ export const hasValidFileSignature = async (filePath, extension) => {
     const { bytesRead } = await handle.read(buffer, 0, 64, 0)
     const head = buffer.subarray(0, bytesRead)
 
+    if(['.mp4','.mov'].includes(extension))return head.length>=12 && (head.subarray(4,8).toString()==='ftyp' || extension==='.mov' && ['moov','mdat','wide'].includes(head.subarray(4,8).toString()))
+    if(extension==='.webm')return startsWithSignature(head,[0x1a,0x45,0xdf,0xa3])
+    if(extension==='.wav')return head.subarray(0,4).toString()==='RIFF' && head.subarray(8,12).toString()==='WAVE'
+    if(extension==='.mp3')return head.subarray(0,3).toString()==='ID3' || head.length>=2 && head[0]===255 && (head[1]&0xe0)===0xe0
+    if(extension==='.ogg')return head.subarray(0,4).toString()==='OggS'
+    if(extension==='.flac')return head.subarray(0,4).toString()==='fLaC'
+    if(extension==='.7z')return startsWithSignature(head,[0x37,0x7a,0xbc,0xaf,0x27,0x1c])
+    if(extension==='.rar')return startsWithSignature(head,[0x52,0x61,0x72,0x21,0x1a,0x07])
+    if(extension==='.psd')return head.subarray(0,4).toString()==='8BPS'
+    if(extension==='.blend')return head.subarray(0,7).toString()==='BLENDER'
+    if(extension==='.pdf')return head.subarray(0,5).toString()==='%PDF-'
+    if(extension==='.tif'||extension==='.tiff')return startsWithSignature(head,[0x49,0x49,0x2a,0]) || startsWithSignature(head,[0x4d,0x4d,0,0x2a])
+    if(['.txt','.csv','.svg'].includes(extension)){
+      if(!head.length || head.includes(0))return false
+      const text=head.toString('utf8').trimStart()
+      return extension!=='.svg' || /^<svg[\s>]|^<\?xml/.test(text)
+    }
+
     const signatures = fileSignatures.get(extension)
     if (signatures) return signatures.some((signature) => startsWithSignature(head, signature))
 

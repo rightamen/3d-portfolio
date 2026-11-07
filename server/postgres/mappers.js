@@ -417,6 +417,7 @@ const toWorkCuration = (row) => ({
 })
 
 export const toWork = (row, { assets = null, includeProtected = false } = {}) => ({
+  resourceType: row.resource_type || 'model',
   assetCategory: row.asset_category || '',
   ...(assets ? { assets: assets.map((asset) => toWorkAsset(asset, { includeProtected })) } : {}),
   createdAt: row.created_at?.toISOString?.() || row.created_at,
@@ -476,6 +477,7 @@ export const toWork = (row, { assets = null, includeProtected = false } = {}) =>
 // columns a grid never reads. A browse page pulling full detail for fifty works
 // is the kind of thing that only hurts once the catalogue is real.
 export const toWorkSummary = (row) => ({
+  resourceType: row.resource_type || 'model',
   assetCategory: row.asset_category || '',
   createdAt: row.created_at?.toISOString?.() || row.created_at,
   creator: toWorkCreator(row),
@@ -509,7 +511,7 @@ export const toWorkSummary = (row) => ({
 // join means a column added to visitor_users later can silently shadow one of
 // works' own, and the failure that produces is very hard to see.
 export const workColumns = `
-  works.id, works.creator_id, works.slug, works.status,
+  works.id, works.creator_id, works.slug, works.status, works.resource_type,
   works.curation_score, works.exhibition_recommended, works.curation_updated_at, works.rating_version,
   (SELECT json_build_object(
      'count', count(*)::int, 'average', COALESCE(avg(r.score), 0)::float,

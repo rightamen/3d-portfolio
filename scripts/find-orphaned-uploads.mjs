@@ -59,7 +59,7 @@ const uploadRoot = path.join(rootDir, 'public', 'uploads')
 // Kept in one place because it is asserted against server/index.js's own
 // multer destinations in the header comment above -- if a sixth folder is
 // ever added there, it belongs here too.
-const UPLOAD_SUBDIRS = ['images', 'avatars', 'banners', 'models', 'projects', 'thumbnails']
+const UPLOAD_SUBDIRS = ['images', 'avatars', 'banners', 'models', 'projects', 'thumbnails','resources','work-previews']
 
 const args = process.argv.slice(2)
 const jsonOutput = args.includes('--json')

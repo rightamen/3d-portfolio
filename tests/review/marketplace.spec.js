@@ -196,7 +196,7 @@ test('all category choices remain available after filtering and an empty result'
     },
   } })
   await page.goto('/explore?category=next-gen-prop&page=4')
-  const categories = page.locator('.explore-filters select')
+  const categories = page.getByRole('combobox',{name:'All categories',exact:true})
   await expect(categories.locator('option')).toHaveCount(7)
   await expect(categories.locator('option[value="next-gen-prop"]')).toHaveText('Props')
   await categories.selectOption('next-gen-character')
@@ -327,7 +327,7 @@ test('invalid page parameters request page one rather than NaN or a fractional o
 test('an unknown shared category stays visible and can be cleared', async ({ page }) => {
   await setup(page, { handlers: { '/api/works': (route) => respond(route, { works: [] }) } })
   await page.goto('/explore?category=older-category')
-  const select = page.locator('.explore-filters select')
+  const select = page.getByRole('combobox',{name:'All categories',exact:true})
   await expect(select).toHaveValue('older-category')
   await expect(select.locator('option[value="older-category"]')).toHaveText('older-category')
   await select.selectOption('')
@@ -708,7 +708,7 @@ test('live reduced motion stops module effects and late filtered cards remain fu
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await expect(page.locator('.module-motion-surface')).toHaveAttribute('data-module-motion', 'reduced')
   await expect(page.locator('[data-module-lit=true]')).toHaveCount(0)
-  await page.locator('.explore-filters select').selectOption('next-gen-prop')
+  await page.getByRole('combobox',{name:'All categories',exact:true}).selectOption('next-gen-prop')
   await expect(page.locator('.work-tile')).toHaveAttribute('data-module-reveal', 'entered')
   await expect(page.locator('.work-tile')).toHaveCSS('opacity', '1')
   expect(await page.locator('.work-tile').evaluate(node => node.getAnimations().length)).toBe(0)

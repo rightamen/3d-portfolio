@@ -64,6 +64,7 @@ const expected = {
       'work_id',
     ],
     visitor_users: ['creator_enabled_at', 'payout_state', 'stripe_account_id', 'theme'],
+    download_tickets: ['work_asset_id'],
     work_assets: ['checksum', 'file_name', 'file_size', 'file_type', 'file_url', 'kind', 'sort_order', 'work_id'],
     work_favorites: ['work_id', 'user_id', 'created_at'],
     direct_conversations: ['user_low','user_high','requester_id','status','blocked_low','blocked_high','last_seq','read_low','read_high'],
@@ -78,6 +79,7 @@ const expected = {
     work_comments: ['message', 'parent_id', 'pinned_at', 'status', 'user_id', 'work_id'],
     works: [
       'curation_score', 'exhibition_recommended', 'curation_updated_at', 'rating_version',
+      'resource_type',
       'asset_category',
       'creator_id',
       'currency',
@@ -96,6 +98,7 @@ const expected = {
     ],
   },
   indexes: [
+    'works_resource_type_published_idx','work_assets_file_url_idx',
     'direct_conversations_low_updated_idx','direct_conversations_high_updated_idx','direct_messages_thread_seq_idx','direct_messages_sender_time_idx',
     'user_follows_received_idx','user_friendships_low_idx','user_friendships_high_idx',
     'favorite_collections_name_idx','favorite_collection_items_favorite_idx','user_reports_open_unique_idx','user_reports_queue_idx',
@@ -190,6 +193,8 @@ try {
   )
   await ensureSchema(pool)
 
+  const mediaKinds=(await pool.query("SELECT pg_get_constraintdef(oid) AS d FROM pg_constraint WHERE conrelid='work_assets'::regclass AND conname='work_assets_kind_check'")).rows[0]?.d || ''
+  check(mediaKinds.includes('video') && mediaKinds.includes('audio'),'work asset kind constraint accepts media resources')
   log('Running it a second time (it must be idempotent)...')
   await ensureSchema(pool)
 

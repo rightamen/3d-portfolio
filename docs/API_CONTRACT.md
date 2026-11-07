@@ -12,6 +12,14 @@ authentication; the Web client retries failed checks on reconnect.
 
 This document defines the stable API shape that the Web client and future C++ native clients should consume. It is a target contract, not a statement that every current endpoint already follows it. Current drift and follow-up migration work are listed below.
 
+## Resource publishing extension (2026-11-07)
+
+Works now expose resourceType (model/image/video/audio/material/document/other) in full and summary payloads. Create/PATCH accept this enum; old rows default to model. GET /api/works accepts optional resourceType and rejects unknown values with VALIDATION_ERROR. /api/v1 keeps the strict envelope.
+
+POST /api/account/works/:id/assets accepts kind=preview/model/source/texture/image/video/audio and one multipart file per request. Clients may upload selected files sequentially. Per-slot formats, public preview semantics and protected originals are described in [RESOURCES_2026-11-07.md](RESOURCES_2026-11-07.md).
+
+POST /api/works/:handle/:slug/download-ticket accepts an optional JSON assetId. It must belong to that work and the existing entitlement check still applies. The selected asset is stored with the ticket; redemption does not accept a replacement asset. Omitted assetId retains default source/model behavior (then image/video/audio for non-model works). Legacy tickets remain valid. Ticket and protected file responses use private/no-store.
+
 ## Goals
 
 - Make every API response predictable for Web, C++ native, and future clients.

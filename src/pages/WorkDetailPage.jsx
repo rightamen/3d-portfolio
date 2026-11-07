@@ -1,3 +1,6 @@
+import ResourceMedia from '../components/ResourceMedia'
+import AssetDownload from '../components/AssetDownload'
+import {resourceLabels} from '../lib/resources'
 import SocialActions from '../components/SocialActions'
 import ReportButton from '../components/ReportButton'
 import FavoriteButton from '../components/FavoriteButton'
@@ -142,22 +145,14 @@ const WorkDetailPage = ({ authToken, copy, language, visitorUser }) => {
 
       <div className="work-layout">
         <div className="work-media">
-          {work.image ? (
-            <img alt="" decoding="async" src={work.image} />
-          ) : (
-            <span className="work-tile-placeholder" />
-          )}
-          {work.modelUrl ? (
-            <button className="primary-action" onClick={() => setViewerOpen(true)} type="button">
-              {copy.openModelViewer}
-            </button>
-          ) : (
-            <p className="text-neutral-400">{copy.workNoPreview}</p>
-          )}
+          {work.resourceType && work.resourceType!=='model'?<ResourceMedia key={work.id} work={work} copy={copy}/>:<>
+            {work.image?<img alt="" decoding="async" src={work.image}/>:<span className="work-tile-placeholder"/>}
+            {work.modelUrl?<button className="primary-action" onClick={()=>setViewerOpen(true)} type="button">{copy.openModelViewer}</button>:<p className="text-neutral-400">{copy.workNoPreview}</p>}
+          </>}
         </div>
 
         <div className="work-info">
-          <h1 className="text-heading">{title}</h1>
+          <p className="resource-type-label">{resourceLabels(copy)[work.resourceType || 'model']}</p><h1 className="text-heading">{title}</h1>
           {work.creator?.handle &&
             (work.creator.profilePublic ? (
               <Link className="work-creator" to={`/u/${work.creator.handle}`}>
@@ -272,13 +267,13 @@ const WorkDetailPage = ({ authToken, copy, language, visitorUser }) => {
               <ul>
                 {work.assets.map((asset) => (
                   <li key={asset.id}>
-                    <span className="work-file-kind">{asset.kind}</span>
+                    <span className="work-file-kind">{asset.kind==='source'?copy.resourceOriginal:asset.kind}</span>
                     <span className="work-file-name">{asset.fileName}</span>
                     <span className="work-file-size">{formatBytes(asset.bytes)}</span>
                     {/* fileUrl is null for a protected asset unless the viewer
                         owns it. Rendering the label instead of a dead link is
                         the honest version of "you cannot have this yet". */}
-                    {asset.fileUrl ? (
+                    {asset.protected?<AssetDownload key={asset.id+authToken} asset={asset} handle={handle} slug={slug} authToken={authToken} copy={copy}/>:asset.fileUrl ? (
                       <a href={asset.fileUrl} rel="noreferrer" target="_blank">
                         {copy.communityOpenFile}
                       </a>

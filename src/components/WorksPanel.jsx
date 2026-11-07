@@ -1,3 +1,4 @@
+import {resourceTypes,resourceLabels,resourceSlots,resourceAccept} from '../lib/resources'
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 
@@ -34,13 +35,11 @@ const STATUS_KEYS = {
 
 // preview and model are public; source is what a buyer pays for. The order
 // here is the order they are asked for, which is the order they matter in.
-const ASSET_KINDS = [
-  { key: 'preview', labelKey: 'worksAssetPreview' },
-  { key: 'model', labelKey: 'worksAssetModel' },
-  { key: 'source', labelKey: 'worksAssetSource' },
-]
+
 
 const WorksPanel = ({ authToken, copy, language, visitorUser }) => {
+  const [createType,setCreateType]=useState('model'),[uploadProgress,setUploadProgress]=useState('')
+  const labels=resourceLabels(copy)
   const [works, setWorks] = useState(null)
   const [openId, setOpenId] = useState('')
   // The list endpoint returns summaries, which carry no assets. The editor
@@ -97,7 +96,7 @@ const WorksPanel = ({ authToken, copy, language, visitorUser }) => {
   // is on a different screen.
   if (!visitorUser?.handle) {
     return (
-      <section className="admin-section">
+      <section className="admin-section resource-works-panel">
         <div className="admin-section-header">
           <h2>{copy.worksTitle}</h2>
         </div>
@@ -115,6 +114,7 @@ const WorksPanel = ({ authToken, copy, language, visitorUser }) => {
     setOpenId(work.id)
     setDetail(null)
     setDraft({
+      resourceType:work.resourceType || 'model',
       assetCategory: work.assetCategory || '',
       priceCents: work.priceCents || 0,
       summary: work.summary || '',
@@ -137,6 +137,7 @@ const WorksPanel = ({ authToken, copy, language, visitorUser }) => {
     return (
       <div className="works-editor">
         <div className="works-fields">
+          <label><span>{copy.resourceType}</span><select aria-label={copy.resourceType} disabled={busy} value={draft.resourceType || 'model'} onChange={e=>setDraft({...draft,resourceType:e.target.value})}>{resourceTypes.map(t=><option value={t} key={t}>{labels[t]}</option>)}</select></label>
           <label>
             <span>{copy.worksFieldTitle}</span>
             <input
@@ -198,6 +199,7 @@ const WorksPanel = ({ authToken, copy, language, visitorUser }) => {
                   updateWork(
                     work.id,
                     {
+                      resourceType:draft.resourceType,
                       assetCategory: draft.assetCategory,
                       priceCents: draft.priceCents,
                       summary: draft.summary,
@@ -218,12 +220,14 @@ const WorksPanel = ({ authToken, copy, language, visitorUser }) => {
 
         <h4>{copy.worksAssets}</h4>
         <p className="text-neutral-400">{copy.worksAssetHint}</p>
-        {ASSET_KINDS.map((kind) => {
+        <p className="resource-upload-hint">{copy.resourceHint}</p><p className="resource-upload-hint">{copy.resourcePrivacy}</p>
+        {uploadProgress && <p role="status">{copy.resourceUploading} · {uploadProgress}</p>}
+        {resourceSlots(draft.resourceType,copy).concat(assets.filter(a=>!resourceSlots(draft.resourceType,copy).some(s=>s.key===a.kind)).filter((a,i,all)=>all.findIndex(b=>b.kind===a.kind)===i).map(a=>({key:a.kind,label:copy.resourceFiles+' · '+a.kind}))).map((kind) => {
           const existing = assets.filter((asset) => asset.kind === kind.key)
 
           return (
             <div className="works-asset" key={kind.key}>
-              <span>{copy[kind.labelKey]}</span>
+              <span>{kind.label}</span>
               {existing.map((asset) => (
                 <div className="works-asset-row" key={asset.id}>
                   <span>{asset.fileName}</span>
@@ -247,21 +251,30 @@ const WorksPanel = ({ authToken, copy, language, visitorUser }) => {
                   thing telling a screen reader which one it is. */}
               <label className="works-asset-upload">
                 <span className="explore-search-label">
-                  {copy.worksUpload} · {copy[kind.labelKey]}
+                  {copy.worksUpload} · {kind.label}
                 </span>
                 <input
                   onChange={(event) => {
-                    const file = event.target.files?.[0]
-                    if (!file) return
-                    run(async () => {
-                      const uploaded = await uploadWorkAsset(work.id, kind.key, file, authToken)
-                      if (uploaded?.work) setDetail(uploaded.work)
+                    const files=Array.from(event.target.files || [])
+                    if(!files.length)return
+                    run(async()=>{
+                      if(draft.resourceType!==(work.resourceType || 'model'))await updateWork(work.id,{resourceType:draft.resourceType},authToken)
+                      try{for(const [i,file] of files.entries()){
+                        setUploadProgress((i+1)+'/'+files.length+' · '+file.name)
+                        const uploaded=await uploadWorkAsset(work.id,kind.key,file,authToken)
+                        if(uploaded?.work)setDetail(uploaded.work)
+                      }}finally{setUploadProgress('')}
                     })
                     // Cleared so choosing the same file twice still fires.
                     event.target.value = ''
                   }}
+                  aria-label={copy.worksUpload+' · '+kind.label}
+                  accept={resourceAccept[kind.key]}
+                  multiple
+                  disabled={busy}
                   type="file"
                 />
+                <small className="resource-upload-formats">{copy.resourceFormats}: {resourceAccept[kind.key]}</small>
               </label>
             </div>
           )
@@ -271,18 +284,19 @@ const WorksPanel = ({ authToken, copy, language, visitorUser }) => {
   }
 
   return (
-    <section className="admin-section">
+    <section className="admin-section resource-works-panel">
       <div className="admin-section-header">
         <div>
           <h2>{copy.worksTitle}</h2>
           <p className="account-section-intro">{copy.worksIntro}</p>
         </div>
+        <label className="resource-create-type"><span>{copy.resourceType}</span><select aria-label={copy.resourceType} disabled={busy} value={createType} onChange={e=>setCreateType(e.target.value)}>{resourceTypes.map(t=><option key={t} value={t}>{labels[t]}</option>)}</select></label>
         <button
           className="primary-action"
           disabled={busy}
           onClick={async () => {
             const created = await run(() =>
-              createWork({ title: copy.worksNew }, authToken),
+              createWork({ title: copy.worksNew,resourceType:createType }, authToken),
             )
             if (created?.work) open(created.work)
           }}

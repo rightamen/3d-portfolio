@@ -131,13 +131,13 @@ export const createDownloadRequestsStore = ({ pool }) => ({
   // lookups differ in what they match on, and a single function would have to
   // branch on which id was null -- which is exactly how one of them ends up
   // matching on nothing.
-  createWorkDownloadTicket: async ({ expiresAt, orderId, tokenHash, userId, workId }) => {
+  createWorkDownloadTicket: async ({ expiresAt, orderId, tokenHash, userId, workId, assetId=null }) => {
     await pool.query(
       `
-        INSERT INTO download_tickets (token_hash, work_id, order_id, user_id, expires_at)
-        VALUES ($1, $2, $3, $4, $5)
+        INSERT INTO download_tickets (token_hash, work_id, order_id, user_id, expires_at,work_asset_id)
+        VALUES ($1, $2, $3, $4, $5,$6)
       `,
-      [tokenHash, workId, orderId || null, userId || null, expiresAt],
+      [tokenHash, workId, orderId || null, userId || null, expiresAt,assetId],
     )
   },
 
@@ -152,13 +152,13 @@ export const createDownloadRequestsStore = ({ pool }) => ({
           AND work_id = $2
           AND used_at IS NULL
           AND expires_at > now()
-        RETURNING work_id, order_id, user_id
+        RETURNING work_id, order_id, user_id,work_asset_id
       `,
       [tokenHash, workId],
     )
 
     const row = result.rows[0]
-    return row ? { orderId: row.order_id, userId: row.user_id, workId: row.work_id } : null
+    return row ? { assetId:row.work_asset_id,orderId: row.order_id, userId: row.user_id, workId: row.work_id } : null
   },
 
   deleteExpiredDownloadTickets: async () => {

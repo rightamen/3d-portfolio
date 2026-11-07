@@ -1,3 +1,4 @@
+import {resourceLabels} from '../lib/resources'
 import { Link } from 'react-router-dom'
 
 import { initials } from '../lib/initials'
@@ -48,7 +49,7 @@ const WorkCard = ({ copy, language, showCreator = true, work }) => {
         )}
         {/* A badge on the image, not a row beneath it: price is something you
             check while scanning, not after committing to a tile. */}
-        <span className="studio-card-category">{assetCategoryLabel(work.assetCategory, language)}</span>
+        <span className="studio-card-category">{work.resourceType && work.resourceType!=='model'?resourceLabels(copy)[work.resourceType]:assetCategoryLabel(work.assetCategory, language)}</span>
         <span className="work-tile-price">{formatWorkPrice(work, copy)}</span>
       </Link>
 

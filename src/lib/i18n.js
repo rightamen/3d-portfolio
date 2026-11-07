@@ -1,3 +1,4 @@
+import {resourceCopy} from './resourceCopy'
 import { communicationCopy } from './communicationCopy'
 import { socialCopy } from './socialCopy'
 import { interfaceCopy } from './interfaceCopy'
@@ -16,6 +17,7 @@ const copy = {
     ...creatorCopy.zh,
     ...interfaceCopy.zh,
     ...socialCopy.zh,
+    ...resourceCopy.zh,
     ...communicationCopy.zh,
     profileBackTop: "回到个人主页顶部",
     themeBrowse: "预览主题",
@@ -184,7 +186,7 @@ const copy = {
     worksNoPreview: '还没有封面图',
     worksAssetModel: '可预览模型',
     worksAssetSource: '出售的文件',
-    worksAssetHint: '封面和模型是公开的；「出售的文件」只有购买后才能下载。',
+    worksAssetHint: '预览可公开访问，原文件通过下载权限获取。请选择适合资源类型的文件。',
     worksUpload: '上传',
     worksRemove: '移除',
     worksSubmit: '提交审核',
@@ -724,6 +726,7 @@ const copy = {
     ...creatorCopy.en,
     ...interfaceCopy.en,
     ...socialCopy.en,
+    ...resourceCopy.en,
     ...communicationCopy.en,
     profileBackTop: "Back to profile top",
     themeBrowse: "Try a theme",
@@ -892,7 +895,7 @@ const copy = {
     worksNoPreview: 'No cover yet',
     worksAssetModel: 'Viewable model',
     worksAssetSource: 'The file you sell',
-    worksAssetHint: 'The cover and the model are public. The file you sell is only downloadable after purchase.',
+    worksAssetHint: 'Preview files are public. Originals require download permission. Choose files for this resource type.',
     worksUpload: 'Upload',
     worksRemove: 'Remove',
     worksSubmit: 'Submit for review',
@@ -1452,6 +1455,7 @@ const copy = {
     ...creatorCopy.ja,
     ...interfaceCopy.ja,
     ...socialCopy.ja,
+    ...resourceCopy.ja,
     ...communicationCopy.ja,
     profileBackTop: "プロフィールの先頭へ戻る",
     themeBrowse: "テーマを試す",
@@ -1620,7 +1624,7 @@ const copy = {
     worksNoPreview: 'カバー画像なし',
     worksAssetModel: '表示用モデル',
     worksAssetSource: '販売するファイル',
-    worksAssetHint: 'カバーとモデルは公開されます。販売するファイルは購入後のみダウンロードできます。',
+    worksAssetHint: 'プレビューは公開されます。元データにはダウンロード権限が必要です。',
     worksUpload: 'アップロード',
     worksRemove: '削除',
     worksSubmit: '審査に提出',

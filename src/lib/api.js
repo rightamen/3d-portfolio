@@ -155,10 +155,11 @@ export const getExperience = () => request('/api/experience')
 // The marketplace catalogue. Params are optional and only sent when set, so
 // a bare getWorks() asks for the unfiltered first page rather than for
 // `?creator=&category=&query=`, which the server would have to strip anyway.
-export const getWorks = ({ category, creator, exhibition, limit, page, query } = {}) => {
+export const getWorks = ({ category, creator, exhibition, limit, page, query,resourceType } = {}) => {
   const params = new URLSearchParams()
   if (exhibition) params.set('exhibition', 'true')
   if (creator) params.set('creator', String(creator).replace(/^@/, ''))
+  if(resourceType)params.set('resourceType',resourceType)
   if (category) params.set('category', category)
   if (query) params.set('query', query)
   if (page) params.set('page', String(page))
@@ -353,9 +354,10 @@ export const settleSale = (id, status, note, token) =>
     method: 'PATCH',
   })
 
-export const createWorkDownloadTicket = (handle, slug, token) =>
+export const createWorkDownloadTicket = (handle, slug, token,assetId) =>
   request(`${workPath(handle, slug)}/download-ticket`, {
-    headers: authHeaders(token),
+    headers: authHeaders(token,assetId?{'Content-Type':'application/json'}:{}),
+    ...(assetId?{body:JSON.stringify({assetId})}:{}),
     method: 'POST',
   })
 
