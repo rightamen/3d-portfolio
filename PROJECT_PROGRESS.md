@@ -29,7 +29,9 @@ useInterfacePreferences、interfacePreferences/interfaceCopy/interface.css 与�
 专项 docs/INTERFACE_WORKSPACE_2026-11-07.md；验证证据 .deploy-tools/interface-checks/：
 browser-verified.log/json、database-final.log/json、spatial-check.json 与 ui-verified/；
 中文桌面/手机预览另存 D:/Codex/artifacts/workspace-2026-11-07/。
-提交/推送结果完成后补记。本轮未部署 VPS、未执行生产 SQL、未改服务器/数据库/API contract。
+功能提交 96301199cd274a063f921370c0642e5decef8b50（37 文件）已推送 GitHub main。
+本条提交结果作为后续文档检查点提交；没有为文档修改产品代码或重复部署。
+本轮未部署 VPS、未执行生产 SQL、未改服务器/数据库/API contract。
 没有新 VPS 备份；线上仍为 c113caf / release-2026-11-07-creator，生产验证沿用上次发布记录，
 备份路径仍见 docs/RELEASE_2026-11-07_CREATOR.md。后续部署须先 GitHub，再备份/固定制品与验收。
 本地公开只读设计预览 http://localhost:5174/settings；私人工作区完整演示见中文截图。
