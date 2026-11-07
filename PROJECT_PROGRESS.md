@@ -30,7 +30,8 @@ build/lint、362 单测、旧库增量升级/幂等（含五表/索引）通过�
 新文件：server/postgres/socialSchema/socialStore/collectionsStore/reportsStore.js、server/socialRoutes.js、socialValidation.js；
 ConnectionsPanel/SocialActions/SocialDialog/ReportButton/ReportsPanel/CollectionLibrary、useSocialResource、socialCopy/reportReasons/social.css；
 接入 schema/worksStore/creatorStore/index、App/Admin/账号/主页/作品/社区/评论/收藏及导航，扩展增量迁移和 API/浏览器/单测。
-专项 docs/SOCIAL_COLLECTIONS_2026-11-07.md 记录权限、行为、边界和 API，提交/推送结果随后补记。
+专项 docs/SOCIAL_COLLECTIONS_2026-11-07.md 记录权限、行为、边界和 API，功能提交 befdbea56056c84c2e14fdd30c416471bdd56aac（47 文件）已推送 GitHub main。
+本条为后续文档检查点，不改变已验证的业务代码，不部署 VPS。
 最终桌面/三语手机、收藏夹和真实后台截图已检查，预览保存 D:/Codex/artifacts/social-2026-11-07/。
 下一步发布仍先 GitHub、固定制品、备份和升级验收；当前新增功能尚未上线。
 
