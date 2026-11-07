@@ -7,6 +7,8 @@
 
 ## 用户流程
 
+入口补齐见 [关注与好友入口说明](SOCIAL_ENTRY_POINTS_2026-11-07.md)：顶部“创作者”、头像菜单、公开作品作者栏和 /creators。
+
 - 创作者公开主页：关注/取消关注、加好友、接受/拒绝收到的申请、撤回发出的申请，已为好友时可确认解除。
 - /account/connections：好友、关注、粉丝、收到/发出的申请与公开创作者搜索。
   关注是单向关系，互相关注不会自动成为好友；双方交叉申请也仍需接收者明确确认。
@@ -57,6 +59,7 @@
 
 | 路径 | 方法与行为 |
 | --- | --- |
+| /api/creators | GET 公开创作者目录，q/page/limit；无登录要求，仅公开白名单字段 |
 | /api/users/:handle/relationship | GET 当前账号对公开用户的关注、好友状态和关注统计 |
 | /api/users/:handle/follow | PUT {following:boolean} |
 | /api/users/:handle/friend | PUT 发起好友申请，重复调用返回已有状态 |

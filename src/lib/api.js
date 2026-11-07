@@ -1020,3 +1020,5 @@ export const getPrivateSocial=(path,token)=>request(path,{cache:'no-store',heade
 export const writePrivateSocial=(path,token,method,body)=>request(path,{method,headers:authHeaders(token,{'Content-Type':'application/json'}),...(body===undefined?{}:{body:JSON.stringify(body)})})
 export const getAdminReports=(token,status,page)=>adminRequest('/api/admin/reports?limit=20&page='+page+(status?'&status='+status:''),token)
 export const resolveAdminReport=(token,id,body)=>adminRequest('/api/admin/reports/'+encodeURIComponent(id),token,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
+
+export const getCreators=({query='',page=1}={})=>request('/api/creators?limit=24&page='+page+'&q='+encodeURIComponent(query))

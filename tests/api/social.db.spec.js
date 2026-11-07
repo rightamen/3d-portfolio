@@ -120,8 +120,8 @@ test('real separate creators follow, accept friendship, organize a saved work an
  const pageFor=async(user,admin=false)=>{const context=await browser.newContext({viewport:{width:1280,height:900},reducedMotion:'reduce'});contexts.push(context);await context.addInitScript(({token,admin})=>{localStorage.setItem(admin?'mrright-admin-token':'mrright-visitor-token',token);localStorage.setItem('mrright-language','en');localStorage.setItem('mrright-admin-language','en')},{token:admin?adminToken:user.token,admin});const page=await context.newPage();page.on('pageerror',error=>errors.push(error.message));page.setDefaultTimeout(10000);page.setDefaultNavigationTimeout(15000);return page}
  try{
   const maker=await pageFor(a),fan=await pageFor(b),moderator=await pageFor(null,true)
-  console.log('[social-journey] profile follow and request')
-  await maker.goto(base+'/u/'+b.handle);await maker.getByRole('button',{name:'Follow',exact:true}).click();await expect(maker.getByRole('button',{name:'Unfollow',exact:true})).toBeEnabled();await maker.getByRole('button',{name:'Add friend',exact:true}).click();await expect(maker.getByRole('button',{name:'Cancel request',exact:true})).toBeEnabled()
+  console.log('[social-journey] discover creator, follow and request')
+  await maker.goto(base+'/creators?q='+b.handle);await expect(maker.locator('.creator-directory-card')).toHaveCount(1);await maker.getByRole('button',{name:'Follow',exact:true}).click();await expect(maker.getByRole('button',{name:'Unfollow',exact:true})).toBeEnabled();await maker.getByRole('button',{name:'Add friend',exact:true}).click();await expect(maker.getByRole('button',{name:'Cancel request',exact:true})).toBeEnabled()
   console.log('[social-journey] accept in second context')
   await fan.goto(base+'/account/connections');await fan.getByRole('button',{name:/Received requests/}).click();await fan.getByRole('button',{name:'Accept request',exact:true}).click();await fan.getByRole('button',{name:/^Friends/}).click();await expect(fan.locator('.social-person')).toHaveCount(1)
   console.log('[social-journey] create and assign folder')
@@ -145,4 +145,21 @@ test('new friend requests after cooldown replace the old request identity, so st
  const second=(await request()).data.data.friendship.id;expect(second).not.toBe(first)
  expect((await api('PATCH','/api/account/friends/'+first,b.token,{action:'accept'})).status).toBe(404)
  expect((await api('PATCH','/api/account/friends/'+second,b.token,{action:'accept'})).status).toBe(200)
+})
+
+test('public creator discovery exposes only public fields, counts published works, and paginates without login',async()=>{
+ await pool.query("UPDATE visitor_users SET profile_public=false WHERE id=$1",[b.id])
+ await pool.query("UPDATE visitor_users SET profile_admin_disabled=true WHERE id=$1",[c.id])
+ const found=await api('GET','/api/creators?q='+a.handle)
+ expect(found.status).toBe(200)
+ expect(found.data.data.creators).toHaveLength(1)
+ const creator=found.data.data.creators[0]
+ expect(Object.keys(creator).sort()).toEqual(['avatarUrl','bio','displayName','handle','location','workCount'])
+ expect(creator).toMatchObject({handle:a.handle,workCount:1})
+ for(const hidden of [b,c])expect((await api('GET','/api/creators?q='+hidden.handle)).data.data.creators).toEqual([])
+ expect((await api('GET','/api/creators?q=%25')).data.data.creators).toEqual([])
+ const paged=await api('GET','/api/v1/creators?limit=1&page=2')
+ expect(paged.status).toBe(200);expect(paged.data.data.creators).toHaveLength(1)
+ expect(paged.data.pagination).toMatchObject({page:2,limit:1})
+ expect((await api('GET','/api/creators?q='+encodeURIComponent('x'.repeat(61)))).status).toBe(400)
 })

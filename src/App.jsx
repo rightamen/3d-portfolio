@@ -26,6 +26,7 @@ const AuthPage = lazy(() => import('./pages/AuthPage'))
 const InterfaceSettings = lazy(() => import('./components/InterfaceSettings'))
 const AccountPage = lazy(() => import('./pages/AccountPage'))
 const CommunityPage = lazy(() => import('./pages/CommunityPage'))
+const CreatorsPage = lazy(() => import('./pages/CreatorsPage'))
 const PublicProfilePage = lazy(() => import('./pages/PublicProfilePage'))
 const ExplorePage = lazy(() => import('./pages/ExplorePage'))
 const WorkDetailPage = lazy(() => import('./pages/WorkDetailPage'))
@@ -291,6 +292,7 @@ const App = () => {
       />
       <ModuleEffects>
       <Routes>
+        <Route path="/creators" element={<Suspense fallback={<SectionFallback title={copy.socialCreators} copy={copy}/>}><CreatorsPage copy={copy} language={language} authToken={visitorToken} visitorUser={visitorUser}/></Suspense>}/>
         <Route path="/settings" element={<Suspense fallback={<SectionFallback title={copy.systemSettings} copy={copy} />}><InterfaceSettings language={language} standalone /></Suspense>} />
         <Route
           path="/login/*"

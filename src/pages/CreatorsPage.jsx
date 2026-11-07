@@ -1,0 +1,17 @@
+import { useEffect,useState } from 'react'
+import { Link,useSearchParams } from 'react-router-dom'
+import { getCreators } from '../lib/api'
+import SocialActions from '../components/SocialActions'
+import { SocialPagination } from '../components/ConnectionsPanel'
+const CreatorsPage=({authToken,visitorUser,copy,language})=>{
+ const [params,setParams]=useSearchParams(),[revision,setRevision]=useState(0),[loaded,setLoaded]=useState({key:'',data:null,error:null})
+ const query=params.get('q') || '',value=Number(params.get('page')),page=Number.isInteger(value)&&value>0?value:1,key=JSON.stringify([query,page,revision])
+ useEffect(()=>{let current=true;getCreators({query,page}).then(data=>{if(current)setLoaded({key,data,error:null})}).catch(error=>{if(current)setLoaded({key,data:null,error})});return()=>{current=false}},[query,page,revision,key])
+ const ready=loaded.key===key,data=ready?loaded.data:null
+ const changePage=next=>setParams({...(query?{q:query}:{}),page:String(next)})
+ return <main className="creators-directory" lang={language}><header className="creators-heading"><div><p className="section-kicker">PEOPLE / CONNECT</p><h1>{copy.socialDirectoryTitle}</h1><p>{copy.socialDirectoryIntro}</p><small>{copy.socialDirectoryHint}</small></div><Link className="secondary-action" to={authToken?'/account/connections':'/login?mode=login'}>{copy.socialConnections} ↗</Link></header>
+ <form className="social-search creators-search" key={query} onSubmit={event=>{event.preventDefault();const q=event.currentTarget.elements.creatorsQuery.value.trim();setParams(q?{q}:{})}}><label><span>{copy.socialSearch}</span><input type="search" name="creatorsQuery" maxLength={60} defaultValue={query} placeholder={copy.socialSearch}/></label><button className="primary-action" type="submit">{copy.socialFind}</button></form>
+ {!ready?<p role="status">{copy.loading}</p>:loaded.error?<div className="social-empty" role="alert"><p>{copy.socialError}</p><button className="secondary-action" type="button" onClick={()=>setRevision(n=>n+1)}>{copy.socialRetry}</button></div>:data?.creators.length?<><div className="creator-directory-grid">{data.creators.map(creator=>{const own=Boolean(authToken && visitorUser?.handle===creator.handle);return <article key={creator.handle} className="creator-directory-card"><header><Link className="social-person-avatar" to={'/u/'+creator.handle} aria-label={creator.displayName}>{creator.avatarUrl?<img src={creator.avatarUrl} alt=""/>:creator.displayName?.slice(0,1) || '◇'}</Link><div><h2><Link to={'/u/'+creator.handle}>{creator.displayName}</Link></h2><p>@{creator.handle}</p></div></header>{creator.bio && <p className="creator-directory-bio">{creator.bio}</p>}<div className="creator-directory-meta"><span>{copy.socialPublishedWorks} <b>{creator.workCount}</b></span>{creator.location && <span>{creator.location}</span>}</div>{own?<div className="social-self-entry"><small>{copy.socialSelf}</small><Link className="secondary-action" to={'/u/'+creator.handle}>{copy.socialOwnProfile} ↗</Link></div>:<SocialActions key={authToken+'/'+creator.handle} handle={creator.handle} authToken={authToken} copy={copy}/>}</article>})}</div><SocialPagination page={page} pagination={data.pagination} onPage={changePage} copy={copy}/></>:<div className="social-empty"><p>{copy.socialDirectoryEmpty}</p>{page>1 && <SocialPagination page={page} pagination={data?.pagination} onPage={changePage} copy={copy}/>}</div>}
+ </main>
+}
+export default CreatorsPage

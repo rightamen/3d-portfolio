@@ -73,7 +73,16 @@ export const socialCopy = {
     "collectionNoWorks": "这个收藏夹还是空的",
     "collectionNoWorksHint": "在已收藏作品的“整理到收藏夹”中添加作品。",
     "collectionDuplicate": "名称已存在，或已达到收藏夹数量上限。请修改后重试。",
-    "reportLogin": "登录后举报"
+    "reportLogin": "登录后举报",
+    "socialCreators": "创作者",
+    "socialDirectoryTitle": "发现值得关注的人",
+    "socialDirectoryIntro": "探索公开的创作者主页，关注你欣赏的人，或发送好友申请。",
+    "socialDirectoryHint": "关注与好友用于联系其他用户；自己的卡片会显示“我的主页”。",
+    "socialOwnProfile": "我的主页",
+    "socialSelf": "这是你的主页",
+    "socialDirectoryEmpty": "暂时没有匹配的公开创作者",
+    "socialPublishedWorks": "已发布作品",
+    "socialConnectAuthor": "联系创作者"
   },
   "en": {
     "socialConnections": "Connections",
@@ -149,7 +158,16 @@ export const socialCopy = {
     "collectionNoWorks": "This folder is empty",
     "collectionNoWorksHint": "Use Organize into folders on a saved work to add it here.",
     "collectionDuplicate": "This name exists or the folder limit was reached. Please adjust and retry.",
-    "reportLogin": "Sign in to report"
+    "reportLogin": "Sign in to report",
+    "socialCreators": "Creators",
+    "socialDirectoryTitle": "Find your creative circle",
+    "socialDirectoryIntro": "Explore public creators, follow the people you admire or send a friend request.",
+    "socialDirectoryHint": "Connect with other people here. Your own card shows My profile.",
+    "socialOwnProfile": "My profile",
+    "socialSelf": "This is your profile",
+    "socialDirectoryEmpty": "No matching public creators yet",
+    "socialPublishedWorks": "Published works",
+    "socialConnectAuthor": "Connect with the creator"
   },
   "ja": {
     "socialConnections": "フォローと友達",
@@ -225,6 +243,15 @@ export const socialCopy = {
     "collectionNoWorks": "このコレクションは空です",
     "collectionNoWorksHint": "保存作品の「コレクションに整理」から追加できます。",
     "collectionDuplicate": "同名が存在するか上限に達しています。変更して再試行してください。",
-    "reportLogin": "ログインして通報"
+    "reportLogin": "ログインして通報",
+    "socialCreators": "クリエイター",
+    "socialDirectoryTitle": "気になるクリエイターを見つける",
+    "socialDirectoryIntro": "公開プロフィールを探して、フォローしたり友達申請を送ったりできます。",
+    "socialDirectoryHint": "他のユーザーとつながる場所です。自分のカードには「自分のプロフィール」が表示されます。",
+    "socialOwnProfile": "自分のプロフィール",
+    "socialSelf": "あなたのプロフィールです",
+    "socialDirectoryEmpty": "一致する公開クリエイターはまだいません",
+    "socialPublishedWorks": "公開作品",
+    "socialConnectAuthor": "クリエイターとつながる"
   }
 }

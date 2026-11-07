@@ -4,6 +4,7 @@ import PageEffects from './PageEffects'
 const ModuleEffects = ({ children }) => {
   const { pathname } = useLocation()
   const kind = pathname.startsWith('/u/') ? 'profile'
+    : pathname.startsWith('/creators') ? 'creators'
     : pathname.startsWith('/settings') ? 'settings'
     : pathname.startsWith('/explore') ? 'explore'
       : pathname.startsWith('/w/') ? 'work'

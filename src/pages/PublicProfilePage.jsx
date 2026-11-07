@@ -358,7 +358,7 @@ const CreatorProfile = ({ copy, language, handle, authToken, visitorUser }) => {
                   {profile.location && <span>{profile.location}</span>}
                 </div>
                 {profile.bio && <p>{profile.bio}</p>}
-                <SocialActions key={authToken+handle} handle={handle} authToken={authToken} copy={copy}/>
+                <SocialActions key={authToken+handle} handle={handle} authToken={authToken} copy={copy} isSelf={Boolean(visitorUser?.handle && visitorUser.handle===handle)}/>
                 {visitorUser?.handle!==handle && <ReportButton authToken={authToken} copy={copy} targetType="user" targetId={handle}/>}
                 <div className="public-profile-links">
                   {profile.website && (

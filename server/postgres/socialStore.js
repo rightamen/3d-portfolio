@@ -48,6 +48,12 @@ export const createSocialStore=({pool})=>({
   }
   const result=await pool.query('SELECT '+personColumns+','+columns+' FROM '+from+' WHERE '+where+' ORDER BY '+order+' LIMIT $2 OFFSET $3',[userId,limit,offset]);return {counts,total:counts[tab],items:result.rows.map(row=>({id:row.connection_id,user:person(row),createdAt:row.created_at.toISOString(),friendship:friendship({...row,id:row.connection_id},userId)}))}
  },
+ listPublicCreators:async({query='',limit=24,offset=0})=>{
+  const where=publicCondition+' AND ($1=\'\' OR strpos(lower(u.handle),lower($1))>0 OR strpos(lower(u.display_name),lower($1))>0)'
+  const total=await pool.query('SELECT count(*)::int AS count FROM visitor_users u WHERE '+where,[query])
+  const result=await pool.query("SELECT u.handle,u.display_name,u.avatar_url,u.bio,u.location,(SELECT count(*)::int FROM works w WHERE w.creator_id=u.id AND w.status='published') AS work_count FROM visitor_users u WHERE "+where+' ORDER BY work_count DESC,lower(u.handle) LIMIT $2 OFFSET $3',[query,limit,offset])
+  return {total:total.rows[0].count,items:result.rows.map(row=>({handle:row.handle,displayName:row.display_name,avatarUrl:row.avatar_url,bio:row.bio,location:row.location,workCount:row.work_count}))}
+ },
  searchPeople:async(userId,{query,limit,offset})=>{
   const pattern=query;const where=publicCondition+' AND u.id<>$1 AND (strpos(lower(u.handle),lower($2))>0 OR strpos(lower(u.display_name),lower($2))>0)'
   const total=await pool.query('SELECT count(*)::int AS count FROM visitor_users u WHERE '+where,[userId,pattern]);const result=await pool.query('SELECT '+personColumns+' FROM visitor_users u WHERE '+where+' ORDER BY lower(u.handle),u.id LIMIT $3 OFFSET $4',[userId,pattern,limit,offset]);return {total:total.rows[0].count,items:result.rows.map(person)}

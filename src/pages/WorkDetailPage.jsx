@@ -1,3 +1,4 @@
+import SocialActions from '../components/SocialActions'
 import ReportButton from '../components/ReportButton'
 import FavoriteButton from '../components/FavoriteButton'
 import { Suspense, lazy, useEffect, useRef, useState } from 'react'
@@ -167,6 +168,8 @@ const WorkDetailPage = ({ authToken, copy, language, visitorUser }) => {
                 {copy.exploreBy} {work.creator.displayName || `@${work.creator.handle}`}
               </span>
             ))}
+
+          {work.creator?.profilePublic && work.creator.handle && <section className="work-author-connections" aria-label={copy.socialConnectAuthor}><p>{copy.socialConnectAuthor}</p><SocialActions key={authToken+work.creator.handle} handle={work.creator.handle} authToken={authToken} copy={copy} isSelf={Boolean(visitorUser?.handle && visitorUser.handle===work.creator.handle)}/></section>}
 
           <div className="work-price-row">
             <p className="work-price">{formatWorkPrice(work, copy)}</p>

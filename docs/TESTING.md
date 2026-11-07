@@ -335,3 +335,14 @@ unchanged. Sessions revoked with 401 verified, private credential files removed.
 An initial probe awaited a sum of unresolved locator-count promises; the probe
 was fixed and repeated with fresh short-lived sessions, without changing code or
 redeploying. Release, backups and evidence: RELEASE_2026-11-07_SOCIAL.md.
+
+2026-11-07 social entry correction: 362 unit, 241 disposable database and
+102 browser checks pass. Public creator discovery has a field whitelist,
+visibility, literal-search, published-only count, pagination and v1 check.
+The separate-account database journey now begins at /creators. Eight added
+browser checks cover global/menu/author entry points, actual social actions,
+self/anonymous states, private author redaction, three-language mobile,
+retry, paper theme and mobile navigation. Legacy payment/rating mocks now
+provide the new author relationship read; order behavior is unchanged.
+Visual screenshots were inspected; production read-only verification follows
+the fixed release, and actual relationship writes stay in disposable data.

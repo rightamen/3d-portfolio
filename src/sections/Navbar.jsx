@@ -62,6 +62,7 @@ const Navbar = ({
   const links = [
     { label: copy.navExplore, to: '/explore' },
     { label: copy.navCommunity, to: '/community' },
+    { label: copy.socialCreators, to: '/creators' },
     ...(ownerHandle ? [{ label: copy.navAbout, to: `/u/${ownerHandle}` }] : []),
   ]
 

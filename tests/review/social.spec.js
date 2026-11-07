@@ -70,7 +70,7 @@ test('report dialog validates Other, submits, and links to private report progre
  await page.screenshot({path:info.outputPath('reports-desktop.png'),animations:'disabled',fullPage:true})
 })
 test('anonymous reporting and connecting provide real sign-in destinations',async({page})=>{
- await fixture(page,{signedIn:false});await page.goto('/u/studio');await expect(page.getByRole('link',{name:'Sign in to connect',exact:true})).toHaveAttribute('href','/login?mode=login');await page.getByRole('button',{name:'Report',exact:true}).click();await expect(page.getByRole('dialog').getByRole('link',{name:'Sign in to report',exact:true})).toHaveAttribute('href','/login?mode=login')
+ await fixture(page,{signedIn:false});await page.goto('/u/studio');await expect(page.locator('.social-anonymous').getByRole('link',{name:'Follow',exact:true})).toHaveAttribute('href','/login?mode=login');await page.getByRole('button',{name:'Report',exact:true}).click();await expect(page.getByRole('dialog').getByRole('link',{name:'Sign in to report',exact:true})).toHaveAttribute('href','/login?mode=login')
 })
 for(const language of ['zh','en','ja'])test('social pages and folder dialogs fit a light mobile theme in '+language,async({page},info)=>{
  await page.setViewportSize({width:390,height:844});const errors=[];page.on('pageerror',e=>errors.push(e.message));await fixture(page,{language,incoming:true});await page.addInitScript(()=>localStorage.setItem('mrright-interface-preferences-v1',JSON.stringify({theme:'paper',accent:'#33c2cc',motion:'off',effects:false,density:'comfortable'})))
