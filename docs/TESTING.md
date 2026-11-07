@@ -317,3 +317,21 @@ Screenshots are controlled test data; all clusters were destroyed. No production
 SQL, relationship/report/collection creation or deployment occurred. Existing
 notifications were unchanged; no private messages/email/push were added.
 See SOCIAL_COLLECTIONS_2026-11-07.md for contracts, bounds and evidence.
+
+2026-11-07 social production release: clean f55bb98 and fixed tag
+release-2026-11-07-social are live. Preflight build/lint, eight release scenarios,
+deploy-script and backup checks passed; earlier 362 unit / 240 disposable DB /
+94 UI and incremental migration checks cover the unchanged feature source.
+All 195 shipped files, 13 original uploads, config and nine business fingerprints
+match, including after browser verification. Five new tables, seven key indexes
+and two composite ownership foreign keys exist. Real verified HTTPS returned
+22 passes with no warnings/failures; 16 pages returned 200, 14 anonymous private
+reads returned 401, legacy 301 and public privacy/thumbnail checks passed.
+Temporary creator/admin sessions exercised all connection reads, people search,
+folder/report reads, v1/no-store, desktop/390px navigation and create/report forms
+without submitting, admin report queues and anonymous connect entry. Zero page
+errors/overflow; all five new tables remained empty and existing business data
+unchanged. Sessions revoked with 401 verified, private credential files removed.
+An initial probe awaited a sum of unresolved locator-count promises; the probe
+was fixed and repeated with fresh short-lived sessions, without changing code or
+redeploying. Release, backups and evidence: RELEASE_2026-11-07_SOCIAL.md.

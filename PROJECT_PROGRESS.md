@@ -1,6 +1,39 @@
 # mrright.blog 项目进度记录
 
-## 下次从这里继续（2026-11-07：关注、好友、举报与私有收藏夹，本地完成待发布）
+## 下次从这里继续（2026-11-07：关注、好友、举报与私有收藏夹已上线）
+
+用户明确要求“部署上线”。main 干净且已推送，从 f55bb98cb3e8ac6206e1970e7a00a2438609cf91 打包，
+固定标签 release-2026-11-07-social 先于上传推送，部署完成 2026-11-07 17:09:53 Asia/Shanghai。
+功能提交 befdbea56056c84c2e14fdd30c416471bdd56aac，/release.json 可查询实际运行提交。
+新增关注/好友确认、/account/connections、私有收藏夹、/account/reports 和后台举报处理均已上线。
+
+发布前复核 build/lint、8 组制品、部署脚本/备份检查通过；同业务代码已有 362 单测、
+240 临时库检查、94 浏览器检查和旧库增量迁移/幂等通过，功能提交后仅补文档，无新业务代码改动。
+启动增量建立五表和索引；五表、七个关键索引、两个收藏夹组合外键均验收正常。
+已有收藏保留，未覆盖环境/nginx/systemd，所有历史备份保留。
+
+制品 SHA-256 de20974994512d1a85034bea43102f0981bfb465add8fa268ea186deaceeed92，15,910,020 bytes。
+195 文件逐项匹配；13 上传、配置与九张既有业务表完整指纹在部署后、浏览器验收后均一致，作者主题不变。
+作品/访客/管理员 4/3/1，评分/策展推荐/收藏 0/0/0，五张新增社交表在验收后仍全部 0 行。
+服务 active，health 第 2 次通过，admin_summary/管理作品/举报队列均 200。
+公网 HTTPS 22 项通过、零警告/失败；16 页面 200、14 匿名私有读取 401、旧链接精确 301、公开隐私/缩略图正常。
+真实短期创作者会话与管理员会话通过：关系五类列表/搜索、自身关系状态、收藏夹/举报私人读取、严格 v1/no-store；
+桌面与 390px 触屏的关系/收藏夹入口、新建夹表单（未保存）、举报表单（未提交）、后台举报筛选和匿名关注登录入口正常。
+页面异常/横向溢出为零，未创建真实关系、好友申请、收藏夹或举报，未改作品/评分/订单或作者主题。
+临时访客会话按 token/user 精确撤销，管理会话通过正式接口撤销，均验证旧凭据 401，本地/远端临时凭据已移除。
+首轮线上探针异步计数未 await，修正等待后通过；未改产品代码、未重复部署，首轮会话也已清理。
+
+备份：/opt/mrright-portfolio.backup-20261107-090946；/etc/mrright-portfolio.env.backup-20261107-090946；
+/var/backups/mrright-portfolio/releases/before-f55bb98-20261107-090946.dump。
+备份名按服务器 UTC；custom pg_dump 目录检查通过，未执行生产恢复演练。上一线上版本 70697f7 / release-2026-11-07-interface。
+
+本轮更新 docs/RELEASE_2026-11-07_SOCIAL.md、SOCIAL_COLLECTIONS_2026-11-07.md、HANDOFF、TESTING 和本进度，
+发布结果作为后续文档提交推送，不为文档重复上线。证据 .deploy-tools/social-release/、social-deploy.log、
+social-deployment.json、social-server-verification.json、social-final-data.json、social-production-check.json、
+social-live-smoke-exit.json 和 release-social-20261107/smoke.json/真实截图。
+后续按真实使用反馈改进；无私信/推送，收藏夹私有；浏览量埋点、账户外观同步、代理链/监控与实际邮件送达仍待推进。
+
+## 上一检查点（2026-11-07：关注、好友、举报与私有收藏夹，本地完成待发布）
 
 用户要求加入关注、好友、举报和可自定义收藏夹。从干净 main / 5192d52 接续，直接在 Ubuntu 开发。
 公开主页新增单向关注和双向确认好友；/account/connections 提供好友、关注、粉丝、收到/发出申请和公开用户搜索。
