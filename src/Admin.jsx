@@ -63,6 +63,7 @@ import AdminAnnouncementsSection from './components/admin/AdminAnnouncementsSect
 import AdminOrdersSection from './components/admin/AdminOrdersSection'
 import AdminProjectEditor from './components/admin/AdminProjectEditor'
 import AdminProjectsSection from './components/admin/AdminProjectsSection'
+import AdminResourcesSection from './components/admin/AdminResourcesSection'
 import AdminCurationSection from './components/admin/AdminCurationSection'
 import AdminSystemPanel from './components/admin/AdminSystemPanel'
 import {
@@ -1283,6 +1284,8 @@ const Admin = () => {
           )}
 
           {activeSection === 'reports' && <ReportsPanel key={token} authToken={token} copy={getCopy(language)} language={language} admin/>}
+
+          {activeSection === 'resources' && <AdminResourcesSection key={token} token={token} />}
 
           {activeSection === 'curation' && <AdminCurationSection key={token} token={token} />}
 

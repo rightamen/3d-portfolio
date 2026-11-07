@@ -13,3 +13,5 @@ export const resourceSlots=(type,copy)=>[
  ...(type==='audio'?[{key:'audio',label:copy.resourceAudioPreview}]:[]),
  {key:'source',label:type==='model'||!type?copy.worksAssetSource:copy.resourceOriginal}
 ]
+
+export const assetKindLabels=copy=>({preview:copy.worksAssetPreview,model:copy.worksAssetModel,source:copy.resourceOriginal,image:copy.resourceGallery,texture:copy.resourceTexture,video:copy.resourceVideoPreview,audio:copy.resourceAudioPreview})

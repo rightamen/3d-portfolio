@@ -6,7 +6,7 @@ const selectors = {
   following: '.communication-heading, .following-card, .following-aside',
   creators: '.creators-heading, .creator-directory-card',
   settings: '.interface-settings-header, .interface-setting-group, .interface-live-preview',
-  admin: '.social-panel-heading, .social-report-card, .admin-page-head, .admin-panel, .admin-galaxy-head, .admin-galaxy-readout, .admin-panel-head, .admin-row, .interface-settings-header, .interface-setting-group, .interface-live-preview',
+  admin: '.admin-resource-card, .social-panel-heading, .social-report-card, .admin-page-head, .admin-panel, .admin-galaxy-head, .admin-galaxy-readout, .admin-panel-head, .admin-row, .interface-settings-header, .interface-setting-group, .interface-live-preview',
   home: '.studio-eyebrow, .atelier-heading h1, .studio-hero-description, .studio-hero-types, .studio-hero-foot, .curated-exhibition-heading, .studio-section-heading, #projects > .section-kicker, #community .section-heading, .community-feed li, .studio-footer',
   explore: '.explore-header, .publish-cta > div, .work-tile',
   work: '.work-info h1, .work-info > p, .work-specs, .work-files, .work-ratings-heading, .work-rating-rule, .work-comments-head, .work-comment-body',
@@ -45,7 +45,7 @@ export const useModuleEffects = (rootRef, kind, routeKey) => {
       // Cards fade in without a transform, leaving hover and pointer geometry
       // intact. File controls also stay still when focus cancels an entrance
       // animation between pointerdown and pointerup. Only editorial text moves.
-      const card = node.matches('.work-files, .following-card, .following-aside, .creator-directory-card, .social-person, .social-report-card, .collection-folder, .collection-library, .work-tile, .community-post-card, .account-center-card, .community-card, .theme-preset, .work-comment-body, .creator-console-metric, .creator-console-panel, .creator-saved-item, .interface-setting-group, .admin-panel, .admin-row')
+      const card = node.matches('.admin-resource-card, .work-files, .following-card, .following-aside, .creator-directory-card, .social-person, .social-report-card, .collection-folder, .collection-library, .work-tile, .community-post-card, .account-center-card, .community-card, .theme-preset, .work-comment-body, .creator-console-metric, .creator-console-panel, .creator-saved-item, .interface-setting-group, .admin-panel, .admin-row')
       const animation = node.animate([
         { opacity: .35, transform: card ? 'none' : 'translate3d(0,' + (fine.matches ? 14 : 7) + 'px,0)' },
         { opacity: 1, transform: 'none' },

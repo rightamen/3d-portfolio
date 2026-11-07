@@ -398,3 +398,9 @@ UI tests cover batch completion before selecting another batch, partial failure,
 The download check explicitly enables regular motion: cancelling a translated file-list entrance on focus previously moved the button between pointerdown and pointerup. The file list now fades without translation.
 Schema migration verifies resource_type, work_asset_id and its FK, resource indexes and video/audio kind constraints, including startup against the old schema and repeated startup.
 Production verification must use read-only list/editor/filter inspection, without creating works or uploading fixtures; do not turn local fixture success into a claim of production upload coverage.
+
+
+## Resource review and overlap regression — 2026-11-07
+
+Three new resources.db checks verify account-safe filters before pagination, admin-only detail/classification with stale-version guards, and a real administrator correcting, decoding and publishing a video. A separate creator filters it in the studio and a public visitor plays it.
+Eight new browser cases cover local homepage type-vs-model-subject filtering, private creator filter queries and six width/language/theme combinations. Layout checks compare actual filename/button rectangles and heading/control spacing instead of checking horizontal overflow alone. Final resource reruns also assert light-interface titles remain legible on the dark infinite wall.

@@ -227,31 +227,26 @@ export const createWorksStore = ({ pool }) => {
     // Everything the caller owns, whatever its status. This is the one list
     // that deliberately shows drafts, so it takes the owner id as a bound
     // parameter and has no "all users" mode at all.
-    listWorksByCreator: async (creatorId, { limit = 50, offset = 0 } = {}) => {
-      const total = await pool.query(
-        'SELECT count(*)::int AS count FROM works WHERE creator_id = $1',
-        [creatorId],
-      )
-      const rows = await pool.query(
-        `SELECT ${workColumns} FROM works
-         JOIN visitor_users ON visitor_users.id = works.creator_id
-         WHERE works.creator_id = $1
-         ORDER BY works.updated_at DESC
-         LIMIT $2 OFFSET $3`,
-        [creatorId, limit, offset],
-      )
-      return { items: rows.rows.map(toWorkSummary), total: total.rows[0].count }
+    listWorksByCreator: async (creatorId, {limit=50,offset=0,resourceType='',status=''}={}) => {
+      const params=[creatorId],conditions=['works.creator_id = $1']
+      for(const [column,value] of [['resource_type',resourceType],['status',status]])if(value){params.push(value);conditions.push('works.'+column+' = $'+params.length)}
+      const where='WHERE '+conditions.join(' AND ')
+      const total=await pool.query('SELECT count(*)::int AS count FROM works '+where,params)
+      const rows=await pool.query(`SELECT ${workColumns} FROM works JOIN visitor_users ON visitor_users.id=works.creator_id ${where} ORDER BY works.updated_at DESC,works.id LIMIT $${params.length+1} OFFSET $${params.length+2}`,[...params,limit,offset])
+      return {items:rows.rows.map(toWorkSummary),total:total.rows[0].count}
     },
 
     // Admin moderation queue. Defaults to the works actually waiting on a
     // decision, because that is the question the console is usually asking.
-    listWorksForAdmin: async ({ limit = 20, offset = 0, status = '' } = {}) => {
+    listWorksForAdmin: async ({ limit = 20, offset = 0, status = '', resourceType='', query='' } = {}) => {
       const conditions = []
       const params = []
       if (status) {
         params.push(status)
         conditions.push(`works.status = $${params.length}`)
       }
+      if(resourceType){params.push(resourceType);conditions.push('works.resource_type = $'+params.length)}
+      if(query){params.push('%'+query+'%');conditions.push(`(works.title ILIKE $${params.length} OR works.title_zh ILIKE $${params.length} OR works.title_ja ILIKE $${params.length} OR works.summary ILIKE $${params.length})`)}
       const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
 
       const total = await pool.query(
@@ -360,6 +355,14 @@ export const createWorksStore = ({ pool }) => {
       return worksStore.getWorkById(id, { includeProtected: true })
     },
 
+    setWorkClassification: async(id,{resourceType,assetCategory,version})=>{
+      const result=await pool.query(`UPDATE works SET resource_type=$2,asset_category=$3,
+        curation_score=NULL,exhibition_recommended=false,curation_updated_at=NULL,
+        rating_version=rating_version+1,updated_at=now()
+        WHERE id=$1 AND rating_version=$4 RETURNING id`,[id,resourceType,assetCategory,version])
+      return result.rows[0]?worksStore.getWorkById(id,{includeProtected:true}):null
+    },
+
     // Only the admin route calls this; creator edits never accept these fields.
     setWorkCuration: async (id, { score, recommended, version }) => {
       const result = await pool.query(
@@ -376,7 +379,7 @@ export const createWorksStore = ({ pool }) => {
     // published_at is stamped once, the first time a work goes live, and never
     // moved again: it is the work's publication date, not the date of the most
     // recent edit. A work taken hidden and published again keeps the original.
-    setWorkStatus: async (id, status) => {
+    setWorkStatus: async (id, status, version=null) => {
       const result = await pool.query(
         `UPDATE works
          SET status = $2,
@@ -386,9 +389,9 @@ export const createWorksStore = ({ pool }) => {
              moderated_at = CASE WHEN $2 IN ('published', 'rejected', 'hidden') THEN now()
                                  ELSE moderated_at END,
              updated_at = now()
-         WHERE id = $1
+         WHERE id = $1 AND ($3::int IS NULL OR rating_version=$3)
          RETURNING id`,
-        [id, status],
+        [id, status, version],
       )
       if (!result.rows[0]) return null
       return worksStore.getWorkById(id, { includeProtected: true })

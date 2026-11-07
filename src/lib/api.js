@@ -257,8 +257,8 @@ export const saveAccountTheme = (theme, token) =>
 // Publishing a work. The API for this has existed since the publishing flow
 // shipped; nothing in the client called it, so the site said "anyone can
 // publish" while offering no way to.
-export const getMyWorks = (token) =>
-  request('/api/account/works', { cache: 'no-store', headers: authHeaders(token) })
+export const getMyWorks = (token, {page=1,resourceType='',status=''}={}) =>
+  request('/api/account/works?'+new URLSearchParams({page,resourceType,status}), { cache: 'no-store', headers: authHeaders(token) })
 
 export const createWork = (fields, token) =>
   request('/api/account/works', {
@@ -996,8 +996,8 @@ export const saveWorkRating = (handle, slug, fields, token) =>
     method: 'PUT', headers: authHeaders(token, { 'Content-Type': 'application/json' }), body: JSON.stringify(fields),
   })
 
-export const getAdminWorks = (token, { page = 1, status = 'published' } = {}) =>
-  request('/api/admin/works?' + new URLSearchParams({ page, status, limit: 12 }), { cache: 'no-store', headers: authHeaders(token) })
+export const getAdminWorks = (token, { page = 1, status = 'published', resourceType='', q='' } = {}) =>
+  request('/api/admin/works?' + new URLSearchParams({ page, status, resourceType, q, limit: 12 }), { cache: 'no-store', headers: authHeaders(token) })
 
 export const saveAdminCuration = (token, id, fields) =>
   request('/api/admin/works/' + encodeURIComponent(id) + '/curation', {
@@ -1024,3 +1024,8 @@ export const getAdminReports=(token,status,page)=>adminRequest('/api/admin/repor
 export const resolveAdminReport=(token,id,body)=>adminRequest('/api/admin/reports/'+encodeURIComponent(id),token,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
 
 export const getCreators=({query='',page=1}={})=>request('/api/creators?limit=24&page='+page+'&q='+encodeURIComponent(query))
+
+export const saveAdminWorkClassification=(token,id,fields)=>adminRequest('/api/admin/works/'+encodeURIComponent(id)+'/classification',token,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(fields)})
+export const moderateAdminWork=(token,id,fields)=>adminRequest('/api/admin/works/'+encodeURIComponent(id)+'/status',token,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(fields)})
+
+export const getAdminWork=(token,id)=>adminRequest('/api/admin/works/'+encodeURIComponent(id),token,{cache:'no-store'})

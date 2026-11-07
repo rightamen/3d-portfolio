@@ -1,3 +1,5 @@
+import {getCopy} from '../../lib/i18n'
+import {resourceTypes,resourceLabels} from '../../lib/resources'
 import { useEffect, useState } from 'react'
 import { getAdminWorks, saveAdminCuration } from '../../lib/api'
 import { useAdminI18n } from '../../lib/admin/i18nAdmin'
@@ -6,6 +8,7 @@ import { EXHIBITION_MIN_SCORE, exhibitionSources } from '../../../server/exhibit
 
 const CurationForm = ({ work, onSave }) => {
   const { language, t } = useAdminI18n()
+  const copy=getCopy(language)
   const [score, setScore] = useState(work.curation?.score ?? '')
   const [recommended, setRecommended] = useState(work.curation?.recommended === true)
   const [status, setStatus] = useState('')
@@ -23,7 +26,7 @@ const CurationForm = ({ work, onSave }) => {
   return <article className="admin-curation-work">
     <div className="admin-curation-work-head">
       {work.thumbnail || work.image ? <img src={work.thumbnail || work.image} alt="" loading="lazy" /> : null}
-      <div><a href={work.url} target="_blank" rel="noreferrer">{localizedWorkField(work, 'title', language)} ↗</a><small>@{work.creator?.handle} · {work.status}</small>
+      <div><a href={work.url} target="_blank" rel="noreferrer">{localizedWorkField(work, 'title', language)} ↗</a><small>@{work.creator?.handle} · {resourceLabels(copy)[work.resourceType || 'model']}</small>
       <p>{sources.curator || sources.community ? t('curation.exhibiting') : t('curation.notExhibiting')}</p>
       <small>{t('curation.communityStats', { average: Number(work.ratings?.average || 0).toFixed(1), count: work.ratings?.count || 0, recommendations: work.ratings?.recommendations || 0 })}</small></div>
     </div>
@@ -37,19 +40,21 @@ const CurationForm = ({ work, onSave }) => {
 }
 
 const AdminCurationSection = ({ token }) => {
-  const { t } = useAdminI18n()
+  const { t,language } = useAdminI18n()
+  const copy=getCopy(language),labels=resourceLabels(copy)
+  const [resourceType,setResourceType]=useState('')
   const [page, setPage] = useState(1)
   const [filter, setFilter] = useState('published')
   const [nonce, setNonce] = useState(0)
   const [loaded, setLoaded] = useState({ key: '', works: [], pagination: {}, error: false })
-  const key = JSON.stringify([token, page, filter, nonce])
+  const key = JSON.stringify([token, page, filter, resourceType, nonce])
   useEffect(() => {
     let cancelled = false
-    getAdminWorks(token, { page, status: filter }).then(payload => {
+    getAdminWorks(token, { page, status: filter,resourceType }).then(payload => {
       if (!cancelled) setLoaded({ key, works: payload.works || [], pagination: payload.pagination || {}, error: false })
     }).catch(() => { if (!cancelled) setLoaded({ key, works: [], pagination: {}, error: true }) })
     return () => { cancelled = true }
-  }, [filter, key, nonce, page, token])
+  }, [filter, key, nonce, page, token, resourceType])
   const save = async (id, fields) => {
     const payload = await saveAdminCuration(token, id, fields)
     setLoaded(current => current.key === key ? { ...current, works: current.works.map(work => work.id === id ? payload.work : work) } : current)
@@ -58,6 +63,7 @@ const AdminCurationSection = ({ token }) => {
   return <section className="admin-section admin-curation-section">
     <div className="admin-section-header"><div><h2>{t('curation.title')}</h2><small>{t('curation.rules')}</small></div><button className="secondary-action" type="button" onClick={() => setNonce(value => value + 1)}>{t('common.refresh')}</button></div>
     <p>{t('curation.versionNote')}</p>
+    <label>{copy.resourceFilterType}<select className="field-input" aria-label={copy.resourceFilterType} value={resourceType} onChange={e=>{setResourceType(e.target.value);setPage(1)}}><option value="">{copy.resourceAll}</option>{resourceTypes.map(type=><option key={type} value={type}>{labels[type]}</option>)}</select></label>
     <label>{t('curation.filter')}<select className="field-input" value={filter} onChange={event => { setFilter(event.target.value); setPage(1) }}><option value="published">{t('status.published')}</option><option value="">{t('curation.allStatuses')}</option></select></label>
     {!ready ? <p role="status">{t('common.loading')}</p> : loaded.error ? <p role="alert">{t('curation.loadError')}</p> : <>
       {loaded.works.length ? loaded.works.map(work => <CurationForm key={work.id + ':' + work.contentVersion + ':' + nonce} work={work} onSave={save} />) : <p>{t('curation.empty')}</p>}

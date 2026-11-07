@@ -1,3 +1,4 @@
+import {resourceTypes,resourceLabels} from '../lib/resources'
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 
@@ -10,12 +11,14 @@ import { assetCategoryProfiles, getAssetCategoryProfile } from '../lib/assetCate
 // pool, while grid mode keeps a conventional list for focused browsing.
 const Projects = ({ copy, language, projects = [], status = 'ready' }) => {
   const [activeCategory, setActiveCategory] = useState('all')
+  const [resourceType,setResourceType]=useState('')
+  const labels=resourceLabels(copy)
   const [view, setView] = useState('infinite')
 
   const categoryCounts = useMemo(() => {
     const counts = new Map(assetCategoryProfiles.map((category) => [category.value, 0]))
 
-    projects.forEach((project) => {
+    projects.filter(p=>(p.resourceType || 'model')==='model').forEach((project) => {
       const category = getAssetCategoryProfile(project, language)
       counts.set(category.value, (counts.get(category.value) || 0) + 1)
     })
@@ -23,15 +26,10 @@ const Projects = ({ copy, language, projects = [], status = 'ready' }) => {
     return counts
   }, [language, projects])
 
-  const visibleProjects = useMemo(
-    () =>
-      activeCategory === 'all'
-        ? projects
-        : projects.filter(
-            (project) => getAssetCategoryProfile(project, language).value === activeCategory,
-          ),
-    [activeCategory, language, projects],
-  )
+  const visibleProjects=useMemo(()=>projects.filter(project=>
+    (!resourceType || (project.resourceType || 'model')===resourceType) &&
+    (activeCategory==='all' || (project.resourceType || 'model')==='model' && getAssetCategoryProfile(project,language).value===activeCategory)
+  ),[projects,resourceType,activeCategory,language])
 
   return (
     <section id="projects" className="c-space mt-16 md:mt-20">
@@ -42,16 +40,20 @@ const Projects = ({ copy, language, projects = [], status = 'ready' }) => {
         <Link className="studio-view-all" to="/explore">{copy.studioViewAll}<span aria-hidden="true">↗</span></Link>
       </div>
 
+      <div className="home-resource-types" role="group" aria-label={copy.resourceType}>
+        <button type="button" aria-pressed={!resourceType} onClick={()=>{setResourceType('');setActiveCategory('all')}}>{copy.allWork}<span>{projects.length}</span></button>
+        {resourceTypes.map(type=><button key={type} type="button" aria-pressed={resourceType===type} onClick={()=>{setResourceType(type);setActiveCategory('all')}}>{labels[type]}<span>{projects.filter(p=>(p.resourceType || 'model')===type).length}</span></button>)}
+      </div>
       <div className="exhibit-browse-bar">
-      <div className="asset-filter-panel">
+      <div className="asset-filter-panel" role="group" aria-label={copy.resourceSubtype} hidden={resourceType && resourceType!=='model'}><span className="resource-subtype-label">{copy.resourceSubtype}</span>
         <button
           type="button"
-          className={activeCategory === 'all' ? 'asset-filter-active' : 'asset-filter'}
-          onClick={() => setActiveCategory('all')}
-          aria-pressed={activeCategory === 'all'}
+          className={resourceType==='model' && activeCategory === 'all' ? 'asset-filter-active' : 'asset-filter'}
+          onClick={() => {setResourceType('model');setActiveCategory('all')}}
+          aria-pressed={resourceType==='model' && activeCategory === 'all'}
         >
-          <span>{copy.allWork}</span>
-          <strong>{projects.length}</strong>
+          <span>{copy.resourceAllModels}</span>
+          <strong>{projects.filter(p=>(p.resourceType || 'model')==='model').length}</strong>
         </button>
         {assetCategoryProfiles.map((categoryBase) => {
           const category = getAssetCategoryProfile({ assetCategory: categoryBase.value }, language)
@@ -62,7 +64,7 @@ const Projects = ({ copy, language, projects = [], status = 'ready' }) => {
               type="button"
               className={activeCategory === category.value ? 'asset-filter-active' : 'asset-filter'}
               style={{ '--category-accent': category.accent }}
-              onClick={() => setActiveCategory(category.value)}
+              onClick={() => {setResourceType('model');setActiveCategory(category.value)}}
               aria-pressed={activeCategory === category.value}
             >
               <span>{category.shortLabel}</span>
@@ -119,7 +121,7 @@ const Projects = ({ copy, language, projects = [], status = 'ready' }) => {
           <span>{copy.emptyCategoryBody}</span>
         </div>
       ) : view === 'infinite' ? (
-        <InfiniteWorks key={activeCategory} works={visibleProjects} copy={copy} language={language} />
+        <InfiniteWorks key={resourceType+':'+activeCategory} works={visibleProjects} copy={copy} language={language} />
       ) : (
         <div className="explore-grid">
           {visibleProjects.map((work) => (

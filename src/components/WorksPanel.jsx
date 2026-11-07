@@ -39,6 +39,8 @@ const STATUS_KEYS = {
 
 const WorksPanel = ({ authToken, copy, language, visitorUser }) => {
   const [createType,setCreateType]=useState('model'),[uploadProgress,setUploadProgress]=useState('')
+  const [typeFilter,setTypeFilter]=useState(''),[statusFilter,setStatusFilter]=useState(''),[page,setPage]=useState(1),[pagination,setPagination]=useState({}),[loadedKey,setLoadedKey]=useState('')
+  const listKey=JSON.stringify([authToken,typeFilter,statusFilter,page])
   const labels=resourceLabels(copy)
   const [works, setWorks] = useState(null)
   const [openId, setOpenId] = useState('')
@@ -54,20 +56,20 @@ const WorksPanel = ({ authToken, copy, language, visitorUser }) => {
   useEffect(() => {
     let isMounted = true
 
-    getMyWorks(authToken)
+    getMyWorks(authToken,{page,resourceType:typeFilter,status:statusFilter})
       .then((payload) => {
-        if (isMounted) setWorks(payload.works || [])
+        if (isMounted){setWorks(payload.works || []);setPagination(payload.pagination || {});setLoadedKey(listKey)}
       })
       .catch((error) => {
         if (!isMounted) return
-        setWorks([])
+        setWorks([]);setLoadedKey(listKey)
         setMessage(error.code ? getApiErrorMessage(error, copy) : error.message)
       })
 
     return () => {
       isMounted = false
     }
-  }, [authToken, copy, reloadNonce])
+  }, [authToken, copy, reloadNonce, listKey, page, typeFilter, statusFilter])
 
   const run = useCallback(
     async (task, successMessage = '') => {
@@ -137,7 +139,7 @@ const WorksPanel = ({ authToken, copy, language, visitorUser }) => {
     return (
       <div className="works-editor">
         <div className="works-fields">
-          <label><span>{copy.resourceType}</span><select aria-label={copy.resourceType} disabled={busy} value={draft.resourceType || 'model'} onChange={e=>setDraft({...draft,resourceType:e.target.value})}>{resourceTypes.map(t=><option value={t} key={t}>{labels[t]}</option>)}</select></label>
+          <label><span>{copy.resourceType}</span><select aria-label={copy.resourceType} disabled={busy} value={draft.resourceType || 'model'} onChange={e=>setDraft({...draft,resourceType:e.target.value,assetCategory:e.target.value==='model'?draft.assetCategory:''})}>{resourceTypes.map(t=><option value={t} key={t}>{labels[t]}</option>)}</select></label>
           <label>
             <span>{copy.worksFieldTitle}</span>
             <input
@@ -154,7 +156,7 @@ const WorksPanel = ({ authToken, copy, language, visitorUser }) => {
               value={draft.summary}
             />
           </label>
-          <label>
+          {(!draft.resourceType || draft.resourceType==='model') && <label>
             <span>{copy.worksFieldCategory}</span>
             <select
               onChange={(event) => setDraft({ ...draft, assetCategory: event.target.value })}
@@ -167,7 +169,7 @@ const WorksPanel = ({ authToken, copy, language, visitorUser }) => {
                 </option>
               ))}
             </select>
-          </label>
+          </label>}
           <label>
             <span>{copy.worksFieldPrice}</span>
             {/* Entered in whole currency, stored in integer cents. Floating
@@ -258,7 +260,7 @@ const WorksPanel = ({ authToken, copy, language, visitorUser }) => {
                     const files=Array.from(event.target.files || [])
                     if(!files.length)return
                     run(async()=>{
-                      if(draft.resourceType!==(work.resourceType || 'model'))await updateWork(work.id,{resourceType:draft.resourceType},authToken)
+                      if(draft.resourceType!==(work.resourceType || 'model'))await updateWork(work.id,{resourceType:draft.resourceType,assetCategory:draft.resourceType==='model'?draft.assetCategory:''},authToken)
                       try{for(const [i,file] of files.entries()){
                         setUploadProgress((i+1)+'/'+files.length+' · '+file.name)
                         const uploaded=await uploadWorkAsset(work.id,kind.key,file,authToken)
@@ -295,6 +297,7 @@ const WorksPanel = ({ authToken, copy, language, visitorUser }) => {
           className="primary-action"
           disabled={busy}
           onClick={async () => {
+            setTypeFilter('');setStatusFilter('');setPage(1)
             const created = await run(() =>
               createWork({ title: copy.worksNew,resourceType:createType }, authToken),
             )
@@ -306,12 +309,18 @@ const WorksPanel = ({ authToken, copy, language, visitorUser }) => {
         </button>
       </div>
 
+      <p className="resource-upload-hint">{copy.resourceTypeHint}</p>
+      <div className="resource-list-controls">
+        <label>{copy.resourceFilterType}<select aria-label={copy.resourceFilterType} value={typeFilter} onChange={e=>{setTypeFilter(e.target.value);setPage(1);setOpenId('')}}><option value="">{copy.resourceAll}</option>{resourceTypes.map(type=><option key={type} value={type}>{labels[type]}</option>)}</select></label>
+        <label>{copy.resourceFilterStatus}<select aria-label={copy.resourceFilterStatus} value={statusFilter} onChange={e=>{setStatusFilter(e.target.value);setPage(1);setOpenId('')}}><option value="">{copy.resourceAllStatuses}</option>{Object.entries(STATUS_KEYS).map(([value,label])=><option key={value} value={value}>{copy[label]}</option>)}</select></label>
+      </div>
+      {loadedKey!==listKey && <p role="status">{copy.loading}</p>}
       {message && (
         <p className={message === copy.worksSaved ? 'text-neutral-400' : 'text-coral'}>{message}</p>
       )}
-      {works.length === 0 && <p className="text-neutral-400">{copy.worksEmpty}</p>}
+      {loadedKey===listKey && works.length === 0 && <p className="text-neutral-400">{copy.worksEmpty}</p>}
 
-      {works.map((work) => (
+      {(loadedKey===listKey?works:[]).map((work) => (
         <article className="works-row" key={work.id}>
           <div className="works-row-head">
             {/* The thumbnail is not decoration. A work with no preview shows as
@@ -327,7 +336,7 @@ const WorksPanel = ({ authToken, copy, language, visitorUser }) => {
             </span>
             <div>
               <div className="admin-row-title">
-                <strong>{work.title}</strong>
+                <strong>{work.title}</strong><span className="resource-type-badge">{labels[work.resourceType || 'model']}</span>
                 <span className={`status-pill status-${work.status}`}>
                   {copy[STATUS_KEYS[work.status]] || work.status}
                 </span>
@@ -390,6 +399,7 @@ const WorksPanel = ({ authToken, copy, language, visitorUser }) => {
           {openId === work.id && renderEditor(work)}
         </article>
       ))}
+      {(pagination.hasPrevious || pagination.hasNext) && <nav className="visitor-pagination"><button type="button" disabled={!pagination.hasPrevious} onClick={()=>{setPage(p=>p-1);setOpenId('')}}>{copy.explorePrevious}</button><span>{page}</span><button type="button" disabled={!pagination.hasNext} onClick={()=>{setPage(p=>p+1);setOpenId('')}}>{copy.exploreNext}</button></nav>}
     </section>
   )
 }

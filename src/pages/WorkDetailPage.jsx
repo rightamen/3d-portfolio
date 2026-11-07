@@ -1,6 +1,6 @@
 import ResourceMedia from '../components/ResourceMedia'
 import AssetDownload from '../components/AssetDownload'
-import {resourceLabels} from '../lib/resources'
+import {resourceLabels,assetKindLabels} from '../lib/resources'
 import SocialActions from '../components/SocialActions'
 import ReportButton from '../components/ReportButton'
 import FavoriteButton from '../components/FavoriteButton'
@@ -267,8 +267,8 @@ const WorkDetailPage = ({ authToken, copy, language, visitorUser }) => {
               <ul>
                 {work.assets.map((asset) => (
                   <li key={asset.id}>
-                    <span className="work-file-kind">{asset.kind==='source'?copy.resourceOriginal:asset.kind}</span>
-                    <span className="work-file-name">{asset.fileName}</span>
+                    <span className="work-file-kind">{assetKindLabels(copy)[asset.kind] || copy.resourceFiles}</span>
+                    <span className="work-file-name" title={asset.fileName}>{asset.fileName}</span>
                     <span className="work-file-size">{formatBytes(asset.bytes)}</span>
                     {/* fileUrl is null for a protected asset unless the viewer
                         owns it. Rendering the label instead of a dead link is

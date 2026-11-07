@@ -115,3 +115,67 @@ test('a real creator uploads a video resource and a separate visitor plays its p
 
  }finally{for(const context of contexts)await context.close();await browser.close()}
 })
+
+test('private creator and admin lists filter types and status before pagination without crossing account ownership',async()=>{
+ const video=await create('video'),other=(await api('POST','/api/account/works',b.token,{title:'Other creator',resourceType:'video'})).data.data.work
+ expect((await upload('video','sample.webm',await bytes('sample.webm'),a.token,video.id)).status).toBe(201)
+ expect((await api('PATCH','/api/account/works/'+video.id+'/status',a.token,{status:'review'})).status).toBe(200)
+ const own=await api('GET','/api/account/works?resourceType=video&status=review&limit=1',a.token)
+ expect(own.status).toBe(200);expect(own.data.data.works.map(w=>w.id)).toEqual([video.id]);expect(own.data.pagination.total).toBe(1)
+ const adminList=await api('GET','/api/admin/works?resourceType=video&status=review&q='+encodeURIComponent(video.title)+'&limit=1',admin)
+ expect(adminList.data.data.works.map(w=>w.id)).toEqual([video.id]);expect(adminList.data.pagination.total).toBe(1)
+ expect(adminList.data.data.works.some(w=>w.id===other.id)).toBe(false)
+ for(const url of ['/api/account/works?resourceType=bad','/api/admin/works?status=bad'])expect((await api('GET',url,url.includes('/admin/')?admin:a.token)).status).toBe(400)
+ expect((await api('GET','/api/admin/works?resourceType=video',a.token)).status).toBe(401)
+})
+test('admin classification and moderation bind the reviewed version and retain protected files',async()=>{
+ const original=await upload('source','asset.txt',Buffer.from('Keep this original'));const current=(await api('GET','/api/works/'+a.handle+'/'+work.slug,a.token)).data.data.work
+ for(const token of [undefined,a.token])expect((await api('GET','/api/admin/works/'+work.id,token)).status).toBe(401)
+ expect((await api('GET','/api/admin/works/'+work.id,admin)).data.data.work.assets[0].fileUrl).toBe(original.data.asset.fileUrl)
+ const path='/api/admin/works/'+work.id+'/classification',fields={resourceType:'video',assetCategory:'',version:current.contentVersion}
+ expect((await api('PATCH',path,a.token,fields)).status).toBe(401)
+ expect((await api('PATCH',path,admin,{...fields,assetCategory:'unknown'})).status).toBe(400)
+ await pool.query("UPDATE works SET curation_score=95,exhibition_recommended=true WHERE id=$1",[work.id])
+ const changed=await api('PATCH',path,admin,fields);expect(changed.status).toBe(200);expect(changed.data.data.work.resourceType).toBe('video');expect(changed.data.data.work.contentVersion).toBe(current.contentVersion+1)
+ expect(changed.data.data.work.curation.recommended).toBe(false)
+ expect(changed.data.data.work.assets.map(a=>a.id)).toContain(original.data.asset.id)
+ expect((await api('PATCH',path,admin,fields)).status).toBe(409)
+ const statusPath='/api/admin/works/'+work.id+'/status'
+ expect((await api('PATCH',statusPath,admin,{status:'published',version:current.contentVersion})).status).toBe(409)
+ expect((await api('PATCH',statusPath,admin,{status:'published',version:changed.data.data.work.contentVersion})).status).toBe(200)
+ expect((await fetch(base+original.data.asset.fileUrl)).status).toBe(404)
+})
+test('a real admin corrects a video classification, previews it and publishes it for the creator and visitor',async({playwright},info)=>{
+ await upload('video','sample.webm',await bytes('sample.webm'))
+ await upload('source','original.webm',await bytes('sample.webm'))
+ expect((await api('PATCH','/api/account/works/'+work.id+'/status',a.token,{status:'review'})).status).toBe(200)
+ const browser=await playwright.chromium.launch(),errors=[]
+ try{
+  const context=await browser.newContext({viewport:{width:1440,height:1000},reducedMotion:'reduce'})
+  await context.addInitScript(({admin})=>{localStorage.setItem('mrright-admin-token',admin);localStorage.setItem('mrright-admin-language','en');localStorage.setItem('mrright-language','en')},{admin})
+  const page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));await page.goto(base+'/admin')
+  await page.locator('.admin-sidebar').getByRole('button',{name:'Resource review',exact:true}).click()
+  let card=page.locator('.admin-resource-card').filter({hasText:work.title})
+  await card.locator('summary').click();await card.getByRole('combobox',{name:'Resource type',exact:true}).selectOption('video')
+  await card.getByRole('button',{name:'Save classification',exact:true}).click()
+  await expect(page.getByRole('status').filter({hasText:'Changes saved'})).toBeVisible()
+  card=page.locator('.admin-resource-card').filter({hasText:work.title});await card.getByRole('button',{name:'Inspect files and previews',exact:true}).click()
+  await expect(card.locator('video')).toBeVisible();await card.locator('video').evaluate(async node=>{await node.play();node.pause()})
+  await expect(card.locator('.resource-asset-list li')).toHaveCount(2)
+  await page.screenshot({path:info.outputPath('real-admin-resource-review.png'),fullPage:true,animations:'disabled'})
+  await card.getByRole('button',{name:'Publish',exact:true}).click();await expect(card).toHaveCount(0)
+  const published=(await api('GET','/api/works/'+a.handle+'/'+work.slug)).data.data.work;expect(published).toMatchObject({resourceType:'video',status:'published'})
+  await page.getByRole('combobox',{name:'Filter work status',exact:true}).selectOption('')
+  await page.getByRole('combobox',{name:'Filter resource type',exact:true}).selectOption('video')
+  await page.setViewportSize({width:390,height:844});await expect(page.locator('.admin-resource-card').filter({hasText:work.title})).toBeVisible()
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true)
+  await page.screenshot({path:info.outputPath('real-admin-resource-phone.png'),fullPage:true,animations:'disabled'})
+  const owner=await browser.newContext({viewport:{width:1024,height:900}})
+  await owner.addInitScript(({token})=>{localStorage.setItem('mrright-visitor-token',token);localStorage.setItem('mrright-language','en')},{token:a.token})
+  const own=await owner.newPage();await own.goto(base+'/account/works');await own.getByRole('combobox',{name:'Filter resource type',exact:true}).selectOption('video');await own.getByRole('combobox',{name:'Filter work status',exact:true}).selectOption('published')
+  await expect(own.locator('.works-row').filter({hasText:work.title})).toBeVisible()
+  await expect(own.locator('.works-row').filter({hasText:work.title}).locator('.resource-type-badge')).toHaveText('Video & animation')
+  const visitor=await browser.newPage();await visitor.goto(base+'/w/'+a.handle+'/'+work.slug);await expect(visitor.locator('video')).toBeVisible()
+  expect(errors).toEqual([])
+ }finally{await browser.close()}
+})

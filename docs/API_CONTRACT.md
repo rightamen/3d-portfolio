@@ -12,6 +12,12 @@ authentication; the Web client retries failed checks on reconnect.
 
 This document defines the stable API shape that the Web client and future C++ native clients should consume. It is a target contract, not a statement that every current endpoint already follows it. Current drift and follow-up migration work are listed below.
 
+## Resource review extension (2026-11-07)
+
+Private creator and administrator work lists now accept resourceType/status filters before pagination; the administrator list also accepts q. Unknown type/status returns VALIDATION_ERROR/400. GET /api/admin/works/:id requires administrator auth and returns private/no-store detail for reviewing unpublished content.
+PATCH /api/admin/works/:id/classification accepts resourceType, assetCategory and an integer content version. Successful classification invalidates the previous exhibition review; a stale version returns409. Administrator status updates accept an optional version with the same stale guard; legacy callers may omit it.
+See [RESOURCE_REVIEW_2026-11-07.md](RESOURCE_REVIEW_2026-11-07.md) for UI entry points and layout coverage.
+
 ## Resource publishing extension (2026-11-07)
 
 Works now expose resourceType (model/image/video/audio/material/document/other) in full and summary payloads. Create/PATCH accept this enum; old rows default to model. GET /api/works accepts optional resourceType and rejects unknown values with VALIDATION_ERROR. /api/v1 keeps the strict envelope.

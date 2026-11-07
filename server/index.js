@@ -2419,9 +2419,17 @@ app.put('/api/works/:handle/:slug/favorite', requireVisitor, requireWorksStore, 
   return sendData(response,{saved:true})
 })
 
+const readPrivateWorkFilters=(request)=>{
+ const resourceType=String(request.query.resourceType || ''),status=String(request.query.status || '')
+ return {resourceType,status,invalid:resourceType && !RESOURCE_TYPES.includes(resourceType) || status && !WORK_STATUSES.has(status)}
+}
+
 app.get('/api/account/works', requireVisitor, requireWorksStore, async (request, response) => {
   const { limit, offset, page } = normalizePagination(request.query, 50, 100)
-  const result = await worksStore.listWorksByCreator(request.visitorUser.id, { limit, offset })
+  const filters=readPrivateWorkFilters(request)
+  if(filters.invalid)return sendError(response,API_ERROR_CODES.VALIDATION_ERROR,'Unknown resource type or status.',400)
+  response.set('Cache-Control','private, no-store')
+  const result = await worksStore.listWorksByCreator(request.visitorUser.id, { limit, offset, ...filters })
   const payload = toPaginatedPayload(result, page, limit)
 
   return sendPage(response, { works: payload.items }, payload.pagination)
@@ -2528,11 +2536,11 @@ app.patch(
     }
 
     // Submitting for review is a promise that there is something to review.
-    if (status === 'review' && !existing.image && !existing.modelUrl) {
+    if (status === 'review' && !existing.image && !existing.modelUrl && !((existing.resourceType || 'model')!=='model' && existing.assets?.length)) {
       return sendError(
         response,
         API_ERROR_CODES.VALIDATION_ERROR,
-        'Add a preview image or a model before submitting for review.',
+        (existing.resourceType || 'model')==='model'?'Add a preview image or a model before submitting for review.':'Add a resource file or cover before submitting for review.',
         400,
       )
     }
@@ -2960,15 +2968,23 @@ app.post('/api/work-comments/:id/like', requireVisitor, requireWorksStore, async
 
 app.get('/api/admin/works', requireAdmin, requireWorksStore, async (request, response) => {
   const { limit, offset, page } = normalizePagination(request.query, 20, 100)
-  const status = String(request.query.status ?? '').trim()
+  const filters=readPrivateWorkFilters(request)
+  if(filters.invalid)return sendError(response,API_ERROR_CODES.VALIDATION_ERROR,'Unknown resource type or status.',400)
+  response.set('Cache-Control','private, no-store')
   const result = await worksStore.listWorksForAdmin({
     limit,
     offset,
-    status: WORK_STATUSES.has(status) ? status : '',
+    ...filters, query:String(request.query.q || '').trim().slice(0,120),
   })
   const payload = toPaginatedPayload(result, page, limit)
 
   return sendPage(response, { works: payload.items }, payload.pagination)
+})
+
+app.get('/api/admin/works/:id',requireAdmin,requireWorksStore,async(request,response)=>{
+ const work=await worksStore.getWorkById(request.params.id,{includeProtected:true})
+ if(!work)return sendError(response,API_ERROR_CODES.WORK_NOT_FOUND,'Work not found.',404)
+ response.set('Cache-Control','private, no-store');return sendData(response,{work})
 })
 
 app.patch('/api/admin/works/:id/curation', requireAdmin, requireWorksStore, async (request, response) => {
@@ -2984,13 +3000,28 @@ app.patch('/api/admin/works/:id/curation', requireAdmin, requireWorksStore, asyn
   return sendData(response, { work })
 })
 
+app.patch('/api/admin/works/:id/classification',requireAdmin,requireWorksStore,async(request,response)=>{
+ const {resourceType,assetCategory='',version}=request.body || {}
+ const categories=['','next-gen-prop','next-gen-character','next-gen-scene','hand-painted-character','hand-painted-scene','generic']
+ if(!RESOURCE_TYPES.includes(resourceType) || !categories.includes(assetCategory) || !Number.isInteger(version) || version<1)
+  return sendError(response,API_ERROR_CODES.VALIDATION_ERROR,'Invalid classification or content version.',400)
+ const existing=await worksStore.getWorkById(request.params.id)
+ if(!existing)return sendError(response,API_ERROR_CODES.WORK_NOT_FOUND,'Work not found.',404)
+ const work=await worksStore.setWorkClassification(request.params.id,{resourceType,assetCategory:resourceType==='model'?assetCategory:'',version})
+ if(!work)return sendError(response,API_ERROR_CODES.VALIDATION_ERROR,'Work changed. Refresh before reviewing again.',409)
+ response.set('Cache-Control','private, no-store');return sendData(response,{work})
+})
+
 app.patch('/api/admin/works/:id/status', requireAdmin, requireWorksStore, async (request, response) => {
   const status = String(request.body?.status ?? '').trim()
   if (!WORK_STATUSES.has(status)) {
     return sendError(response, API_ERROR_CODES.VALIDATION_ERROR, 'Unknown work status.', 400)
   }
 
-  const work = await worksStore.setWorkStatus(request.params.id, status)
+  const version=request.body?.version
+  if(version!==undefined && (!Number.isInteger(version) || version<1))return sendError(response,API_ERROR_CODES.VALIDATION_ERROR,'Invalid content version.',400)
+  const work = await worksStore.setWorkStatus(request.params.id, status, version ?? null)
+  if(!work && version!==undefined && await worksStore.getWorkById(request.params.id))return sendError(response,API_ERROR_CODES.VALIDATION_ERROR,'Work changed. Refresh before reviewing again.',409)
   if (!work) {
     return sendError(response, API_ERROR_CODES.WORK_NOT_FOUND, 'Work not found.', 404)
   }

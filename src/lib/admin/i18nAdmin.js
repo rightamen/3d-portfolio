@@ -10,6 +10,7 @@
 // fallback for any key a language is missing, which is why `en` must stay
 // complete.
 
+import {resourceAdminCopy} from './resourceAdminCopy'
 import { createContext, useContext } from 'react'
 import { defaultLanguage, languages } from '../i18n'
 
@@ -19,6 +20,7 @@ const adminLanguageKey = 'mrright-admin-language'
 const siteLanguageKey = 'mrright-language'
 
 const zh = {
+  ...resourceAdminCopy.zh,
   'section.reports': '举报处理',
   'section.curation': '精选展管理',
   'curation.title': '评分与展览推荐',
@@ -599,6 +601,7 @@ const zh = {
 }
 
 const en = {
+  ...resourceAdminCopy.en,
   'section.reports': 'Reports',
   'section.curation': 'Curated exhibition',
   'curation.title': 'Scores and exhibition recommendations',
@@ -1176,6 +1179,7 @@ const en = {
 }
 
 const ja = {
+  ...resourceAdminCopy.ja,
   'section.reports': '通報管理',
   'section.curation': '厳選展示の管理',
   'curation.title': '評価と展示推薦',

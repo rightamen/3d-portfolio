@@ -21,7 +21,14 @@ export const resourceCopy={
     "resourcePrevious": "上一张预览",
     "resourceNext": "下一张预览",
     "resourceUploading": "正在上传",
-    "resourceFiles": "资源文件"
+    "resourceFiles": "资源文件",
+    "resourceSubtype": "3D 细分类",
+    "resourceFilterType": "筛选资源类型",
+    "resourceFilterStatus": "筛选作品状态",
+    "resourceAllStatuses": "全部状态",
+    "resourceTexture": "贴图",
+    "resourceTypeHint": "先按资源类型分类；3D 模型可进一步选择道具、角色或场景。",
+    "resourceAllModels": "全部模型"
   },
   "en": {
     "resourceType": "Resource type",
@@ -45,7 +52,14 @@ export const resourceCopy={
     "resourcePrevious": "Previous preview",
     "resourceNext": "Next preview",
     "resourceUploading": "Uploading",
-    "resourceFiles": "Resource files"
+    "resourceFiles": "Resource files",
+    "resourceSubtype": "3D category",
+    "resourceFilterType": "Filter resource type",
+    "resourceFilterStatus": "Filter work status",
+    "resourceAllStatuses": "All statuses",
+    "resourceTexture": "Texture",
+    "resourceTypeHint": "Choose a resource type first. 3D models can also have a prop, character or scene category.",
+    "resourceAllModels": "All models"
   },
   "ja": {
     "resourceType": "リソースの種類",
@@ -69,6 +83,13 @@ export const resourceCopy={
     "resourcePrevious": "前のプレビュー",
     "resourceNext": "次のプレビュー",
     "resourceUploading": "アップロード中",
-    "resourceFiles": "リソースファイル"
+    "resourceFiles": "リソースファイル",
+    "resourceSubtype": "3D カテゴリー",
+    "resourceFilterType": "リソース種類で絞り込む",
+    "resourceFilterStatus": "公開状態で絞り込む",
+    "resourceAllStatuses": "すべての状態",
+    "resourceTexture": "テクスチャ",
+    "resourceTypeHint": "まずリソース種類を選択します。3Dモデルには小物・キャラクター・背景の詳細分類も設定できます。",
+    "resourceAllModels": "すべてのモデル"
   }
 }
