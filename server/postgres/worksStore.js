@@ -1,3 +1,4 @@
+import { createCommunicationStore } from './communicationStore.js'
 import { createSocialStore } from './socialStore.js'
 import { createCollectionsStore } from './collectionsStore.js'
 import { createReportsStore } from './reportsStore.js'
@@ -68,6 +69,7 @@ export const createWorksStore = ({ pool }) => {
   const worksStore = {
     ...createCreatorStore({ pool }),
     ...createSocialStore({pool}),
+    ...createCommunicationStore({pool}),
     ...createCollectionsStore({pool}),
     ...createReportsStore({pool}),
     // Public browse. Published only, newest first. The filters are all

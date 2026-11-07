@@ -1,3 +1,4 @@
+import CommunicationNav from '../components/CommunicationNav'
 import { useState } from 'react'
 import { Link, NavLink, useNavigate } from 'react-router-dom'
 
@@ -90,6 +91,7 @@ const Navbar = ({
         </form>
 
         <div className="topbar-actions">
+          <CommunicationNav key={visitorToken} authToken={visitorToken} copy={copy}/>
           {/* Publishing is the thing this site is for, so it is an action in
               the bar rather than something to find in a menu. */}
           <Link className="topbar-publish" to={visitorToken ? '/account/works' : '/login?mode=login'}>
@@ -129,6 +131,9 @@ const Navbar = ({
             </label>
             <input id="topbar-q-mobile" name="q" placeholder={copy.navSearch} type="search" />
           </form>
+          <Link onClick={()=>setOpen(false)} to="/messages">{copy.commMessages}</Link>
+          <Link onClick={()=>setOpen(false)} to="/following">{copy.commFollowing}</Link>
+          <Link onClick={()=>setOpen(false)} to="/settings">{copy.systemSettings}</Link>
           {links.map((item) => (
             <Link key={item.to} onClick={() => setOpen(false)} to={item.to}>
               {item.label}

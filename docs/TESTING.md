@@ -353,3 +353,14 @@ entries pass. All 196 source files match, 13 uploads and configuration hashes
 are unchanged, and all 14 business-table fingerprints match both after deploy
 and after UI verification. Temporary visitor/admin sessions were revoked and
 checked as unauthorized; credential files removed. No business data was written.
+
+2026-11-07 private messages and following feed: build/lint, 365 unit,
+254 complete disposable-DB and 116 complete browser checks pass, with old-schema
+upgrade/idempotence and both existing notification suites. Added 13 DB, 14 UI,
+and 3 validation checks. A real two-context journey sends a request, accepts,
+exchanges messages, checks read receipts, follows a publication and reads it.
+Isolation, canonical pairs, quotas, sequence/cursor, idempotent retries,
+blocking, visibility, feed read races, three-language mobile, response loss,
+read-ack retry, offline draft retention and late old-account replies are covered.
+All write journeys use disposable data; production verification must use only
+read requests and canceled forms. See COMMUNICATION_2026-11-07.md.

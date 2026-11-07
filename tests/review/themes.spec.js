@@ -39,6 +39,7 @@ const setup = async (page, { signedIn = true, language = 'en', failSave = false,
     if(path.endsWith('/relationship'))return respond(route,{self:true,following:false,friendship:null,followers:0,followingCount:0})
     if (path.endsWith('/favorite')) return respond(route, { saved: false })
     if (path.endsWith('/rating')) return respond(route, { ratings: { count: 0, average: 0, recommendations: 0 }, mine: null, contentVersion: 1 })
+    if(path==='/api/account/communication/summary')return respond(route,{messagesUnread:0,requestsUnread:0,feedUnread:0})
     throw new Error('Unexpected request: ' + path)
   })
   return state

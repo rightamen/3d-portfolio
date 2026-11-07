@@ -20,7 +20,7 @@
 // Read-only with respect to anything real: it initdb's a throwaway cluster in
 // a temp directory, destroys it at the end, and never reads DATABASE_URL.
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import process from 'node:process'
@@ -66,6 +66,9 @@ const expected = {
     visitor_users: ['creator_enabled_at', 'payout_state', 'stripe_account_id', 'theme'],
     work_assets: ['checksum', 'file_name', 'file_size', 'file_type', 'file_url', 'kind', 'sort_order', 'work_id'],
     work_favorites: ['work_id', 'user_id', 'created_at'],
+    direct_conversations: ['user_low','user_high','requester_id','status','blocked_low','blocked_high','last_seq','read_low','read_high'],
+    direct_messages: ['conversation_id','seq','sender_id','client_id','body'],
+    following_feed_reads: ['user_id','kind','item_id','read_at'],
     user_follows: ['follower_id','followed_id'],
     user_friendships: ['user_low','user_high','requester_id','status'],
     favorite_collections: ['user_id','name','description'],
@@ -93,6 +96,7 @@ const expected = {
     ],
   },
   indexes: [
+    'direct_conversations_low_updated_idx','direct_conversations_high_updated_idx','direct_messages_thread_seq_idx','direct_messages_sender_time_idx',
     'user_follows_received_idx','user_friendships_low_idx','user_friendships_high_idx',
     'favorite_collections_name_idx','favorite_collection_items_favorite_idx','user_reports_open_unique_idx','user_reports_queue_idx',
     'orders_payment_intent_unique_idx',
@@ -103,6 +107,7 @@ const expected = {
     'works_exhibition_idx', 'work_ratings_version_idx', 'work_favorites_user_created_idx',
   ],
   tables: [
+    'direct_conversations','direct_messages','following_feed_reads',
     'user_follows','user_friendships','favorite_collections','favorite_collection_items','user_reports',
     'orders',
     'payouts',
@@ -140,8 +145,23 @@ try {
 
   const identical = baseSource === workingSource
 
-  const basePath = path.join(tempDir, 'schema-base.mjs')
-  writeFileSync(basePath, baseSource)
+  // Historical schema modules can import additive schema helpers. Materialise
+  // those helpers from the same Git revision so the upgrade starts at that revision.
+  const visited=new Set()
+  const materialise=file=>{
+    if(visited.has(file))return
+    visited.add(file)
+    const source=gitShow(baseRef,file),target=path.join(tempDir,'base',file)
+    mkdirSync(path.dirname(target),{recursive:true});writeFileSync(target,source)
+    for(const match of source.matchAll(/from\s+['"](\.[^'"]+)['"]/g)){
+      const child=path.posix.normalize(path.posix.join(path.posix.dirname(file),match[1]))
+      if(!child.startsWith('server/postgres/'))throw new Error('Unexpected schema dependency')
+      materialise(child)
+    }
+  }
+  materialise(SCHEMA_PATH)
+  writeFileSync(path.join(tempDir,'base','package.json'),JSON.stringify({type:'module'}))
+  const basePath=path.join(tempDir,'base',SCHEMA_PATH)
 
   cluster = await startDisposablePostgres({ databaseName: TEST_DATABASE_NAME, log })
 

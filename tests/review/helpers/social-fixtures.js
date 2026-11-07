@@ -34,6 +34,7 @@ const setup=async(page,{signedIn=true,language='en',handlers={}}={})=>{
     if(path.endsWith('/likes')) return respond(route,{likeCount:0,liked:false})
     if(path.endsWith('/comments')) return respond(route,{comments:[]})
     if(path.endsWith('/rating')) return respond(route,{ratings:work.ratings,mine:null,contentVersion:1})
+    if(path==='/api/account/communication/summary')return respond(route,{messagesUnread:0,requestsUnread:0,feedUnread:0})
     throw new Error('Unexpected API route '+path)
   })
   return calls

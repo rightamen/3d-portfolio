@@ -1,3 +1,4 @@
+import { ensureCommunicationSchema } from './communicationSchema.js'
 import { ensureSocialSchema } from './socialSchema.js'
 // Every CREATE TABLE / ADD COLUMN the service needs, run once at startup.
 // Additive only -- `IF NOT EXISTS` throughout -- so deploying a newer build
@@ -899,5 +900,6 @@ export const ensureSchema = async (pool) => {
   `)
 
   await ensureSocialSchema(pool)
+  await ensureCommunicationSchema(pool)
 
 }

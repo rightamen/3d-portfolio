@@ -95,6 +95,8 @@ const AccountMenuBar = ({ copy, onSignOut, onRetrySession, visitorUser, visitorL
           <hr />
 
           <Link onClick={close} role="menuitem" to="/account/dashboard">{copy.accountNavDashboard}</Link>
+          <Link onClick={close} role="menuitem" to="/messages">{copy.commMessages}</Link>
+          <Link onClick={close} role="menuitem" to="/following">{copy.commFollowing}</Link>
           <Link onClick={close} role="menuitem" to="/account/connections">{copy.socialConnections}</Link>
           <Link onClick={close} role="menuitem" to="/creators">{copy.socialFind}</Link>
           <Link onClick={close} role="menuitem" to="/account/favorites">{copy.accountNavFavorites}</Link>

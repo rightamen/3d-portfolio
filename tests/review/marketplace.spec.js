@@ -50,6 +50,7 @@ const setup = async (page, { signedIn = false, remembered = false, handlers = {}
     if (path === '/api/community/posts') return respond(route, { posts: [] })
     if (path === '/api/projects') return respond(route, { projects: [{ ...work, title: 'Misleading legacy work' }] })
     if (path === '/api/experience') return respond(route, { experience: [] })
+    if(path==='/api/account/communication/summary')return respond(route,{messagesUnread:0,requestsUnread:0,feedUnread:0})
     throw new Error(`Unexpected API request: ${path}`)
   })
   return requests

@@ -7,7 +7,7 @@ const SocialActions=({handle,authToken,copy,isSelf=false})=>{
  const path='/api/users/'+encodeURIComponent(handle),resource=useSocialResource(authToken && !isSelf?path+'/relationship':null,authToken),[confirm,setConfirm]=useState(false)
  const state=resource.data,friend=state?.friendship
  const run=(suffix,body,method='PUT')=>resource.mutate(()=>writePrivateSocial(suffix.startsWith('/api/')?suffix:path+suffix,authToken,method,body))
- if(!authToken)return <div className="social-actions social-anonymous"><Link className="primary-action" to="/login?mode=login">{copy.socialFollow}</Link><Link className="secondary-action" to="/login?mode=login">{copy.socialAddFriend}</Link><small>{copy.socialLogin}</small></div>
+ if(!authToken)return <div className="social-actions social-anonymous"><Link className="primary-action" to="/login?mode=login">{copy.socialFollow}</Link><Link className="secondary-action" to="/login?mode=login">{copy.socialAddFriend}</Link><Link className="secondary-action" to={"/messages?to="+encodeURIComponent(handle)}>{copy.dmSend}</Link><small>{copy.socialLogin}</small></div>
  if(isSelf || state?.self)return <div className="social-self-entry"><small>{copy.socialSelf}</small><Link className="secondary-action" to="/creators">{copy.socialFind} ↗</Link></div>
  return <div className="social-actions">
   {resource.error?<div role="alert"><span>{copy.socialError}</span><button type="button" className="secondary-action" onClick={resource.refresh}>{copy.socialRetry}</button></div>:<>

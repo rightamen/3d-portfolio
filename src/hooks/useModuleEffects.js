@@ -2,6 +2,8 @@ import { readInterfaceMotion,readInterfaceEffects } from './useInterfacePreferen
 import { useEffect } from 'react'
 
 const selectors = {
+  messages: '.communication-heading',
+  following: '.communication-heading, .following-card, .following-aside',
   creators: '.creators-heading, .creator-directory-card',
   settings: '.interface-settings-header, .interface-setting-group, .interface-live-preview',
   admin: '.social-panel-heading, .social-report-card, .admin-page-head, .admin-panel, .admin-galaxy-head, .admin-galaxy-readout, .admin-panel-head, .admin-row, .interface-settings-header, .interface-setting-group, .interface-live-preview',
@@ -12,7 +14,7 @@ const selectors = {
   account: '.social-panel-heading, .social-person, .social-report-card, .collection-library, .collection-folder, .workspace-header, .creator-console-heading, .creator-console-metric, .creator-console-panel, .creator-saved-item, .creator-console-toolbar, .interface-settings-header, .interface-setting-group, .interface-live-preview, .account-state-card, .works-panel, .seller-panel, .account-studio-hero h1, .account-studio-hero p, .account-center-card, .account-section-intro, .account-channel-preview, .theme-preset',
   auth: '.admin-login-head, .admin-login > p, .account-state-card, .auth-brand-panel h1, .auth-brand-panel p, .auth-feature-row',
 }
-const hoverSelector = '.creator-directory-card, .social-person, .social-report-card, .collection-folder, .creator-console-metric, .creator-console-panel, .creator-saved-item, .interface-setting-group, .admin-panel, .work-tile-media, .community-post-card, .account-center-card, .publish-cta'
+const hoverSelector = '.following-card, .creator-directory-card, .social-person, .social-report-card, .collection-folder, .creator-console-metric, .creator-console-panel, .creator-saved-item, .interface-setting-group, .admin-panel, .work-tile-media, .community-post-card, .account-center-card, .publish-cta'
 
 // This root follows the router, including late lazy/data content. It never
 // transforms a canvas, the infinite wall, a modal or a transactional form.
@@ -42,7 +44,7 @@ export const useModuleEffects = (rootRef, kind, routeKey) => {
       if (!animate || isReduced() || document.hidden || typeof node.animate !== 'function') return
       // Cards fade in without a transform, leaving hover and pointer geometry
       // intact. Only editorial text moves a few pixels.
-      const card = node.matches('.creator-directory-card, .social-person, .social-report-card, .collection-folder, .collection-library, .work-tile, .community-post-card, .account-center-card, .community-card, .theme-preset, .work-comment-body, .creator-console-metric, .creator-console-panel, .creator-saved-item, .interface-setting-group, .admin-panel, .admin-row')
+      const card = node.matches('.following-card, .following-aside, .creator-directory-card, .social-person, .social-report-card, .collection-folder, .collection-library, .work-tile, .community-post-card, .account-center-card, .community-card, .theme-preset, .work-comment-body, .creator-console-metric, .creator-console-panel, .creator-saved-item, .interface-setting-group, .admin-panel, .admin-row')
       const animation = node.animate([
         { opacity: .35, transform: card ? 'none' : 'translate3d(0,' + (fine.matches ? 14 : 7) + 'px,0)' },
         { opacity: 1, transform: 'none' },

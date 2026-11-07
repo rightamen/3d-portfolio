@@ -1,3 +1,4 @@
+import { registerCommunicationRoutes } from './communicationRoutes.js'
 import { registerSocialRoutes } from './socialRoutes.js'
 import cors from 'cors'
 import { isContentVersion, readCuration } from './exhibition.js'
@@ -2353,6 +2354,8 @@ app.get('/api/account/analytics', requireVisitor, requireWorksStore, async (requ
 })
 
 registerSocialRoutes({app,store:worksStore,requireVisitor,requireAdmin,requireWorksStore,sendData,sendPage,sendError,codes:API_ERROR_CODES,normalizePagination,toPaginatedPayload,limiter:createLimiter({windowMs:minutes(10),limit:120,message:'Too many social requests. Please try again later.'})})
+registerCommunicationRoutes({app,store:worksStore,requireVisitor,requireWorksStore,sendData,sendPage,sendError,codes:API_ERROR_CODES,normalizePagination,toPaginatedPayload,limiter:createLimiter({windowMs:minutes(1),limit:120,message:'Too many communication requests. Please try again shortly.'})})
+
 
 app.get('/api/account/favorites', requireVisitor, requireWorksStore, async (request, response) => {
   const {limit,offset,page} = normalizePagination(request.query,24,60)
