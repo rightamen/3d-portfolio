@@ -41,3 +41,8 @@ GitHub 提交和标签先于上传，196 个制品文件逐项匹配；制品 SH
 social-entry-deploy.log、social-entry-deployment.json、social-entry-server-verification.json、
 social-entry-final-data.json、social-entry-production-check.json、
 social-entry-live-smoke-exit.json 和 release-social-entry-20261107/smoke.json/截图。
+
+## 后续私聊与关注动态
+
+专门消息和关注动态已由 de1929a / release-2026-11-07-communication 上线。
+当前运行、增量结构与备份见 [私聊与动态发布](RELEASE_2026-11-07_COMMUNICATION.md)。

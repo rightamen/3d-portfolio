@@ -364,3 +364,19 @@ blocking, visibility, feed read races, three-language mobile, response loss,
 read-ack retry, offline draft retention and late old-account replies are covered.
 All write journeys use disposable data; production verification must use only
 read requests and canceled forms. See COMMUNICATION_2026-11-07.md.
+
+Communication production verification: 19 public routes,
+18 anonymous private-read denials and
+22 HTTPS checks pass. Real desktop/mobile message/feed
+entries, menu links, unread API, new-message form cancellation and anonymous
+gates pass. 203 release files match; 13 uploads,
+configuration hashes and all 17 pre-existing business-table fingerprints
+are unchanged. All communication schema objects exist. No conversations,
+messages or feed-read records were created by verification. Temporary sessions
+revoked and credential files removed.
+
+Communication slow-loading completion: 117 full browser checks and 365 unit
+checks pass. A new clock-controlled ten-second response verifies that initial
+loading is not restarted by periodic/focus refresh. This adds the fifteenth
+communication UI check. Server/schema are unchanged from the fully validated
+254-DB-check build; initial production evidence is preserved separately.

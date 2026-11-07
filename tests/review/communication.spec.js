@@ -138,3 +138,19 @@ test('background polling cannot interrupt a slow conversation action or leave it
   release();await expect(dialog).toHaveCount(0);await expect(page.getByRole('button',{name:'Unblock',exact:true})).toBeVisible()
  }finally{release()}
 })
+
+test('a slow initial conversation load is not restarted by polling or focus refresh',async({page})=>{
+ await page.clock.install();await fixture(page)
+ let release,reads=0
+ const gate=new Promise(resolve=>{release=resolve})
+ await page.route('**/api/account/messages/threads/thread-1',async route=>{
+  if(route.request().method()==='GET'){reads++;await gate}
+  return route.fallback()
+ })
+ try{
+  await page.goto('/messages/thread-1');await expect.poll(()=>reads).toBeGreaterThan(0)
+  const initial=reads;await page.clock.runFor(10000);await page.evaluate(()=>window.dispatchEvent(new Event('focus')))
+  expect(reads).toBe(initial)
+  release();await expect(page.locator('.dm-message')).toHaveCount(1)
+ }finally{release()}
+})
