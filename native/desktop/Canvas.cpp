@@ -1,4 +1,5 @@
 #include "App.hpp"
+#include "Input.hpp"
 #include <algorithm>
 #include <cmath>
 #include <dwmapi.h>
@@ -59,6 +60,7 @@ void App::create() {
   SendMessageW(subjects, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
   SetWindowTheme(subjects, L"", L"");
   preferences();
+  centerInput(search);
   load();
 }
 void App::preferences() {
@@ -66,6 +68,7 @@ void App::preferences() {
   if (editBrush)
     DeleteObject(editBrush);
   editBrush = CreateSolidBrush(gdi(colors.raised));
+  RedrawWindow(search, nullptr, nullptr, RDW_FRAME | RDW_INVALIDATE);
   BOOL dark = prefs.theme != 2;
   DwmSetWindowAttribute(hwnd, 20, &dark, sizeof(dark));
   SetPropW(hwnd, L"MRLanguage", reinterpret_cast<HANDLE>(INT_PTR(prefs.language)));
@@ -413,7 +416,7 @@ void App::paint() {
   text(L"MR", D2D1::RectF(27, 30, 53, 53), 13, colors.onAccent, true);
   text(L"mrright", D2D1::RectF(65, 22, nav - 12, 48), 19, colors.text, true);
   text(L"STUDIO / NATIVE", D2D1::RectF(65, 46, nav - 12, 65), 8, colors.muted);
-  text(L"0.1.1 · C++20", D2D1::RectF(24, height - 37, nav - 10, height - 12), 10, colors.muted);
+  text(L"0.1.2 · C++20", D2D1::RectF(24, height - 37, nav - 10, height - 12), 10, colors.muted);
   text(L"● " + copy(cppReady        ? "connected"
                     : healthPending ? "connecting"
                                     : "offline"),
@@ -638,7 +641,8 @@ LRESULT App::message(UINT msg, WPARAM wp, LPARAM lp) {
       query = utf8(s);
       page = 1;
       load();
-    } else if (wp == 2 && wall && mode < 2 && tracking && !down && prefs.motion) {
+    } else if (wp == 2 && wall && mode < 2 && tracking && !down && prefs.motion &&
+               IsWindowEnabled(hwnd) && !IsIconic(hwnd)) {
       float x = mouse.x / scale, y = mouse.y / scale;
       if (x > nav && x < nav + content && y > gridTop && y < height - 65) {
         float dx = nav + content / 2 - x, dy = (gridTop + height - 65) / 2 - y;

@@ -228,9 +228,9 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show) {
       RegisterClassW(&c);
       int w = std::min(1440, GetSystemMetrics(SM_CXSCREEN) - 90),
           h = std::min(960, GetSystemMetrics(SM_CYSCREEN) - 90);
-      auto window =
-          CreateWindowExW(0, L"MRStudioNative", L"mrright Studio | C++ Native", WS_OVERLAPPEDWINDOW,
-                          CW_USEDEFAULT, CW_USEDEFAULT, w, h, nullptr, nullptr, instance, &app);
+      auto window = CreateWindowExW(0, L"MRStudioNative", L"mrright Studio | C++ Native",
+                                    WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, CW_USEDEFAULT,
+                                    CW_USEDEFAULT, w, h, nullptr, nullptr, instance, &app);
       if (!window)
         throw std::runtime_error("Window unavailable");
       ShowWindow(window, show);

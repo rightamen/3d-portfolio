@@ -1,4 +1,5 @@
 #include "App.hpp"
+#include "Input.hpp"
 #include <algorithm>
 #include <commctrl.h>
 #include <fstream>
@@ -20,8 +21,9 @@ int uiTests(const std::wstring &server, const std::filesystem::path &report) {
     c.lpszClassName = L"MRStudioRegression";
     c.hCursor = LoadCursorW(nullptr, IDC_ARROW);
     RegisterClassW(&c);
-    auto window = CreateWindowExW(0, c.lpszClassName, L"Studio regression", WS_OVERLAPPEDWINDOW, 0,
-                                  0, 1280, 850, nullptr, nullptr, c.hInstance, &app);
+    auto window = CreateWindowExW(0, c.lpszClassName, L"Studio regression",
+                                  WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, 0, 0, 1280, 850, nullptr,
+                                  nullptr, c.hInstance, &app);
     check(window != nullptr, "create native window");
     auto pump = [&](auto ready) {
       auto deadline = GetTickCount64() + 20000;
@@ -40,6 +42,66 @@ int uiTests(const std::wstring &server, const std::filesystem::path &report) {
     };
     pump([&] { return !app.loading; });
     check(!app.works.empty(), "real catalogue loads");
+    check((GetWindowLongPtrW(window, GWL_STYLE) & WS_CLIPCHILDREN) != 0,
+          "canvas excludes native child windows");
+    for (float factor : {1.f, 1.25f, 1.5f, 2.f, 2.5f})
+      for (bool password : {false, true}) {
+        auto font = CreateFontW(-int(14 * factor), 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+                                DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Segoe UI");
+        auto input =
+            CreateWindowExW(0, L"EDIT", L"Sample 示例 123",
+                            WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL | (password ? ES_PASSWORD : 0),
+                            20, 80, 400, int(34 * factor), window, reinterpret_cast<HMENU>(901),
+                            GetModuleHandleW(nullptr), nullptr);
+        SendMessageW(input, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
+        centerInput(input);
+        RECT outer{}, client{};
+        GetWindowRect(input, &outer);
+        GetClientRect(input, &client);
+        POINT origin{};
+        ClientToScreen(input, &origin);
+        HDC dc = GetDC(input);
+        auto previous = SelectObject(dc, font);
+        TEXTMETRICW metrics{};
+        GetTextMetricsW(dc, &metrics);
+        SelectObject(dc, previous);
+        ReleaseDC(input, dc);
+        auto position = SendMessageW(input, EM_POSFROMCHAR, 0, 0);
+        float lineCenter = origin.y + short(HIWORD(position)) + metrics.tmHeight / 2.f;
+        check(std::abs(lineCenter - (outer.top + outer.bottom) / 2.f) <= 2.f,
+              "single line text is vertically centered");
+        check(client.bottom <= metrics.tmHeight + 3 && origin.y > outer.top + 2,
+              "real edit has vertical padding");
+        check((GetWindowLongPtrW(input, GWL_STYLE) & ES_MULTILINE) == 0,
+              "input stays a native single line edit");
+        check(!password || SendMessageW(input, EM_GETPASSWORDCHAR, 0, 0) != 0,
+              "password stays masked");
+        SendMessageW(input, EM_SETSEL, 2, 6);
+        DWORD first = 0, last = 0;
+        SendMessageW(input, EM_GETSEL, reinterpret_cast<WPARAM>(&first),
+                     reinterpret_cast<LPARAM>(&last));
+        check(first == 2 && last == 6, "caret and selection work after centering");
+        SendMessageW(input, WM_SETFONT, reinterpret_cast<WPARAM>(app.font), TRUE);
+        GetClientRect(input, &client);
+        check(client.bottom < int(34 * factor), "font changes recompute input padding");
+        DestroyWindow(input);
+        DeleteObject(font);
+      }
+
+    ValidateRect(app.search, nullptr);
+    for (auto &[id, button] : app.buttons)
+      ValidateRect(button, nullptr);
+    app.hover = -1;
+    app.message(WM_MOUSEMOVE, 0,
+                MAKELPARAM(int((app.nav + 60) * app.scale), int((app.gridTop + 60) * app.scale)));
+    check(!GetUpdateRect(app.search, nullptr, FALSE),
+          "card hover does not invalidate the native input");
+    bool buttonsClean = true;
+    for (auto &[id, button] : app.buttons)
+      if (GetUpdateRect(button, nullptr, FALSE))
+        buttonsClean = false;
+    check(buttonsClean, "card hover does not invalidate native buttons");
+    app.message(WM_MOUSELEAVE, 0, 0);
     Event failed;
     failed.operation = Operation::Detail;
     failed.generation = app.detailGen;
@@ -100,6 +162,18 @@ int uiTests(const std::wstring &server, const std::filesystem::path &report) {
     app.message(WM_TIMER, 2, 0);
     check(app.worldX == initialX && app.worldY == initialY,
           "motion preference stops automatic panning");
+    app.prefs.motion = true;
+    app.wall = true;
+    app.tracking = true;
+    initialX = app.worldX;
+    initialY = app.worldY;
+    EnableWindow(window, FALSE);
+    ValidateRect(window, nullptr);
+    app.message(WM_TIMER, 2, 0);
+    check(app.worldX == initialX && app.worldY == initialY &&
+              !GetUpdateRect(window, nullptr, FALSE),
+          "modal window pauses background wall redraw");
+    EnableWindow(window, TRUE);
     app.wall = false;
     app.tracking = false;
     app.prefs.motion = true;

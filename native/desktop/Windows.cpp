@@ -1,4 +1,5 @@
 #include "Windows.hpp"
+#include "Input.hpp"
 #include <algorithm>
 #include <array>
 #include <commdlg.h>
@@ -208,6 +209,8 @@ public:
       SetWindowTheme(c, L"", L"");
     else if (theme != 2)
       SetWindowTheme(c, L"DarkMode_Explorer", nullptr);
+    if (_wcsicmp(cls, L"EDIT") == 0)
+      centerInput(c);
     return c;
   }
   void labelAt(const char *key, int y) {
@@ -244,11 +247,12 @@ public:
     RECT size{0, 0, px(width), px(height)};
     AdjustWindowRectEx(&size, WS_CAPTION | WS_SYSMENU | WS_POPUP, FALSE, 0);
     EnableWindow(parent, FALSE);
-    hwnd = CreateWindowExW(
-        WS_EX_DLGMODALFRAME, L"MRNativeForm", title.c_str(), WS_CAPTION | WS_SYSMENU | WS_POPUP,
-        (r.left + r.right - (size.right - size.left)) / 2,
-        (r.top + r.bottom - (size.bottom - size.top)) / 2, size.right - size.left,
-        size.bottom - size.top, parent, nullptr, GetModuleHandleW(nullptr), this);
+    hwnd =
+        CreateWindowExW(WS_EX_DLGMODALFRAME, L"MRNativeForm", title.c_str(),
+                        WS_CAPTION | WS_SYSMENU | WS_POPUP | WS_CLIPCHILDREN,
+                        (r.left + r.right - (size.right - size.left)) / 2,
+                        (r.top + r.bottom - (size.bottom - size.top)) / 2, size.right - size.left,
+                        size.bottom - size.top, parent, nullptr, GetModuleHandleW(nullptr), this);
     if (!hwnd) {
       EnableWindow(parent, TRUE);
       return false;
