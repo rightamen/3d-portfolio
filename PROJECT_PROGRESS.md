@@ -4,11 +4,11 @@
 
 用户确认 Windows 桌面、界面与后端逐步改写为 C++。新增 native/，纯 Win32 / Direct2D / DirectWrite 界面与 OpenGL 模型预览；C++20 + libpq 公共目录服务。七种资源类型、模型细类、搜索分页、精选资格、原生登录、批量上传 / 审核、指定附件受保护下载、三语 / 三主题 / 动效设置均接入真实 API。
 
-Windows x64 EXE 已编译并在本机运行；真实 Draco / 普通 GLB 与内嵌 WebP 纹理解码通过，实际鼠标旋转通过；修复窄窗口详情遮挡筛选及按钮绘制。隔离 PostgreSQL C++ API 76 项、Windows 原生登录上传 / 中文文件名 / 发布 / 单次票据 / 逐字节下载 / 会话撤销通过；原项目 build / lint、368 单测、267 DB 测试通过。发布构建与线上验收进行中。
+Windows x64 EXE 已编译并在本机运行；真实 Draco / 普通 GLB 与内嵌 WebP 纹理解码通过，实际鼠标旋转通过；修复窄窗口详情遮挡筛选及按钮绘制。隔离 PostgreSQL C++ API 76 项、Windows 原生登录上传 / 中文文件名 / 发布 / 单次票据 / 逐字节下载 / 会话撤销通过；原项目 build / lint、368 单测、267 DB 测试通过。发布构建与线上验收完成，发布记录见 docs/RELEASE_2026-11-08_NATIVE_STUDIO.md。
 
 迁移边界：认证、写入、审核、交易与社交消息后端本阶段沿用现有 Node API；完整后台通过明确的在线工作台入口访问。没有宣称全站已经改写。文档见 native/README.md。继续遵循先 GitHub 后上线；新增 C++ 服务仅监听回环并独立代理 /api/native/v1/，使用只能 SELECT 公共视图的独立数据库角色。原环境文件及 20 表 / 13 上传文件需按部署前摘要核对，禁止输出凭据。
 
-桌面交付目录 D:/Codex/artifacts/mrright-studio；最终源码版本、制品 SHA-256 与新备份位置在上线后补记。
+桌面交付目录 D:/Codex/artifacts/mrright-studio；运行提交 025cb969ad067f589260be366feef50a54cd775d / release-2026-11-08-native-studio。GitHub 先于上线；正式 EXE 已连接线上 C++ 服务，4 个真实作品 / 图片 / Draco / WebP / 非法 origin 拒绝通过。20 业务表完整摘要、13 上传文件、旧 env / systemd 全部保持；nginx 仅新增原生 API 前缀。Web / Node 发布 2026-11-08 14:36:39 Asia/Shanghai；随后独立 C++ 服务上线。新 app / env / dump 备份与 SHA-256 全部记录在发布文档；本次文档提交不重复部署。
 
 
 ## 下次从这里继续（2026-11-08：资源后台与分类布局已上线）
