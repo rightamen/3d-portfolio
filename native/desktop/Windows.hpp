@@ -33,6 +33,14 @@ std::wstring resourceLabel(int language, const std::string &type);
 std::optional<LoginData> loginDialog(HWND, int, int);
 std::optional<PublishData> publishDialog(HWND, int, int, const Json &existing = Json{});
 std::optional<Preferences> settingsDialog(HWND, const Preferences &);
+struct TextField {
+  std::string key, value;
+  int limit = 300;
+  bool multiline = false;
+};
+std::optional<std::vector<std::string>> textDialog(HWND, int, int, const char *,
+                                                   const std::vector<TextField> &);
+std::optional<int> choiceDialog(HWND, int, int, const char *, const std::vector<std::wstring> &);
 void showModel(HWND, std::shared_ptr<Model>, const std::wstring &);
 void showPicture(HWND, const Pixels &, const std::wstring &);
 } // namespace mr

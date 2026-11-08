@@ -1,6 +1,7 @@
 #pragma once
 #include "../common/Resources.hpp"
 #include "Windows.hpp"
+#include "Workspace.hpp"
 #include <condition_variable>
 #include <d2d1helper.h>
 #include <deque>
@@ -32,7 +33,13 @@ enum class Operation {
   Media,
   Upload,
   Download,
-  Progress
+  Progress,
+  Space,
+  Mutation,
+  Conversation,
+  Relationship,
+  Summary,
+  Receipt
 };
 struct Event {
   Operation operation = Operation::Health;
@@ -67,6 +74,10 @@ void dispatch(Pool &pool, HWND h, Operation op, int gen, int account, bool sensi
 Json payload(const Json &);
 uint64_t number(const Json &, const char *, uint64_t fallback = 0);
 std::string uniqueName();
+inline std::wstring money(uint64_t cents, const std::string &currency) {
+  return wide(currency) + L" " + std::to_wstring(cents / 100) + L"." +
+         (cents % 100 < 10 ? L"0" : L"") + std::to_wstring(cents % 100);
+}
 std::shared_ptr<Model> safeDecode(const std::vector<unsigned char> &);
 struct Palette {
   uint32_t bg, panel, raised, text, muted, line, accent, onAccent;
@@ -84,7 +95,35 @@ enum class Action {
   Close,
   Folder,
   Cancel,
-  RetryDetail
+  RetryDetail,
+  Navigate,
+  Tab,
+  Thread,
+  NewMessage,
+  SendMessage,
+  AcceptMessage,
+  DeclineMessage,
+  OlderMessages,
+  BlockMessage,
+  FolderNew,
+  FolderRename,
+  FolderDelete,
+  FolderChoose,
+  Favorite,
+  Follow,
+  Friend,
+  Chat,
+  Person,
+  FriendAccept,
+  FriendDecline,
+  FriendCancel,
+  EditProfile,
+  EditWork,
+  ReviewWork,
+  FeedItem,
+  ReadFeed,
+  Report,
+  OrderItem
 };
 struct Hit {
   D2D1_RECT_F rect;
@@ -101,7 +140,7 @@ struct Job {
 };
 class App {
 public:
-  HWND hwnd = nullptr, search = nullptr, subjects = nullptr;
+  HWND hwnd = nullptr, search = nullptr, subjects = nullptr, composer = nullptr, folders = nullptr;
   HFONT font = nullptr;
   HBRUSH editBrush = nullptr;
   std::map<int, HWND> buttons;
@@ -115,6 +154,7 @@ public:
   Pool io{2}, imageIO{3}, transfers{2};
   Http http;
   Preferences prefs;
+  SpaceState space;
   Palette colors;
   Json works = Json::array(), detail, loginUser, pagination = Json::object(),
        counts = Json::object();
@@ -122,7 +162,7 @@ public:
   std::vector<Job> jobs;
   std::string token, type, subject, query, lastError, detailError, pendingWork, pendingAsset;
   int mode = 0, page = 1, generation = 0, detailGen = 0, account = 0, nextJob = 1, hover = -1,
-      afterLogin = 0, previewGeneration = -1, selectedIndex = -1;
+      hoverHit = -1, afterLogin = 0, previewGeneration = -1, selectedIndex = -1;
   bool loading = false, detailLoading = false, uploading = false, authBusy = false,
        cppReady = false, healthPending = false, wall = false, tracking = false, dragging = false,
        down = false;
@@ -140,6 +180,22 @@ public:
   void layout();
   void paint();
   void repaint();
+  bool gallery() const {
+    return mode < 3 || mode == 5;
+  }
+  void navigate(int);
+  void loadSpace();
+  void paintSpace();
+  void spaceLayout();
+  void mutate(const std::string &, const std::string &, const Json &, const std::string &key = "");
+  bool spaceEvent(Event &);
+  void spaceAction(Hit);
+  void loadThread(const std::string &, bool older = false);
+  void sendMessage();
+  void loadRelationship();
+  void spaceTimer();
+  void editProfile();
+  void editWork();
   void load();
   void select(int);
   void clearSelection();

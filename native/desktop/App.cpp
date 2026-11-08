@@ -56,6 +56,7 @@ std::string App::cover(const Json &w) const {
 }
 void App::clearSelection() {
   detailError.clear();
+  space.social = Json::object();
   selectedIndex = -1;
   detail = nullptr;
   detailLoading = false;
@@ -65,7 +66,7 @@ void App::clearSelection() {
 }
 void App::load() {
   ++generation;
-  if (mode < 2) {
+  if (mode < 2 || (!cppReady && !healthPending)) {
     healthPending = true;
     auto client = http;
     dispatch(io, hwnd, Operation::Health, generation, account, false, [=](Event &e) {
@@ -82,6 +83,10 @@ void App::load() {
     repaint();
     return;
   }
+  if (mode >= 4) {
+    loadSpace();
+    return;
+  }
   if (mode == 2 && token.empty()) {
     loading = false;
     lastError = "notSigned";
@@ -92,7 +97,7 @@ void App::load() {
   auto client = http;
   auto auth = token;
   int gen = generation, acc = account;
-  bool mine = mode == 2;
+  bool mine = mode == 2 || mode == 4;
   auto path = mine ? "/api/account/works?limit=24&page=" + std::to_string(page) +
                          "&resourceType=" + encoded(type)
                    : "/api/native/v1/works?limit=24&page=" + std::to_string(page) +
@@ -112,8 +117,20 @@ void App::select(int i) {
   detailScroll = 0;
   int gen = ++detailGen;
   auto w = works[i];
+  if (!w.value("available", true)) {
+    detail = w;
+    detailLoading = false;
+    space.social = {{"saved", true}};
+    layout();
+    return;
+  }
+  if (mr::text(w, "slug").empty()) {
+    detailLoading = false;
+    layout();
+    return;
+  }
   auto creator = w.value("creator", Json::object());
-  bool mine = mode == 2;
+  bool mine = mode == 2 || mode == 4;
   auto path = std::string(mine ? "/api/works/" : "/api/native/v1/works/") +
               encoded(mr::text(creator, "handle")) + "/" + encoded(mr::text(w, "slug")),
        auth = mine ? token : "";
@@ -174,6 +191,8 @@ void App::clearLogin(bool remote) {
   token.clear();
   loginUser = nullptr;
   account++;
+  space = SpaceState{};
+  SetWindowTextW(composer, L"");
   uploading = false;
   for (auto &j : jobs)
     j.cancel->store(true);
@@ -189,7 +208,7 @@ void App::clearLogin(bool remote) {
     });
   }
   SetWindowTextW(buttons[100], copy("login").c_str());
-  if (mode == 2)
+  if (mode == 2 || mode >= 4)
     load();
   else
     repaint();
@@ -389,6 +408,8 @@ void App::media() {
 void App::event(Event &e) {
   if (e.sensitive && e.account != account)
     return;
+  if (spaceEvent(e))
+    return;
   if (e.operation == Operation::Image) {
     pendingImages.erase(e.key);
     if (!e.ok) {
@@ -437,6 +458,9 @@ void App::event(Event &e) {
       info("signinFailed");
       return;
     }
+    int requestedAfter = afterLogin;
+    if (!token.empty())
+      clearLogin(true);
     token = mr::text(d["session"], "token");
     loginUser = d["user"];
     if (token.empty()) {
@@ -444,7 +468,7 @@ void App::event(Event &e) {
       return;
     }
     SetWindowTextW(buttons[100], copy("logout").c_str());
-    int after = afterLogin;
+    int after = requestedAfter;
     afterLogin = 0;
     if (after == 1)
       publish();
@@ -455,8 +479,11 @@ void App::event(Event &e) {
           download(int(i));
           break;
         }
-    } else if (mode == 2)
+    } else if (mode == 2 || mode >= 4)
       load();
+    else if (!detail.is_null())
+      loadRelationship();
+    spaceTimer();
     repaint();
     return;
   }
@@ -512,15 +539,18 @@ void App::event(Event &e) {
       detailError = "offline";
       if (e.sensitive && e.status == 401)
         clearLogin(false);
-    } else
+    } else {
       detail = payload(e.value).value("work", Json{});
+      loadRelationship();
+    }
     layout();
     return;
   }
   if (e.operation == Operation::Health) {
-    if (e.key == "catalogue" && e.generation == generation) {
+    if (e.key == "catalogue") {
       healthPending = false;
-      cppReady = e.ok && e.value.is_object() && mr::text(payload(e.value), "runtime") == "cpp20";
+      if (e.generation == generation)
+        cppReady = e.ok && e.value.is_object() && mr::text(payload(e.value), "runtime") == "cpp20";
     }
     repaint();
     return;
@@ -575,7 +605,9 @@ void App::button(int id) {
       preferences();
     }
   } else if (id == 104)
-    openWeb(http, "/account/works");
+    navigate(9);
+  else if (id == 205)
+    sendMessage();
   else if (id == 105 && page > 1) {
     page--;
     load();
@@ -586,15 +618,8 @@ void App::button(int id) {
     wall = !wall;
     SetWindowTextW(buttons[107], copy(wall ? "list" : "wall").c_str());
     repaint();
-  } else if (id >= 110 && id <= 113) {
-    mode = id - 110;
-    page = 1;
-    wall = false;
-    SetWindowTextW(buttons[107], copy("wall").c_str());
-    subject.clear();
-    load();
-    if (mode == 2 && token.empty())
-      signIn();
+  } else if (id >= 110 && id <= 119) {
+    navigate(id == 119 ? 10 : id - 110);
   } else if (id >= 300 && id <= 307) {
     type = id == 300 ? "" : std::string(resourceTypes[id - 301]);
     subject.clear();
@@ -604,6 +629,10 @@ void App::button(int id) {
   }
 }
 void App::activate(Hit h) {
+  if (h.action >= Action::Navigate) {
+    spaceAction(h);
+    return;
+  }
   switch (h.action) {
   case Action::RetryDetail:
     select(selectedIndex);
@@ -640,6 +669,8 @@ void App::activate(Hit h) {
   case Action::Cancel:
     if (size_t(h.index) < jobs.size())
       jobs[h.index].cancel->store(true);
+    break;
+  default:
     break;
   }
 }

@@ -21,6 +21,7 @@ await cp(join(root,'server'),join(runtime,'server'),{recursive:true})
 await cp(join(root,'package.json'),join(runtime,'package.json'))
 for(const name of ['node_modules','dist','scripts'])await symlink(join(root,name),join(runtime,name),'dir')
 await mkdir(join(runtime,'public'),{recursive:true})
+for(const name of ['assets','models'])await symlink(join(root,'public',name),join(runtime,'public',name),'dir')
 const children=[];let pool,rolePool,cluster,gateway;let assertions=0
 const check=(value,message)=>{assert.ok(value,message);assertions++}
 const admin=randomBytes(24).toString('hex'),password='Native-'+randomBytes(12).toString('hex')
@@ -76,6 +77,23 @@ try{
  for(const [name,status]of [['设计说明.txt',201],['../escape.txt',400],['..\\escape.txt',400],['wrong.exe',400],['bad\r\n.txt',400]]){
   const f=new FormData();f.set('kind','source');f.set('displayName',name);f.set('file',new Blob(['native-test']),'resource.txt');const r=await fetch('http://127.0.0.1:'+nodePort+'/api/account/works/'+draft.work.id+'/assets?kind=source',{method:'POST',headers:{Authorization:'Bearer '+token},body:f});check(r.status===status,'filename validation '+status);const j=await r.json();if(status===201)check(j.data.asset.fileName===name,'Unicode filename preserved')
  }
+ // Seed disposable peers only after catalogue assertions so the public API tests stay exact.
+ const peerEmail='native-peer@example.invalid',peerPassword='Peer-'+randomBytes(12).toString('hex');
+ const strangerEmail='native-stranger@example.invalid',strangerPassword='Stranger-'+randomBytes(12).toString('hex');
+ const makeUser=async(email,password,handle,displayName)=>{
+  const r=await api('POST','/api/auth/register',{displayName,email,password});
+  const v=await api('POST','/api/auth/verify-email',{email,code:r.verification.devCode});
+  await api('PUT','/api/account/profile',{displayName,handle,bio:'Native Studio isolated workflow fixture',profilePublic:true},v.session.token);return v;
+ };
+ const peer=await makeUser(peerEmail,peerPassword,'native-peer','测试创作者 · Aster');
+ const stranger=await makeUser(strangerEmail,strangerPassword,'native-stranger','测试访客 · Nova');
+ await pool.query("INSERT INTO works(id,creator_id,slug,title,summary,resource_type,status,image,published_at) VALUES('native-peer-art',$1,'native-peer-art','光与形 · Studio study','A study in light, form and material.','image','published','/assets/projects/fire-extinguisher.png',now())",[peer.user.id]);
+ await api('PUT','/api/users/native-peer/follow',{following:true},token);
+ await api('PUT','/api/works/native-peer/native-peer-art/favorite',{saved:true},token);
+ const collection=await api('POST','/api/account/collections',{name:'灵感档案',description:'Native preview collection'},token);
+ await api('PUT','/api/account/collections/'+collection.collection.id+'/works/native-peer-art',{included:true},token);
+ const intro=await api('POST','/api/account/messages/threads',{handle:'native-creator'},stranger.session.token);
+ await api('POST','/api/account/messages/threads/'+intro.thread.id+'/messages',{body:'你好！想交流一下材质制作的思路。',clientId:'native-preview-intro-001'},stranger.session.token);
  gateway=createServer(async(req,res)=>{
   if(req.url==='/native-fixtures/upload-count'){res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({files:(await files(uploadRoot)).length}));return}
 
@@ -89,6 +107,6 @@ try{
  await new Promise(r=>gateway.listen(proxyPort,'0.0.0.0',r))
  await writeFile(join(report,'api-integration.json'),JSON.stringify({ok:true,assertions},null,2))
  console.log(JSON.stringify({ok:true,assertions}))
- if(hold){await writeFile(join(report,'session.json'),JSON.stringify({server:'http://127.0.0.1:'+proxyPort,legacyServer:'http://127.0.0.1:'+nodePort,email,password,admin}),{mode:0o600});console.log('Windows fixture ready');for(let n=0;n<18000;n++){try{await readFile(join(report,'stop'));break}catch{}await wait(100)}await unlink(join(report,'session.json')).catch(()=>{});await unlink(join(report,'stop')).catch(()=>{})}
+ if(hold){await writeFile(join(report,'session.json'),JSON.stringify({server:'http://127.0.0.1:'+proxyPort,legacyServer:'http://127.0.0.1:'+nodePort,email,password,admin,peerEmail,peerPassword,peerHandle:'native-peer',strangerEmail,strangerPassword,strangerHandle:'native-stranger'}),{mode:0o600});console.log('Windows fixture ready');for(let n=0;n<18000;n++){try{await readFile(join(report,'stop'));break}catch{}await wait(100)}await unlink(join(report,'session.json')).catch(()=>{});await unlink(join(report,'stop')).catch(()=>{})}
 }catch(e){console.error(e.message);process.exitCode=1}
-finally{if(gateway)gateway.close();for(const p of children)p.kill();await wait(300);if(rolePool)await rolePool.end();if(pool)await pool.end();if(cluster)cluster.teardown();for(const p of await files(join(root,'public/uploads')))if(!original.has(p))await unlink(p)}
+finally{if(gateway)gateway.close();for(const p of children)p.kill();await wait(300);if(rolePool)await rolePool.end();if(pool)await pool.end();if(cluster)cluster.teardown();await rm(runtime,{recursive:true,force:true})}

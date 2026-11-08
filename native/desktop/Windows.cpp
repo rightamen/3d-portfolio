@@ -94,13 +94,13 @@ static const Copy copies[] = {
      {L"操作未完成，请重试。", L"The operation did not finish. Please retry.",
       L"操作が完了しませんでした。再試行してください。"}},
     {"noHandle",
-     {L"请先在在线工作室设置用户名，再发布作品。",
-      L"Choose a handle in the online studio before publishing.",
-      L"オンラインスタジオでユーザー名を設定してください。"}},
+     {L"请先打开左下角“个人资料”，设置用户名后再发布作品。",
+      L"Choose a handle in Your profile before publishing.",
+      L"「プロフィール」でユーザー名を設定してください。"}},
     {"modelFailed",
-     {L"此模型未能完成原生预览。原文件可下载，在线详情仍可查看。",
-      L"This model could not be previewed natively. Downloads and online details remain available.",
-      L"このモデルを表示できません。ダウンロードとオンライン詳細は利用できます。"}},
+     {L"此模型暂不支持原生预览，可按权限下载原文件。",
+      L"This model could not be previewed natively. You can download the original with permission.",
+      L"このモデルを表示できません。権限があれば原本をダウンロードできます。"}},
     {"modelHelp",
      {L"拖动旋转 · 右键平移 · 滚轮缩放 · F 线框 · M 材质 · R 重置",
       L"Drag to orbit · Right drag to pan · Wheel to zoom · F wireframe · M material · R reset",
@@ -209,7 +209,7 @@ public:
       SetWindowTheme(c, L"", L"");
     else if (theme != 2)
       SetWindowTheme(c, L"DarkMode_Explorer", nullptr);
-    if (_wcsicmp(cls, L"EDIT") == 0)
+    if (_wcsicmp(cls, L"EDIT") == 0 && !(style & ES_MULTILINE))
       centerInput(c);
     return c;
   }
@@ -491,6 +491,65 @@ struct PublishForm : Form {
     end(true);
   }
 };
+struct TextForm : Form {
+  std::vector<TextField> fields;
+  std::optional<std::vector<std::string>> result;
+  TextForm(HWND p, int l, int t, const char *key, std::vector<TextField> f)
+      : Form(p, l, t, mr::label(l, key), 560, 120), fields(std::move(f)) {
+    for (auto &f : fields)
+      height += f.multiline ? 146 : 82;
+  }
+  void build() override {
+    int y = 22;
+    for (size_t i = 0; i < fields.size(); i++) {
+      auto &f = fields[i];
+      labelAt(f.key.c_str(), y);
+      HWND e =
+          f.multiline
+              ? control(L"EDIT", wide(f.value), int(10 + i), 28, y + 26, 500, 105,
+                        WS_TABSTOP | ES_MULTILINE | ES_AUTOVSCROLL | WS_VSCROLL | ES_WANTRETURN)
+              : edit(int(10 + i), y + 26);
+      SetWindowTextW(e, wide(f.value).c_str());
+      SendMessageW(e, EM_SETLIMITTEXT, f.limit, 0);
+      y += f.multiline ? 146 : 82;
+    }
+    button("cancel", IDCANCEL, 28, height - 66, 125);
+    button("save", IDOK, 365, height - 66, 165);
+  }
+  void command(int id, int) override {
+    if (id != IDOK)
+      return;
+    std::vector<std::string> v;
+    for (size_t i = 0; i < fields.size(); i++)
+      v.push_back(utf8(content(hwnd, int(10 + i))));
+    result = std::move(v);
+    end(true);
+  }
+};
+struct ChoiceForm : Form {
+  std::vector<std::wstring> items;
+  std::optional<int> result;
+  ChoiceForm(HWND p, int l, int t, const char *key, std::vector<std::wstring> v)
+      : Form(p, l, t, mr::label(l, key), 500, 215), items(std::move(v)) {}
+  void build() override {
+    auto c =
+        control(L"COMBOBOX", L"", 10, 28, 30, 444, 220, WS_TABSTOP | CBS_DROPDOWNLIST | WS_VSCROLL);
+    for (auto &s : items)
+      SendMessageW(c, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(s.c_str()));
+    SendMessageW(c, CB_SETCURSEL, 0, 0);
+    button("cancel", IDCANCEL, 28, 142, 125);
+    button("save", IDOK, 307, 142, 165);
+  }
+  void command(int id, int) override {
+    if (id == IDOK) {
+      int n = int(SendDlgItemMessageW(hwnd, 10, CB_GETCURSEL, 0, 0));
+      if (n >= 0) {
+        result = n;
+        end(true);
+      }
+    }
+  }
+};
 struct SettingsForm : Form {
   Preferences prefs;
   std::optional<Preferences> result;
@@ -525,7 +584,10 @@ struct SettingsForm : Form {
   }
 };
 } // namespace
+const wchar_t *studioLabel(int, const char *);
 const wchar_t *label(int language, const char *key) {
+  if (auto studio = studioLabel(language, key))
+    return studio;
   for (const auto &c : copies)
     if (std::string_view(c.key) == key)
       return c.value[std::clamp(language, 0, 2)];
@@ -541,6 +603,20 @@ std::wstring resourceLabel(int l, const std::string &type) {
     if (type == types[i])
       return label(l, keys[i]);
   return label(l, "resourceOther");
+}
+std::optional<std::vector<std::string>> textDialog(HWND h, int l, int t, const char *k,
+                                                   const std::vector<TextField> &v) {
+  TextForm f(h, l, t, k, v);
+  f.run();
+  return f.result;
+}
+std::optional<int> choiceDialog(HWND h, int l, int t, const char *k,
+                                const std::vector<std::wstring> &v) {
+  if (v.empty())
+    return {};
+  ChoiceForm f(h, l, t, k, v);
+  f.run();
+  return f.result;
 }
 std::optional<LoginData> loginDialog(HWND h, int l, int t) {
   LoginForm f(h, l, t);

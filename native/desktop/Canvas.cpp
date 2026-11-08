@@ -17,6 +17,80 @@ Palette palette(int t) {
 COLORREF gdi(uint32_t c) {
   return RGB(c >> 16, (c >> 8) & 255, c & 255);
 }
+namespace {
+void navigationIcon(HDC dc, int id, int x, int y, float scale, uint32_t tint) {
+  auto pen = CreatePen(PS_SOLID, std::max(1, int(1.3f * scale)), gdi(tint));
+  auto old = SelectObject(dc, pen);
+  auto oldBrush = SelectObject(dc, GetStockObject(NULL_BRUSH));
+  auto px = [&](int n) { return x + int(n * scale); };
+  auto py = [&](int n) { return y + int(n * scale); };
+  auto line = [&](int a, int b, int c, int d) {
+    MoveToEx(dc, px(a), py(b), nullptr);
+    LineTo(dc, px(c), py(d));
+  };
+  if (id == 110) {
+    for (int a : {0, 9})
+      for (int b : {0, 9})
+        Rectangle(dc, px(a), py(b), px(a + 6), py(b + 6));
+  } else if (id == 114) {
+    line(0, 0, 0, 16);
+    line(0, 16, 17, 16);
+    line(3, 11, 7, 7);
+    line(7, 7, 11, 10);
+    line(11, 10, 16, 3);
+  } else if (id == 115) {
+    POINT v[] = {{px(8), py(15)}, {px(0), py(7)},  {px(1), py(2)},  {px(5), py(0)}, {px(8), py(4)},
+                 {px(11), py(0)}, {px(15), py(2)}, {px(16), py(7)}, {px(8), py(15)}};
+    Polyline(dc, v, 9);
+  } else if (id == 116) {
+    RoundRect(dc, px(0), py(1), px(17), py(13), 4, 4);
+    line(4, 13, 4, 17);
+    line(4, 17, 9, 13);
+    line(4, 5, 13, 5);
+    line(4, 9, 11, 9);
+  } else if (id == 118 || id == 104) {
+    Ellipse(dc, px(4), py(0), px(12), py(8));
+    Arc(dc, px(0), py(8), px(16), py(23), px(0), py(16), px(16), py(16));
+    if (id == 118) {
+      Ellipse(dc, px(12), py(1), px(18), py(7));
+      line(16, 10, 19, 16);
+    }
+  } else if (id == 113) {
+    line(8, 0, 8, 12);
+    line(3, 7, 8, 12);
+    line(8, 12, 13, 7);
+    line(0, 13, 0, 17);
+    line(0, 17, 16, 17);
+    line(16, 17, 16, 13);
+  } else if (id == 112) {
+    line(0, 4, 8, 0);
+    line(8, 0, 16, 4);
+    line(0, 4, 8, 8);
+    line(8, 8, 16, 4);
+    line(0, 4, 0, 13);
+    line(0, 13, 8, 17);
+    line(8, 17, 16, 13);
+    line(16, 13, 16, 4);
+    line(8, 8, 8, 17);
+  } else if (id == 111) {
+    POINT v[11];
+    for (int i = 0; i < 11; i++) {
+      double a = -1.5708 + i * .628318;
+      double r = i % 2 ? 4 : 9;
+      v[i] = {px(8) + int(std::cos(a) * r * scale), py(8) + int(std::sin(a) * r * scale)};
+    }
+    Polyline(dc, v, 11);
+  } else {
+    RoundRect(dc, px(1), py(0), px(16), py(18), 3, 3);
+    line(5, 5, 12, 5);
+    line(5, 9, 12, 9);
+    line(5, 13, 10, 13);
+  }
+  SelectObject(dc, old);
+  SelectObject(dc, oldBrush);
+  DeleteObject(pen);
+}
+} // namespace
 void App::create() {
   D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, &factory);
   DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory),
@@ -37,14 +111,21 @@ void App::create() {
                                                                   {101, "publish"},
                                                                   {102, "refresh"},
                                                                   {103, "settings"},
-                                                                  {104, "onlineWorkspace"},
+                                                                  {104, "profile"},
                                                                   {105, "previous"},
                                                                   {106, "next"},
                                                                   {107, "wall"},
                                                                   {110, "library"},
                                                                   {111, "curated"},
                                                                   {112, "mine"},
-                                                                  {113, "downloads"}})
+                                                                  {113, "downloads"},
+                                                                  {114, "workspace"},
+                                                                  {115, "favorites"},
+                                                                  {116, "messages"},
+                                                                  {117, "feed"},
+                                                                  {118, "connections"},
+                                                                  {119, "orders"},
+                                                                  {205, "send"}})
     make(id, key);
   search =
       CreateWindowExW(0, L"EDIT", L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL, 0, 0, 1,
@@ -59,7 +140,20 @@ void App::create() {
       reinterpret_cast<HMENU>(202), GetModuleHandleW(nullptr), nullptr);
   SendMessageW(subjects, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
   SetWindowTheme(subjects, L"", L"");
+  folders = CreateWindowExW(0, L"COMBOBOX", L"",
+                            WS_CHILD | WS_TABSTOP | CBS_DROPDOWNLIST | WS_VSCROLL, 0, 0, 1, 1, hwnd,
+                            reinterpret_cast<HMENU>(203), GetModuleHandleW(nullptr), nullptr);
+  composer = CreateWindowExW(
+      0, L"EDIT", L"",
+      WS_CHILD | WS_TABSTOP | ES_MULTILINE | ES_AUTOVSCROLL | ES_WANTRETURN | WS_VSCROLL, 0, 0, 1,
+      1, hwnd, reinterpret_cast<HMENU>(204), GetModuleHandleW(nullptr), nullptr);
+  SendMessageW(folders, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
+  SetWindowTheme(folders, L"", L"");
+  SendMessageW(composer, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
+  SendMessageW(composer, EM_SETLIMITTEXT, 4000, 0);
   preferences();
+  SetTimer(hwnd, 3, 8000, nullptr);
+  SetTimer(hwnd, 4, 40, nullptr);
   centerInput(search);
   load();
 }
@@ -77,14 +171,21 @@ void App::preferences() {
                                                  {101, "publish"},
                                                  {102, "refresh"},
                                                  {103, "settings"},
-                                                 {104, "onlineWorkspace"},
+                                                 {104, "profile"},
                                                  {105, "previous"},
                                                  {106, "next"},
                                                  {107, wall ? "list" : "wall"},
                                                  {110, "library"},
                                                  {111, "curated"},
                                                  {112, "mine"},
-                                                 {113, "downloads"}})
+                                                 {113, "downloads"},
+                                                 {114, "workspace"},
+                                                 {115, "favorites"},
+                                                 {116, "messages"},
+                                                 {117, "feed"},
+                                                 {118, "connections"},
+                                                 {119, "orders"},
+                                                 {205, "send"}})
     SetWindowTextW(buttons[id], copy(key).c_str());
   SendMessageW(search, EM_SETCUEBANNER, 0, reinterpret_cast<LPARAM>(copy("search").c_str()));
   SendMessageW(subjects, CB_RESETCONTENT, 0, 0);
@@ -160,23 +261,32 @@ void App::layout() {
       SendMessageW(button, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
     SendMessageW(search, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
     SendMessageW(subjects, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
+    SendMessageW(composer, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
+    SendMessageW(folders, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
     if (previous)
       DeleteObject(previous);
   }
   scale = nextScale;
   width = r.right / scale;
   height = r.bottom / scale;
-  nav = width < 1000 ? 168.f : 202.f;
+  nav = width < 1100 ? 190.f : 224.f;
   aside = (!detail.is_null() || detailLoading || !detailError.empty())
               ? std::min(388.f, width - nav - 44)
               : 0;
   content = width - nav - aside;
   place(buttons[100], width - 151, 20, 123, 36);
   place(buttons[101], width - 316, 20, 150, 36);
-  for (int n = 0; n < 4; n++)
-    place(buttons[110 + n], 16, 126 + n * 51, nav - 32, 41);
-  place(buttons[103], 16, height - 151, nav - 32, 37);
-  place(buttons[104], 16, height - 100, nav - 32, 37);
+  const int navigation[] = {110, 111, 114, 112, 115, 117, 116, 118, 119, 113};
+  float step = std::min(42.f, std::max(31.f, (height - 300) / 10));
+  float ny = 124;
+  for (int i = 0; i < 10; i++) {
+    if (i == 2 || i == 5 || i == 8)
+      ny += 16;
+    place(buttons[navigation[i]], 14, ny, nav - 28, step - 4);
+    ny += step;
+  }
+  place(buttons[103], 14, height - 140, nav - 28, 37);
+  place(buttons[104], 14, height - 92, nav - 28, 37);
   place(buttons[102], nav + content - 134, 82, 106, 32, mode != 3);
   place(buttons[107], nav + content - 165, 190, 137, 34, mode < 2);
   place(search, nav + 28, 190, std::max(100.f, content - 225), 34, mode < 2);
@@ -197,7 +307,7 @@ void App::layout() {
       x = nav + 28;
       y += 42;
     }
-    place(buttons[300 + n], x, y, w, 32, mode != 3);
+    place(buttons[300 + n], x, y, w, 32, mode < 3);
     x += w + 7;
   }
   gridTop = mode == 3 ? 190 : y + 53;
@@ -205,6 +315,9 @@ void App::layout() {
   place(subjects, nav + 28, gridTop, 210, 260, cat);
   if (cat)
     gridTop += 47;
+  if (mode >= 4)
+    gridTop = mode == 5 ? 296.f : 190.f;
+  spaceLayout();
   bool prev = pagination.value("hasPrevious", false), next = pagination.value("hasNext", false);
   place(buttons[105], nav + 28, height - 51, 100, 32, mode != 3 && (prev || next));
   place(buttons[106], nav + content - 128, height - 51, 100, 32, mode != 3 && (prev || next));
@@ -241,8 +354,11 @@ void App::border(D2D1_RECT_F r, uint32_t c, float radius, float thickness) {
 }
 void App::action(const std::wstring &s, D2D1_RECT_F r, Action a, int index, bool primary) {
   fill(r, primary ? colors.accent : colors.raised, 7);
-  if (!primary)
-    border(r, colors.line, 7);
+  if (!primary) {
+    bool hot = tracking && mouse.x / scale >= r.left && mouse.x / scale <= r.right &&
+               mouse.y / scale >= r.top && mouse.y / scale <= r.bottom;
+    border(r, hot ? colors.accent : colors.line, 7);
+  }
   text(s, D2D1::RectF(r.left + 12, r.top + 10, r.right - 10, r.bottom), 12,
        primary ? colors.onAccent : colors.text, true);
   hits.push_back({r, a, index});
@@ -265,10 +381,16 @@ void App::card(const Json &w, D2D1_RECT_F r, int index) {
   auto coverRect = D2D1::RectF(r.left + 8, r.top + 8, r.right - 8, r.bottom - 86);
   fill(coverRect, colors.raised, 8);
   bitmap(cover(w), coverRect, mr::text(w, "image"));
+  if (!w.value("available", true)) {
+    text(copy("unavailable"), D2D1::RectF(r.left + 18, r.top + 35, r.right - 18, r.bottom - 90), 17,
+         colors.muted);
+    text(copy("removeSaved"), D2D1::RectF(r.left + 18, r.bottom - 65, r.right - 18, r.bottom - 20),
+         12, colors.text);
+    hits.push_back({r, Action::Card, index});
+    return;
+  }
   auto cents = number(w, "priceCents");
-  std::wstring price =
-      cents == 0 ? copy("free")
-                 : wide(mr::text(w, "currency", "usd")) + L" " + std::to_wstring(cents / 100);
+  std::wstring price = cents == 0 ? copy("free") : money(cents, mr::text(w, "currency", "usd"));
   float pw = measure(price, 10) + 18;
   fill(D2D1::RectF(coverRect.right - pw - 8, coverRect.bottom - 31, coverRect.right - 8,
                    coverRect.bottom - 9),
@@ -311,6 +433,14 @@ void App::details() {
     target->PopAxisAlignedClip();
     return;
   }
+  if (!detail.value("available", true)) {
+    text(copy("unavailable"), D2D1::RectF(x, y + 40, x + w, y + 90), 24, colors.text, true);
+    text(copy("unavailableSaved"), D2D1::RectF(x, y + 110, x + w, y + 205), 13, colors.muted);
+    action(copy("removeSaved"), D2D1::RectF(x, y + 225, x + w, y + 267), Action::Favorite);
+    detailHeight = height;
+    target->PopAxisAlignedClip();
+    return;
+  }
   text(resourceLabel(prefs.language, mr::text(detail, "resourceType", "model")),
        D2D1::RectF(x, y + 5, x + w - 35, y + 28), 11, colors.accent);
   y += 43;
@@ -347,8 +477,42 @@ void App::details() {
       y += 53;
     }
   }
-  action(copy("openweb"), D2D1::RectF(x, y, x + w, y + 39), Action::Web);
-  y += 59;
+  if (!space.social.is_object())
+    space.social = Json::object();
+  bool own = !token.empty() && mr::text(creator, "handle") == mr::text(loginUser, "handle");
+  if (!mr::text(detail, "id").empty() && !own &&
+      mr::text(detail, "status", "published") == "published") {
+    action(copy(space.social.value("saved", false) ? "saved" : "favorite"),
+           D2D1::RectF(x, y, x + w / 2 - 5, y + 39), Action::Favorite, 0, true);
+    action(copy("organize"), D2D1::RectF(x + w / 2 + 5, y, x + w, y + 39), Action::FolderChoose);
+    y += 50;
+  }
+  if (!mr::text(creator, "handle").empty() && !own) {
+    action(copy(space.social.value("following", false) ? "unfollow" : "follow"),
+           D2D1::RectF(x, y, x + w / 2 - 5, y + 39), Action::Follow);
+    action(copy("chat"), D2D1::RectF(x + w / 2 + 5, y, x + w, y + 39), Action::Chat);
+    y += 50;
+    auto friendship = space.social.value("friendship", Json::object());
+    auto status = friendship.is_object() ? mr::text(friendship, "status") : "";
+    if (status == "accepted" ||
+        (status == "pending" && mr::text(friendship, "direction") == "outgoing")) {
+      action(copy(status == "accepted" ? "removeFriend" : "cancelRequest"),
+             D2D1::RectF(x, y, x + w, y + 39), Action::Friend);
+      y += 50;
+    } else {
+      action(copy(status == "pending" ? "accept" : "addFriend"), D2D1::RectF(x, y, x + w, y + 39),
+             Action::Friend);
+      y += 50;
+    }
+  }
+  if (own && (mode == 2 || mode == 4)) {
+    action(copy("editWork"), D2D1::RectF(x, y, x + w, y + 39), Action::EditWork);
+    y += 50;
+    if (mr::text(detail, "status") == "draft" || mr::text(detail, "status") == "rejected") {
+      action(copy("reviewWork"), D2D1::RectF(x, y, x + w, y + 39), Action::ReviewWork);
+      y += 50;
+    }
+  }
   auto summary = wide(localized(detail, "summary", prefs.language));
   if (!summary.empty()) {
     float h = std::min(230.f, textHeight(summary, 12, w) + 2);
@@ -391,6 +555,10 @@ void App::details() {
     action(copy("download"), D2D1::RectF(x, y, x + w, y + 37), Action::Download, int(i));
     y += 57;
   }
+  if (!mr::text(detail, "id").empty() && !own) {
+    action(copy("report"), D2D1::RectF(x, y, x + w, y + 36), Action::Report);
+    y += 49;
+  }
   detailHeight = y + detailScroll + 20;
   target->PopAxisAlignedClip();
 }
@@ -415,99 +583,116 @@ void App::paint() {
   fill(D2D1::RectF(23, 24, 53, 54), colors.accent, 8);
   text(L"MR", D2D1::RectF(27, 30, 53, 53), 13, colors.onAccent, true);
   text(L"mrright", D2D1::RectF(65, 22, nav - 12, 48), 19, colors.text, true);
-  text(L"STUDIO / NATIVE", D2D1::RectF(65, 46, nav - 12, 65), 8, colors.muted);
-  text(L"0.1.2 · C++20", D2D1::RectF(24, height - 37, nav - 10, height - 12), 10, colors.muted);
+  text(L"CREATOR PLATFORM", D2D1::RectF(65, 46, nav - 12, 65), 8, colors.muted);
+  float sideStep = std::min(42.f, std::max(31.f, (height - 300) / 10));
+  text(copy("exploreGroup"), D2D1::RectF(27, 98, nav - 16, 120), 9, colors.muted);
+  text(copy("createGroup"),
+       D2D1::RectF(27, 124 + sideStep * 2 - 3, nav - 16, 124 + sideStep * 2 + 16), 9, colors.muted);
+  text(copy("connectGroup"),
+       D2D1::RectF(27, 140 + sideStep * 5 - 3, nav - 16, 140 + sideStep * 5 + 16), 9, colors.muted);
+  text(L"STUDIO 0.2.0", D2D1::RectF(24, height - 37, nav - 10, height - 12), 10, colors.muted);
   text(L"● " + copy(cppReady        ? "connected"
                     : healthPending ? "connecting"
                                     : "offline"),
        D2D1::RectF(nav + 28, 27, width - 340, 54), 10, cppReady ? colors.accent : colors.muted);
-  auto heading = mode == 0 ? "library" : mode == 1 ? "curated" : mode == 2 ? "mine" : "downloads";
+  auto heading = modeLabel(mode);
   text(copy(heading), D2D1::RectF(nav + 28, 88, nav + content - 156, 133), 31, colors.text, true);
-  text(copy(mode == 3 ? "noDownloads" : "subhead"),
+  text(copy(mode == 3   ? "noDownloads"
+            : mode >= 4 ? "spaceIntro"
+                        : "subhead"),
        D2D1::RectF(nav + 28, 142, nav + content - 28, 175), 12, colors.muted);
-  float right = nav + content - 28, bottom = height - 65;
-  target->PushAxisAlignedClip(D2D1::RectF(nav + 18, gridTop, right + 10, bottom),
-                              D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
-  if (mode == 3) {
-    float y = gridTop - scroll;
-    for (size_t i = 0; i < jobs.size(); i++) {
-      auto &j = jobs[i];
-      auto r = D2D1::RectF(nav + 28, y, right, y + 125);
-      fill(r, colors.panel, 10);
-      border(r, colors.line, 10);
-      text(j.title, D2D1::RectF(r.left + 18, y + 15, r.right - 130, y + 42), 15, colors.text, true);
-      text(j.name, D2D1::RectF(r.left + 18, y + 48, r.right - 130, y + 73), 11, colors.muted);
-      fill(D2D1::RectF(r.left + 18, y + 89, r.right - 145, y + 93), colors.line, 2);
-      fill(D2D1::RectF(r.left + 18, y + 89,
-                       r.left + 18 + (r.right - r.left - 163) * float(j.progress), y + 93),
-           j.cancelled ? colors.muted
-           : j.failed  ? 0xd99b80
-                       : colors.accent,
-           2);
-      if (!j.done && j.cancel->load())
-        text(copy("cancelling"), D2D1::RectF(right - 128, y + 38, right - 18, y + 90), 11,
-             colors.muted);
-      else if (!j.done)
-        action(copy("cancel"), D2D1::RectF(right - 123, y + 40, right - 18, y + 79), Action::Cancel,
-               int(i));
-      else if (!j.file.empty() && !j.failed && !j.cancelled)
-        action(copy("folder"), D2D1::RectF(right - 123, y + 40, right - 18, y + 79), Action::Folder,
-               int(i));
-      else
-        text(j.cancelled ? copy("cancelled")
-             : j.failed  ? copy("error")
-                         : copy("downloadComplete"),
-             D2D1::RectF(right - 128, y + 38, right - 18, y + 90), 11, colors.muted);
-      y += 141;
-    }
-    maxScroll = std::max(0.f, y + scroll - bottom + 20);
-  } else if (loading)
-    text(copy("loading"), D2D1::RectF(nav + 30, gridTop + 40, right, gridTop + 90), 17,
-         colors.muted);
-  else if (!lastError.empty())
-    text(copy(lastError == "notSigned" ? "notSigned" : "offline"),
-         D2D1::RectF(nav + 30, gridTop + 35, right, gridTop + 85), 17, colors.muted);
-  else if (works.empty())
-    text(copy("empty"), D2D1::RectF(nav + 30, gridTop + 35, right, gridTop + 95), 17, colors.muted);
-  else if (wall && mode < 2) {
-    float cw = 260, ch = 250, gap = 26, ww = right - nav - 28, hh = bottom - gridTop;
-    int cols = int(ww / (cw + gap)) + 3, rows = int(hh / (ch + gap)) + 3;
-    float ox = std::fmod(worldX, cw + gap), oy = std::fmod(worldY, ch + gap);
-    int cellX = int(std::floor(worldX / (cw + gap))), cellY = int(std::floor(worldY / (ch + gap)));
-    for (int row = -1; row < rows; row++)
-      for (int col = -1; col < cols; col++) {
-        float x = nav + 28 + col * (cw + gap) + ox, y = gridTop + row * (ch + gap) + oy;
-        int i = ((row - cellY) * 11 + col - cellX) % int(works.size());
-        if (i < 0)
-          i += int(works.size());
-        if (x + cw < nav + 20 || x > right || y + ch < gridTop || y > bottom)
-          continue;
-        card(works[i], D2D1::RectF(x, y, x + cw, y + ch), i);
-      }
+  if (mode >= 4 && (mode != 5 || token.empty())) {
+    paintSpace();
   } else {
-    float available = content - 56, gap = 20;
-    int cols = std::max(1, int((available + gap) / 270));
-    float cw = (available - gap * (cols - 1)) / cols, ch = cw * .63f + 92;
-    for (size_t i = 0; i < works.size(); i++) {
-      float x = nav + 28 + (int(i) % cols) * (cw + gap),
-            y = gridTop + (int(i) / cols) * (ch + gap) - scroll;
-      if (y + ch < gridTop || y > bottom)
-        continue;
-      card(works[i], D2D1::RectF(x, y, x + cw, y + ch), int(i));
+    if (mode == 5)
+      paintSpace();
+    float right = nav + content - 28, bottom = height - 65;
+    target->PushAxisAlignedClip(D2D1::RectF(nav + 18, gridTop, right + 10, bottom),
+                                D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+    if (mode == 3) {
+      float y = gridTop - scroll;
+      for (size_t i = 0; i < jobs.size(); i++) {
+        auto &j = jobs[i];
+        auto r = D2D1::RectF(nav + 28, y, right, y + 125);
+        fill(r, colors.panel, 10);
+        border(r, colors.line, 10);
+        text(j.title, D2D1::RectF(r.left + 18, y + 15, r.right - 130, y + 42), 15, colors.text,
+             true);
+        text(j.name, D2D1::RectF(r.left + 18, y + 48, r.right - 130, y + 73), 11, colors.muted);
+        fill(D2D1::RectF(r.left + 18, y + 89, r.right - 145, y + 93), colors.line, 2);
+        fill(D2D1::RectF(r.left + 18, y + 89,
+                         r.left + 18 + (r.right - r.left - 163) * float(j.progress), y + 93),
+             j.cancelled ? colors.muted
+             : j.failed  ? 0xd99b80
+                         : colors.accent,
+             2);
+        if (!j.done && j.cancel->load())
+          text(copy("cancelling"), D2D1::RectF(right - 128, y + 38, right - 18, y + 90), 11,
+               colors.muted);
+        else if (!j.done)
+          action(copy("cancel"), D2D1::RectF(right - 123, y + 40, right - 18, y + 79),
+                 Action::Cancel, int(i));
+        else if (!j.file.empty() && !j.failed && !j.cancelled)
+          action(copy("folder"), D2D1::RectF(right - 123, y + 40, right - 18, y + 79),
+                 Action::Folder, int(i));
+        else
+          text(j.cancelled ? copy("cancelled")
+               : j.failed  ? copy("error")
+                           : copy("downloadComplete"),
+               D2D1::RectF(right - 128, y + 38, right - 18, y + 90), 11, colors.muted);
+        y += 141;
+      }
+      maxScroll = std::max(0.f, y + scroll - bottom + 20);
+    } else if (loading)
+      text(copy("loading"), D2D1::RectF(nav + 30, gridTop + 40, right, gridTop + 90), 17,
+           colors.muted);
+    else if (!lastError.empty())
+      text(copy(lastError == "notSigned" ? "notSigned" : "offline"),
+           D2D1::RectF(nav + 30, gridTop + 35, right, gridTop + 85), 17, colors.muted);
+    else if (works.empty())
+      text(copy("empty"), D2D1::RectF(nav + 30, gridTop + 35, right, gridTop + 95), 17,
+           colors.muted);
+    else if (wall && mode < 2) {
+      float cw = 260, ch = 250, gap = 26, ww = right - nav - 28, hh = bottom - gridTop;
+      int cols = int(ww / (cw + gap)) + 3, rows = int(hh / (ch + gap)) + 3;
+      float ox = std::fmod(worldX, cw + gap), oy = std::fmod(worldY, ch + gap);
+      int cellX = int(std::floor(worldX / (cw + gap))),
+          cellY = int(std::floor(worldY / (ch + gap)));
+      for (int row = -1; row < rows; row++)
+        for (int col = -1; col < cols; col++) {
+          float x = nav + 28 + col * (cw + gap) + ox, y = gridTop + row * (ch + gap) + oy;
+          int i = ((row - cellY) * 11 + col - cellX) % int(works.size());
+          if (i < 0)
+            i += int(works.size());
+          if (x + cw < nav + 20 || x > right || y + ch < gridTop || y > bottom)
+            continue;
+          card(works[i], D2D1::RectF(x, y, x + cw, y + ch), i);
+        }
+    } else {
+      float available = content - 56, gap = 20;
+      int cols = std::max(1, int((available + gap) / 270));
+      float cw = (available - gap * (cols - 1)) / cols, ch = cw * .63f + 92;
+      for (size_t i = 0; i < works.size(); i++) {
+        float x = nav + 28 + (int(i) % cols) * (cw + gap),
+              y = gridTop + (int(i) / cols) * (ch + gap) - scroll;
+        if (y + ch < gridTop || y > bottom)
+          continue;
+        card(works[i], D2D1::RectF(x, y, x + cw, y + ch), int(i));
+      }
+      maxScroll =
+          std::max(0.f, std::ceil(float(works.size()) / cols) * (ch + gap) - (bottom - gridTop));
     }
-    maxScroll =
-        std::max(0.f, std::ceil(float(works.size()) / cols) * (ch + gap) - (bottom - gridTop));
-  }
-  target->PopAxisAlignedClip();
-  if (wall && mode < 2)
-    text(copy("wallHelp"), D2D1::RectF(nav + 30, height - 48, nav + content - 30, height - 12), 10,
-         colors.muted);
-  else if (mode != 3) {
-    auto value = std::to_wstring(page) + L" / " +
-                 std::to_wstring(std::max<uint64_t>(1, number(pagination, "pages", 1)));
-    text(value,
-         D2D1::RectF(nav + content / 2 - 30, height - 43, nav + content / 2 + 60, height - 12), 11,
-         colors.muted);
+    target->PopAxisAlignedClip();
+    if (wall && mode < 2)
+      text(copy("wallHelp"), D2D1::RectF(nav + 30, height - 48, nav + content - 30, height - 12),
+           10, colors.muted);
+    else if (mode != 3) {
+      auto value = std::to_wstring(page) + L" / " +
+                   std::to_wstring(std::max<uint64_t>(1, number(pagination, "pages", 1)));
+      text(value,
+           D2D1::RectF(nav + content / 2 - 30, height - 43, nav + content / 2 + 60, height - 12),
+           11, colors.muted);
+    }
   }
   details();
   if (target->EndDraw() == static_cast<HRESULT>(D2DERR_RECREATE_TARGET)) {
@@ -523,8 +708,18 @@ void App::paint() {
 }
 std::optional<Hit> App::at(float x, float y) {
   for (auto i = hits.rbegin(); i != hits.rend(); ++i) {
+    bool row = i->action == Action::Thread || i->action == Action::FeedItem ||
+               i->action == Action::Person || i->action == Action::FriendAccept ||
+               i->action == Action::FriendDecline || i->action == Action::FriendCancel ||
+               i->action == Action::OrderItem;
+    if (row && y < space.bodyTop)
+      continue;
+    if (i->action >= Action::Navigate && !(aside && i->rect.left >= width - aside) &&
+        (x < nav || y < 190 || y > height - 65))
+      continue;
     if (i->action == Action::Card &&
-        (x < nav + 18 || x > nav + content - 18 || y < gridTop || y > height - 65))
+        (x < nav + 18 || x > nav + content - 18 || y < (mode >= 4 && mode != 5 ? 190 : gridTop) ||
+         y > height - 65))
       continue;
     if (i->action != Action::Card && aside && i->rect.left >= width - aside &&
         (y < 66 || y > height))
@@ -539,7 +734,8 @@ bool App::translate(MSG &message) {
     bool control = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
     auto key = message.wParam;
     bool global =
-        key == VK_F5 || key == VK_ESCAPE || (control && (key == 'F' || key == 'U' || key == 'L'));
+        key == VK_F5 || key == VK_ESCAPE ||
+        (control && (key == 'F' || key == 'U' || key == 'L' || (key == VK_RETURN && mode == 6)));
     bool gallery = message.hwnd == hwnd && (key == VK_LEFT || key == VK_RIGHT || key == VK_UP ||
                                             key == VK_DOWN || key == VK_RETURN);
     if (global || gallery) {
@@ -566,7 +762,7 @@ LRESULT App::message(UINT msg, WPARAM wp, LPARAM lp) {
   }
   case WM_GETMINMAXINFO: {
     auto p = reinterpret_cast<MINMAXINFO *>(lp);
-    p->ptMinTrackSize = {int(1000 * scale), int(620 * scale)};
+    p->ptMinTrackSize = {int(1000 * scale), int(760 * scale)};
     return 0;
   }
   case WM_ERASEBKGND:
@@ -590,14 +786,19 @@ LRESULT App::message(UINT msg, WPARAM wp, LPARAM lp) {
   case WM_DRAWITEM: {
     auto i = reinterpret_cast<DRAWITEMSTRUCT *>(lp);
     int id = int(i->CtlID);
-    bool active = (id >= 110 && id <= 113 && mode == id - 110) ||
+    bool active = (id == 104 && mode == 9) ||
+                  (id >= 110 && id <= 119 && mode == (id == 119 ? 10 : id - 110)) ||
                   (id >= 300 && id <= 307 &&
                    type == (id == 300 ? "" : std::string(resourceTypes[id - 301]))),
-         primary = id == 101;
-    auto p = CreatePen(PS_SOLID, 1, gdi(active ? colors.accent : colors.line));
+         primary = id == 101 || id == 205;
+    bool navigation = (id >= 110 && id <= 119) || id == 104 || id == 103;
+    auto p = CreatePen(PS_SOLID, 1,
+                       gdi(active       ? colors.line
+                           : navigation ? colors.panel
+                                        : colors.line));
     auto b = CreateSolidBrush(gdi(primary ? colors.accent : active ? colors.raised : colors.panel));
     auto background = CreateSolidBrush(
-        gdi((id >= 110 && id <= 113) || id == 103 || id == 104 ? colors.panel : colors.bg));
+        gdi((id >= 110 && id <= 119) || id == 103 || id == 104 ? colors.panel : colors.bg));
     FillRect(i->hDC, &i->rcItem, background);
     DeleteObject(background);
     auto op = SelectObject(i->hDC, p), ob = SelectObject(i->hDC, b);
@@ -608,18 +809,48 @@ LRESULT App::message(UINT msg, WPARAM wp, LPARAM lp) {
     DeleteObject(b);
     SetBkMode(i->hDC, TRANSPARENT);
     SetTextColor(i->hDC, gdi(primary ? colors.onAccent : active ? colors.text : colors.muted));
-    SelectObject(i->hDC, font);
+    auto previousFont = SelectObject(i->hDC, font);
     wchar_t s[256];
     GetWindowTextW(i->hwndItem, s, 256);
     RECT r = i->rcItem;
-    r.left += 10;
+    r.left += navigation ? int(43 * scale) : 10;
     r.right -= 8;
-    DrawTextW(i->hDC, s, -1, &r, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+    if (navigation)
+      navigationIcon(i->hDC, id, i->rcItem.left + int(14 * scale),
+                     (i->rcItem.top + i->rcItem.bottom) / 2 - int(8 * scale), scale,
+                     active ? colors.accent : colors.muted);
+    auto unread = id == 116 ? number(space.summary, "messagesUnread") +
+                                  number(space.summary, "requestsUnread")
+                  : id == 117 ? number(space.summary, "feedUnread")
+                              : 0;
+    if (unread)
+      r.right -= int(30 * scale);
+    DrawTextW(i->hDC, s, -1, &r,
+              (navigation ? DT_LEFT : DT_CENTER) | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+    if (unread) {
+      auto value = unread > 99 ? L"99+" : std::to_wstring(unread);
+      RECT badge = i->rcItem;
+      badge.left = badge.right - int(33 * scale);
+      badge.right -= int(6 * scale);
+      SetTextColor(i->hDC, gdi(colors.accent));
+      DrawTextW(i->hDC, value.c_str(), -1, &badge, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    }
+    SelectObject(i->hDC, previousFont);
     if (i->itemState & ODS_FOCUS)
       DrawFocusRect(i->hDC, &i->rcItem);
     return TRUE;
   }
   case WM_COMMAND:
+    if (LOWORD(wp) == 203 && HIWORD(wp) == CBN_SELCHANGE) {
+      int n = int(SendMessageW(folders, CB_GETCURSEL, 0, 0));
+      space.folder =
+          n > 0 && size_t(n) <= space.folders.size() ? mr::text(space.folders[n - 1], "id") : "";
+      page = 1;
+      load();
+      return 0;
+    }
+    if (LOWORD(wp) == 204)
+      return 0;
     if (LOWORD(wp) == 201 && HIWORD(wp) == EN_CHANGE) {
       KillTimer(hwnd, 1);
       SetTimer(hwnd, 1, 350, nullptr);
@@ -632,6 +863,15 @@ LRESULT App::message(UINT msg, WPARAM wp, LPARAM lp) {
       button(LOWORD(wp));
     return 0;
   case WM_TIMER:
+    if (wp == 3) {
+      spaceTimer();
+      return 0;
+    }
+    if (wp == 4 && mode == 4 && prefs.motion && IsWindowVisible(hwnd) && IsWindowEnabled(hwnd) &&
+        !IsIconic(hwnd) && !loading) {
+      repaint();
+      return 0;
+    }
     if (wp == 1) {
       KillTimer(hwnd, 1);
       int n = GetWindowTextLengthW(search);
@@ -674,7 +914,9 @@ LRESULT App::message(UINT msg, WPARAM wp, LPARAM lp) {
     }
     auto h = at(x, y);
     int now = h && h->action == Action::Card ? h->index : -1;
-    if (now != hover) {
+    int hot = h ? int(h->action) * 1000 + h->index : -1;
+    if (now != hover || hot != hoverHit) {
+      hoverHit = hot;
       hover = now;
       repaint();
     }
@@ -682,6 +924,7 @@ LRESULT App::message(UINT msg, WPARAM wp, LPARAM lp) {
   }
   case WM_MOUSELEAVE:
     tracking = false;
+    hoverHit = -1;
     hover = -1;
     KillTimer(hwnd, 2);
     repaint();
@@ -713,6 +956,11 @@ LRESULT App::message(UINT msg, WPARAM wp, LPARAM lp) {
     POINT p{GET_X_LPARAM(lp), GET_Y_LPARAM(lp)};
     ScreenToClient(hwnd, &p);
     float delta = GET_WHEEL_DELTA_WPARAM(wp) / 120.f;
+    if (mode == 6 && p.x / scale > nav + 28 + std::min(270.f, content * .32f)) {
+      space.threadScroll = std::clamp(space.threadScroll + delta * 70, 0.f, space.threadMaxScroll);
+      repaint();
+      return 0;
+    }
     if (aside && p.x / scale > width - aside)
       detailScroll =
           std::clamp(detailScroll - delta * 70, 0.f, std::max(0.f, detailHeight - height + 24));
@@ -724,6 +972,10 @@ LRESULT App::message(UINT msg, WPARAM wp, LPARAM lp) {
     return 0;
   }
   case WM_KEYDOWN:
+    if (mode == 6 && wp == VK_RETURN && (GetKeyState(VK_CONTROL) & 0x8000)) {
+      sendMessage();
+      return 0;
+    }
     if ((GetKeyState(VK_CONTROL) & 0x8000) && wp == 'F') {
       SetFocus(search);
       return 0;
@@ -777,6 +1029,8 @@ LRESULT App::message(UINT msg, WPARAM wp, LPARAM lp) {
   case WM_DESTROY:
     KillTimer(hwnd, 1);
     KillTimer(hwnd, 2);
+    KillTimer(hwnd, 3);
+    KillTimer(hwnd, 4);
     RemovePropW(hwnd, L"MRLanguage");
     PostQuitMessage(0);
     return 0;

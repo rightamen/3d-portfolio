@@ -189,6 +189,8 @@ LRESULT CALLBACK procedure(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     return DefWindowProcW(h, msg, wp, lp);
   }
 }
+Json studioFixture(const std::filesystem::path &);
+int studioTests(const std::filesystem::path &, const std::filesystem::path &);
 int uiTests(const std::wstring &, const std::filesystem::path &);
 int selfTest(const Http &, const std::filesystem::path &);
 int integrationTest(const std::filesystem::path &, const std::filesystem::path &);
@@ -217,8 +219,23 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show) {
       result = uiTests(server, argv[2]);
     } else if (argc == 4 && std::wstring(argv[1]) == L"--integration-test") {
       result = integrationTest(argv[2], argv[3]);
+    } else if (argc == 4 && std::wstring(argv[1]) == L"--studio-test") {
+      result = studioTests(argv[2], argv[3]);
     } else {
+      Json fixture, user;
+      if (argc == 3 && std::wstring(argv[1]) == L"--studio-preview") {
+        fixture = studioFixture(argv[2]);
+        server = wide(text(fixture, "server"));
+        user = payload(Http(server).json(
+            "POST", "/api/auth/login", "",
+            {{"email", text(fixture, "email")}, {"password", text(fixture, "password")}}));
+      }
       App app(server);
+      if (user.is_object()) {
+        app.token = text(user["session"], "token");
+        app.loginUser = user["user"];
+        app.mode = 4;
+      }
       WNDCLASSW c{};
       c.lpfnWndProc = procedure;
       c.hInstance = instance;
