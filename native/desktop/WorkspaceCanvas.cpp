@@ -50,7 +50,9 @@ void App::spaceLayout() {
   bool send = chat && canSendMessage(obj(space.thread, "thread")) && !space.busy;
   EnableWindow(composer, send);
   EnableWindow(buttons[205], send);
-  place(folders, nav + 28, 193, std::min(280.f, content - 56), 220, mode == 5 && !token.empty());
+  place(folders, nav + 28, 193, std::min(280.f, content - 56), 220, false);
+  place(buttons[206], nav + 28, 193, std::min(280.f, content - 56), 38,
+        mode == 5 && !token.empty());
   if (mode == 5) {
     auto selected = space.folder;
     SendMessageW(folders, CB_RESETCONTENT, 0, 0);
@@ -64,6 +66,8 @@ void App::spaceLayout() {
         index = int(i) + 1;
     }
     SendMessageW(folders, CB_SETCURSEL, index, 0);
+    auto name = index > 0 ? wide(mr::text(space.folders[index - 1], "name")) : copy("allFavorites");
+    SetWindowTextW(buttons[206], (name + L"   ▾").c_str());
   }
 }
 void App::paintSpace() {
@@ -361,7 +365,7 @@ void App::paintSpace() {
       fill(D2D1::RectF(x, y, right, y + 100), colors.panel, 12);
       border(D2D1::RectF(x, y, right, y + 100), colors.line, 12);
       fill(D2D1::RectF(x + 17, y + 20, x + 71, y + 74), colors.raised, 27);
-      bitmap(mr::text(user, "avatarUrl"), D2D1::RectF(x + 17, y + 20, x + 71, y + 74));
+      avatarBitmap(mr::text(user, "avatarUrl"), D2D1::RectF(x + 17, y + 20, x + 71, y + 74));
       auto name = wide(mr::text(user, "displayName", utf8(copy("unavailable"))));
       text(name, D2D1::RectF(x + 88, y + 20, right - 250, y + 48), 16, colors.text, true);
       text(L"@" + wide(mr::text(user, "handle")), D2D1::RectF(x + 88, y + 54, right - 250, y + 81),
@@ -390,6 +394,7 @@ void App::paintSpace() {
     text(wide(mr::text(p, "bio")), D2D1::RectF(x + 28, y + 143, right - 200, y + 220), 14,
          colors.muted);
     tag("editProfile", right - 180, y + 34, Action::EditProfile, 0, 152);
+    tag("viewPortfolio", right - 180, y + 87, Action::Portfolio, 0, 152);
     y += 290;
     panel(y, 150);
     text(copy("appearance"), D2D1::RectF(x + 25, y + 23, right, y + 55), 18, colors.text, true);

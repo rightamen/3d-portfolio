@@ -29,6 +29,9 @@ void App::navigate(int destination) {
   }
   if (!space.threadId.empty())
     space.drafts[space.threadId] = inputValue(composer);
+  exhibitionFocus = false;
+  if (destination == 1 || destination == 11 || destination == 12)
+    type.clear();
   mode = destination;
   query.clear();
   SetWindowTextW(search, L"");
@@ -375,7 +378,7 @@ bool App::spaceEvent(Event &e) {
   } else if (e.key == "relationship" || e.key == "favorite") {
     if (!detail.is_null())
       loadRelationship();
-    if (mode == 5)
+    if (mode == 5 || mode == 12)
       load();
   } else if (e.key == "profile") {
     loginUser["displayName"] =
@@ -434,7 +437,9 @@ void App::spaceAction(Hit hit) {
                                 Json::array());
   auto item =
       hit.index >= 0 && size_t(hit.index) < items.size() ? items[hit.index] : Json::object();
-  auto creator = detail.is_object() ? detail.value("creator", Json::object()) : Json::object();
+  auto creator = detail.is_object() ? detail.value("creator", Json::object())
+                 : mode == 12       ? portfolio
+                                    : Json::object();
   auto handle = mr::text(creator, "handle");
   switch (hit.action) {
   case Action::Navigate:
@@ -563,19 +568,7 @@ void App::spaceAction(Hit hit) {
     auto name = mr::text(p, "handle");
     if (name.empty())
       break;
-    auto client = http;
-    dispatch(io, hwnd, Operation::Detail, ++detailGen, account, false, [=](Event &e) {
-      auto profile = payload(client.json("GET", "/api/users/" + encoded(name)))
-                         .value("profile", Json::object());
-      Json card = {{"title", mr::text(p, "displayName")},
-                   {"summary", mr::text(profile, "bio")},
-                   {"resourceType", "creator"},
-                   {"creator", p},
-                   {"image", mr::text(p, "avatarUrl")}};
-      e.value = {{"data", {{"work", card}}}};
-    });
-    detailLoading = true;
-    layout();
+    openPortfolio(name);
     break;
   }
   case Action::FriendAccept:

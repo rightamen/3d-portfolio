@@ -1,5 +1,6 @@
 #pragma once
 #include "../common/Resources.hpp"
+#include "Exhibition.hpp"
 #include "Windows.hpp"
 #include "Workspace.hpp"
 #include <condition_variable>
@@ -39,7 +40,9 @@ enum class Operation {
   Conversation,
   Relationship,
   Summary,
-  Receipt
+  Receipt,
+  Exhibition,
+  Portfolio
 };
 struct Event {
   Operation operation = Operation::Health;
@@ -79,11 +82,6 @@ inline std::wstring money(uint64_t cents, const std::string &currency) {
          (cents % 100 < 10 ? L"0" : L"") + std::to_wstring(cents % 100);
 }
 std::shared_ptr<Model> safeDecode(const std::vector<unsigned char> &);
-struct Palette {
-  uint32_t bg, panel, raised, text, muted, line, accent, onAccent;
-};
-Palette palette(int);
-COLORREF gdi(uint32_t);
 enum class Action {
   Card,
   Download,
@@ -123,7 +121,14 @@ enum class Action {
   FeedItem,
   ReadFeed,
   Report,
-  OrderItem
+  OrderItem,
+  ExhibitionSelect,
+  ExhibitionOpen,
+  ExhibitionReset,
+  ExhibitionFocus,
+  BrowseHome,
+  Portfolio,
+  PublicPage
 };
 struct Hit {
   D2D1_RECT_F rect;
@@ -141,6 +146,11 @@ struct Job {
 class App {
 public:
   HWND hwnd = nullptr, search = nullptr, subjects = nullptr, composer = nullptr, folders = nullptr;
+  D2D1_RECT_F stageBounds{}, browseBounds{};
+  uint64_t hoverStart = 0;
+  bool scrollBarDrag = false;
+  float scrollDragY = 0, scrollDragStart = 0;
+  HWND exhibition = nullptr, workPreview = nullptr;
   HFONT font = nullptr;
   HBRUSH editBrush = nullptr;
   std::map<int, HWND> buttons;
@@ -158,10 +168,15 @@ public:
   Palette colors;
   Json works = Json::array(), detail, loginUser, pagination = Json::object(),
        counts = Json::object();
+  Json featured = Json::array(), portfolio = Json::object();
+  std::string portfolioHandle;
+  int exhibitionIndex = 0;
+  bool homeWall = true, portfolioWall = true;
+  bool exhibitionLoading = false, exhibitionFailed = false, exhibitionFocus = false;
   std::vector<Hit> hits;
   std::vector<Job> jobs;
   std::string token, type, subject, query, lastError, detailError, pendingWork, pendingAsset;
-  int mode = 0, page = 1, generation = 0, detailGen = 0, account = 0, nextJob = 1, hover = -1,
+  int mode = 11, page = 1, generation = 0, detailGen = 0, account = 0, nextJob = 1, hover = -1,
       hoverHit = -1, afterLogin = 0, previewGeneration = -1, selectedIndex = -1;
   bool loading = false, detailLoading = false, uploading = false, authBusy = false,
        cppReady = false, healthPending = false, wall = false, tracking = false, dragging = false,
@@ -186,6 +201,26 @@ public:
   void navigate(int);
   void loadSpace();
   void paintSpace();
+  bool publicPage() const {
+    return mode == 0 || mode == 1 || mode == 11 || mode == 12;
+  }
+  bool workroom() const {
+    return publicPage() && detail.is_object() && detailError.empty();
+  }
+  void paintChrome();
+  void paintScrollBar();
+  float publicPager(float);
+  void paintHome();
+  void paintPortfolio();
+  void paintWorkroom();
+  void layoutShowcase();
+  void synchronizeExhibition();
+  void openPortfolio(const std::string &);
+  bool showcaseEvent(Event &);
+  bool showcaseAction(Hit);
+  void gradient(D2D1_RECT_F, uint32_t, uint32_t, bool vertical = true);
+  void avatarBitmap(const std::string &, D2D1_RECT_F);
+  void coverBitmap(const std::string &, D2D1_RECT_F, const std::string &fallback = {});
   void spaceLayout();
   void mutate(const std::string &, const std::string &, const Json &, const std::string &key = "");
   bool spaceEvent(Event &);

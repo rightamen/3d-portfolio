@@ -190,6 +190,7 @@ LRESULT CALLBACK procedure(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
   }
 }
 Json studioFixture(const std::filesystem::path &);
+int designTests(const std::filesystem::path &, const std::filesystem::path &);
 int studioTests(const std::filesystem::path &, const std::filesystem::path &);
 int uiTests(const std::wstring &, const std::filesystem::path &);
 int selfTest(const Http &, const std::filesystem::path &);
@@ -219,6 +220,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show) {
       result = uiTests(server, argv[2]);
     } else if (argc == 4 && std::wstring(argv[1]) == L"--integration-test") {
       result = integrationTest(argv[2], argv[3]);
+    } else if (argc == 4 && std::wstring(argv[1]) == L"--design-test") {
+      result = designTests(argv[2], argv[3]);
     } else if (argc == 4 && std::wstring(argv[1]) == L"--studio-test") {
       result = studioTests(argv[2], argv[3]);
     } else {
@@ -245,7 +248,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show) {
       RegisterClassW(&c);
       int w = std::min(1440, GetSystemMetrics(SM_CXSCREEN) - 90),
           h = std::min(960, GetSystemMetrics(SM_CYSCREEN) - 90);
-      auto window = CreateWindowExW(0, L"MRStudioNative", L"mrright Studio | C++ Native",
+      auto window = CreateWindowExW(0, L"MRStudioNative", L"mrright Studio",
                                     WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, CW_USEDEFAULT,
                                     CW_USEDEFAULT, w, h, nullptr, nullptr, instance, &app);
       if (!window)

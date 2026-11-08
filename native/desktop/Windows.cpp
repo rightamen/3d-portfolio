@@ -110,7 +110,7 @@ static const Copy copies[] = {
     {"notSigned", {L"请先登录账号", L"Sign in to continue", L"ログインしてください"}},
     {"downloadComplete", {L"下载完成", L"Download complete", L"保存しました"}},
     {"theme", {L"界面主题", L"Theme", L"テーマ"}},
-    {"dark", {L"石墨青绿", L"Graphite jade", L"グラファイト"}},
+    {"dark", {L"石墨鸢尾", L"Graphite iris", L"グラファイト・アイリス"}},
     {"blue", {L"午夜蓝", L"Midnight blue", L"ミッドナイト"}},
     {"paper", {L"暖纸白", L"Warm paper", L"ペーパー"}},
     {"language", {L"界面语言", L"Language", L"言語"}},
@@ -211,6 +211,11 @@ public:
       SetWindowTheme(c, L"DarkMode_Explorer", nullptr);
     if (_wcsicmp(cls, L"EDIT") == 0 && !(style & ES_MULTILINE))
       centerInput(c);
+    if (_wcsicmp(cls, L"EDIT") == 0) {
+      auto region = CreateRoundRectRgn(0, 0, px(w) + 1, px(h) + 1, px(12), px(12));
+      if (!SetWindowRgn(c, region, FALSE))
+        DeleteObject(region);
+    }
     return c;
   }
   void labelAt(const char *key, int y) {
@@ -284,8 +289,8 @@ public:
       f->font = CreateFontW(-f->px(14), 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
                             OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
                             DEFAULT_PITCH, L"Segoe UI");
-      f->bg = CreateSolidBrush(color(f->theme == 2 ? 0xf4f1e9 : 0x111820));
-      f->input = CreateSolidBrush(color(f->theme == 2 ? 0xe7e4dc : 0x1d2630));
+      f->bg = CreateSolidBrush(color(palette(f->theme).bg));
+      f->input = CreateSolidBrush(color(palette(f->theme).raised));
       f->build();
       return 0;
     }
@@ -303,10 +308,10 @@ public:
     }
     if (msg == WM_CTLCOLORSTATIC || msg == WM_CTLCOLOREDIT || msg == WM_CTLCOLORLISTBOX) {
       HDC dc = reinterpret_cast<HDC>(wp);
-      SetTextColor(dc, color(f->theme == 2 ? 0x26352e : 0xe4ebe7));
+      SetTextColor(dc, color(palette(f->theme).text));
       SetBkColor(dc, color(msg == WM_CTLCOLOREDIT || msg == WM_CTLCOLORLISTBOX
-                               ? (f->theme == 2 ? 0xe7e4dc : 0x1d2630)
-                               : (f->theme == 2 ? 0xf4f1e9 : 0x111820)));
+                               ? palette(f->theme).raised
+                               : palette(f->theme).bg));
       return reinterpret_cast<LRESULT>(
           msg == WM_CTLCOLOREDIT || msg == WM_CTLCOLORLISTBOX ? f->input : f->bg);
     }
@@ -318,17 +323,25 @@ public:
     }
     if (msg == WM_DRAWITEM) {
       auto item = reinterpret_cast<DRAWITEMSTRUCT *>(lp);
-      auto fill = CreateSolidBrush(
-          color(item->CtlID == IDOK ? 0x67cdb0 : (f->theme == 2 ? 0xe0ddd5 : 0x25323c)));
-      FillRect(item->hDC, &item->rcItem, fill);
+      auto theme = palette(f->theme);
+      FillRect(item->hDC, &item->rcItem, f->bg);
+      auto fill = CreateSolidBrush(color(item->CtlID == IDOK ? theme.accent : theme.raised));
+      auto pen = CreatePen(PS_SOLID, 1, color(item->CtlID == IDOK ? theme.accent : theme.line));
+      auto previousBrush = SelectObject(item->hDC, fill),
+           previousPen = SelectObject(item->hDC, pen);
+      RoundRect(item->hDC, item->rcItem.left, item->rcItem.top, item->rcItem.right,
+                item->rcItem.bottom, f->px(12), f->px(12));
+      SelectObject(item->hDC, previousBrush);
+      SelectObject(item->hDC, previousPen);
       DeleteObject(fill);
+      DeleteObject(pen);
       SetBkMode(item->hDC, TRANSPARENT);
-      SetTextColor(item->hDC,
-                   color(item->CtlID == IDOK ? 0x10251e : (f->theme == 2 ? 0x24322c : 0xe5ede9)));
-      SelectObject(item->hDC, f->font);
+      SetTextColor(item->hDC, color(item->CtlID == IDOK ? theme.onAccent : theme.text));
+      auto previousFont = SelectObject(item->hDC, f->font);
       wchar_t t[160]{};
       GetWindowTextW(item->hwndItem, t, 160);
       DrawTextW(item->hDC, t, -1, &item->rcItem, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+      SelectObject(item->hDC, previousFont);
       if (item->itemState & ODS_FOCUS)
         DrawFocusRect(item->hDC, &item->rcItem);
       return TRUE;

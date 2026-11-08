@@ -148,8 +148,13 @@ int studioTests(const std::filesystem::path &path, const std::filesystem::path &
       app->navigate(mode);
       pump([&] { return !app->loading; });
       check(app->space.error.empty(), "workspace section loads");
-      if (mode == 5)
+      if (mode == 5) {
         check(!app->works.empty(), "saved works render in the native library");
+        check(GetWindowLongPtrW(app->buttons[206], GWL_STYLE) & WS_VISIBLE,
+              "collection selector follows the shared button style");
+        check(!(GetWindowLongPtrW(app->folders, GWL_STYLE) & WS_VISIBLE),
+              "legacy collection dropdown does not overlap styled selector");
+      }
       for (auto size : {SIZE{980, 760}, SIZE{1280, 850}, SIZE{1600, 1000}}) {
         MoveWindow(window, 0, 0, size.cx, size.cy, FALSE);
         for (int theme = 0; theme < 3; theme++)

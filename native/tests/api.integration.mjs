@@ -77,6 +77,7 @@ try{
  for(const [name,status]of [['设计说明.txt',201],['../escape.txt',400],['..\\escape.txt',400],['wrong.exe',400],['bad\r\n.txt',400]]){
   const f=new FormData();f.set('kind','source');f.set('displayName',name);f.set('file',new Blob(['native-test']),'resource.txt');const r=await fetch('http://127.0.0.1:'+nodePort+'/api/account/works/'+draft.work.id+'/assets?kind=source',{method:'POST',headers:{Authorization:'Bearer '+token},body:f});check(r.status===status,'filename validation '+status);const j=await r.json();if(status===201)check(j.data.asset.fileName===name,'Unicode filename preserved')
  }
+ await pool.query("UPDATE works SET curation_score=94,exhibition_recommended=true WHERE id IN ('native-video','native-material')");
  // Seed disposable peers only after catalogue assertions so the public API tests stay exact.
  const peerEmail='native-peer@example.invalid',peerPassword='Peer-'+randomBytes(12).toString('hex');
  const strangerEmail='native-stranger@example.invalid',strangerPassword='Stranger-'+randomBytes(12).toString('hex');
@@ -92,6 +93,7 @@ try{
  await api('PUT','/api/works/native-peer/native-peer-art/favorite',{saved:true},token);
  const collection=await api('POST','/api/account/collections',{name:'灵感档案',description:'Native preview collection'},token);
  await api('PUT','/api/account/collections/'+collection.collection.id+'/works/native-peer-art',{included:true},token);
+ for(let i=0;i<28;i++)await pool.query("INSERT INTO works(id,creator_id,slug,title,resource_type,status,image,published_at)VALUES($1,$2,$1,$3,'image','published','/assets/projects/fire-extinguisher.png',now())",['native-peer-page-'+i,peer.user.id,'Portfolio pagination '+i]);
  const intro=await api('POST','/api/account/messages/threads',{handle:'native-creator'},stranger.session.token);
  await api('POST','/api/account/messages/threads/'+intro.thread.id+'/messages',{body:'你好！想交流一下材质制作的思路。',clientId:'native-preview-intro-001'},stranger.session.token);
  gateway=createServer(async(req,res)=>{

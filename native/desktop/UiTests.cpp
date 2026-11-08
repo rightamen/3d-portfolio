@@ -14,6 +14,7 @@ int uiTests(const std::wstring &server, const std::filesystem::path &report) {
       throw std::runtime_error(label);
   };
   App app(server);
+  app.mode = 0;
   try {
     WNDCLASSW c{};
     c.lpfnWndProc = procedure;
@@ -209,7 +210,8 @@ int uiTests(const std::wstring &server, const std::filesystem::path &report) {
             RECT r{};
             GetWindowRect(app.buttons[id], &r);
             MapWindowPoints(nullptr, window, reinterpret_cast<POINT *>(&r), 2);
-            check(r.right / app.scale <= app.nav + app.content + 1,
+            check(!(GetWindowLongPtrW(app.buttons[id], GWL_STYLE) & WS_VISIBLE) ||
+                      r.right / app.scale <= app.nav + app.content + 1,
                   "filters do not overlap detail panel");
           }
           for (const auto &hit : app.hits)

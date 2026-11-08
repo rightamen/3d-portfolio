@@ -21,7 +21,7 @@ struct Viewer {
   float yaw = -25, pitch = 8, distance = 3.1f, panX = 0, panY = 0, zoom = 1;
   POINT last{};
   int drag = 0, lang = 0;
-  bool wire = false, materials = true;
+  bool wire = false, materials = true, embedded = false;
   ~Viewer() {
     if (context) {
       wglMakeCurrent(dc, context);
@@ -105,7 +105,10 @@ struct Viewer {
       return;
     wglMakeCurrent(dc, context);
     glViewport(0, 42, w, std::max(1, h - 42));
-    glClearColor(.037f, .055f, .067f, 1);
+    auto appearance =
+        palette(int(reinterpret_cast<INT_PTR>(GetPropW(GetParent(hwnd), L"MRTheme"))));
+    glClearColor(float((appearance.bg >> 16) & 255) / 255, float((appearance.bg >> 8) & 255) / 255,
+                 float(appearance.bg & 255) / 255, 1);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
@@ -120,7 +123,8 @@ struct Viewer {
     glDisable(GL_LIGHTING);
     glDisable(GL_TEXTURE_2D);
     glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-    glColor4f(.15f, .23f, .25f, .6f);
+    glColor4f(float((appearance.line >> 16) & 255) / 255, float((appearance.line >> 8) & 255) / 255,
+              float(appearance.line & 255) / 255, .7f);
     glBegin(GL_LINES);
     for (int n = -12; n <= 12; n++) {
       float x = n * .25f;
@@ -154,7 +158,7 @@ struct Viewer {
       if (materials && !wire)
         glColor4fv(m.color.data());
       else
-        glColor4f(.68f, .85f, .79f, 1);
+        glColor4f(.76f, .77f, .84f, 1);
       glVertexPointer(3, GL_FLOAT, sizeof(Vertex), &m.vertices[0].x);
       glNormalPointer(GL_FLOAT, sizeof(Vertex), &m.vertices[0].nx);
       glDrawElements(GL_TRIANGLES, GLsizei(m.indices.size()), GL_UNSIGNED_INT, m.indices.data());
@@ -185,7 +189,8 @@ struct Viewer {
     }
     target->Resize(D2D1::SizeU(w, h));
     target->BeginDraw();
-    target->Clear(D2D1::ColorF(.037f, .055f, .067f));
+    target->Clear(D2D1::ColorF(
+        palette(int(reinterpret_cast<INT_PTR>(GetPropW(GetParent(hwnd), L"MRTheme")))).bg));
     float fit = std::min(float(w - 40) / picture.width, float(h - 80) / picture.height) * zoom;
     float iw = picture.width * fit, ih = picture.height * fit;
     target->DrawBitmap(bitmap,
@@ -223,13 +228,15 @@ struct Viewer {
       else
         v->drawPicture(r.right, r.bottom);
       RECT foot{0, r.bottom - 42, r.right, r.bottom};
-      auto brush = CreateSolidBrush(RGB(12, 18, 23));
+      auto appearance = palette(int(reinterpret_cast<INT_PTR>(GetPropW(GetParent(h), L"MRTheme"))));
+      auto brush = CreateSolidBrush(gdi(appearance.panel));
       FillRect(dc, &foot, brush);
       DeleteObject(brush);
       SetBkMode(dc, TRANSPARENT);
-      SetTextColor(dc, RGB(159, 184, 177));
-      auto font = CreateFontW(-13, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, 0, 0,
-                              CLEARTYPE_QUALITY, 0, L"Segoe UI");
+      SetTextColor(dc, gdi(appearance.muted));
+      auto font =
+          CreateFontW(-int(12 * GetDpiForWindow(h) / 96.f), 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+                      DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Segoe UI");
       auto old = SelectObject(dc, font);
       foot.left = 18;
       DrawTextW(dc, label(v->lang, v->model ? "modelHelp" : "imageHelp"), -1, &foot,
@@ -244,6 +251,7 @@ struct Viewer {
       return 0;
     case WM_LBUTTONDOWN:
     case WM_RBUTTONDOWN:
+      SetFocus(h);
       v->drag = msg == WM_LBUTTONDOWN ? 1 : 2;
       v->last = {GET_X_LPARAM(lp), GET_Y_LPARAM(lp)};
       SetCapture(h);
@@ -280,8 +288,14 @@ struct Viewer {
       InvalidateRect(h, nullptr, FALSE);
       return 0;
     }
+    case WM_GETDLGCODE:
+      return DLGC_WANTARROWS | DLGC_WANTCHARS;
     case WM_KEYDOWN:
       if (wp == VK_ESCAPE) {
+        if (v->embedded) {
+          SendMessageW(GetParent(h), WM_KEYDOWN, VK_ESCAPE, 0);
+          return 0;
+        }
         DestroyWindow(h);
         return 0;
       }
@@ -347,6 +361,22 @@ void showModel(HWND p, std::shared_ptr<Model> model, const std::wstring &title) 
   auto v = new Viewer;
   v->model = std::move(model);
   launch(p, v, title);
+}
+HWND createEmbeddedModel(HWND parent, std::shared_ptr<Model> model) {
+  WNDCLASSW c{};
+  c.style = CS_OWNDC;
+  c.lpfnWndProc = Viewer::proc;
+  c.hInstance = GetModuleHandleW(nullptr);
+  c.lpszClassName = L"MRInlineModel";
+  c.hCursor = LoadCursorW(nullptr, IDC_SIZEALL);
+  RegisterClassW(&c);
+  auto v = new Viewer;
+  v->embedded = true;
+  v->model = std::move(model);
+  v->lang = int(reinterpret_cast<INT_PTR>(GetPropW(parent, L"MRLanguage")));
+  return CreateWindowExW(0, c.lpszClassName, label(v->lang, "view3d"),
+                         WS_CHILD | WS_CLIPSIBLINGS | WS_TABSTOP, 0, 0, 1, 1, parent, nullptr,
+                         c.hInstance, v);
 }
 void showPicture(HWND p, const Pixels &pixels, const std::wstring &title) {
   auto v = new Viewer;

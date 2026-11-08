@@ -9,10 +9,10 @@
 namespace mr {
 Palette palette(int t) {
   if (t == 2)
-    return {0xf1eee5, 0xfffdf7, 0xe5e1d6, 0x27392f, 0x758074, 0xd6d7cc, 0x287d61, 0xffffff};
+    return {0xf2f0eb, 0xfaf8f5, 0xe9e5df, 0x292832, 0x7c7884, 0xdad5df, 0x6c5aa7, 0xffffff};
   if (t == 1)
     return {0x0e1423, 0x151f32, 0x202f46, 0xe0e9f6, 0x95a8c0, 0x2b3950, 0x88b7ff, 0x101e34};
-  return {0x0b1116, 0x141d24, 0x1d2a31, 0xe3ece8, 0x96a8a4, 0x28363c, 0x6ed4b6, 0x0d2b21};
+  return {0x101013, 0x18191f, 0x242530, 0xededf1, 0x9b9eac, 0x2b2c37, 0xbcb6ff, 0x1c1e26};
 }
 COLORREF gdi(uint32_t c) {
   return RGB(c >> 16, (c >> 8) & 255, c & 255);
@@ -28,7 +28,23 @@ void navigationIcon(HDC dc, int id, int x, int y, float scale, uint32_t tint) {
     MoveToEx(dc, px(a), py(b), nullptr);
     LineTo(dc, px(c), py(d));
   };
-  if (id == 110) {
+  if (id == 120) {
+    line(0, 7, 8, 0);
+    line(8, 0, 16, 7);
+    line(2, 6, 2, 17);
+    line(2, 17, 14, 17);
+    line(14, 17, 14, 6);
+    line(6, 17, 6, 11);
+    line(6, 11, 10, 11);
+    line(10, 11, 10, 17);
+  } else if (id == 103) {
+    Ellipse(dc, px(4), py(4), px(12), py(12));
+    for (int n = 0; n < 8; n++) {
+      double a = n * 3.141592653589793 / 4;
+      line(8 + int(std::cos(a) * 6), 8 + int(std::sin(a) * 6), 8 + int(std::cos(a) * 9),
+           8 + int(std::sin(a) * 9));
+    }
+  } else if (id == 110) {
     for (int a : {0, 9})
       for (int b : {0, 9})
         Rectangle(dc, px(a), py(b), px(a + 6), py(b + 6));
@@ -107,25 +123,13 @@ void App::create() {
     SendMessageW(b, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
     buttons[id] = b;
   };
-  for (auto [id, key] : std::vector<std::pair<int, const char *>>{{100, "login"},
-                                                                  {101, "publish"},
-                                                                  {102, "refresh"},
-                                                                  {103, "settings"},
-                                                                  {104, "profile"},
-                                                                  {105, "previous"},
-                                                                  {106, "next"},
-                                                                  {107, "wall"},
-                                                                  {110, "library"},
-                                                                  {111, "curated"},
-                                                                  {112, "mine"},
-                                                                  {113, "downloads"},
-                                                                  {114, "workspace"},
-                                                                  {115, "favorites"},
-                                                                  {116, "messages"},
-                                                                  {117, "feed"},
-                                                                  {118, "connections"},
-                                                                  {119, "orders"},
-                                                                  {205, "send"}})
+  for (auto [id, key] : std::vector<std::pair<int, const char *>>{
+           {100, "login"},       {101, "publish"},   {102, "refresh"},  {103, "settings"},
+           {104, "profile"},     {105, "previous"},  {106, "next"},     {107, "wall"},
+           {110, "library"},     {111, "curated"},   {112, "mine"},     {113, "downloads"},
+           {114, "workspace"},   {115, "favorites"}, {116, "messages"}, {117, "feed"},
+           {118, "connections"}, {119, "orders"},    {120, "home"},     {205, "send"},
+           {206, "allFavorites"}})
     make(id, key);
   search =
       CreateWindowExW(0, L"EDIT", L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL, 0, 0, 1,
@@ -151,6 +155,7 @@ void App::create() {
   SetWindowTheme(folders, L"", L"");
   SendMessageW(composer, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
   SendMessageW(composer, EM_SETLIMITTEXT, 4000, 0);
+  exhibition = createExhibition(hwnd);
   preferences();
   SetTimer(hwnd, 3, 8000, nullptr);
   SetTimer(hwnd, 4, 40, nullptr);
@@ -165,6 +170,11 @@ void App::preferences() {
   RedrawWindow(search, nullptr, nullptr, RDW_FRAME | RDW_INVALIDATE);
   BOOL dark = prefs.theme != 2;
   DwmSetWindowAttribute(hwnd, 20, &dark, sizeof(dark));
+  SetPropW(hwnd, L"MRTheme", reinterpret_cast<HANDLE>(INT_PTR(prefs.theme)));
+  if (exhibition)
+    SetWindowTextW(exhibition, copy("curatedKicker").c_str());
+  if (workPreview)
+    InvalidateRect(workPreview, nullptr, FALSE);
   SetPropW(hwnd, L"MRLanguage", reinterpret_cast<HANDLE>(INT_PTR(prefs.language)));
   for (auto [id, key] :
        std::vector<std::pair<int, const char *>>{{100, token.empty() ? "login" : "logout"},
@@ -185,6 +195,7 @@ void App::preferences() {
                                                  {117, "feed"},
                                                  {118, "connections"},
                                                  {119, "orders"},
+                                                 {120, "home"},
                                                  {205, "send"}})
     SetWindowTextW(buttons[id], copy(key).c_str());
   SendMessageW(search, EM_SETCUEBANNER, 0, reinterpret_cast<LPARAM>(copy("search").c_str()));
@@ -204,6 +215,8 @@ void App::preferences() {
     if (subject == modelCategories[i])
       selected = int(i) + 1;
   SendMessageW(subjects, CB_SETCURSEL, selected, 0);
+  if (mode == 1 || mode == 11)
+    synchronizeExhibition();
   layout();
   repaint();
 }
@@ -212,6 +225,12 @@ void App::place(HWND h, float x, float y, float w, float hgt, bool visible) {
   if (visible)
     SetWindowPos(h, nullptr, int(x * scale), int(y * scale), std::max(1, int(w * scale)),
                  std::max(1, int(hgt * scale)), SWP_NOZORDER | SWP_NOACTIVATE);
+  if (visible && (h == search || h == composer)) {
+    auto region = CreateRoundRectRgn(0, 0, int(w * scale) + 1, int(hgt * scale) + 1,
+                                     int(12 * scale), int(12 * scale));
+    if (!SetWindowRgn(h, region, FALSE))
+      DeleteObject(region);
+  }
 }
 IDWriteTextFormat *App::format(float size, bool bold) {
   int key = int(size * 10) + (bold ? 10000 : 0);
@@ -269,11 +288,12 @@ void App::layout() {
   scale = nextScale;
   width = r.right / scale;
   height = r.bottom / scale;
-  nav = width < 1100 ? 190.f : 224.f;
+  nav = publicPage() ? 0.f : width < 1100 ? 190.f : 224.f;
   aside = (!detail.is_null() || detailLoading || !detailError.empty())
               ? std::min(388.f, width - nav - 44)
               : 0;
   content = width - nav - aside;
+  place(buttons[120], 14, 77, nav - 28, 30, !publicPage());
   place(buttons[100], width - 151, 20, 123, 36);
   place(buttons[101], width - 316, 20, 150, 36);
   const int navigation[] = {110, 111, 114, 112, 115, 117, 116, 118, 119, 113};
@@ -288,14 +308,14 @@ void App::layout() {
   place(buttons[103], 14, height - 140, nav - 28, 37);
   place(buttons[104], 14, height - 92, nav - 28, 37);
   place(buttons[102], nav + content - 134, 82, 106, 32, mode != 3);
-  place(buttons[107], nav + content - 165, 190, 137, 34, mode < 2);
-  place(search, nav + 28, 190, std::max(100.f, content - 225), 34, mode < 2);
+  place(buttons[107], nav + content - 165, publicPage() ? 220 : 190, 137, 34, mode < 2);
+  place(search, nav + 28, publicPage() ? 220 : 190, std::max(100.f, content - 225), 34, mode < 2);
   uint64_t total = 0;
   if (counts.is_object())
     for (auto i = counts.begin(); i != counts.end(); ++i)
       if (i.value().is_number())
         total += i.value().get<uint64_t>();
-  float x = nav + 28, y = mode == 2 ? 195.f : 244.f;
+  float x = nav + 28, y = mode == 2 ? 195.f : publicPage() ? 274.f : 244.f;
   for (int n = 0; n < 8; n++) {
     std::string key = n ? std::string(resourceTypes[n - 1]) : "";
     auto name = n ? resourceLabel(prefs.language, key) : copy("all"), value = name;
@@ -325,6 +345,18 @@ void App::layout() {
   EnableWindow(buttons[106], next);
   for (auto &[id, h] : buttons)
     InvalidateRect(h, nullptr, FALSE);
+  SetWindowTextW(buttons[104], copy(publicPage() ? "workspace" : "profile").c_str());
+  if (publicPage()) {
+    for (int id : {110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 103, 104})
+      ShowWindow(buttons[id], SW_HIDE);
+    place(buttons[120], 213, 22, 82, 36);
+    place(buttons[110], 304, 22, 98, 36);
+    place(buttons[111], 411, 22, 116, 36);
+    place(buttons[114], 549, 22, 132, 36, width > 1180);
+    place(buttons[103], width - 404, 22, 40, 36);
+    place(buttons[104], width - 354, 22, 40, 36);
+  }
+  layoutShowcase();
   if (target) {
     target->SetDpi(96 * scale, 96 * scale);
     target->Resize(D2D1::SizeU(UINT(r.right), UINT(r.bottom)));
@@ -359,7 +391,10 @@ void App::action(const std::wstring &s, D2D1_RECT_F r, Action a, int index, bool
                mouse.y / scale >= r.top && mouse.y / scale <= r.bottom;
     border(r, hot ? colors.accent : colors.line, 7);
   }
-  text(s, D2D1::RectF(r.left + 12, r.top + 10, r.right - 10, r.bottom), 12,
+  float lineHeight =
+      std::min(r.bottom - r.top, textHeight(s, 12, std::max(1.f, r.right - r.left - 24)));
+  float labelY = r.top + (r.bottom - r.top - lineHeight) / 2;
+  text(s, D2D1::RectF(r.left + 12, labelY, r.right - 10, labelY + lineHeight + 1), 12,
        primary ? colors.onAccent : colors.text, true);
   hits.push_back({r, a, index});
 }
@@ -376,36 +411,52 @@ void App::bitmap(const std::string &key, D2D1_RECT_F r, const std::string &fallb
                      D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
 }
 void App::card(const Json &w, D2D1_RECT_F r, int index) {
-  fill(r, colors.panel, 12);
-  border(r, index == hover ? colors.accent : colors.line, 12, index == hover ? 1.5f : 1);
-  auto coverRect = D2D1::RectF(r.left + 8, r.top + 8, r.right - 8, r.bottom - 86);
-  fill(coverRect, colors.raised, 8);
-  bitmap(cover(w), coverRect, mr::text(w, "image"));
+  bool hot = index == hover;
+  fill(D2D1::RectF(r.left - 3, r.top - 3, r.right + 3, r.bottom + 4), colors.bg, 12, .65f);
+  fill(r, colors.raised, 11);
+  target->PushAxisAlignedClip(r, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
   if (!w.value("available", true)) {
-    text(copy("unavailable"), D2D1::RectF(r.left + 18, r.top + 35, r.right - 18, r.bottom - 90), 17,
+    text(copy("unavailable"), D2D1::RectF(r.left + 20, r.top + 32, r.right - 20, r.bottom - 65), 19,
          colors.muted);
-    text(copy("removeSaved"), D2D1::RectF(r.left + 18, r.bottom - 65, r.right - 18, r.bottom - 20),
+    text(copy("removeSaved"), D2D1::RectF(r.left + 20, r.bottom - 56, r.right - 20, r.bottom - 20),
          12, colors.text);
-    hits.push_back({r, Action::Card, index});
-    return;
+  } else {
+    coverBitmap(cover(w), r, mr::text(w, "image"));
+    // The bottom veil leaves the artwork dominant while keeping metadata readable.
+    ID2D1GradientStopCollection *stops = nullptr;
+    ID2D1LinearGradientBrush *g = nullptr;
+    D2D1_GRADIENT_STOP s[] = {{0, D2D1::ColorF(0x080910, 0)},
+                              {1, D2D1::ColorF(0x080910, hot ? .94f : .78f)}};
+    if (SUCCEEDED(target->CreateGradientStopCollection(s, 2, &stops))) {
+      target->CreateLinearGradientBrush(
+          D2D1::LinearGradientBrushProperties(D2D1::Point2F(r.left, r.bottom - 108),
+                                              D2D1::Point2F(r.left, r.bottom)),
+          stops, &g);
+      if (g) {
+        target->FillRectangle(D2D1::RectF(r.left, r.bottom - 108, r.right, r.bottom), g);
+        g->Release();
+      }
+      stops->Release();
+    }
+    auto cents = number(w, "priceCents");
+    auto price = cents ? money(cents, mr::text(w, "currency", "usd")) : copy("free");
+    float pw = measure(price, 10) + 22;
+    fill(D2D1::RectF(r.right - pw - 12, r.top + 12, r.right - 12, r.top + 37), 0x0d1019, 7, .82f);
+    text(price, D2D1::RectF(r.right - pw - 2, r.top + 18, r.right - 18, r.top + 37), 10, 0xf0eff8);
+    if (hot)
+      text(resourceLabel(prefs.language, mr::text(w, "resourceType", "model")),
+           D2D1::RectF(r.left + 17, r.top + 19, r.right - pw - 25, r.top + 42), 10, 0xd7d1f0);
+    text(title(w), D2D1::RectF(r.left + 18, r.bottom - 68, r.right - 18, r.bottom - 34), 17,
+         0xf0eff8, true);
+    auto creator = w.value("creator", Json::object());
+    text(L"@" + wide(mr::text(creator, "handle")),
+         D2D1::RectF(r.left + 18, r.bottom - 32, r.right - 42, r.bottom - 9), 11, 0xb7b6c7);
+    if (hot)
+      text(L"↗", D2D1::RectF(r.right - 34, r.bottom - 36, r.right - 12, r.bottom - 10), 17,
+           0xd8d0ff);
   }
-  auto cents = number(w, "priceCents");
-  std::wstring price = cents == 0 ? copy("free") : money(cents, mr::text(w, "currency", "usd"));
-  float pw = measure(price, 10) + 18;
-  fill(D2D1::RectF(coverRect.right - pw - 8, coverRect.bottom - 31, coverRect.right - 8,
-                   coverRect.bottom - 9),
-       0x0b151b, 5, .88f);
-  text(price,
-       D2D1::RectF(coverRect.right - pw, coverRect.bottom - 28, coverRect.right - 12,
-                   coverRect.bottom - 9),
-       10, 0xd8eae3);
-  text(title(w), D2D1::RectF(r.left + 16, r.bottom - 74, r.right - 14, r.bottom - 36), 15,
-       colors.text, true);
-  auto creator = w.value("creator", Json::object());
-  text(L"@" + wide(mr::text(creator, "handle")),
-       D2D1::RectF(r.left + 16, r.bottom - 29, r.right - 100, r.bottom - 7), 11, colors.muted);
-  text(resourceLabel(prefs.language, mr::text(w, "resourceType", "model")),
-       D2D1::RectF(r.right - 119, r.bottom - 29, r.right - 13, r.bottom - 7), 10, colors.accent);
+  target->PopAxisAlignedClip();
+  border(r, hot ? colors.accent : colors.line, 11, hot ? 1.4f : 1.f);
   hits.push_back({r, Action::Card, index});
 }
 void App::details() {
@@ -452,13 +503,19 @@ void App::details() {
   text(L"@" + wide(mr::text(creator, "handle")), D2D1::RectF(x, y, x + w, y + 23), 12,
        colors.muted);
   y += 35;
-  auto r = D2D1::RectF(x, y, x + w, y + 190);
-  fill(r, colors.raised, 10);
-  bitmap(cover(detail), r, mr::text(detail, "image"));
-  hits.push_back({r, Action::Picture});
-  y += 207;
+  if (!mr::text(creator, "handle").empty()) {
+    action(copy("viewPortfolio"), D2D1::RectF(x, y, x + w, y + 36), Action::Portfolio);
+    y += 47;
+  }
+  if (!workroom()) {
+    auto r = D2D1::RectF(x, y, x + w, y + 190);
+    fill(r, colors.raised, 10);
+    bitmap(cover(detail), r, mr::text(detail, "image"));
+    hits.push_back({r, Action::Picture});
+    y += 207;
+  }
   auto type = mr::text(detail, "resourceType", "model");
-  if (type == "model" && !mr::text(detail, "modelUrl").empty()) {
+  if (!workroom() && type == "model" && !mr::text(detail, "modelUrl").empty()) {
     auto previewRect = D2D1::RectF(x, y, x + w, y + 42);
     if (previewGeneration != -1) {
       fill(previewRect, colors.raised, 7);
@@ -577,30 +634,47 @@ void App::paint() {
   hits.clear();
   target->BeginDraw();
   target->Clear(D2D1::ColorF(colors.bg));
-  fill(D2D1::RectF(0, 0, nav, height), colors.panel);
-  fill(D2D1::RectF(nav - 1, 0, nav, height), colors.line);
-  fill(D2D1::RectF(nav, 65, width, 66), colors.line);
-  fill(D2D1::RectF(23, 24, 53, 54), colors.accent, 8);
-  text(L"MR", D2D1::RectF(27, 30, 53, 53), 13, colors.onAccent, true);
-  text(L"mrright", D2D1::RectF(65, 22, nav - 12, 48), 19, colors.text, true);
-  text(L"CREATOR PLATFORM", D2D1::RectF(65, 46, nav - 12, 65), 8, colors.muted);
-  float sideStep = std::min(42.f, std::max(31.f, (height - 300) / 10));
-  text(copy("exploreGroup"), D2D1::RectF(27, 98, nav - 16, 120), 9, colors.muted);
-  text(copy("createGroup"),
-       D2D1::RectF(27, 124 + sideStep * 2 - 3, nav - 16, 124 + sideStep * 2 + 16), 9, colors.muted);
-  text(copy("connectGroup"),
-       D2D1::RectF(27, 140 + sideStep * 5 - 3, nav - 16, 140 + sideStep * 5 + 16), 9, colors.muted);
-  text(L"STUDIO 0.2.0", D2D1::RectF(24, height - 37, nav - 10, height - 12), 10, colors.muted);
-  text(L"● " + copy(cppReady        ? "connected"
-                    : healthPending ? "connecting"
-                                    : "offline"),
-       D2D1::RectF(nav + 28, 27, width - 340, 54), 10, cppReady ? colors.accent : colors.muted);
+  auto finish = [&]() {
+    if (target->EndDraw() == static_cast<HRESULT>(D2DERR_RECREATE_TARGET)) {
+      for (auto &[key, img] : images)
+        img->Release();
+      images.clear();
+      brush->Release();
+      brush = nullptr;
+      target->Release();
+      target = nullptr;
+      repaint();
+    }
+  };
+  paintChrome();
+  if (workroom()) {
+    paintWorkroom();
+    finish();
+    return;
+  }
+  if (mode == 11 || mode == 1) {
+    paintHome();
+    paintScrollBar();
+    finish();
+    return;
+  }
+  if (mode == 12) {
+    paintPortfolio();
+    paintScrollBar();
+    finish();
+    return;
+  }
   auto heading = modeLabel(mode);
-  text(copy(heading), D2D1::RectF(nav + 28, 88, nav + content - 156, 133), 31, colors.text, true);
-  text(copy(mode == 3   ? "noDownloads"
-            : mode >= 4 ? "spaceIntro"
-                        : "subhead"),
-       D2D1::RectF(nav + 28, 142, nav + content - 28, 175), 12, colors.muted);
+  text(
+      copy(heading),
+      D2D1::RectF(nav + 28, publicPage() ? 116 : 88, nav + content - 156, publicPage() ? 169 : 133),
+      publicPage() ? 40 : 31, colors.text, true);
+  text(
+      copy(mode == 3   ? "noDownloads"
+           : mode >= 4 ? "spaceIntro"
+                       : "subhead"),
+      D2D1::RectF(nav + 28, publicPage() ? 177 : 142, nav + content - 28, publicPage() ? 209 : 175),
+      12, colors.muted);
   if (mode >= 4 && (mode != 5 || token.empty())) {
     paintSpace();
   } else {
@@ -671,7 +745,7 @@ void App::paint() {
     } else {
       float available = content - 56, gap = 20;
       int cols = std::max(1, int((available + gap) / 270));
-      float cw = (available - gap * (cols - 1)) / cols, ch = cw * .63f + 92;
+      float cw = (available - gap * (cols - 1)) / cols, ch = cw * .77f;
       for (size_t i = 0; i < works.size(); i++) {
         float x = nav + 28 + (int(i) % cols) * (cw + gap),
               y = gridTop + (int(i) / cols) * (ch + gap) - scroll;
@@ -695,16 +769,8 @@ void App::paint() {
     }
   }
   details();
-  if (target->EndDraw() == static_cast<HRESULT>(D2DERR_RECREATE_TARGET)) {
-    for (auto &[key, img] : images)
-      img->Release();
-    images.clear();
-    brush->Release();
-    brush = nullptr;
-    target->Release();
-    target = nullptr;
-    repaint();
-  }
+  paintScrollBar();
+  finish();
 }
 std::optional<Hit> App::at(float x, float y) {
   for (auto i = hits.rbegin(); i != hits.rend(); ++i) {
@@ -712,14 +778,16 @@ std::optional<Hit> App::at(float x, float y) {
                i->action == Action::Person || i->action == Action::FriendAccept ||
                i->action == Action::FriendDecline || i->action == Action::FriendCancel ||
                i->action == Action::OrderItem;
-    if (row && y < space.bodyTop)
+    if (!publicPage() && row && y < space.bodyTop)
       continue;
     if (i->action >= Action::Navigate && !(aside && i->rect.left >= width - aside) &&
-        (x < nav || y < 190 || y > height - 65))
+        (x < nav || y < (publicPage() ? 82 : 190) || y > height - (publicPage() ? 38 : 65)))
       continue;
-    if (i->action == Action::Card &&
-        (x < nav + 18 || x > nav + content - 18 || y < (mode >= 4 && mode != 5 ? 190 : gridTop) ||
-         y > height - 65))
+    if (i->action == Action::Card && (x < nav + 18 || x > nav + content - 18 ||
+                                      y < ((mode == 11 || mode == 12) ? gridTop
+                                           : mode >= 4 && mode != 5   ? 190
+                                                                      : gridTop) ||
+                                      y > height - 65))
       continue;
     if (i->action != Action::Card && aside && i->rect.left >= width - aside &&
         (y < 66 || y > height))
@@ -747,6 +815,10 @@ bool App::translate(MSG &message) {
 }
 LRESULT App::message(UINT msg, WPARAM wp, LPARAM lp) {
   switch (msg) {
+  case WM_ENABLE:
+    if (wp && (mode == 1 || mode == 11))
+      synchronizeExhibition();
+    return 0;
   case WM_CREATE:
     create();
     return 0;
@@ -786,23 +858,29 @@ LRESULT App::message(UINT msg, WPARAM wp, LPARAM lp) {
   case WM_DRAWITEM: {
     auto i = reinterpret_cast<DRAWITEMSTRUCT *>(lp);
     int id = int(i->CtlID);
-    bool active = (id == 104 && mode == 9) ||
+    bool publicTab = publicPage() && (id == 120 || id == 110 || id == 111 || id == 114);
+    bool iconOnly = publicPage() && (id == 103 || id == 104);
+    bool active = (id == 120 && mode == 11) || (id == 104 && mode == 9) ||
                   (id >= 110 && id <= 119 && mode == (id == 119 ? 10 : id - 110)) ||
                   (id >= 300 && id <= 307 &&
                    type == (id == 300 ? "" : std::string(resourceTypes[id - 301]))),
          primary = id == 101 || id == 205;
-    bool navigation = (id >= 110 && id <= 119) || id == 104 || id == 103;
+    bool navigation =
+        !publicTab && ((id >= 110 && id <= 119) || id == 104 || id == 103 || id == 120);
     auto p = CreatePen(PS_SOLID, 1,
                        gdi(active       ? colors.line
                            : navigation ? colors.panel
                                         : colors.line));
     auto b = CreateSolidBrush(gdi(primary ? colors.accent : active ? colors.raised : colors.panel));
-    auto background = CreateSolidBrush(
-        gdi((id >= 110 && id <= 119) || id == 103 || id == 104 ? colors.panel : colors.bg));
+    auto background =
+        CreateSolidBrush(gdi(publicPage()                                         ? colors.bg
+                             : (id >= 110 && id <= 119) || id == 103 || id == 104 ? colors.panel
+                                                                                  : colors.bg));
     FillRect(i->hDC, &i->rcItem, background);
     DeleteObject(background);
     auto op = SelectObject(i->hDC, p), ob = SelectObject(i->hDC, b);
-    RoundRect(i->hDC, i->rcItem.left, i->rcItem.top, i->rcItem.right, i->rcItem.bottom, 12, 12);
+    if (!publicTab)
+      RoundRect(i->hDC, i->rcItem.left, i->rcItem.top, i->rcItem.right, i->rcItem.bottom, 12, 12);
     SelectObject(i->hDC, op);
     SelectObject(i->hDC, ob);
     DeleteObject(p);
@@ -814,9 +892,11 @@ LRESULT App::message(UINT msg, WPARAM wp, LPARAM lp) {
     GetWindowTextW(i->hwndItem, s, 256);
     RECT r = i->rcItem;
     r.left += navigation ? int(43 * scale) : 10;
+    if (iconOnly)
+      r.left = r.right;
     r.right -= 8;
     if (navigation)
-      navigationIcon(i->hDC, id, i->rcItem.left + int(14 * scale),
+      navigationIcon(i->hDC, id, i->rcItem.left + int((iconOnly ? 12 : 14) * scale),
                      (i->rcItem.top + i->rcItem.bottom) / 2 - int(8 * scale), scale,
                      active ? colors.accent : colors.muted);
     auto unread = id == 116 ? number(space.summary, "messagesUnread") +
@@ -825,8 +905,9 @@ LRESULT App::message(UINT msg, WPARAM wp, LPARAM lp) {
                               : 0;
     if (unread)
       r.right -= int(30 * scale);
-    DrawTextW(i->hDC, s, -1, &r,
-              (navigation ? DT_LEFT : DT_CENTER) | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+    if (!iconOnly)
+      DrawTextW(i->hDC, s, -1, &r,
+                (navigation ? DT_LEFT : DT_CENTER) | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
     if (unread) {
       auto value = unread > 99 ? L"99+" : std::to_wstring(unread);
       RECT badge = i->rcItem;
@@ -836,6 +917,13 @@ LRESULT App::message(UINT msg, WPARAM wp, LPARAM lp) {
       DrawTextW(i->hDC, value.c_str(), -1, &badge, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     }
     SelectObject(i->hDC, previousFont);
+    if (publicTab && active) {
+      auto marker = CreateSolidBrush(gdi(colors.accent));
+      RECT line{i->rcItem.left + int(17 * scale), i->rcItem.bottom - int(2 * scale),
+                i->rcItem.right - int(17 * scale), i->rcItem.bottom};
+      FillRect(i->hDC, &line, marker);
+      DeleteObject(marker);
+    }
     if (i->itemState & ODS_FOCUS)
       DrawFocusRect(i->hDC, &i->rcItem);
     return TRUE;
@@ -867,6 +955,11 @@ LRESULT App::message(UINT msg, WPARAM wp, LPARAM lp) {
       spaceTimer();
       return 0;
     }
+    if (wp == 4 && prefs.motion && hover >= 0 && GetTickCount64() - hoverStart < 210 &&
+        IsWindowVisible(hwnd) && IsWindowEnabled(hwnd) && !IsIconic(hwnd)) {
+      repaint();
+      return 0;
+    }
     if (wp == 4 && mode == 4 && prefs.motion && IsWindowVisible(hwnd) && IsWindowEnabled(hwnd) &&
         !IsIconic(hwnd) && !loading) {
       repaint();
@@ -881,10 +974,13 @@ LRESULT App::message(UINT msg, WPARAM wp, LPARAM lp) {
       query = utf8(s);
       page = 1;
       load();
-    } else if (wp == 2 && wall && mode < 2 && tracking && !down && prefs.motion &&
-               IsWindowEnabled(hwnd) && !IsIconic(hwnd)) {
+    } else if (wp == 2 &&
+               ((wall && mode < 2) ||
+                ((mode == 11 && homeWall) || (mode == 12 && portfolioWall))) &&
+               tracking && !down && prefs.motion && IsWindowEnabled(hwnd) && !IsIconic(hwnd)) {
       float x = mouse.x / scale, y = mouse.y / scale;
-      if (x > nav && x < nav + content && y > gridTop && y < height - 65) {
+      if (x > nav && x < nav + content && y > gridTop && y < height - 65 &&
+          ((mode != 11 && mode != 12) || (y > browseBounds.top && y < browseBounds.bottom))) {
         float dx = nav + content / 2 - x, dy = (gridTop + height - 65) / 2 - y;
         if (std::abs(dx) > 8 || std::abs(dy) > 8) {
           worldX += dx * .015f;
@@ -903,7 +999,10 @@ LRESULT App::message(UINT msg, WPARAM wp, LPARAM lp) {
       SetTimer(hwnd, 2, 33, nullptr);
     }
     float x = mouse.x / scale, y = mouse.y / scale;
-    if (down && wall) {
+    if (down &&
+        ((wall && mode < 2) ||
+         (((mode == 11 && homeWall) || (mode == 12 && portfolioWall)) &&
+          downPoint.y / scale >= browseBounds.top && downPoint.y / scale <= browseBounds.bottom))) {
       if (std::abs(mouse.x - downPoint.x) + std::abs(mouse.y - downPoint.y) > 6)
         dragging = true;
       if (dragging) {
@@ -913,11 +1012,22 @@ LRESULT App::message(UINT msg, WPARAM wp, LPARAM lp) {
       }
     }
     auto h = at(x, y);
+    if (scrollBarDrag) {
+      float track = height - (publicPage() ? 94.f : 190.f) - 65;
+      float thumb = std::max(35.f, track * track / (track + maxScroll));
+      scroll =
+          std::clamp(scrollDragStart + (y - scrollDragY) * maxScroll / std::max(1.f, track - thumb),
+                     0.f, maxScroll);
+      layoutShowcase();
+      repaint();
+      return 0;
+    }
     int now = h && h->action == Action::Card ? h->index : -1;
     int hot = h ? int(h->action) * 1000 + h->index : -1;
     if (now != hover || hot != hoverHit) {
       hoverHit = hot;
       hover = now;
+      hoverStart = GetTickCount64();
       repaint();
     }
     return 0;
@@ -930,6 +1040,13 @@ LRESULT App::message(UINT msg, WPARAM wp, LPARAM lp) {
     repaint();
     return 0;
   case WM_LBUTTONDOWN:
+    if (GET_X_LPARAM(lp) / scale > width - 18 && maxScroll > 0 && !workroom()) {
+      scrollBarDrag = true;
+      scrollDragY = GET_Y_LPARAM(lp) / scale;
+      scrollDragStart = scroll;
+      SetCapture(hwnd);
+      return 0;
+    }
     down = true;
     dragging = false;
     downPoint = {GET_X_LPARAM(lp), GET_Y_LPARAM(lp)};
@@ -939,6 +1056,12 @@ LRESULT App::message(UINT msg, WPARAM wp, LPARAM lp) {
     SetFocus(hwnd);
     return 0;
   case WM_LBUTTONUP: {
+    if (scrollBarDrag) {
+      scrollBarDrag = false;
+      ReleaseCapture();
+      repaint();
+      return 0;
+    }
     bool click = !dragging;
     down = false;
     ReleaseCapture();
@@ -950,6 +1073,7 @@ LRESULT App::message(UINT msg, WPARAM wp, LPARAM lp) {
     return 0;
   }
   case WM_CAPTURECHANGED:
+    scrollBarDrag = false;
     down = false;
     return 0;
   case WM_MOUSEWHEEL: {
@@ -968,10 +1092,21 @@ LRESULT App::message(UINT msg, WPARAM wp, LPARAM lp) {
       worldY += delta * 75;
     else
       scroll = std::clamp(scroll - delta * 85, 0.f, maxScroll);
+    layoutShowcase();
     repaint();
     return 0;
   }
   case WM_KEYDOWN:
+    if ((wp == VK_NEXT || wp == VK_PRIOR || wp == VK_HOME || wp == VK_END) && publicPage() &&
+        !workroom()) {
+      scroll = wp == VK_HOME ? 0
+               : wp == VK_END
+                   ? maxScroll
+                   : std::clamp(scroll + (wp == VK_NEXT ? 1 : -1) * (height - 150), 0.f, maxScroll);
+      layoutShowcase();
+      repaint();
+      return 0;
+    }
     if (mode == 6 && wp == VK_RETURN && (GetKeyState(VK_CONTROL) & 0x8000)) {
       sendMessage();
       return 0;
@@ -993,6 +1128,17 @@ LRESULT App::message(UINT msg, WPARAM wp, LPARAM lp) {
       return 0;
     }
     if (wp == VK_ESCAPE) {
+      if (exhibitionFocus) {
+        exhibitionFocus = false;
+        layout();
+        return 0;
+      }
+      if (workPreview) {
+        DestroyWindow(workPreview);
+        workPreview = nullptr;
+        layout();
+        return 0;
+      }
       if (!detail.is_null() || detailLoading)
         clearSelection();
       else {
@@ -1016,6 +1162,9 @@ LRESULT App::message(UINT msg, WPARAM wp, LPARAM lp) {
       return 0;
     }
     return 0;
+  case exhibitionMessage:
+    showcaseAction({{}, Action::ExhibitionSelect, int(wp)});
+    return 0;
   case eventMessage: {
     std::unique_ptr<Event> e(reinterpret_cast<Event *>(lp));
     event(*e);
@@ -1032,6 +1181,7 @@ LRESULT App::message(UINT msg, WPARAM wp, LPARAM lp) {
     KillTimer(hwnd, 3);
     KillTimer(hwnd, 4);
     RemovePropW(hwnd, L"MRLanguage");
+    RemovePropW(hwnd, L"MRTheme");
     PostQuitMessage(0);
     return 0;
   }

@@ -5,6 +5,11 @@
 #include <dwrite.h>
 #include <optional>
 namespace mr {
+struct Palette {
+  uint32_t bg, panel, raised, text, muted, line, accent, onAccent;
+};
+Palette palette(int);
+COLORREF gdi(uint32_t);
 struct Pixels {
   UINT width = 0, height = 0;
   std::vector<unsigned char> data;

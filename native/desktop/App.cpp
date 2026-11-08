@@ -55,6 +55,10 @@ std::string App::cover(const Json &w) const {
   return url.empty() ? mr::text(w, "image") : url;
 }
 void App::clearSelection() {
+  if (workPreview) {
+    DestroyWindow(workPreview);
+    workPreview = nullptr;
+  }
   detailError.clear();
   space.social = Json::object();
   selectedIndex = -1;
@@ -83,7 +87,7 @@ void App::load() {
     repaint();
     return;
   }
-  if (mode >= 4) {
+  if (mode >= 4 && mode != 11 && mode != 12) {
     loadSpace();
     return;
   }
@@ -95,6 +99,38 @@ void App::load() {
   }
   loading = true;
   auto client = http;
+  if (mode == 11) {
+    exhibitionLoading = true;
+    exhibitionFailed = false;
+    dispatch(io, hwnd, Operation::Exhibition, generation, account, false, [=](Event &e) {
+      e.value = client.json("GET", "/api/native/v1/works?exhibition=true&limit=24");
+    });
+  }
+  if (mode == 12) {
+    auto handle = portfolioHandle;
+    auto requestedPage = page;
+    auto auth = token;
+    dispatch(io, hwnd, Operation::Portfolio, generation, account, !auth.empty(), [=](Event &e) {
+      auto profile = payload(client.json("GET", "/api/users/" + encoded(handle)))
+                         .value("profile", Json::object());
+      e.value = {{"profile", profile}};
+      if (!auth.empty()) {
+        try {
+          e.value["relationship"] =
+              client.json("GET", "/api/users/" + encoded(handle) + "/relationship", auth);
+        } catch (const HttpError &x) {
+          if (x.status == 401)
+            e.value["expiredSession"] = true;
+        } catch (...) {
+        }
+      }
+      if (profile.value("profilePublic", false))
+        e.value["catalogue"] =
+            client.json("GET", "/api/native/v1/works?limit=24&creator=" + encoded(handle) +
+                                   "&page=" + std::to_string(requestedPage));
+    });
+    return;
+  }
   auto auth = token;
   int gen = generation, acc = account;
   bool mine = mode == 2 || mode == 4;
@@ -408,6 +444,8 @@ void App::media() {
 void App::event(Event &e) {
   if (e.sensitive && e.account != account)
     return;
+  if (showcaseEvent(e))
+    return;
   if (spaceEvent(e))
     return;
   if (e.operation == Operation::Image) {
@@ -416,6 +454,7 @@ void App::event(Event &e) {
       failedImages.insert(e.key);
       return;
     }
+    exhibitionImage(exhibition, e.key, e.pixels);
     if (target) {
       ID2D1Bitmap *b = nullptr;
       if (SUCCEEDED(
@@ -528,6 +567,8 @@ void App::event(Event &e) {
     pagination = e.value.value("pagination", Json::object());
     counts = d.value("resourceCounts", Json::object());
     lastError.clear();
+    if (mode == 1)
+      synchronizeExhibition();
     layout();
     return;
   }
@@ -562,9 +603,15 @@ void App::event(Event &e) {
     return;
   }
   if (e.operation == Operation::Model) {
-    if (e.ok)
-      showModel(hwnd, e.model, title(detail));
-    else
+    if (e.ok) {
+      if (workroom()) {
+        workPreview = createEmbeddedModel(hwnd, e.model);
+        layout();
+        if (workPreview)
+          SetFocus(workPreview);
+      } else
+        showModel(hwnd, e.model, title(detail));
+    } else
       info("modelFailed");
   }
   if (e.operation == Operation::Picture) {
@@ -605,10 +652,23 @@ void App::button(int id) {
       preferences();
     }
   } else if (id == 104)
-    navigate(9);
-  else if (id == 205)
+    navigate(publicPage() ? 4 : 9);
+  else if (id == 120) {
+    type.clear();
+    navigate(11);
+  } else if (id == 205)
     sendMessage();
-  else if (id == 105 && page > 1) {
+  else if (id == 206 && !space.busy) {
+    std::vector<std::wstring> names{copy("allFavorites")};
+    for (auto &f : space.folders)
+      names.push_back(wide(mr::text(f, "name")));
+    auto selected = choiceDialog(hwnd, prefs.language, prefs.theme, "favorites", names);
+    if (selected) {
+      space.folder = *selected ? mr::text(space.folders[*selected - 1], "id") : "";
+      page = 1;
+      load();
+    }
+  } else if (id == 105 && page > 1) {
     page--;
     load();
   } else if (id == 106 && pagination.value("hasNext", false)) {
@@ -629,6 +689,8 @@ void App::button(int id) {
   }
 }
 void App::activate(Hit h) {
+  if (showcaseAction(h))
+    return;
   if (h.action >= Action::Navigate) {
     spaceAction(h);
     return;
