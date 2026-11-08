@@ -3,6 +3,7 @@
 #include <array>
 #include <commdlg.h>
 #include <cstring>
+#include <dwmapi.h>
 #include <fstream>
 #include <shellapi.h>
 #include <shlobj.h>
@@ -17,6 +18,15 @@ struct Copy {
   const wchar_t *value[3];
 };
 static const Copy copies[] = {
+    {"cancelling", {L"正在取消…", L"Cancelling…", L"中止しています…"}},
+    {"connected", {L"资源库已连接", L"Library connected", L"ライブラリ接続済み"}},
+    {"connecting", {L"正在连接资源库", L"Connecting to library", L"ライブラリに接続中"}},
+    {"cancelled", {L"已取消", L"Cancelled", L"キャンセル済み"}},
+    {"uploadCancelled",
+     {L"上传已取消，已创建的草稿和已完成的附件会保留。",
+      L"Upload cancelled. Your draft and completed attachments have been kept.",
+      L"アップロードを中止しました。下書きと完了済みの添付ファイルは保持されます。"}},
+    {"preparing3d", {L"正在准备 3D 预览…", L"Preparing 3D preview…", L"3D プレビューを準備中…"}},
     {"library", {L"资源库", L"Library", L"ライブラリ"}},
     {"curated", {L"精选展览", L"Exhibition", L"厳選展示"}},
     {"mine", {L"我的作品", L"My works", L"自分の作品"}},
@@ -194,7 +204,9 @@ public:
                              px(w), px(h), hwnd, reinterpret_cast<HMENU>(INT_PTR(id)),
                              GetModuleHandleW(nullptr), nullptr);
     SendMessageW(c, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
-    if (theme != 2)
+    if (_wcsicmp(cls, L"COMBOBOX") == 0)
+      SetWindowTheme(c, L"", L"");
+    else if (theme != 2)
       SetWindowTheme(c, L"DarkMode_Explorer", nullptr);
     return c;
   }
@@ -241,6 +253,8 @@ public:
       EnableWindow(parent, TRUE);
       return false;
     }
+    BOOL dark = theme != 2;
+    DwmSetWindowAttribute(hwnd, 20, &dark, sizeof(dark));
     ShowWindow(hwnd, SW_SHOW);
     MSG m{};
     while (IsWindow(hwnd) && GetMessageW(&m, nullptr, 0, 0) > 0) {

@@ -189,6 +189,7 @@ LRESULT CALLBACK procedure(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     return DefWindowProcW(h, msg, wp, lp);
   }
 }
+int uiTests(const std::wstring &, const std::filesystem::path &);
 int selfTest(const Http &, const std::filesystem::path &);
 int integrationTest(const std::filesystem::path &, const std::filesystem::path &);
 } // namespace mr
@@ -212,6 +213,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show) {
         server = argv[++n];
     if (argc >= 3 && std::wstring(argv[1]) == L"--self-test") {
       result = selfTest(Http(server), argv[2]);
+    } else if (argc >= 3 && std::wstring(argv[1]) == L"--ui-test") {
+      result = uiTests(server, argv[2]);
     } else if (argc == 4 && std::wstring(argv[1]) == L"--integration-test") {
       result = integrationTest(argv[2], argv[3]);
     } else {
@@ -234,7 +237,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show) {
       UpdateWindow(window);
       MSG m{};
       while (GetMessageW(&m, nullptr, 0, 0) > 0) {
-        if (!IsDialogMessageW(window, &m)) {
+        if (!app.translate(m)) {
           TranslateMessage(&m);
           DispatchMessageW(&m);
         }

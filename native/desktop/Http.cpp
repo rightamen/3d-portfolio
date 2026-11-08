@@ -199,8 +199,13 @@ std::vector<unsigned char> Http::bytes(const std::string &path, size_t maximum) 
   return c.read(maximum);
 }
 Json Http::upload(const std::string &id, const std::string &kind, const std::filesystem::path &file,
-                  const std::string &token,
-                  const std::function<void(uint64_t, uint64_t)> &progress) const {
+                  const std::string &token, const std::function<void(uint64_t, uint64_t)> &progress,
+                  const std::shared_ptr<std::atomic_bool> &cancel) const {
+  auto checkpoint = [&] {
+    if (cancel && cancel->load())
+      throw TransferCancelled();
+  };
+  checkpoint();
   uint64_t size = std::filesystem::file_size(file);
   if (!size || size > 120ull * 1024 * 1024)
     throw HttpError(0, "File limit: 120 MiB");
@@ -230,6 +235,7 @@ Json Http::upload(const std::string &id, const std::string &kind, const std::fil
   c.send(L"Content-Type: multipart/form-data; boundary=" + wide(boundary) + L"\r\n", nullptr, 0,
          DWORD(total));
   auto write = [&](const void *p, DWORD n) {
+    checkpoint();
     DWORD done = 0;
     if (!WinHttpWriteData(c.request.h, p, n, &done) || done != n)
       throw HttpError(0, "Upload interrupted");
@@ -249,6 +255,7 @@ Json Http::upload(const std::string &id, const std::string &kind, const std::fil
     sent += n;
     progress(sent, size);
   }
+  checkpoint();
   write(last.data(), DWORD(last.size()));
   c.receive();
   return parse(c);
@@ -256,6 +263,8 @@ Json Http::upload(const std::string &id, const std::string &kind, const std::fil
 void Http::download(const std::string &path, const std::filesystem::path &destination,
                     const std::shared_ptr<std::atomic_bool> &cancel,
                     const std::function<void(uint64_t, uint64_t)> &progress) const {
+  if (cancel && cancel->load())
+    throw TransferCancelled();
   Call c(*this, "GET", path, {});
   c.send(L"", nullptr, 0);
   c.receive();
@@ -280,7 +289,7 @@ void Http::download(const std::string &path, const std::filesystem::path &destin
     uint64_t done = 0, reported = 0;
     for (;;) {
       if (cancel && cancel->load())
-        throw HttpError(0, "Transfer cancelled");
+        throw TransferCancelled();
       DWORD n = 0;
       if (!WinHttpReadData(c.request.h, b.data(), DWORD(b.size()), &n))
         throw HttpError(0, "Download interrupted");
@@ -299,9 +308,14 @@ void Http::download(const std::string &path, const std::filesystem::path &destin
     }
     if (total && done != total)
       throw HttpError(0, "Incomplete download");
+    out.flush();
+    if (!out)
+      throw HttpError(0, "Could not finish writing file");
     out.close();
+    if (!out)
+      throw HttpError(0, "Could not close completed file");
     if (cancel && cancel->load())
-      throw HttpError(0, "Transfer cancelled");
+      throw TransferCancelled();
     if (!MoveFileExW(part.c_str(), destination.c_str(),
                      MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
       throw HttpError(0, "Could not save completed file");

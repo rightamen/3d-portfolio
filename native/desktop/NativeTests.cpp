@@ -133,6 +133,109 @@ int integrationTest(const std::filesystem::path &configPath, const std::filesyst
     }
     check(used);
     result["singleUseTicket"] = true;
+
+    result["stage"] = "transfer cancellation";
+    auto caseFolder = dest.parent_path() / wide("transfer-cases-" + uniqueName());
+    std::filesystem::create_directory(caseFolder);
+    struct Cleanup {
+      std::filesystem::path folder;
+      ~Cleanup() {
+        std::error_code ec;
+        for (const auto &p : std::filesystem::directory_iterator(folder, ec))
+          std::filesystem::remove(p.path(), ec);
+        std::filesystem::remove(folder, ec);
+      }
+    } cleanup{caseFolder};
+    auto original = caseFolder / L"原有文件.txt";
+    auto sentinel = [&] {
+      std::ofstream f(original, std::ios::binary);
+      f << "keep existing file";
+    };
+    auto onlyOriginal = [&] {
+      size_t count = 0;
+      for (const auto &p : std::filesystem::directory_iterator(caseFolder)) {
+        (void)p;
+        ++count;
+      }
+      return count == 1;
+    };
+    sentinel();
+    auto expected = readBytes(original);
+    auto cancel = std::make_shared<std::atomic_bool>(true);
+    bool cancelled = false;
+    try {
+      http.download("/native-fixtures/download", original, cancel, [](auto, auto) {});
+    } catch (const TransferCancelled &) {
+      cancelled = true;
+    }
+    check(cancelled && readBytes(original) == expected && onlyOriginal());
+    result["preCancelledDownloadKeptOriginal"] = true;
+    cancel->store(false);
+    cancelled = false;
+    try {
+      http.download("/native-fixtures/download", original, cancel, [&](auto done, auto) {
+        if (done)
+          cancel->store(true);
+      });
+    } catch (const TransferCancelled &) {
+      cancelled = true;
+    }
+    check(cancelled && readBytes(original) == expected && onlyOriginal());
+    result["midDownloadCancelKeptOriginal"] = true;
+    cancel->store(false);
+    bool interrupted = false;
+    try {
+      http.download("/native-fixtures/truncated", original, cancel, [](auto, auto) {});
+    } catch (const HttpError &) {
+      interrupted = true;
+    }
+    check(interrupted && readBytes(original) == expected && onlyOriginal());
+    result["interruptedDownloadKeptOriginal"] = true;
+    http.download("/native-fixtures/download", original, cancel, [](auto, auto) {});
+    auto complete = readBytes(original);
+    check(complete.size() == 2 * 1024 * 1024 &&
+          std::all_of(complete.begin(), complete.end(), [](auto c) { return c == 81; }) &&
+          onlyOriginal());
+    result["completedDownloadAtomicallyReplaced"] = true;
+    auto draft = payload(
+        http.json("POST", "/api/account/works", token,
+                  {{"title", "Cancelled upload fixture"}, {"resourceType", "document"}}))["work"];
+    auto uploadFile = caseFolder / L"取消上传.txt";
+    {
+      std::ofstream f(uploadFile, std::ios::binary);
+      f.write(reinterpret_cast<const char *>(complete.data()), complete.size());
+    }
+    auto uploadCount = http.json("GET", "/native-fixtures/upload-count").at("files");
+    cancel->store(false);
+    cancelled = false;
+    try {
+      Http(wide(text(config, "legacyServer", text(config, "server"))))
+          .upload(
+              text(draft, "id"), "source", uploadFile, token,
+              [&](auto done, auto) {
+                if (done)
+                  cancel->store(true);
+              },
+              cancel);
+    } catch (const TransferCancelled &) {
+      cancelled = true;
+    }
+    result["stage"] = "upload cancel raised";
+    check(cancelled);
+    Sleep(150);
+    auto kept = payload(
+        http.json("GET", "/api/works/" + encoded(handle) + "/" + encoded(text(draft, "slug")),
+                  token))["work"];
+    result["stage"] = "cancelled draft retained";
+    check(text(kept, "status") == "draft" && kept["assets"].empty());
+    result["stage"] = "orphan file cleanup";
+    result["filesBeforeCancelledUpload"] = uploadCount;
+    result["filesAfterCancelledUpload"] =
+        http.json("GET", "/native-fixtures/upload-count").at("files");
+    check(http.json("GET", "/native-fixtures/upload-count").at("files") == uploadCount);
+    result["midUploadCancelKeptDraftNoPartialAsset"] = true;
+    result["cancelledUploadLeavesNoOrphanFile"] = true;
+
     http.json("POST", "/api/auth/logout", token);
     bool revoked = false;
     try {
@@ -143,6 +246,7 @@ int integrationTest(const std::filesystem::path &configPath, const std::filesyst
     check(revoked);
     result["logoutRevoked"] = true;
     result["ok"] = true;
+    result.erase("stage");
     SecureZeroMemory(token.data(), token.size());
   } catch (...) {
     result["error"] = "Native integration check failed";

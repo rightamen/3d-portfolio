@@ -1,3 +1,4 @@
+import {createUploadStorage} from './uploadStorage.js'
 import {RESOURCE_TYPES,WORK_RESOURCE_KINDS,allowedWorkExtension,workUploadExtensions,defaultDownloadAsset} from './workResources.js'
 import { registerCommunicationRoutes } from './communicationRoutes.js'
 import { registerSocialRoutes } from './socialRoutes.js'
@@ -594,7 +595,7 @@ app.use('/api/community/posts', createLimiter({
 
 const upload = multer({
   limits: { fileSize: 120 * 1024 * 1024 },
-  storage: multer.diskStorage({
+  storage: createUploadStorage({
     destination: (_request, file, callback) => {
       const extension = path.extname(file.originalname).toLowerCase()
       const folder = imageExtensions.has(extension) ? 'images' : 'models'
@@ -637,7 +638,7 @@ const upload = multer({
 // Work originals and media use a separate allowlist from community/admin uploads.
 const workUpload=multer({
  limits:{fileSize:120*1024*1024},
- storage:multer.diskStorage({
+ storage:createUploadStorage({
   destination:(req,_file,done)=>{const kind=req.query.kind ?? req.body?.kind,folder=path.join(uploadRoot,kind==='preview'?'images':kind==='model'?'models':'resources');mkdir(folder,{recursive:true}).then(()=>done(null,folder)).catch(done)},
   filename:(_req,file,done)=>done(null,Date.now()+'-'+randomBytes(12).toString('hex')+path.extname(file.originalname).toLowerCase())
  }),

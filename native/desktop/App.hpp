@@ -73,7 +73,19 @@ struct Palette {
 };
 Palette palette(int);
 COLORREF gdi(uint32_t);
-enum class Action { Card, Download, Model, Picture, Media, Web, Continue, Close, Folder, Cancel };
+enum class Action {
+  Card,
+  Download,
+  Model,
+  Picture,
+  Media,
+  Web,
+  Continue,
+  Close,
+  Folder,
+  Cancel,
+  RetryDetail
+};
 struct Hit {
   D2D1_RECT_F rect;
   Action action;
@@ -84,7 +96,7 @@ struct Job {
   std::wstring title, name;
   std::filesystem::path file;
   double progress = 0;
-  bool done = false, failed = false;
+  bool done = false, failed = false, cancelled = false;
   std::shared_ptr<std::atomic_bool> cancel = std::make_shared<std::atomic_bool>(false);
 };
 class App {
@@ -108,11 +120,12 @@ public:
        counts = Json::object();
   std::vector<Hit> hits;
   std::vector<Job> jobs;
-  std::string token, type, subject, query, lastError, pendingWork, pendingAsset;
+  std::string token, type, subject, query, lastError, detailError, pendingWork, pendingAsset;
   int mode = 0, page = 1, generation = 0, detailGen = 0, account = 0, nextJob = 1, hover = -1,
-      afterLogin = 0;
+      afterLogin = 0, previewGeneration = -1, selectedIndex = -1;
   bool loading = false, detailLoading = false, uploading = false, authBusy = false,
-       cppReady = false, wall = false, tracking = false, dragging = false, down = false;
+       cppReady = false, healthPending = false, wall = false, tracking = false, dragging = false,
+       down = false;
   float scale = 1, width = 1300, height = 900, nav = 202, content = 1098, aside = 0, gridTop = 300,
         scroll = 0, maxScroll = 0, detailScroll = 0, detailHeight = 0, worldX = 0, worldY = 0,
         downX = 0, downY = 0;
@@ -121,6 +134,7 @@ public:
   ~App();
   std::wstring copy(const char *) const;
   std::wstring title(const Json &) const;
+  bool translate(MSG &);
   void create();
   void preferences();
   void layout();

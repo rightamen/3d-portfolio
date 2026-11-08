@@ -55,6 +55,8 @@ std::string App::cover(const Json &w) const {
   return url.empty() ? mr::text(w, "image") : url;
 }
 void App::clearSelection() {
+  detailError.clear();
+  selectedIndex = -1;
   detail = nullptr;
   detailLoading = false;
   detailScroll = 0;
@@ -63,6 +65,14 @@ void App::clearSelection() {
 }
 void App::load() {
   ++generation;
+  if (mode < 2) {
+    healthPending = true;
+    auto client = http;
+    dispatch(io, hwnd, Operation::Health, generation, account, false, [=](Event &e) {
+      e.key = "catalogue";
+      e.value = client.json("GET", "/api/native/v1/health");
+    });
+  }
   scroll = 0;
   lastError.clear();
   works = Json::array();
@@ -95,6 +105,8 @@ void App::load() {
 void App::select(int i) {
   if (i < 0 || size_t(i) >= works.size())
     return;
+  detailError.clear();
+  selectedIndex = i;
   detail = nullptr;
   detailLoading = true;
   detailScroll = 0;
@@ -205,12 +217,18 @@ void App::publish(const Json &existing) {
   job.id = id;
   job.title = copy("uploading");
   job.name = wide(p.title);
+  auto cancel = job.cancel;
   jobs.push_back(job);
   auto h = hwnd;
   dispatch(transfers, h, Operation::Upload, 0, acc, true, [=](Event &e) {
     e.id = id;
     std::string workId = p.existingId;
     try {
+      auto checkpoint = [&] {
+        if (cancel->load())
+          throw TransferCancelled();
+      };
+      checkpoint();
       if (workId.empty()) {
         auto d = payload(client.json("POST", "/api/account/works", auth,
                                      {{"title", p.title}, {"resourceType", p.type}}));
@@ -221,16 +239,19 @@ void App::publish(const Json &existing) {
       size_t steps = p.sources.size() + (!p.cover.empty() ? 1 : 0) + (!p.preview.empty() ? 1 : 0),
              step = 0;
       auto upload = [&](const std::string &kind, const std::filesystem::path &file) {
-        client.upload(workId, kind, file, auth, [&](uint64_t done, uint64_t total) {
-          auto progress = std::make_unique<Event>();
-          progress->operation = Operation::Progress;
-          progress->id = id;
-          progress->account = acc;
-          progress->sensitive = true;
-          progress->value = {
-              {"progress", (step + double(done) / std::max<uint64_t>(1, total)) / steps}};
-          post(h, std::move(progress));
-        });
+        client.upload(
+            workId, kind, file, auth,
+            [&](uint64_t done, uint64_t total) {
+              auto progress = std::make_unique<Event>();
+              progress->operation = Operation::Progress;
+              progress->id = id;
+              progress->account = acc;
+              progress->sensitive = true;
+              progress->value = {
+                  {"progress", (step + double(done) / std::max<uint64_t>(1, total)) / steps}};
+              post(h, std::move(progress));
+            },
+            cancel);
         step++;
       };
       if (!p.cover.empty())
@@ -243,6 +264,7 @@ void App::publish(const Json &existing) {
                p.preview);
       for (auto &file : p.sources)
         upload("source", file);
+      checkpoint();
       if (p.review)
         client.json("PATCH", "/api/account/works/" + encoded(workId) + "/status", auth,
                     {{"status", "review"}});
@@ -250,7 +272,7 @@ void App::publish(const Json &existing) {
     } catch (const HttpError &error) {
       e.ok = false;
       e.status = error.status;
-      e.key = workId.empty() ? "error" : "uploadKept";
+      e.key = error.status == -1 ? "uploadCancelled" : workId.empty() ? "error" : "uploadKept";
     } catch (...) {
       e.ok = false;
       e.key = workId.empty() ? "error" : "uploadKept";
@@ -288,6 +310,8 @@ void App::download(int i) {
   HWND h = hwnd;
   dispatch(transfers, h, Operation::Download, 0, acc, locked, [=](Event &e) {
     e.id = id;
+    if (cancel->load())
+      throw TransferCancelled();
     auto url = mr::text(asset, "fileUrl");
     if (locked) {
       auto c = w.value("creator", Json::object());
@@ -310,12 +334,14 @@ void App::download(int i) {
   repaint();
 }
 void App::model() {
+  if (previewGeneration != -1)
+    return;
   auto url = mr::text(detail, "modelUrl");
   if (url.empty()) {
     info("modelFailed");
     return;
   }
-  lastError = "model-loading";
+  previewGeneration = detailGen;
   auto client = http;
   dispatch(transfers, hwnd, Operation::Model, detailGen, account, false,
            [=](Event &e) { e.model = safeDecode(client.bytes(url, 128 * 1024 * 1024)); });
@@ -438,7 +464,8 @@ void App::event(Event &e) {
     for (auto &j : jobs)
       if (j.id == e.id) {
         j.done = true;
-        j.failed = !e.ok;
+        j.cancelled = e.status == -1;
+        j.failed = !e.ok && !j.cancelled;
         if (e.ok)
           j.progress = 1;
       }
@@ -447,7 +474,7 @@ void App::event(Event &e) {
       info(e.key.empty() ? "error" : e.key.c_str());
       if (mode == 2)
         load();
-    } else if (!e.ok)
+    } else if (!e.ok && e.status != -1)
       info(e.status == 403 ? "paid" : "error");
     if (!e.ok && e.sensitive && e.status == 401)
       clearLogin(false);
@@ -482,7 +509,7 @@ void App::event(Event &e) {
       return;
     detailLoading = false;
     if (!e.ok) {
-      lastError = "offline";
+      detailError = "offline";
       if (e.sensitive && e.status == 401)
         clearLogin(false);
     } else
@@ -491,15 +518,20 @@ void App::event(Event &e) {
     return;
   }
   if (e.operation == Operation::Health) {
-    if (e.ok && e.value.is_object())
-      cppReady = mr::text(payload(e.value), "runtime") == "cpp20";
+    if (e.key == "catalogue" && e.generation == generation) {
+      healthPending = false;
+      cppReady = e.ok && e.value.is_object() && mr::text(payload(e.value), "runtime") == "cpp20";
+    }
     repaint();
     return;
   }
-  if (e.generation != detailGen)
+  if (e.operation == Operation::Model)
+    previewGeneration = -1;
+  if (e.generation != detailGen) {
+    repaint();
     return;
+  }
   if (e.operation == Operation::Model) {
-    lastError.clear();
     if (e.ok)
       showModel(hwnd, e.model, title(detail));
     else
@@ -558,6 +590,7 @@ void App::button(int id) {
     mode = id - 110;
     page = 1;
     wall = false;
+    SetWindowTextW(buttons[107], copy("wall").c_str());
     subject.clear();
     load();
     if (mode == 2 && token.empty())
@@ -572,6 +605,9 @@ void App::button(int id) {
 }
 void App::activate(Hit h) {
   switch (h.action) {
+  case Action::RetryDetail:
+    select(selectedIndex);
+    break;
   case Action::Card:
     select(h.index);
     break;

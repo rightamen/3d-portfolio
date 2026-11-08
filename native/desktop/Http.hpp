@@ -21,6 +21,10 @@ public:
   int status;
   HttpError(int s, const std::string &m) : runtime_error(m), status(s) {}
 };
+class TransferCancelled : public HttpError {
+public:
+  TransferCancelled() : HttpError(-1, "Transfer cancelled") {}
+};
 class Http {
   std::wstring origin_;
 
@@ -34,8 +38,8 @@ public:
   Json json(const std::string &method, const std::string &path, const std::string &token = {},
             const Json &body = nullptr) const;
   Json upload(const std::string &id, const std::string &kind, const std::filesystem::path &,
-              const std::string &token,
-              const std::function<void(uint64_t, uint64_t)> &progress) const;
+              const std::string &token, const std::function<void(uint64_t, uint64_t)> &progress,
+              const std::shared_ptr<std::atomic_bool> &cancel = {}) const;
   void download(const std::string &path, const std::filesystem::path &destination,
                 const std::shared_ptr<std::atomic_bool> &cancel,
                 const std::function<void(uint64_t, uint64_t)> &progress) const;

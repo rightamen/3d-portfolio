@@ -1,7 +1,8 @@
 // Isolated PostgreSQL + actual C++ HTTP process. No production environment is read.
 import {spawn} from 'node:child_process'
-import {readFile,writeFile,readdir,unlink} from 'node:fs/promises'
+import {readFile,writeFile,readdir,unlink,mkdir,mkdtemp,cp,symlink,rm} from 'node:fs/promises'
 import {resolve,join,dirname} from 'node:path'
+import {tmpdir} from 'node:os'
 import {fileURLToPath} from 'node:url'
 import {randomBytes} from 'node:crypto'
 import {createServer,request} from 'node:http'
@@ -14,7 +15,12 @@ const root=resolve(dirname(fileURLToPath(import.meta.url)),'../..')
 const free=()=>new Promise(r=>{const s=net.createServer();s.listen(0,'127.0.0.1',()=>{const p=s.address().port;s.close(()=>r(p))})})
 const wait=ms=>new Promise(r=>setTimeout(r,ms))
 const files=async(dir)=>{let list=[];try{for(const e of await readdir(dir,{withFileTypes:true})){const p=join(dir,e.name);list.push(...(e.isDirectory()?await files(p):[p]))}}catch{}return list}
-const original=new Set(await files(join(root,'public/uploads')))
+const runtime=await mkdtemp(join(tmpdir(),'mrright-native-api-test-'))
+const uploadRoot=join(runtime,'public/uploads')
+await cp(join(root,'server'),join(runtime,'server'),{recursive:true})
+await cp(join(root,'package.json'),join(runtime,'package.json'))
+for(const name of ['node_modules','dist','scripts'])await symlink(join(root,name),join(runtime,name),'dir')
+await mkdir(join(runtime,'public'),{recursive:true})
 const children=[];let pool,rolePool,cluster,gateway;let assertions=0
 const check=(value,message)=>{assert.ok(value,message);assertions++}
 const admin=randomBytes(24).toString('hex'),password='Native-'+randomBytes(12).toString('hex')
@@ -22,6 +28,7 @@ const email='native-fixture@example.invalid'
 const binary=process.env.NATIVE_TEST_BINARY||join(root,'.deploy-tools/native-linux/mrright-catalogue')
 const hold=process.argv.includes('--hold')
 const report=join(root,'.deploy-tools/native-checks')
+await mkdir(report,{recursive:true})
 const start=(exe,args,env)=>{const p=spawn(exe,args,{cwd:root,env:{PATH:process.env.PATH,...env},stdio:'ignore'});children.push(p);return p}
 try{
  cluster=await startDisposablePostgres({databaseName:'mrright_native_test',log:()=>{}})
@@ -32,7 +39,7 @@ try{
  rolePool=new pg.Pool({connectionString:readUrl.href})
  for(const sql of ['SELECT * FROM visitor_users','SELECT * FROM work_assets',"INSERT INTO visitor_users(id,email,display_name,password_hash) VALUES('x','x','x','x')"]){let denied=false;try{await rolePool.query(sql)}catch(e){denied=e.code==='42501'}check(denied,'read-only role denies base table access')}
  const nodePort=await free(),cppPort=await free(),proxyPort=await free()
- start(process.execPath,['server/index.js'],{PORT:String(nodePort),DATABASE_URL:cluster.databaseUrl,ADMIN_TOKEN:admin,NODE_ENV:'test',EXPOSE_DEV_VERIFICATION_CODE:'true',VISITOR_ID_SECRET:randomBytes(32).toString('hex')})
+ start(process.execPath,[join(runtime,'server/index.js')],{PORT:String(nodePort),DATABASE_URL:cluster.databaseUrl,ADMIN_TOKEN:admin,NODE_ENV:'test',EXPOSE_DEV_VERIFICATION_CODE:'true',VISITOR_ID_SECRET:randomBytes(32).toString('hex')})
  start(binary,[],{NATIVE_DATABASE_URL:readUrl.href,NATIVE_PORT:String(cppPort)})
  const api=async(method,path,body,token)=>{const r=await fetch('http://127.0.0.1:'+nodePort+path,{method,headers:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},...(body?{body:JSON.stringify(body)}:{})});const j=await r.json();assert.ok(r.ok,'legacy fixture request '+path+' '+r.status);return j.data}
  for(let n=0;n<100;n++){try{const a=await fetch('http://127.0.0.1:'+nodePort+'/api/health');const b=await fetch('http://127.0.0.1:'+cppPort+'/api/native/v1/health');if(a.ok&&b.ok)break}catch{}await wait(100);if(n===99)throw Error('Fixture services unavailable')}
@@ -69,10 +76,19 @@ try{
  for(const [name,status]of [['设计说明.txt',201],['../escape.txt',400],['..\\escape.txt',400],['wrong.exe',400],['bad\r\n.txt',400]]){
   const f=new FormData();f.set('kind','source');f.set('displayName',name);f.set('file',new Blob(['native-test']),'resource.txt');const r=await fetch('http://127.0.0.1:'+nodePort+'/api/account/works/'+draft.work.id+'/assets?kind=source',{method:'POST',headers:{Authorization:'Bearer '+token},body:f});check(r.status===status,'filename validation '+status);const j=await r.json();if(status===201)check(j.data.asset.fileName===name,'Unicode filename preserved')
  }
- gateway=createServer((req,res)=>{const port=req.url.startsWith('/api/native/')?cppPort:nodePort;const out=request({hostname:'127.0.0.1',port,path:req.url,method:req.method,headers:req.headers},r=>{res.writeHead(r.statusCode,r.headers);r.pipe(res)});out.on('error',()=>{res.writeHead(502);res.end()});req.pipe(out)})
+ gateway=createServer(async(req,res)=>{
+  if(req.url==='/native-fixtures/upload-count'){res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({files:(await files(uploadRoot)).length}));return}
+
+  if(req.url==='/native-fixtures/download'||req.url==='/native-fixtures/truncated'){
+   const truncated=req.url.endsWith('truncated');let chunks=0;
+   res.writeHead(200,{'Content-Type':'application/octet-stream','Content-Length':2*1024*1024});
+   const timer=setInterval(()=>{if(truncated&&chunks===1){clearInterval(timer);res.destroy();return}res.write(Buffer.alloc(65536,81));chunks++;if(chunks===32){clearInterval(timer);res.end()}},10);
+   res.on('close',()=>clearInterval(timer));return;
+  }
+  const port=req.url.startsWith('/api/native/')?cppPort:nodePort;const out=request({hostname:'127.0.0.1',port,path:req.url,method:req.method,headers:req.headers},r=>{res.writeHead(r.statusCode,r.headers);r.pipe(res)});req.on('aborted',()=>out.destroy());res.on('close',()=>{if(!res.writableFinished)out.destroy()});out.on('error',()=>{if(!res.destroyed){res.writeHead(502);res.end()}});req.pipe(out)})
  await new Promise(r=>gateway.listen(proxyPort,'0.0.0.0',r))
  await writeFile(join(report,'api-integration.json'),JSON.stringify({ok:true,assertions},null,2))
  console.log(JSON.stringify({ok:true,assertions}))
- if(hold){await writeFile(join(report,'session.json'),JSON.stringify({server:'http://127.0.0.1:'+proxyPort,email,password,admin}));console.log('Windows fixture ready');for(let n=0;n<18000;n++){try{await readFile(join(report,'stop'));break}catch{}await wait(100)}await unlink(join(report,'session.json')).catch(()=>{});await unlink(join(report,'stop')).catch(()=>{})}
+ if(hold){await writeFile(join(report,'session.json'),JSON.stringify({server:'http://127.0.0.1:'+proxyPort,legacyServer:'http://127.0.0.1:'+nodePort,email,password,admin}),{mode:0o600});console.log('Windows fixture ready');for(let n=0;n<18000;n++){try{await readFile(join(report,'stop'));break}catch{}await wait(100)}await unlink(join(report,'session.json')).catch(()=>{});await unlink(join(report,'stop')).catch(()=>{})}
 }catch(e){console.error(e.message);process.exitCode=1}
 finally{if(gateway)gateway.close();for(const p of children)p.kill();await wait(300);if(rolePool)await rolePool.end();if(pool)await pool.end();if(cluster)cluster.teardown();for(const p of await files(join(root,'public/uploads')))if(!original.has(p))await unlink(p)}

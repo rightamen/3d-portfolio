@@ -3,6 +3,7 @@
 #include <cmath>
 #include <dwmapi.h>
 #include <sstream>
+#include <uxtheme.h>
 #include <windowsx.h>
 namespace mr {
 Palette palette(int t) {
@@ -56,11 +57,9 @@ void App::create() {
       0, L"COMBOBOX", L"", WS_CHILD | WS_TABSTOP | CBS_DROPDOWNLIST | WS_VSCROLL, 0, 0, 1, 1, hwnd,
       reinterpret_cast<HMENU>(202), GetModuleHandleW(nullptr), nullptr);
   SendMessageW(subjects, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
+  SetWindowTheme(subjects, L"", L"");
   preferences();
   load();
-  auto client = http;
-  dispatch(io, hwnd, Operation::Health, 0, account, false,
-           [=](Event &e) { e.value = client.json("GET", "/api/native/v1/health"); });
 }
 void App::preferences() {
   colors = palette(prefs.theme);
@@ -96,7 +95,11 @@ void App::preferences() {
                  reinterpret_cast<LPARAM>(prefs.language == 0   ? zh[i]
                                           : prefs.language == 1 ? en[i]
                                                                 : ja[i]));
-  SendMessageW(subjects, CB_SETCURSEL, 0, 0);
+  int selected = 0;
+  for (size_t i = 0; i < modelCategories.size(); ++i)
+    if (subject == modelCategories[i])
+      selected = int(i) + 1;
+  SendMessageW(subjects, CB_SETCURSEL, selected, 0);
   layout();
   repaint();
 }
@@ -145,11 +148,25 @@ float App::textHeight(const std::wstring &s, float size, float width) {
 void App::layout() {
   RECT r{};
   GetClientRect(hwnd, &r);
-  scale = GetDpiForWindow(hwnd) / 96.f;
+  float nextScale = GetDpiForWindow(hwnd) / 96.f;
+  if (std::abs(scale - nextScale) > .01f) {
+    auto previous = font;
+    font = CreateFontW(-int(13 * nextScale), 0, 0, 0, FW_MEDIUM, FALSE, FALSE, FALSE,
+                       DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Segoe UI");
+    for (auto &[id, button] : buttons)
+      SendMessageW(button, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
+    SendMessageW(search, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
+    SendMessageW(subjects, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
+    if (previous)
+      DeleteObject(previous);
+  }
+  scale = nextScale;
   width = r.right / scale;
   height = r.bottom / scale;
   nav = width < 1000 ? 168.f : 202.f;
-  aside = (!detail.is_null() || detailLoading) ? std::min(388.f, width - nav - 44) : 0;
+  aside = (!detail.is_null() || detailLoading || !detailError.empty())
+              ? std::min(388.f, width - nav - 44)
+              : 0;
   content = width - nav - aside;
   place(buttons[100], width - 151, 20, 123, 36);
   place(buttons[101], width - 316, 20, 150, 36);
@@ -281,6 +298,12 @@ void App::details() {
     target->PopAxisAlignedClip();
     return;
   }
+  if (!detailError.empty()) {
+    text(copy("offline"), D2D1::RectF(x, 138, x + w, 193), 14, colors.muted);
+    action(copy("refresh"), D2D1::RectF(x, 207, x + w, 246), Action::RetryDetail);
+    target->PopAxisAlignedClip();
+    return;
+  }
   if (!detail.is_object()) {
     target->PopAxisAlignedClip();
     return;
@@ -303,7 +326,12 @@ void App::details() {
   y += 207;
   auto type = mr::text(detail, "resourceType", "model");
   if (type == "model" && !mr::text(detail, "modelUrl").empty()) {
-    action(copy("view3d"), D2D1::RectF(x, y, x + w, y + 42), Action::Model, 0, true);
+    auto previewRect = D2D1::RectF(x, y, x + w, y + 42);
+    if (previewGeneration != -1) {
+      fill(previewRect, colors.raised, 7);
+      text(copy("preparing3d"), D2D1::RectF(x + 12, y + 10, x + w - 10, y + 42), 12, colors.muted);
+    } else
+      action(copy("view3d"), previewRect, Action::Model, 0, true);
     y += 53;
   }
   if (type == "video" || type == "audio") {
@@ -385,9 +413,11 @@ void App::paint() {
   text(L"MR", D2D1::RectF(27, 30, 53, 53), 13, colors.onAccent, true);
   text(L"mrright", D2D1::RectF(65, 22, nav - 12, 48), 19, colors.text, true);
   text(L"STUDIO / NATIVE", D2D1::RectF(65, 46, nav - 12, 65), 8, colors.muted);
-  text(L"0.1.0 · C++20", D2D1::RectF(24, height - 37, nav - 10, height - 12), 10, colors.muted);
-  text(cppReady ? L"● NATIVE ENGINE" : L"● CONNECTING", D2D1::RectF(nav + 28, 27, width - 340, 54),
-       10, cppReady ? colors.accent : colors.muted);
+  text(L"0.1.1 · C++20", D2D1::RectF(24, height - 37, nav - 10, height - 12), 10, colors.muted);
+  text(L"● " + copy(cppReady        ? "connected"
+                    : healthPending ? "connecting"
+                                    : "offline"),
+       D2D1::RectF(nav + 28, 27, width - 340, 54), 10, cppReady ? colors.accent : colors.muted);
   auto heading = mode == 0 ? "library" : mode == 1 ? "curated" : mode == 2 ? "mine" : "downloads";
   text(copy(heading), D2D1::RectF(nav + 28, 88, nav + content - 156, 133), 31, colors.text, true);
   text(copy(mode == 3 ? "noDownloads" : "subhead"),
@@ -407,15 +437,23 @@ void App::paint() {
       fill(D2D1::RectF(r.left + 18, y + 89, r.right - 145, y + 93), colors.line, 2);
       fill(D2D1::RectF(r.left + 18, y + 89,
                        r.left + 18 + (r.right - r.left - 163) * float(j.progress), y + 93),
-           j.failed ? 0xd99b80 : colors.accent, 2);
-      if (!j.done)
+           j.cancelled ? colors.muted
+           : j.failed  ? 0xd99b80
+                       : colors.accent,
+           2);
+      if (!j.done && j.cancel->load())
+        text(copy("cancelling"), D2D1::RectF(right - 128, y + 38, right - 18, y + 90), 11,
+             colors.muted);
+      else if (!j.done)
         action(copy("cancel"), D2D1::RectF(right - 123, y + 40, right - 18, y + 79), Action::Cancel,
                int(i));
-      else if (!j.file.empty() && !j.failed)
+      else if (!j.file.empty() && !j.failed && !j.cancelled)
         action(copy("folder"), D2D1::RectF(right - 123, y + 40, right - 18, y + 79), Action::Folder,
                int(i));
       else
-        text(j.failed ? copy("error") : copy("downloadComplete"),
+        text(j.cancelled ? copy("cancelled")
+             : j.failed  ? copy("error")
+                         : copy("downloadComplete"),
              D2D1::RectF(right - 128, y + 38, right - 18, y + 90), 11, colors.muted);
       y += 141;
     }
@@ -423,7 +461,7 @@ void App::paint() {
   } else if (loading)
     text(copy("loading"), D2D1::RectF(nav + 30, gridTop + 40, right, gridTop + 90), 17,
          colors.muted);
-  else if (!lastError.empty() && lastError != "model-loading")
+  else if (!lastError.empty())
     text(copy(lastError == "notSigned" ? "notSigned" : "offline"),
          D2D1::RectF(nav + 30, gridTop + 35, right, gridTop + 85), 17, colors.muted);
   else if (works.empty())
@@ -469,7 +507,7 @@ void App::paint() {
          colors.muted);
   }
   details();
-  if (target->EndDraw() == D2DERR_RECREATE_TARGET) {
+  if (target->EndDraw() == static_cast<HRESULT>(D2DERR_RECREATE_TARGET)) {
     for (auto &[key, img] : images)
       img->Release();
     images.clear();
@@ -492,6 +530,21 @@ std::optional<Hit> App::at(float x, float y) {
       return *i;
   }
   return {};
+}
+bool App::translate(MSG &message) {
+  if (message.message == WM_KEYDOWN && (message.hwnd == hwnd || IsChild(hwnd, message.hwnd))) {
+    bool control = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
+    auto key = message.wParam;
+    bool global =
+        key == VK_F5 || key == VK_ESCAPE || (control && (key == 'F' || key == 'U' || key == 'L'));
+    bool gallery = message.hwnd == hwnd && (key == VK_LEFT || key == VK_RIGHT || key == VK_UP ||
+                                            key == VK_DOWN || key == VK_RETURN);
+    if (global || gallery) {
+      SendMessageW(hwnd, WM_KEYDOWN, key, message.lParam);
+      return true;
+    }
+  }
+  return IsDialogMessageW(hwnd, &message) != FALSE;
 }
 LRESULT App::message(UINT msg, WPARAM wp, LPARAM lp) {
   switch (msg) {
@@ -541,7 +594,7 @@ LRESULT App::message(UINT msg, WPARAM wp, LPARAM lp) {
     auto p = CreatePen(PS_SOLID, 1, gdi(active ? colors.accent : colors.line));
     auto b = CreateSolidBrush(gdi(primary ? colors.accent : active ? colors.raised : colors.panel));
     auto background = CreateSolidBrush(
-        gdi(id >= 110 && id <= 113 || id == 103 || id == 104 ? colors.panel : colors.bg));
+        gdi((id >= 110 && id <= 113) || id == 103 || id == 104 ? colors.panel : colors.bg));
     FillRect(i->hDC, &i->rcItem, background);
     DeleteObject(background);
     auto op = SelectObject(i->hDC, p), ob = SelectObject(i->hDC, b);
@@ -588,9 +641,12 @@ LRESULT App::message(UINT msg, WPARAM wp, LPARAM lp) {
     } else if (wp == 2 && wall && mode < 2 && tracking && !down && prefs.motion) {
       float x = mouse.x / scale, y = mouse.y / scale;
       if (x > nav && x < nav + content && y > gridTop && y < height - 65) {
-        worldX += (nav + content / 2 - x) * .015f;
-        worldY += ((gridTop + height - 65) / 2 - y) * .015f;
-        repaint();
+        float dx = nav + content / 2 - x, dy = (gridTop + height - 65) / 2 - y;
+        if (std::abs(dx) > 8 || std::abs(dy) > 8) {
+          worldX += dx * .015f;
+          worldY += dy * .015f;
+          repaint();
+        }
       }
     }
     return 0;
