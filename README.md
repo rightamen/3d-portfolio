@@ -251,3 +251,7 @@ saved works are redacted placeholders that can still be removed.
 
 See [creator console and bookmark rules](docs/CREATOR_DASHBOARD_2026-11-06.md)
 for metric definitions, incremental migration and verification scope.
+
+## Windows 原生 C++ 应用
+
+正在逐步迁移为 C++ 桌面与服务端。第一阶段源码、构建、能力边界和验证方法见 [native/README.md](native/README.md)。既有网站继续独立运行。

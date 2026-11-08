@@ -2657,6 +2657,19 @@ app.post(
     }
 
     const extension = path.extname(request.file.originalname).toLowerCase()
+    // Native clients send Unicode as a UTF-8 text field; multipart filenames
+    // use legacy header encodings in some clients. Never use this display name
+    // for disk paths or to change the signature/extension validation.
+    const displayName = request.body?.displayName
+    if (displayName !== undefined && (
+      typeof displayName !== 'string' || !displayName.trim() || displayName.length > 200 ||
+      (displayName.includes('/') || displayName.includes('\\') || [...displayName].some(char => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127)) ||
+      path.extname(displayName).toLowerCase() !== extension
+    )) {
+      await discard()
+      return sendError(response, API_ERROR_CODES.VALIDATION_ERROR, 'Invalid display filename.', 400)
+    }
+
     const isImage = imageExtensions.has(extension)
 
     // The shared multer instance caps everything at the 120MB a model may
@@ -2678,7 +2691,7 @@ app.post(
     const fileUrl='/uploads/'+path.basename(request.file.destination)+'/'+request.file.filename
 
     const asset = await worksStore.addAsset(work.id, {
-      fileName: request.file.originalname,
+      fileName: displayName ?? request.file.originalname,
       fileSize: request.file.size,
       fileType: extension.replace(/^\./, ''),
       fileUrl,

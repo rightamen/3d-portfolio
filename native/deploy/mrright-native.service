@@ -1,0 +1,24 @@
+[Unit]
+Description=mrright Studio C++ public catalogue
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=mrright-native
+Group=mrright-native
+WorkingDirectory=/opt/mrright-native/current
+EnvironmentFile=/etc/mrright-native.env
+ExecStart=/opt/mrright-native/current/mrright-catalogue
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+MemoryMax=512M
+TasksMax=64
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
