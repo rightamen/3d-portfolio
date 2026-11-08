@@ -6,7 +6,7 @@
 
 开发构建：新增 Windows 工作台 1,553 项 / 189 组布局、原有 UI 404 项 / 27 组、原有 Windows 上传下载取消 / 权限集成通过；公共 C++ API 76 项、build / lint / 376 单测通过。夹具仅用独立临时数据库 / uploads / 测试账号；修正测试 finally 的残留变量，清理临时根目录而非仓库上传文件。
 
-后端无业务变更，私人工作台调用原有 API，不重复部署生产服务。支付 / 管理 / 社区编辑 / 完整账号安全尚未原生迁移；聊天为 8 秒轮询。实现与边界见 docs/NATIVE_WORKSPACE_0.2.0.md，发布校验见 docs/RELEASE_2026-11-08_NATIVE_0.2.0.md。继续先 GitHub 再发布固定源码桌面包。
+后端无业务变更，私人工作台调用原有 API，不重复部署生产服务。支付 / 管理 / 社区编辑 / 完整账号安全尚未原生迁移；聊天为 8 秒轮询。实现与边界见 docs/NATIVE_WORKSPACE_0.2.0.md，发布校验见 docs/RELEASE_2026-11-08_NATIVE_0.2.0.md。已先推送源码 4bdc176bac2abad0584fbe3f1d7821115c58bfa4 / native-studio-v0.2.0，再构建并发布 GitHub Release。正式 EXE 1,553 + 404 项、上传下载权限集成、线上4作品 / Draco / WebP 自检通过；ZIP 1,934,175 bytes，SHA-256 784569be0e5ca0cc9f3419b338fbb73441359d842a4f42fab688eac094b35caa，GitHub digest 一致。本机 D:/Codex/artifacts/mrright-studio-0.2.0，旧版保留可回退。夹具退出0，短期配置已移除。
 
 ## 当前：2026-11-08 原生 0.1.2 输入与屏闪修复
 
