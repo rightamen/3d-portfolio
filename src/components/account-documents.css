@@ -1,0 +1,71 @@
+.account-documents {
+  display: grid;
+  gap: 20px;
+}
+
+.account-document-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr));
+  gap: 16px;
+}
+
+.account-document-slot,
+.account-document-form,
+.account-document-file {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.account-document-slot h2 {
+  font-size: 1.15rem;
+  font-weight: 650;
+}
+
+.account-document-file {
+  align-content: start;
+  min-height: 3.5rem;
+  overflow-wrap: anywhere;
+}
+
+.account-document-picker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  overflow-wrap: anywhere;
+}
+
+.account-document-picker label {
+  cursor: pointer;
+}
+
+.account-document-picker label:focus-within {
+  outline: 2px solid currentColor;
+  outline-offset: 3px;
+}
+
+.account-document-picker label:has(:disabled) {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.account-document-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.account-document-slot progress {
+  width: 100%;
+  accent-color: var(--studio-accent, currentColor);
+}
+
+.account-document-status {
+  min-height: 1.25rem;
+  font-size: 0.875rem;
+}
+
+.account-document-status[role='alert'] {
+  color: var(--color-coral, #fb7185);
+}

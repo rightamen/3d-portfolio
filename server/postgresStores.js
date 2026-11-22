@@ -1,5 +1,6 @@
 import pg from 'pg'
 import { ensureSchema } from './postgres/schema.js'
+import { createAccountDocumentsStore } from './postgres/accountDocumentsStore.js'
 import { createAdminStore } from './postgres/adminStore.js'
 import { createAuthStore } from './postgres/authStore.js'
 import { createCommunityStore } from './postgres/communityStore.js'
@@ -31,6 +32,7 @@ export const createPostgresStores = async (databaseUrl) => {
   const projectStore = createProjectStore({ pool })
 
   return {
+    accountDocumentsStore: createAccountDocumentsStore({ pool }),
     adminStore: createAdminStore({ pool, projectStore }),
     authStore: createAuthStore({ pool }),
     close: () => pool.end(),

@@ -12,6 +12,7 @@ import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypt
 import { mkdir, unlink, access, readFile, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { createAccountDocumentsRouter, removeAccountDocuments } from './accountDocuments.js'
 import { createContactMessagesStore } from './contactMessagesStore.js'
 import { createContentHealthChecker } from './contentHealth.js'
 import { createContentHealthHeadline } from './contentHealthHeadline.js'
@@ -164,6 +165,7 @@ const stores = process.env.DATABASE_URL
     }
 
 const {
+  accountDocumentsStore,
   adminStore,
   authStore,
   communityStore,
@@ -1082,6 +1084,17 @@ const requireVisitor = async (request, response, next) => {
   request.visitorUser = user
   return next()
 }
+
+app.use('/api/account/documents', createAccountDocumentsRouter({
+  dataDir,
+  store: accountDocumentsStore,
+  requireVisitor,
+  writeLimiter: createLimiter({
+    windowMs: minutes(60),
+    limit: 20,
+    message: 'Document upload limit reached. Please try again later.',
+  }),
+}))
 
 app.get('/api/health', (_request, response) => {
   sendData(response, { ok: true, service: 'mrright-portfolio' })
@@ -3625,6 +3638,7 @@ app.delete('/api/account', requireAuthStore, async (request, response) => {
     }
   }
 
+  await removeAccountDocuments(dataDir, user.id)
   return sendData(response, { ok: true })
 })
 
@@ -5524,6 +5538,7 @@ app.delete('/api/admin/visitors/:id', requireAdmin, async (request, response) =>
     )
   }
 
+  await removeAccountDocuments(dataDir, deleted.id)
   return sendData(response, { deleted })
 })
 

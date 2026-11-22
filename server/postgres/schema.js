@@ -29,6 +29,16 @@ export const ensureSchema = async (pool) => {
       updated_at timestamptz NOT NULL DEFAULT now()
     );
 
+    CREATE TABLE IF NOT EXISTS account_documents (
+      user_id text NOT NULL REFERENCES visitor_users(id) ON DELETE CASCADE,
+      kind text NOT NULL CHECK (kind IN ('resume', 'portfolio')),
+      stored_name text NOT NULL,
+      file_name text NOT NULL,
+      byte_size integer NOT NULL CHECK (byte_size > 0 AND byte_size <= 52428800),
+      updated_at timestamptz NOT NULL DEFAULT now(),
+      PRIMARY KEY (user_id, kind)
+    );
+
     CREATE TABLE IF NOT EXISTS visitor_sessions (
       token_hash text PRIMARY KEY,
       user_id text NOT NULL REFERENCES visitor_users(id) ON DELETE CASCADE,

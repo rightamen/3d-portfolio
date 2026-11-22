@@ -647,7 +647,7 @@ export const updateAccountProfile = (token, payload) =>
     body: JSON.stringify(payload),
   })
 
-const uploadAccountImage = (token, endpoint, file, onProgress) => {
+const uploadAccountFile = (token, endpoint, file, onProgress, signal) => {
   const formData = new FormData()
   formData.append('file', file)
 
@@ -677,15 +677,54 @@ const uploadAccountImage = (token, endpoint, file, onProgress) => {
     }
 
     xhr.onerror = () => reject(new Error('Upload failed'))
+    const abort = () => xhr.abort()
+    if (signal?.aborted) return reject(signal.reason)
+    xhr.onabort = () => reject(signal?.reason ?? new DOMException('Upload cancelled', 'AbortError'))
+    xhr.onloadend = () => signal?.removeEventListener('abort', abort)
+    signal?.addEventListener('abort', abort, { once: true })
     xhr.send(formData)
   })
 }
 
 export const uploadAccountAvatar = (token, file, onProgress) =>
-  uploadAccountImage(token, '/api/account/avatar', file, onProgress)
+  uploadAccountFile(token, '/api/account/avatar', file, onProgress)
 
 export const uploadAccountBanner = (token, file, onProgress) =>
-  uploadAccountImage(token, '/api/account/banner', file, onProgress)
+  uploadAccountFile(token, '/api/account/banner', file, onProgress)
+
+export const getAccountDocuments = (token, signal) =>
+  request('/api/account/documents', { headers: authHeaders(token), signal })
+
+export const uploadAccountDocument = (token, kind, file, onProgress, signal) =>
+  uploadAccountFile(token, `/api/account/documents/${kind}`, file, onProgress, signal)
+
+export const removeAccountDocument = (token, kind, signal) =>
+  request(`/api/account/documents/${kind}`, {
+    method: 'DELETE',
+    headers: authHeaders(token),
+    signal,
+  })
+
+export const downloadAccountDocument = async (token, kind, fileName, signal) => {
+  const response = await fetch(`${API_BASE}/api/account/documents/${kind}/download`, {
+    cache: 'no-store',
+    headers: authHeaders(token),
+    signal,
+  })
+  if (!response.ok) {
+    const payload = await parseJsonBody(response).catch(() => ({}))
+    throw createApiError(payload, 'Download failed', response.status)
+  }
+
+  const url = URL.createObjectURL(await response.blob())
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = fileName
+  document.body.append(anchor)
+  anchor.click()
+  anchor.remove()
+  window.setTimeout(() => URL.revokeObjectURL(url), 30_000)
+}
 
 export const deleteAccountCommunityUpload = (token, id) =>
   request(`/api/account/community/uploads/${id}`, {

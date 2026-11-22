@@ -71,6 +71,7 @@ const createProfileForm = (profile = {}) => ({
 
 // Only ever mounted while someone is actually cropping, which is a rare
 // moment in a long-lived page.
+const AccountDocumentsPanel = lazy(() => import('../components/AccountDocumentsPanel'))
 const CreatorNoticesPanel = lazy(() => import('../components/CreatorNoticesPanel'))
 const CreatorProfileEditor = lazy(() => import('../components/CreatorProfileEditor'))
 const ImageCropDialog = lazy(() => import('../components/ImageCropDialog'))
@@ -96,6 +97,7 @@ const accountTabs = [
   { key: 'comments', labelKey: 'accountNavComments' },
   { key: 'community', labelKey: 'accountNavCommunity' },
   { key: 'works', labelKey: 'accountNavWorks' },
+  { key: 'documents', labelKey: 'accountNavDocuments' },
   { key: 'selling', labelKey: 'accountNavSelling' },
   { key: 'notices', labelKey: 'accountNavNotices' },
   { key: 'settings', labelKey: 'accountNavSettings' },
@@ -1617,6 +1619,12 @@ const AccountPage = ({
         return <Suspense fallback={<p role="status">{copy.loading}</p>}><CreatorDashboard key={authToken} authToken={authToken} copy={copy} language={language} /></Suspense>
       case 'favorites':
         return <Suspense fallback={<p role="status">{copy.loading}</p>}><FavoritesPanel key={authToken} authToken={authToken} copy={copy} language={language} /></Suspense>
+      case 'documents':
+        return (
+          <Suspense fallback={<p role="status">{copy.loading}</p>}>
+            <AccountDocumentsPanel key={authToken} authToken={authToken} copy={copy} language={language} />
+          </Suspense>
+        )
       case 'downloads':
         return renderDownloads()
       case 'comments':
