@@ -3,6 +3,7 @@ import ReportButton from '../components/ReportButton'
 import { readInterfaceMotion } from '../hooks/useInterfacePreferences'
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
+import ProfileDocuments from '../components/ProfileDocuments'
 import CreatorProfileContent from '../components/CreatorProfileContent'
 import CreatorWorksGallery from '../components/CreatorWorksGallery'
 import CreatorThemeBrowser from '../components/CreatorThemeBrowser'
@@ -53,6 +54,7 @@ const CreatorProfile = ({ copy, language, handle, authToken, visitorUser }) => {
   const [previewTheme, setPreviewTheme] = useState('')
   const [profile, setProfile] = useState(null)
   const [notices, setNotices] = useState([])
+  const [publicDocuments, setPublicDocuments] = useState([])
   const [activity, setActivity] = useState({ comments: [], posts: [], resources: [] })
   const [worksTotal, setWorksTotal] = useState(null)
   const [profileAttempt, setProfileAttempt] = useState(0)
@@ -68,6 +70,7 @@ const CreatorProfile = ({ copy, language, handle, authToken, visitorUser }) => {
         if (!current) return
         setProfile(payload.profile)
         setNotices(payload.notices || [])
+        setPublicDocuments(payload.documents || [])
         setStatus(payload.profile?.profilePublic === false ? 'private' : 'ready')
       })
       .catch(error => {
@@ -125,6 +128,18 @@ const CreatorProfile = ({ copy, language, handle, authToken, visitorUser }) => {
     return preset ? themeToTokens(preset.theme) : profile?.themeTokens
   }, [previewTheme, profile?.themeTokens])
   useEffect(() => applyTheme(pageRef.current, themeTokens), [themeTokens])
+
+  const viewingOwnProfile = Boolean(authToken && visitorUser?.handle?.toLowerCase() === handle.toLowerCase())
+  const profileDocuments = (
+    <ProfileDocuments
+      key={viewingOwnProfile ? authToken : 'public'}
+      authToken={viewingOwnProfile ? authToken : undefined}
+      copy={copy}
+      handle={handle}
+      language={language}
+      publicDocuments={publicDocuments}
+    />
+  )
 
   const isLoading = status === `loading:${handle}`
   const activityPublic = profile?.activityPublic !== false
@@ -314,6 +329,8 @@ const CreatorProfile = ({ copy, language, handle, authToken, visitorUser }) => {
         </section>
       )}
 
+      {status === 'private' && viewingOwnProfile && profileDocuments}
+
       {status === 'admin-disabled' && (
         <section className="account-state-card">
           <p className="section-kicker">{copy.publicProfileKicker}</p>
@@ -399,6 +416,7 @@ const CreatorProfile = ({ copy, language, handle, authToken, visitorUser }) => {
           </nav>
 
           <section className="public-profile-content">
+            {['overview', 'about'].includes(activeTab) && profileDocuments}
             <div className="profile-work-panel" hidden={!['overview', 'works'].includes(activeTab)}>
               <CreatorWorksGallery handle={handle} copy={copy} language={language} onTotal={setWorksTotal} />
             </div>

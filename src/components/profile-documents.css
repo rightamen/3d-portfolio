@@ -1,0 +1,74 @@
+.profile-documents {
+  display: grid;
+  gap: 16px;
+  margin-bottom: clamp(24px, 3vw, 42px);
+}
+
+.profile-documents-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.profile-documents-heading h2 {
+  font-size: clamp(1.2rem, 2.15vw, 1.65rem);
+  font-weight: 650;
+}
+
+.profile-document-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr));
+  gap: 12px;
+}
+
+.profile-document-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: clamp(14px, 2vw, 20px);
+  border: 1px solid var(--theme-line, #ffffff20);
+  border-radius: 12px;
+  background: var(--theme-panel, #171a21);
+}
+
+.profile-document-icon {
+  display: grid;
+  width: 42px;
+  height: 46px;
+  place-items: center;
+  align-self: start;
+  color: var(--theme-accent, #bcb6ff);
+  background: var(--theme-soft, #212430);
+  border: 1px solid var(--theme-line, #ffffff20);
+  border-radius: 7px;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.profile-document-meta h3 {
+  font-weight: 650;
+}
+
+.profile-document-meta :is(p, small) {
+  color: var(--theme-muted, #a0a3b4);
+  overflow-wrap: anywhere;
+}
+
+.profile-document-meta p {
+  margin: 4px 0;
+  font-size: 0.875rem;
+}
+
+@media (max-width: 460px) {
+  .profile-document-card {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .profile-document-card > .secondary-action {
+    grid-column: 2;
+    justify-self: start;
+  }
+}

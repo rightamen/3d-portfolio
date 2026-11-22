@@ -39,6 +39,9 @@ export const ensureSchema = async (pool) => {
       PRIMARY KEY (user_id, kind)
     );
 
+    ALTER TABLE account_documents
+      ADD COLUMN IF NOT EXISTS profile_visible boolean NOT NULL DEFAULT false;
+
     CREATE TABLE IF NOT EXISTS visitor_sessions (
       token_hash text PRIMARY KEY,
       user_id text NOT NULL REFERENCES visitor_users(id) ON DELETE CASCADE,

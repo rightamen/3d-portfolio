@@ -698,6 +698,17 @@ export const getAccountDocuments = (token, signal) =>
 export const uploadAccountDocument = (token, kind, file, onProgress, signal) =>
   uploadAccountFile(token, `/api/account/documents/${kind}`, file, onProgress, signal)
 
+export const updateAccountDocumentVisibility = (token, kind, version, profileVisible, signal) =>
+  request(`/api/account/documents/${kind}/visibility`, {
+    method: 'PATCH',
+    headers: authHeaders(token, { 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ version, profileVisible }),
+    signal,
+  })
+
+export const publicAccountDocumentUrl = (handle, kind) =>
+  `${API_BASE}/api/users/${encodeURIComponent(handle)}/documents/${kind}/download`
+
 export const removeAccountDocument = (token, kind, signal) =>
   request(`/api/account/documents/${kind}`, {
     method: 'DELETE',

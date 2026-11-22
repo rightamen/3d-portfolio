@@ -1,7 +1,16 @@
+const publicDocumentsFrom = `
+  FROM account_documents AS document
+  JOIN visitor_users AS owner ON owner.id = document.user_id
+  WHERE lower(owner.handle) = lower($1)
+    AND owner.profile_public IS NOT FALSE
+    AND NOT owner.profile_admin_disabled
+    AND document.profile_visible
+`
+
 export const createAccountDocumentsStore = ({ pool }) => ({
   async list(userId) {
     const { rows } = await pool.query(
-      'SELECT kind, file_name, byte_size, updated_at FROM account_documents WHERE user_id = $1 ORDER BY kind',
+      'SELECT kind, stored_name, file_name, byte_size, updated_at, profile_visible FROM account_documents WHERE user_id = $1 ORDER BY kind',
       [userId],
     )
     return rows
@@ -32,7 +41,7 @@ export const createAccountDocumentsStore = ({ pool }) => ({
       const { rows } = await client.query(
         `INSERT INTO account_documents (user_id, kind, stored_name, file_name, byte_size)
          VALUES ($1, $2, $3, $4, $5)
-         RETURNING kind, file_name, byte_size, updated_at`,
+         RETURNING kind, stored_name, file_name, byte_size, updated_at, profile_visible`,
         [userId, kind, storedName, fileName, byteSize],
       )
       await client.query('COMMIT')
@@ -43,6 +52,35 @@ export const createAccountDocumentsStore = ({ pool }) => ({
     } finally {
       client.release()
     }
+  },
+
+  async listForProfile(handle) {
+    const { rows } = await pool.query(
+      `SELECT document.kind, document.file_name, document.byte_size, document.updated_at
+       ${publicDocumentsFrom} ORDER BY document.kind`,
+      [handle],
+    )
+    return rows
+  },
+
+  async getForProfile(handle, kind) {
+    const { rows } = await pool.query(
+      `SELECT document.user_id, document.stored_name, document.file_name
+       ${publicDocumentsFrom} AND document.kind = $2`,
+      [handle, kind],
+    )
+    return rows[0] ?? null
+  },
+
+  async setProfileVisibility(userId, kind, version, visible) {
+    const { rows } = await pool.query(
+      `UPDATE account_documents
+       SET profile_visible = $4
+       WHERE user_id = $1 AND kind = $2 AND stored_name = $3
+       RETURNING kind, stored_name, file_name, byte_size, updated_at, profile_visible`,
+      [userId, kind, version, visible],
+    )
+    return rows[0] ?? null
   },
 
   async remove(userId, kind) {

@@ -12,7 +12,12 @@ import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypt
 import { mkdir, unlink, access, readFile, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { createAccountDocumentsRouter, removeAccountDocuments } from './accountDocuments.js'
+import {
+  createAccountDocumentsRouter,
+  createPublicDocumentDownload,
+  publicDocumentMetadata,
+  removeAccountDocuments,
+} from './accountDocuments.js'
 import { createContactMessagesStore } from './contactMessagesStore.js'
 import { createContentHealthChecker } from './contentHealth.js'
 import { createContentHealthHeadline } from './contentHealthHeadline.js'
@@ -3877,15 +3882,20 @@ app.get('/api/users/:handle', async (request, response) => {
   //
   // internalId is what stripInternalPublicProfile removes below, so the lookup
   // has to happen before it does.
-  let notices = []
-  if (notificationsStore && profile.internalId) {
-    notices = await notificationsStore
-      .listCreatorNotices(profile.internalId, { limit: 10 })
-      .catch(() => [])
-  }
+  const [notices, documents] = await Promise.all([
+    notificationsStore && profile.internalId
+      ? notificationsStore.listCreatorNotices(profile.internalId, { limit: 10 }).catch(() => [])
+      : [],
+    accountDocumentsStore ? accountDocumentsStore.listForProfile(handle).catch(() => []) : [],
+  ])
 
-  return sendData(response, { notices, profile: stripInternalPublicProfile(profile) })
+  response.set('Cache-Control', 'no-store')
+  return sendData(response, { notices, documents: documents.map(publicDocumentMetadata), profile: stripInternalPublicProfile(profile) })
 })
+
+app.get('/api/users/:handle/documents/:kind/download', createPublicDocumentDownload({
+  dataDir, store: accountDocumentsStore, normalizeHandle, handlePattern,
+}))
 
 app.get('/api/users/:handle/resources', async (request, response) => {
   if (!authStore || !communityStore) return sendData(response, { resources: [] })

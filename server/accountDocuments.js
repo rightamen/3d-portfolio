@@ -42,12 +42,20 @@ const displayName = (originalName) => {
   return (Array.from(base).slice(0, 116).join('') || 'document') + '.pdf'
 }
 
-const metadata = (row) => ({
+export const publicDocumentMetadata = (row) => ({
   kind: row.kind,
   fileName: row.file_name,
   byteSize: row.byte_size,
   updatedAt: row.updated_at,
 })
+
+const metadata = (row) => ({
+  ...publicDocumentMetadata(row),
+  profileVisible: row.profile_visible,
+  version: row.stored_name,
+})
+
+const versionPattern = /^[a-f0-9-]{36}\.pdf$/
 
 const requireKind = (request, response, next) => {
   if (kinds.has(request.params.kind)) return next()
@@ -56,6 +64,34 @@ const requireKind = (request, response, next) => {
 
 const documentMissing = (response) =>
   sendError(response, API_ERROR_CODES.RESOURCE_FORBIDDEN, 'Document not found.', 404)
+
+const sendDocumentFile = (dataDir, userId, row, response, next) => {
+  response.attachment(row.file_name)
+  response.set('Content-Type', 'application/octet-stream')
+  return response.sendFile(row.stored_name, {
+    root: directoryFor(dataDir, userId),
+    cacheControl: false,
+    lastModified: false,
+    acceptRanges: false,
+  }, (error) => {
+    if (!error) return
+    if (!response.headersSent && error.code === 'ENOENT') {
+      response.removeHeader('Content-Disposition')
+      return documentMissing(response)
+    }
+    return next(error)
+  })
+}
+
+export const createPublicDocumentDownload = ({ dataDir, store, normalizeHandle, handlePattern }) =>
+  async (request, response, next) => {
+    response.set('Cache-Control', 'no-store')
+    const handle = normalizeHandle(request.params.handle)
+    const kind = request.params.kind
+    if (!store || !handlePattern.test(handle) || !kinds.has(kind)) return documentMissing(response)
+    const row = await store.getForProfile(handle, kind)
+    return row ? sendDocumentFile(dataDir, row.user_id, row, response, next) : documentMissing(response)
+  }
 
 export const createAccountDocumentsRouter = ({ dataDir, store, requireVisitor, writeLimiter }) => {
   const router = Router()
@@ -124,21 +160,19 @@ export const createAccountDocumentsRouter = ({ dataDir, store, requireVisitor, w
     const row = await store.get(userId, request.params.kind)
     if (!row) return documentMissing(response)
 
-    response.attachment(row.file_name)
-    response.set('Content-Type', 'application/octet-stream')
-    return response.sendFile(row.stored_name, {
-      root: directoryFor(dataDir, userId),
-      cacheControl: false,
-      lastModified: false,
-      acceptRanges: false,
-    }, (error) => {
-      if (!error) return
-      if (!response.headersSent && error.code === 'ENOENT') {
-        response.removeHeader('Content-Disposition')
-        return documentMissing(response)
-      }
-      return next(error)
-    })
+    return sendDocumentFile(dataDir, userId, row, response, next)
+  })
+
+  router.patch('/:kind/visibility', requireKind, writeLimiter, async (request, response) => {
+    const { version, profileVisible } = request.body ?? {}
+    if (typeof version !== 'string' || !versionPattern.test(version) || typeof profileVisible !== 'boolean') {
+      return sendError(response, API_ERROR_CODES.VALIDATION_ERROR, 'Document version and visibility are required.', 400)
+    }
+    const row = await store.setProfileVisibility(request.visitorUser.id, request.params.kind, version, profileVisible)
+    if (!row) {
+      return sendError(response, API_ERROR_CODES.VALIDATION_ERROR, 'This document has changed. Reload it before publishing.', 409)
+    }
+    return sendData(response, { document: metadata(row) })
   })
 
   router.delete('/:kind', requireKind, writeLimiter, async (request, response) => {

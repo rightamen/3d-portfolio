@@ -29,7 +29,7 @@ const createUser = async () => {
      VALUES ($1, $2, now() + interval '1 hour')`,
     [createHash('sha256').update(token).digest('hex'), id],
   )
-  return { id, token }
+  return { id, token, handle: 'documents-' + id.slice(0, 8) }
 }
 
 const call = (suffix = '', token = owner.token, options = {}) =>
@@ -153,7 +153,86 @@ test('account sidebar opens the upload panel and the mobile download matches the
     await page.setViewportSize({ width: 1440, height: 1000 })
     await expect(page.getByRole('navigation').getByRole('button', { name: '简历与作品集' })).toHaveAttribute('aria-current', 'page')
     await page.screenshot({ path: info.outputPath('account-documents-desktop.png'), fullPage: true })
+    await page.goto(base + '/u/' + user.handle)
+    const ownSection = page.getByRole('region', { name: '简历与作品集' })
+    await expect(ownSection.getByText('简历.pdf')).toBeVisible()
+    await expect(ownSection.getByText('仅自己可见')).toBeVisible()
+    await ownSection.getByRole('link', { name: '管理文件' }).click()
+    await expect(resume.getByText('简历.pdf')).toBeVisible()
+
+    const guest = await browser.newPage({ viewport: { width: 390, height: 850 }, acceptDownloads: true })
+    await guest.addInitScript(() => localStorage.setItem('mrright-language', 'zh'))
+    await guest.goto(base + '/u/' + user.handle)
+    await expect(guest.getByRole('heading', { name: 'Document test account' })).toBeVisible()
+    await expect(guest.getByRole('region', { name: '简历与作品集' })).toHaveCount(0)
+
+    page.once('dialog', (dialog) => dialog.accept())
+    await resume.getByRole('button', { name: '在主页公开' }).click()
+    await expect(resume.getByText('文件已设为主页公开。')).toBeVisible()
+    await guest.reload()
+    const guestSection = guest.getByRole('region', { name: '简历与作品集' })
+    await expect(guestSection.getByText('简历.pdf')).toBeVisible()
+    expect(await guest.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+    await guest.screenshot({ path: info.outputPath('profile-documents-mobile.png'), fullPage: true })
+    const guestDownload = guest.waitForEvent('download')
+    await guestSection.getByRole('link', { name: '简历 · 下载 PDF' }).click()
+    expect(await readFile(await (await guestDownload).path())).toEqual(sample)
+
+    await resume.getByRole('button', { name: '设为私有' }).click()
+    await expect(resume.getByText('文件已设为私有。')).toBeVisible()
+    await guest.reload()
+    await expect(guest.getByRole('heading', { name: 'Document test account' })).toBeVisible()
+    await expect(guest.getByRole('region', { name: '简历与作品集' })).toHaveCount(0)
   } finally {
     await browser.close()
   }
+})
+
+test('profile links respect owner consent, profile privacy, moderation, and the uploaded version', async () => {
+  const author = await createUser()
+  const profilePath = base + '/api/users/' + author.handle
+  const publicDownload = (kind) => fetch(profilePath + '/documents/' + kind + '/download')
+  const published = async () => (await (await fetch(profilePath)).json()).documents ?? []
+  const setVisibility = (actor, version, profileVisible) => fetch(base + route + '/resume/visibility', {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(actor ? { Authorization: 'Bearer ' + actor.token } : {}),
+    },
+    body: JSON.stringify({ version, profileVisible }),
+  })
+
+  const { document: original } = await (await upload('resume', 'private.pdf', sample, author.token)).json()
+  expect(original.profileVisible).toBe(false)
+  expect(await published()).toEqual([])
+  expect((await publicDownload('resume')).status).toBe(404)
+  expect((await setVisibility(null, original.version, true)).status).toBe(401)
+  expect((await setVisibility(visitor, original.version, true)).status).toBe(409)
+  expect((await setVisibility(author, original.version, true)).status).toBe(200)
+  expect(await published()).toEqual([{
+    kind: 'resume', fileName: 'private.pdf', byteSize: sample.length, updatedAt: original.updatedAt,
+  }])
+  const publicFile = await publicDownload('resume')
+  expect(publicFile.status).toBe(200)
+  expect(publicFile.headers.get('cache-control')).toBe('no-store')
+  expect(publicFile.headers.get('content-disposition')).toContain('attachment')
+  expect(Buffer.from(await publicFile.arrayBuffer())).toEqual(sample)
+
+  await pool.query('UPDATE visitor_users SET profile_public = false WHERE id = $1', [author.id])
+  expect(await published()).toEqual([])
+  expect((await publicDownload('resume')).status).toBe(404)
+  expect((await call('/resume/download', author.token)).status).toBe(200)
+  await pool.query('UPDATE visitor_users SET profile_public = true, profile_admin_disabled = true WHERE id = $1', [author.id])
+  expect((await fetch(profilePath)).status).toBe(403)
+  expect((await publicDownload('resume')).status).toBe(404)
+  await pool.query('UPDATE visitor_users SET profile_admin_disabled = false WHERE id = $1', [author.id])
+
+  expect((await setVisibility(author, original.version, false)).status).toBe(200)
+  expect((await publicDownload('resume')).status).toBe(404)
+  expect((await setVisibility(author, original.version, true)).status).toBe(200)
+  const { document: replacement } = await (await upload('resume', 'new-private.pdf', sample, author.token)).json()
+  expect(replacement.profileVisible).toBe(false)
+  expect((await setVisibility(author, original.version, true)).status).toBe(409)
+  expect(await published()).toEqual([])
+  expect((await publicDownload('resume')).status).toBe(404)
 })

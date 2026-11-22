@@ -3,24 +3,14 @@ import {
   downloadAccountDocument,
   getAccountDocuments,
   removeAccountDocument,
+  updateAccountDocumentVisibility,
   uploadAccountDocument,
 } from '../lib/api'
+import { documentSlots, formatDocumentSize } from '../lib/accountDocuments'
 import { getApiErrorMessage } from '../lib/i18n'
 import './account-documents.css'
 
 const maxFileSize = 50 * 1024 * 1024
-const slots = [
-  ['resume', 'accountDocumentsResume'],
-  ['portfolio', 'accountDocumentsPortfolio'],
-]
-
-const formatSize = (size, locale) => {
-  const format = new Intl.NumberFormat(locale, { maximumFractionDigits: 1 })
-  if (size < 1024) return `${format.format(size)} B`
-  if (size < 1024 * 1024) return `${format.format(size / 1024)} KB`
-  return `${format.format(size / (1024 * 1024))} MB`
-}
-
 const DocumentSlot = ({ authToken, copy, kind, label, item, onChange, language }) => {
   const input = useRef(null)
   const operation = useRef(null)
@@ -63,7 +53,7 @@ const DocumentSlot = ({ authToken, copy, kind, label, item, onChange, language }
       if (!controller.signal.aborted) {
         const key = error.status === 413 ? 'accountDocumentsSize'
           : error.code === 'INVALID_FILE_TYPE' ? 'accountDocumentsFormat'
-            : 'accountDocumentsActionError'
+            : error.status === 409 ? 'accountDocumentsVersionChanged' : 'accountDocumentsActionError'
         setNotice({ key, error: true })
       }
     } finally {
@@ -81,7 +71,7 @@ const DocumentSlot = ({ authToken, copy, kind, label, item, onChange, language }
       if (signal.aborted) return
       onChange(kind, result.document)
       resetPicker()
-      setNotice({ key: 'accountDocumentsSaved' })
+      setNotice({ key: item?.profileVisible ? 'accountDocumentsReplacementPrivate' : 'accountDocumentsSaved' })
     })
   }
 
@@ -93,6 +83,17 @@ const DocumentSlot = ({ authToken, copy, kind, label, item, onChange, language }
       onChange(kind, null)
       resetPicker()
       setNotice({ key: 'accountDocumentsRemoved' })
+    })
+  }
+
+  const toggleVisibility = () => {
+    const profileVisible = !item.profileVisible
+    if (profileVisible && !window.confirm(copy.accountDocumentsPublishConfirm.replace('{kind}', label))) return
+    void run('visibility', async (signal) => {
+      const { document } = await updateAccountDocumentVisibility(authToken, kind, item.version, profileVisible, signal)
+      if (signal.aborted) return
+      onChange(kind, document)
+      setNotice({ key: profileVisible ? 'accountDocumentsPublished' : 'accountDocumentsUnpublished' })
     })
   }
 
@@ -109,9 +110,10 @@ const DocumentSlot = ({ authToken, copy, kind, label, item, onChange, language }
           <>
             <strong>{item.fileName}</strong>
             <span>
-              {formatSize(item.byteSize, locale)} ·{' '}
+              {formatDocumentSize(item.byteSize, language)} ·{' '}
               <time dateTime={item.updatedAt}>{new Date(item.updatedAt).toLocaleDateString(locale)}</time>
             </span>
+            <span>{item.profileVisible ? copy.accountDocumentsPublic : copy.accountDocumentsPrivate}</span>
           </>
         ) : <span>{copy.accountDocumentsEmpty}</span>}
       </div>
@@ -140,6 +142,9 @@ const DocumentSlot = ({ authToken, copy, kind, label, item, onChange, language }
                   downloadAccountDocument(authToken, kind, item.fileName, signal))}
               >
                 {copy.accountDocumentsDownload}
+              </button>
+              <button className="secondary-action" type="button" disabled={Boolean(activity)} onClick={toggleVisibility}>
+                {item.profileVisible ? copy.accountDocumentsUnpublish : copy.accountDocumentsPublish}
               </button>
               <button className="secondary-action" type="button" disabled={Boolean(activity)} onClick={remove}>
                 {copy.accountDocumentsRemove}
@@ -188,7 +193,7 @@ const AccountDocumentsPanel = ({ authToken, copy, language }) => {
         </div>
       ) : items ? (
         <div className="account-document-grid">
-          {slots.map(([kind, labelKey]) => (
+          {documentSlots.map(([kind, labelKey]) => (
             <DocumentSlot
               key={kind}
               authToken={authToken}
