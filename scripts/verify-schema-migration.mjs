@@ -20,7 +20,7 @@
 // Read-only with respect to anything real: it initdb's a throwaway cluster in
 // a temp directory, destroys it at the end, and never reads DATABASE_URL.
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import process from 'node:process'
@@ -141,28 +141,23 @@ let cluster = null
 let client = null
 
 try {
-  const baseSource = gitShow(baseRef, SCHEMA_PATH)
-  // The working tree, deliberately -- not the index. The whole point is to run
-  // this on a change that has not been committed yet.
-  const workingSource = readFileSync(path.resolve(SCHEMA_PATH), 'utf8')
-
-  const identical = baseSource === workingSource
-
-  // Historical schema modules can import additive schema helpers. Materialise
-  // those helpers from the same Git revision so the upgrade starts at that revision.
-  const visited=new Set()
-  const materialise=file=>{
-    if(visited.has(file))return
-    visited.add(file)
-    const source=gitShow(baseRef,file),target=path.join(tempDir,'base',file)
-    mkdirSync(path.dirname(target),{recursive:true});writeFileSync(target,source)
-    for(const match of source.matchAll(/from\s+['"](\.[^'"]+)['"]/g)){
-      const child=path.posix.normalize(path.posix.join(path.posix.dirname(file),match[1]))
-      if(!child.startsWith('server/postgres/'))throw new Error('Unexpected schema dependency')
+  // Materialise the baseline and its local dependencies from the same revision.
+  const baseline = new Map()
+  const materialise = (file) => {
+    if (baseline.has(file)) return
+    const source = gitShow(baseRef, file)
+    baseline.set(file, source)
+    const target = path.join(tempDir, 'base', file)
+    mkdirSync(path.dirname(target), { recursive: true })
+    writeFileSync(target, source)
+    for (const match of source.matchAll(/from\s+['"](\.[^'"]+)['"]/g)) {
+      const child = path.posix.normalize(path.posix.join(path.posix.dirname(file), match[1]))
+      if (!child.startsWith('server/')) throw new Error('Unexpected schema dependency')
       materialise(child)
     }
   }
   materialise(SCHEMA_PATH)
+  const identical = [...baseline].every(([file, source]) => existsSync(file) && readFileSync(file, 'utf8') === source)
   writeFileSync(path.join(tempDir,'base','package.json'),JSON.stringify({type:'module'}))
   const basePath=path.join(tempDir,'base',SCHEMA_PATH)
 
@@ -187,6 +182,18 @@ try {
   await pool.query("INSERT INTO works(id,creator_id,slug,title,status) VALUES('w-curation-migrate','u-schema-check','curation-migrate','Existing work','published')")
 
 
+  const legacyChat = (await pool.query("SELECT to_regclass('direct_messages') AS chat")).rows[0].chat
+  if (legacyChat) {
+    await pool.query(`
+      INSERT INTO visitor_users (id, email, display_name, password_hash)
+      VALUES ('u-schema-chat-peer', 'schema-peer@example.test', 'Chat Peer', 'x');
+      INSERT INTO direct_conversations (id, user_low, user_high, requester_id, status, last_seq)
+      VALUES ('schema-chat', 'u-schema-chat-peer', 'u-schema-check', 'u-schema-check', 'active', 1);
+      INSERT INTO direct_messages (id, conversation_id, seq, sender_id, client_id, body)
+      VALUES ('old-chat-message', 'schema-chat', 1, 'u-schema-check', 'old-chat-message', 'Existing text');
+    `)
+  }
+
   log('Upgrading to the working tree schema...')
   const { ensureSchema } = await import(
     pathToFileURL(path.resolve(SCHEMA_PATH)).href + `?t=${Date.now()}`
@@ -197,6 +204,11 @@ try {
   check(mediaKinds.includes('video') && mediaKinds.includes('audio'),'work asset kind constraint accepts media resources')
   log('Running it a second time (it must be idempotent)...')
   await ensureSchema(pool)
+
+  if (legacyChat) {
+    const { rows: [message] } = await pool.query("SELECT body, attachment FROM direct_messages WHERE id = 'old-chat-message'")
+    check(message?.body === 'Existing text' && message.attachment === null, 'existing text chat survives the attachment migration')
+  }
 
   const migratedWork = (await pool.query("SELECT curation_score,exhibition_recommended,rating_version FROM works WHERE id='w-curation-migrate'")).rows[0]
   check(migratedWork.curation_score === null && migratedWork.exhibition_recommended === false && migratedWork.rating_version === 1, 'existing works are not automatically admitted')
@@ -292,7 +304,7 @@ try {
 
   if (identical) {
     console.warn(
-      `\n[schema] NOTE: ${SCHEMA_PATH} is identical at ${baseRef} and in the working tree, so no\n` +
+      `\n[schema] NOTE: Schema sources are identical at ${baseRef} and in the working tree, so no\n` +
         '[schema]       upgrade was exercised -- only idempotency and the assertions above.\n' +
         '[schema]       Pass --from <older ref> to test a real upgrade.',
     )

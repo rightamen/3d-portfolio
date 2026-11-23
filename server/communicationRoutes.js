@@ -1,3 +1,4 @@
+import { registerMessageMediaRoutes } from './messageMediaRoutes.js'
 import {SocialError,socialFail,textField} from './socialValidation.js'
 import {messageInput,messageSequence,feedReadInput} from './communicationValidation.js'
 export const registerCommunicationRoutes=({app,store,requireVisitor,requireWorksStore,sendData,sendPage,sendError,codes,normalizePagination,toPaginatedPayload,limiter})=>{
@@ -13,6 +14,7 @@ export const registerCommunicationRoutes=({app,store,requireVisitor,requireWorks
  route('post','/api/account/messages/threads',async(req,res)=>{const handle=textField(req.body?.handle,40,{required:true});if(handle.includes(String.fromCharCode(0)))socialFail('Invalid creator.');return sendData(res,{thread:await store.openConversation(req.visitorUser.id,handle)})})
  route('get','/api/account/messages/threads/:id',async(req,res)=>sendData(res,await store.getConversation(req.visitorUser.id,req.params.id,{before:messageSequence(req.query.before,{optional:true})})))
  route('post','/api/account/messages/threads/:id/messages',async(req,res)=>sendData(res,{message:await store.sendMessage(req.visitorUser.id,req.params.id,messageInput(req.body))}))
+ registerMessageMediaRoutes({ route, store, sendData, sendError, codes })
  route('put','/api/account/messages/threads/:id/read',async(req,res)=>sendData(res,await store.readConversation(req.visitorUser.id,req.params.id,messageSequence(req.body?.seq))))
  route('patch','/api/account/messages/threads/:id',async(req,res)=>{
   if(!['accept','decline','block','unblock'].includes(req.body?.action))socialFail('Unknown conversation action.')

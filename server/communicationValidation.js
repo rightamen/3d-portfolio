@@ -1,6 +1,6 @@
 import { socialFail,textField } from './socialValidation.js'
-export const messageInput=body=>{
- const text=textField(body?.body,4000,{required:true})
+export const messageInput=(body,{attachment=false}={})=>{
+ const text=textField(body?.body ?? (attachment ? '' : undefined),4000,{required:!attachment})
  if(text.includes(String.fromCharCode(0)))socialFail('Unsupported message character.')
  if(typeof body?.clientId!=='string' || !/^[a-zA-Z0-9-]{16,80}$/.test(body.clientId))socialFail('A valid message retry key is required.')
  return {body:text,clientId:body.clientId}

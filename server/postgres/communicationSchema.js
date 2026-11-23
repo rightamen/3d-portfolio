@@ -29,6 +29,21 @@ export const ensureCommunicationSchema=pool=>pool.query(`
   created_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE(conversation_id,seq),UNIQUE(sender_id,client_id)
  );
+ ALTER TABLE direct_messages ADD COLUMN IF NOT EXISTS attachment jsonb;
+ DO $$ BEGIN
+   IF NOT EXISTS (
+     SELECT 1 FROM pg_constraint
+     WHERE conrelid = 'direct_messages'::regclass AND conname = 'direct_messages_content_check'
+   ) THEN
+     ALTER TABLE direct_messages DROP CONSTRAINT IF EXISTS direct_messages_body_check;
+     ALTER TABLE direct_messages ADD CONSTRAINT direct_messages_content_check
+       CHECK (length(body) <= 4000 AND (length(body) > 0 OR attachment IS NOT NULL));
+   END IF;
+ END $$;
+ CREATE TABLE IF NOT EXISTS direct_message_media (
+   message_id text PRIMARY KEY REFERENCES direct_messages(id) ON DELETE CASCADE,
+   bytes bytea NOT NULL
+ );
  CREATE INDEX IF NOT EXISTS direct_messages_thread_seq_idx ON direct_messages(conversation_id,seq DESC);
  CREATE INDEX IF NOT EXISTS direct_messages_sender_time_idx ON direct_messages(sender_id,created_at DESC);
  CREATE TABLE IF NOT EXISTS following_feed_reads (

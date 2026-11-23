@@ -1,5 +1,6 @@
 import {expect,test} from '@playwright/test'
 import {spawn} from 'node:child_process'
+import {readFile} from 'node:fs/promises'
 import {createHash,randomBytes,randomUUID} from 'node:crypto'
 import pg from 'pg'
 import {ensureSchema} from '../../server/postgres/schema.js'
@@ -156,4 +157,105 @@ test('concurrent new conversations respect the daily per-account limit',async()=
  const outcomes=await Promise.all([api('POST',root,a.token,{handle:b.handle}),api('POST',root,a.token,{handle:c.handle})])
  expect(outcomes.map(r=>r.status).sort()).toEqual([200,429])
  expect((await pool.query('SELECT count(*)::int AS n FROM direct_conversations WHERE requester_id=$1',[a.id])).rows[0].n).toBe(20)
+})
+
+test('private chat attachments validate content and permissions and retry at most once', async () => {
+ const image = await readFile('tests/fixtures/resources/sample.png')
+ const video = await readFile('tests/fixtures/resources/sample.webm')
+ const thread = await open()
+ const conversationPath = root + '/' + thread.id
+ const sendMedia = async ({ owner = a, name = 'photo.png', bytes = image, clientId = randomUUID(), body = '' } = {}) => {
+  const form = new FormData()
+  form.set('file', new Blob([bytes]), name)
+  form.set('body', body)
+  const response = await fetch(base + conversationPath + '/messages/media?' + new URLSearchParams({ clientId }), {
+   method: 'POST',
+   headers: owner ? { Authorization: 'Bearer ' + owner.token } : {},
+   body: form,
+  })
+  return { status: response.status, payload: (await response.json()).data }
+ }
+
+ expect((await sendMedia({ owner: null })).status).toBe(401)
+ expect((await sendMedia({ owner: c })).status).toBe(404)
+ expect((await sendMedia()).status).toBe(403)
+ expect((await send(thread)).status).toBe(200)
+ expect((await action(thread, b, 'accept')).status).toBe(200)
+ expect((await sendMedia({ bytes: Buffer.from('<html>Not an image</html>') })).status).toBe(400)
+ const bigImage = Buffer.concat([image, Buffer.alloc(10 * 1024 * 1024)])
+ expect((await sendMedia({ bytes: bigImage })).status).toBe(413)
+
+ const clientId = randomUUID()
+ const [first, retry] = await Promise.all([sendMedia({ clientId, name: '照片.png' }), sendMedia({ clientId, name: '照片.png' })])
+ expect(first.status).toBe(200)
+ expect(retry.payload.message.id).toBe(first.payload.message.id)
+ expect(first.payload.message).toMatchObject({ body: '', attachment: { kind: 'image', name: '照片.png', size: image.length } })
+ expect(first.payload.message.attachment).not.toHaveProperty('digest')
+ expect((await sendMedia({ clientId, name: 'different.png' })).status).toBe(409)
+ expect((await sendMedia({ owner: b, name: 'clip.webm', bytes: video, body: 'Video caption' })).status).toBe(200)
+
+ const filePath = conversationPath + '/messages/' + first.payload.message.id + '/media'
+ const read = (owner, path = filePath) => fetch(base + path, {
+  headers: owner ? { Authorization: 'Bearer ' + owner.token } : {},
+ })
+ expect((await read(null)).status).toBe(401)
+ expect((await read(c)).status).toBe(404)
+ expect((await read(a, filePath.replace(thread.id, (await open(a, c)).id))).status).toBe(404)
+ const authorized = await read(b)
+ expect(authorized.status).toBe(200)
+ expect(authorized.headers.get('cache-control')).toContain('no-store')
+ expect(authorized.headers.get('content-type')).toMatch(/^image\/png/)
+ expect(Buffer.from(await authorized.arrayBuffer())).toEqual(image)
+ expect((await detail(thread, b)).data.data.messages.map((message) => message.body)).toEqual(['Hello', '', 'Video caption'])
+
+ await action(thread, b, 'block')
+ expect((await sendMedia()).status).toBe(403)
+ expect((await sendMedia({ clientId, name: '照片.png' })).status).toBe(200)
+ await pool.query('DELETE FROM visitor_users WHERE id = $1', [b.id])
+ expect((await read(a)).status).toBe(404)
+ expect((await pool.query('SELECT 1 FROM direct_message_media WHERE message_id = $1', [first.payload.message.id])).rowCount).toBe(0)
+})
+
+test('real friends can send a photo and a playable video through desktop and mobile chat', async ({ browser }, info) => {
+ const request = await api('PUT', '/api/users/' + b.handle + '/friend', a.token, {})
+ expect(request.status).toBe(200)
+ const friendshipId = request.data.data.friendship.id
+ expect((await api('PATCH', '/api/account/friends/' + friendshipId, b.token, { action: 'accept' })).status).toBe(200)
+ const thread = await open()
+ expect(thread.status).toBe('active')
+ const sender = await browser.newContext({ viewport: { width: 1365, height: 900 }, reducedMotion: 'reduce' })
+ const receiver = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, reducedMotion: 'reduce' })
+ try {
+  for (const [context, user] of [[sender, a], [receiver, b]]) {
+   await context.addInitScript((token) => {
+    localStorage.setItem('mrright-visitor-token', token)
+    localStorage.setItem('mrright-language', 'zh')
+   }, user.token)
+  }
+  const [desktop, mobile] = await Promise.all([sender.newPage(), receiver.newPage()])
+  await Promise.all([desktop, mobile].map((page) => page.goto(base + '/messages/' + thread.id)))
+
+  const senderComposer = desktop.locator('.dm-composer')
+  const recipientComposer = mobile.locator('.dm-composer')
+  await senderComposer.getByLabel('添加图片或视频').setInputFiles('tests/fixtures/resources/sample.png')
+  await senderComposer.locator('textarea').fill('照片说明')
+  await senderComposer.getByRole('button', { name: '发送', exact: true }).click()
+  const photo = mobile.getByRole('img', { name: 'sample.png' })
+  await expect(photo).toBeVisible()
+  await expect.poll(() => photo.evaluate((img) => img.naturalWidth)).toBeGreaterThan(0)
+  await expect(mobile.locator('.dm-message-log')).toContainText('照片说明')
+
+  await recipientComposer.getByLabel('添加图片或视频').setInputFiles('tests/fixtures/resources/sample.webm')
+  await recipientComposer.getByRole('button', { name: '发送', exact: true }).click()
+  await desktop.getByRole('button', { name: '查看视频', exact: true }).click()
+  const player = desktop.locator('video[aria-label="sample.webm"]')
+  await expect(player).toBeVisible()
+  await expect.poll(() => player.evaluate((video) => video.readyState)).toBeGreaterThanOrEqual(2)
+  await player.evaluate(async (video) => { await video.play(); video.pause() })
+  expect(await mobile.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  await mobile.screenshot({ path: info.outputPath('chat-media-mobile.png'), animations: 'disabled' })
+ } finally {
+  await sender.close()
+  await receiver.close()
+ }
 })

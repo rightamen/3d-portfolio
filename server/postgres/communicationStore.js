@@ -1,4 +1,5 @@
 import {randomUUID} from 'node:crypto'
+import { messageMediaQuota } from '../messageMediaLimits.js'
 import {inTransaction,socialLock} from './socialStore.js'
 import {socialFail} from '../socialValidation.js'
 const visible="u.profile_public IS DISTINCT FROM false AND NOT u.profile_admin_disabled AND u.handle IS NOT NULL"
@@ -10,7 +11,23 @@ const requireThread=async(db,userId,id,lock=false)=>{
  if(!r.rowCount)socialFail('Conversation unavailable.',404)
  return r.rows[0]
 }
-const mapMessage=(m,userId)=>({id:m.id,seq:m.seq,clientId:m.sender_id===userId?m.client_id:undefined,body:m.body,mine:m.sender_id===userId,createdAt:m.created_at.toISOString()})
+const areFriends = async (db, conversation) => (await db.query(
+ "SELECT 1 FROM user_friendships WHERE user_low=$1 AND user_high=$2 AND status='accepted'",
+ [conversation.user_low, conversation.user_high],
+)).rowCount > 0
+const mediaUnlocked = (db, conversation) =>
+ conversation.status === 'active' || conversation.status === 'pending' && areFriends(db, conversation)
+const mapAttachment = ({ kind, mimeType, name, size }) => ({ kind, mimeType, name, size })
+const mapMessage = (message, userId) => ({
+ id: message.id,
+ seq: message.seq,
+ clientId: message.sender_id === userId ? message.client_id : undefined,
+ body: message.body,
+ mine: message.sender_id === userId,
+ createdAt: message.created_at.toISOString(),
+ ...(message.attachment && { attachment: mapAttachment(message.attachment) }),
+})
+
 const peer=async(db,c,userId)=>{
  const r=await db.query('SELECT u.handle,u.display_name,u.avatar_url,('+visible+') AS available FROM visitor_users u WHERE u.id=$1',[peerId(c,userId)])
  const p=r.rows[0]
@@ -18,7 +35,8 @@ const peer=async(db,c,userId)=>{
 }
 const mapThread=async(db,c,userId)=>{
  const [person,last,count]=await Promise.all([peer(db,c,userId),db.query('SELECT * FROM direct_messages WHERE conversation_id=$1 ORDER BY seq DESC LIMIT 1',[c.id]),db.query('SELECT count(*)::int AS n FROM direct_messages WHERE conversation_id=$1 AND sender_id<>$2 AND seq>$3',[c.id,userId,readSeq(c,userId)])])
- return {id:c.id,peer:person,status:c.status,direction:c.requester_id===userId?'outgoing':'incoming',blocked:c.blocked_low||c.blocked_high,blockedByMe:blockedMe(c,userId),lastSeq:c.last_seq,readSeq:readSeq(c,userId),peerReadSeq:readSeq(c,peerId(c,userId)),unread:count.rows[0].n,lastMessage:last.rows[0]?mapMessage(last.rows[0],userId):null,updatedAt:c.updated_at.toISOString()}
+ const canAttach = person.available && !c.blocked_low && !c.blocked_high && await mediaUnlocked(db, c)
+ return {id:c.id,peer:person,status:c.status,canAttach,direction:c.requester_id===userId?'outgoing':'incoming',blocked:c.blocked_low||c.blocked_high,blockedByMe:blockedMe(c,userId),lastSeq:c.last_seq,readSeq:readSeq(c,userId),peerReadSeq:readSeq(c,peerId(c,userId)),unread:count.rows[0].n,lastMessage:last.rows[0]?mapMessage(last.rows[0],userId):null,updatedAt:c.updated_at.toISOString()}
 }
 // Shared visibility source for feed and unread counts. No publication fan-out,
 // no copied private content, and a read row refers only to a displayed item.
@@ -66,24 +84,71 @@ export const createCommunicationStore=({pool})=>({
   const messages=rows.slice(0,limit).reverse().map(m=>mapMessage(m,userId))
   return {thread:await mapThread(pool,c,userId),messages,hasOlder:rows.length>limit}
  },
- sendMessage:async(userId,id,input)=>inTransaction(pool,async db=>{
-  const c=await requireThread(db,userId,id,true)
-  const prior=(await db.query('SELECT * FROM direct_messages WHERE sender_id=$1 AND client_id=$2',[userId,input.clientId])).rows[0]
-  if(prior){if(prior.conversation_id!==id || prior.body!==input.body)socialFail('Retry key belongs to another message.',409);return mapMessage(prior,userId)}
-  const person=await peer(db,c,userId)
-  if(!person.available || c.blocked_low || c.blocked_high || c.status==='declined')socialFail('Messaging is unavailable for this conversation.',403)
-  if(c.status==='pending'){
-   const friend=await db.query("SELECT 1 FROM user_friendships WHERE user_low=$1 AND user_high=$2 AND status='accepted'",[c.user_low,c.user_high])
-   if(friend.rowCount){c.status='active';await db.query("UPDATE direct_conversations SET status='active' WHERE id=$1",[id])}
-   else if(c.requester_id!==userId || c.last_seq>0)socialFail('Wait for the message request to be accepted.',403)
+ requireMediaSend: async (userId, threadId, clientId) => {
+  const thread = await requireThread(pool, userId, threadId)
+  if (clientId && (await pool.query(
+   'SELECT 1 FROM direct_messages WHERE conversation_id = $1 AND sender_id = $2 AND client_id = $3',
+   [threadId, userId, clientId],
+  )).rowCount) return
+  if (thread.blocked_low || thread.blocked_high || !(await mediaUnlocked(pool, thread)) || !(await peer(pool, thread, userId)).available) {
+   socialFail('Attachments are only available in an active conversation.',403)
   }
-  await socialLock(db,'dm-send:'+userId)
-  const count=(await db.query("SELECT count(*)::int AS n FROM direct_messages WHERE sender_id=$1 AND created_at>now()-interval '1 minute'",[userId])).rows[0].n
-  if(count>=30)socialFail('Too many messages. Please try again shortly.',429)
-  const seq=c.last_seq+1
-  const message=(await db.query('INSERT INTO direct_messages(id,conversation_id,seq,sender_id,client_id,body) VALUES($1,$2,$3,$4,$5,$6) RETURNING *',[randomUUID(),id,seq,userId,input.clientId,input.body])).rows[0]
-  await db.query('UPDATE direct_conversations SET last_seq=$2,updated_at=now() WHERE id=$1',[id,seq])
-  return mapMessage(message,userId)
+ },
+ getMessageMedia: async (userId, threadId, messageId) => {
+  const { rows } = await pool.query(`
+   SELECT m.attachment, media.bytes
+   FROM direct_message_media media
+   JOIN direct_messages m ON m.id = media.message_id
+   JOIN direct_conversations c ON c.id = m.conversation_id
+   WHERE c.id = $1 AND m.id = $2 AND $3 IN (c.user_low, c.user_high)
+  `, [threadId, messageId, userId])
+  if (!rows[0]) socialFail('Attachment unavailable.',404)
+  return rows[0]
+ },
+ sendMessage: async (userId, id, input, media = null) => inTransaction(pool, async (db) => {
+  const c = await requireThread(db, userId, id, true)
+  const prior = (await db.query('SELECT * FROM direct_messages WHERE sender_id=$1 AND client_id=$2', [userId, input.clientId])).rows[0]
+  if (prior) {
+   const matchesMedia = prior.attachment?.digest === media?.metadata.digest &&
+    prior.attachment?.name === media?.metadata.name && prior.attachment?.mimeType === media?.metadata.mimeType
+   if (prior.conversation_id !== id || prior.body !== input.body || !matchesMedia) {
+    socialFail('Retry key belongs to another message.',409)
+   }
+   return mapMessage(prior, userId)
+  }
+  const person = await peer(db, c, userId)
+  if (!person.available || c.blocked_low || c.blocked_high || c.status === 'declined') {
+   socialFail('Messaging is unavailable for this conversation.',403)
+  }
+  if (c.status === 'pending') {
+   if (await areFriends(db, c)) {
+    c.status = 'active'
+    await db.query("UPDATE direct_conversations SET status='active' WHERE id=$1", [id])
+   } else if (media || c.requester_id !== userId || c.last_seq > 0) {
+    socialFail('Wait for the message request to be accepted.',403)
+   }
+  }
+  await socialLock(db, 'dm-send:' + userId)
+  const { rows: [usage] } = await db.query(`
+   SELECT count(*) FILTER (WHERE created_at > now() - interval '1 minute')::int AS recent,
+     CASE WHEN $2::boolean THEN coalesce(sum((attachment->>'size')::bigint), 0) ELSE 0 END AS bytes
+   FROM direct_messages
+   WHERE sender_id = $1 AND created_at > now() - CASE WHEN $2 THEN interval '24 hours' ELSE interval '1 minute' END
+  `, [userId, Boolean(media)])
+  if (usage.recent >= 30) socialFail('Too many messages. Please try again shortly.',429)
+  if (media && Number(usage.bytes) + media.metadata.size > messageMediaQuota) {
+   socialFail('Daily chat attachment limit reached.',413)
+  }
+  const seq = c.last_seq + 1
+  const { rows: [message] } = await db.query(`
+   INSERT INTO direct_messages(id, conversation_id, seq, sender_id, client_id, body, attachment)
+   VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *
+  `, [randomUUID(), id, seq, userId, input.clientId, input.body, media?.metadata ?? null])
+  if (media) {
+   await db.query('INSERT INTO direct_message_media (message_id, bytes) VALUES ($1, $2)', [message.id, media.bytes])
+  }
+  await db.query('UPDATE direct_conversations SET last_seq=$2,updated_at=now() WHERE id=$1', [id, seq])
+  return mapMessage(message, userId)
  }),
  readConversation:async(userId,id,seq)=>{
   const c=await requireThread(pool,userId,id)

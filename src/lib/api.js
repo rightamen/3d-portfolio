@@ -648,11 +648,8 @@ export const updateAccountProfile = (token, payload) =>
     body: JSON.stringify(payload),
   })
 
-const uploadAccountFile = (token, endpoint, file, onProgress, signal) => {
-  const formData = new FormData()
-  formData.append('file', file)
-
-  return new Promise((resolve, reject) => {
+const uploadPrivateForm = (token, endpoint, formData, onProgress, signal) =>
+  new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
     xhr.open('POST', `${API_BASE}${endpoint}`)
     xhr.setRequestHeader('Authorization', `Bearer ${token}`)
@@ -685,6 +682,31 @@ const uploadAccountFile = (token, endpoint, file, onProgress, signal) => {
     signal?.addEventListener('abort', abort, { once: true })
     xhr.send(formData)
   })
+
+const uploadAccountFile = (token, endpoint, file, onProgress, signal) => {
+  const formData = new FormData()
+  formData.append('file', file)
+  return uploadPrivateForm(token, endpoint, formData, onProgress, signal)
+}
+
+export const sendChatMedia = (token, threadPath, input, onProgress, signal) => {
+  const formData = new FormData()
+  formData.append('file', input.file)
+  formData.append('body', input.body)
+  const query = new URLSearchParams({ clientId: input.clientId })
+  return uploadPrivateForm(token, threadPath + '/messages/media?' + query, formData, onProgress, signal)
+}
+
+export const getChatMedia = async (token, threadPath, messageId, signal) => {
+  const response = await fetch(API_BASE + threadPath + '/messages/' + encodeURIComponent(messageId) + '/media', {
+    headers: authHeaders(token),
+    cache: 'no-store',
+    signal,
+  })
+  if (!response.ok) {
+    throw createApiError(await parseJsonBody(response), 'Attachment unavailable', response.status)
+  }
+  return response.blob()
 }
 
 export const uploadAccountAvatar = (token, file, onProgress) =>

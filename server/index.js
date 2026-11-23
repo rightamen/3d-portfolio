@@ -268,6 +268,7 @@ app.use(
         frameAncestors: ["'none'"],
         objectSrc: ["'none'"],
         imgSrc: ["'self'", 'data:', 'blob:'],
+        mediaSrc: ["'self'", 'blob:'],
         workerSrc: ["'self'", 'blob:'],
         // 'wasm-unsafe-eval' allows WebAssembly.instantiate and nothing else —
         // it does not bring back eval() or inline script. Without it the
