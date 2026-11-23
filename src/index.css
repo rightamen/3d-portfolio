@@ -562,9 +562,71 @@ select option:checked {
   @apply flex flex-wrap items-center gap-2;
 }
 
-.public-profile-links a,
-.public-profile-links span {
+.public-profile-links > :is(a, span),
+.profile-contact-value > summary {
   @apply rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-semibold text-aqua;
+}
+
+.profile-contact-value {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.profile-contact-value > summary {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  gap: 7px;
+  cursor: pointer;
+}
+
+.profile-contact-value > summary::after {
+  width: 5px;
+  height: 5px;
+  border-right: 1px solid currentColor;
+  border-bottom: 1px solid currentColor;
+  content: '';
+  transform: rotate(45deg);
+}
+
+.profile-contact-value[open] > summary::after {
+  transform: rotate(225deg);
+}
+
+.profile-contact-value > summary:focus-visible {
+  outline: 2px solid var(--theme-accent, #bcb6ff);
+  outline-offset: 2px;
+}
+
+.profile-contact-value-panel {
+  margin-top: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--theme-line, #ffffff20);
+  border-radius: 8px;
+  background: var(--theme-panel, #191b22);
+  color: var(--theme-text, #e4e4ec);
+  font-size: 0.875rem;
+}
+
+.profile-contact-value-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.profile-contact-value-row strong {
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.profile-contact-value-panel output {
+  display: block;
+  color: var(--theme-muted, #a0a3b4);
+}
+
+.profile-contact-value-panel output:not(:empty) {
+  margin-top: 6px;
 }
 
 .public-profile-tabs {
@@ -2634,8 +2696,8 @@ body {
 .account-tag,
 .project-category-badge,
 .community-post-meta span,
-.public-profile-links a,
-.public-profile-links span {
+.public-profile-links > :is(a, span),
+.profile-contact-value > summary {
   @apply rounded-md;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }

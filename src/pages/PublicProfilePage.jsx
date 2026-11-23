@@ -49,6 +49,37 @@ const privateActivityTabs = [
 
 const formatDate = (value) => (value ? new Date(value).toLocaleDateString() : '')
 
+const ProfileContactValue = ({ copy, label, value }) => {
+  const [copyStatus, setCopyStatus] = useState('')
+
+  const copyValue = async () => {
+    try {
+      await navigator.clipboard.writeText(value)
+      setCopyStatus(copy.publicProfileContactCopied)
+    } catch {
+      setCopyStatus(copy.publicProfileContactCopyFailed)
+    }
+  }
+
+  return (
+    <details
+      className="profile-contact-value"
+      onToggle={(event) => { if (!event.currentTarget.open) setCopyStatus('') }}
+    >
+      <summary>{label}</summary>
+      <div className="profile-contact-value-panel">
+        <div className="profile-contact-value-row">
+          <strong>{value}</strong>
+          <button type="button" className="secondary-action" onClick={copyValue}>
+            {copy.publicProfileCopyContact}
+          </button>
+        </div>
+        <output>{copyStatus}</output>
+      </div>
+    </details>
+  )
+}
+
 const CreatorProfile = ({ copy, language, handle, authToken, visitorUser }) => {
   const [activeTab, setActiveTab] = useState('overview')
   const [previewTheme, setPreviewTheme] = useState('')
@@ -158,6 +189,15 @@ const CreatorProfile = ({ copy, language, handle, authToken, visitorUser }) => {
     return Object.entries(links).filter(([, item]) => item?.url || item?.value)
   }, [profile])
 
+  const renderContactLinks = () => visibleLinks.map(([key, item]) => {
+    const label = key === 'wechat' ? copy.accountContactWechat : item.label || key
+    return item.url ? (
+      <a key={key} href={item.url} target="_blank" rel="noreferrer">{label}</a>
+    ) : (
+      <ProfileContactValue key={key} copy={copy} label={label} value={item.value} />
+    )
+  })
+
   const renderEmpty = (title, body) => (
     <div className="asset-empty-state">
       <strong>{title}</strong>
@@ -260,11 +300,7 @@ const CreatorProfile = ({ copy, language, handle, authToken, visitorUser }) => {
         <article>
           <span>{copy.accountProfileContacts}</span>
           <div className="public-profile-links">
-            {visibleLinks.map(([key, item]) => (
-              <a key={key} href={item.url || undefined} target="_blank" rel="noreferrer">
-                {item.label || key}
-              </a>
-            ))}
+            {renderContactLinks()}
           </div>
         </article>
       )}
@@ -384,11 +420,7 @@ const CreatorProfile = ({ copy, language, handle, authToken, visitorUser }) => {
                     </a>
                   )}
                   {profile.publicEmail && <span>{profile.publicEmail}</span>}
-                  {visibleLinks.map(([key, item]) => (
-                    <a key={key} href={item.url || undefined} target="_blank" rel="noreferrer">
-                      {item.label || key}
-                    </a>
-                  ))}
+                  {renderContactLinks()}
                 </div>
               </div>
               <div className="profile-hero-summary">

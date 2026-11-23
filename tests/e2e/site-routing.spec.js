@@ -98,10 +98,10 @@ const payloadFor = (pathname) => {
   return { ok: true }
 }
 
-const routeApi = async (page) => {
+const routeApi = async (page, resolvePayload) => {
   await page.route('**/api/**', async (route) => {
     const { pathname } = new URL(route.request().url())
-    const payload = payloadFor(pathname)
+    const payload = resolvePayload(pathname)
 
     if (!payload) {
       return route.fulfill({
@@ -134,8 +134,8 @@ const markDocument = (page) =>
 
 const documentSurvived = (page) => page.evaluate((key) => Boolean(window[key]), sentinel)
 
-const openSite = async (page, path = '/') => {
-  await routeApi(page)
+const openSite = async (page, path = '/', resolvePayload = payloadFor) => {
+  await routeApi(page, resolvePayload)
   await page.addInitScript(() => {
     window.localStorage.setItem('mrright-language', 'en')
   })
@@ -344,4 +344,44 @@ test('an unknown path still renders the homepage', async ({ page }) => {
   await openSite(page, '/no-such-page')
 
   await expect(page.locator('#home')).toBeVisible()
+})
+
+test('a public WeChat ID opens from the profile and About and can be copied', async ({ context, page }) => {
+  const wechatId = 'routing-fixture-wechat'
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+  const resolvePayload = (pathname) => pathname === '/api/users/' + knownHandle ? {
+    profile: {
+      ...publicProfile,
+      contactsPublic: true,
+      contactLinks: {
+        wechat: { label: 'wechat', url: '', value: wechatId },
+        artstation: { label: 'ArtStation', url: 'https://example.test/artist' },
+      },
+    },
+  } : payloadFor(pathname)
+  await openSite(page, '/u/' + knownHandle, resolvePayload)
+
+  const hero = page.locator('.public-profile-hero')
+  const disclosure = hero.getByText('WeChat', { exact: true })
+  await expect(hero.getByText(wechatId)).toBeHidden()
+  await expect(hero.getByRole('link', { name: 'ArtStation' })).toHaveAttribute('href', 'https://example.test/artist')
+  await disclosure.focus()
+  await disclosure.press('Enter')
+  await expect(hero.getByText(wechatId)).toBeVisible()
+  await hero.getByRole('button', { name: 'Copy WeChat ID' }).click()
+  await expect(hero.getByRole('status')).toHaveText('Copied')
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(wechatId)
+  await disclosure.click()
+  await expect(hero.getByText(wechatId)).toBeHidden()
+
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, 'clipboard', { value: undefined })
+  })
+  await page.locator('.public-profile-tabs').getByRole('button', { name: 'About', exact: true }).click()
+  const about = page.locator('.public-profile-about')
+  await about.getByText('WeChat', { exact: true }).click()
+  await about.getByRole('button', { name: 'Copy WeChat ID' }).click()
+  await expect(about.getByRole('status')).toContainText('Clipboard unavailable')
+  await expect(about.getByText(wechatId)).toBeVisible()
 })
