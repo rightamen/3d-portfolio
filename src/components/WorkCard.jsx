@@ -1,3 +1,4 @@
+import ResourceNumber from './ResourceNumber'
 import {resourceLabels} from '../lib/resources'
 import { Link } from 'react-router-dom'
 
@@ -57,6 +58,7 @@ const WorkCard = ({ copy, language, showCreator = true, work }) => {
         <h3>
           <Link to={work.url}>{localizedWorkField(work, 'title', language)}</Link>
         </h3>
+        <ResourceNumber copy={copy} number={work.resourceNumber} />
         {showCreator && creator.handle ? (
           // Only a link when the profile is actually readable -- profilePublic
           // folds in both the visitor's own setting and a moderator's disable.

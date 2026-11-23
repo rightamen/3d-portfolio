@@ -371,7 +371,8 @@ export const savePaymentInfo = (paymentInfo, token) =>
     method: 'PUT',
   })
 
-export const getCommunityUploads = () => request('/api/community/uploads')
+export const getCommunityUploads = (resourceNumber) =>
+  request(resourceNumber ? '/api/community/uploads?' + new URLSearchParams({ number: resourceNumber }) : '/api/community/uploads')
 
 export const getCommunityPosts = () => request('/api/community/posts')
 

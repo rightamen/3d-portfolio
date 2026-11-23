@@ -1,3 +1,4 @@
+import ResourceNumber from '../components/ResourceNumber'
 import CreatorWorkspace from '../components/CreatorWorkspace'
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
@@ -886,6 +887,7 @@ const AccountPage = ({
                   <div>
                     <div className="admin-row-title">
                       <strong>{upload.title}</strong>
+                      <ResourceNumber copy={copy} number={upload.resourceNumber} />
                       <span>{category.label}</span>
                     </div>
                     <p>{upload.description}</p>

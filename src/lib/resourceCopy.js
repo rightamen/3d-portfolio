@@ -1,6 +1,8 @@
 export const resourceCopy={
   "zh": {
     "resourceType": "资源类型",
+    "resourceNumberLabel": "资源编号",
+    "resourceSearchSubmit": "搜索",
     "resourceAll": "全部资源",
     "resourceModel": "3D 模型",
     "resourceImage": "图片与插画",
@@ -32,6 +34,8 @@ export const resourceCopy={
   },
   "en": {
     "resourceType": "Resource type",
+    "resourceNumberLabel": "Resource ID",
+    "resourceSearchSubmit": "Search",
     "resourceAll": "All resources",
     "resourceModel": "3D models",
     "resourceImage": "Images & illustration",
@@ -63,6 +67,8 @@ export const resourceCopy={
   },
   "ja": {
     "resourceType": "リソースの種類",
+    "resourceNumberLabel": "リソース番号",
+    "resourceSearchSubmit": "検索",
     "resourceAll": "すべてのリソース",
     "resourceModel": "3Dモデル",
     "resourceImage": "画像・イラスト",

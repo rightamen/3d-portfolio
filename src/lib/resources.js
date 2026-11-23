@@ -15,3 +15,9 @@ export const resourceSlots=(type,copy)=>[
 ]
 
 export const assetKindLabels=copy=>({preview:copy.worksAssetPreview,model:copy.worksAssetModel,source:copy.resourceOriginal,image:copy.resourceGallery,texture:copy.resourceTexture,video:copy.resourceVideoPreview,audio:copy.resourceAudioPreview})
+
+export const formatResourceFileSize = (size) => {
+  if (!Number.isFinite(size) || size <= 0) return ''
+  if (size < 1024 * 1024) return `${Math.max(1, Math.round(size / 1024))} KB`
+  return `${(size / 1024 / 1024).toFixed(size > 20 * 1024 * 1024 ? 0 : 1)} MB`
+}

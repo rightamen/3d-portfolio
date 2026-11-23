@@ -1,4 +1,6 @@
 import ReportButton from '../components/ReportButton'
+import CommunityResourceCard from '../components/CommunityResourceCard'
+import { formatResourceFileSize } from '../lib/resources'
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { assetCategoryProfiles, getAssetCategoryProfile } from '../lib/assetCategories'
@@ -28,12 +30,6 @@ const emptyPostForm = {
 }
 
 const topicKeys = ['general', 'showcase', 'help', 'feedback']
-
-const formatFileSize = (size) => {
-  if (!Number.isFinite(size) || size <= 0) return ''
-  if (size < 1024 * 1024) return `${Math.max(1, Math.round(size / 1024))} KB`
-  return `${(size / 1024 / 1024).toFixed(size > 20 * 1024 * 1024 ? 0 : 1)} MB`
-}
 
 const getTopicLabel = (copy, topic) => {
   if (!topic) return ''
@@ -300,7 +296,7 @@ const PostList = ({ authToken, copy, language, visitorUser }) => {
                 }`}
               >
                 {postImage.file
-                  ? `${postImage.file.name} · ${formatFileSize(postImage.file.size)}`
+                  ? `${postImage.file.name} · ${formatResourceFileSize(postImage.file.size)}`
                   : copy.communityChooseImage}
                 <input
                   type="file"
@@ -436,7 +432,7 @@ const PostList = ({ authToken, copy, language, visitorUser }) => {
                 className={`asset-upload-control ${form.file ? 'asset-upload-control-done' : ''}`}
               >
                 {form.file
-                  ? `${form.file.name} · ${formatFileSize(form.file.size)}`
+                  ? `${form.file.name} · ${formatResourceFileSize(form.file.size)}`
                   : copy.communityChooseFile}
                 <input
                   type="file"
@@ -492,49 +488,9 @@ const PostList = ({ authToken, copy, language, visitorUser }) => {
       )}
       {uploads.length > 0 && (
         <div className="community-grid">
-          {uploads.map((upload) => {
-            const category = getAssetCategoryProfile(
-              { assetCategory: upload.assetCategory },
-              language,
-            )
-
-            return (
-              <article
-                key={upload.id}
-                className="community-card"
-                style={{ '--category-accent': category.accent }}
-              >
-                {upload.previewUrl ? (
-                  <img
-                    src={upload.previewUrl}
-                    alt={`${upload.title} preview`}
-                    decoding="async"
-                    loading="lazy"
-                  />
-                ) : (
-                  <div className="community-file-preview">{upload.fileType}</div>
-                )}
-                <div>
-                  <span className="project-category-badge">{category.label}</span>
-                  <h4>{upload.title}</h4>
-                  <p>{upload.description}</p>
-                  <small>
-                    {upload.user?.displayName || copy.accountGuest} ·{' '}
-                    {formatFileSize(upload.fileSize)}
-                  </small>
-                  <a
-                    className="secondary-action"
-                    href={upload.fileUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    {copy.communityOpenFile}
-                  </a>
-                  <ReportButton authToken={authToken} copy={copy} targetType="resource" targetId={upload.id}/>
-                </div>
-              </article>
-            )
-          })}
+          {uploads.map((upload) => (
+            <CommunityResourceCard key={upload.id} upload={upload} authToken={authToken} copy={copy} language={language} />
+          ))}
         </div>
       )}
     </div>

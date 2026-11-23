@@ -5,6 +5,7 @@ import {readFile,unlink} from 'node:fs/promises'
 import path from 'node:path'
 import pg from 'pg'
 import {ensureSchema} from '../../server/postgres/schema.js'
+import {ensureResourceNumberSchema} from '../../server/postgres/resourceSchema.js'
 import {assertDisposableDatabaseUrl} from '../../scripts/lib/disposable-postgres.mjs'
 const databaseUrl=process.env.API_TEST_DATABASE_URL || ''
 test.skip(!databaseUrl,'Requires disposable database')
@@ -178,4 +179,98 @@ test('a real admin corrects a video classification, previews it and publishes it
   const visitor=await browser.newPage();await visitor.goto(base+'/w/'+a.handle+'/'+work.slug);await expect(visitor.locator('video')).toBeVisible()
   expect(errors).toEqual([])
  }finally{await browser.close()}
+})
+
+test('resource numbers backfill the oldest entries first across both tables and remain stable on restart', async () => {
+  await pool.query('CREATE SCHEMA resource_number_migration')
+  const legacy = new pg.Pool({
+    connectionString: databaseUrl,
+    options: '-c search_path=resource_number_migration',
+  })
+  try {
+    await legacy.query(`
+      CREATE TABLE works (id text PRIMARY KEY, created_at timestamptz NOT NULL DEFAULT now());
+      CREATE TABLE community_uploads (id text PRIMARY KEY, created_at timestamptz NOT NULL DEFAULT now());
+      INSERT INTO works VALUES ('work-older', '2026-01-01'), ('work-newer', '2026-01-03');
+      INSERT INTO community_uploads VALUES ('upload-middle', '2026-01-02');
+    `)
+    await ensureResourceNumberSchema(legacy)
+    const assignments = () => legacy.query(`
+      SELECT id, resource_number FROM works
+      UNION ALL
+      SELECT id, resource_number FROM community_uploads
+      ORDER BY resource_number
+    `).then(({ rows }) => rows)
+    const expected = [
+      { id: 'work-older', resource_number: '1' },
+      { id: 'upload-middle', resource_number: '2' },
+      { id: 'work-newer', resource_number: '3' },
+    ]
+    expect(await assignments()).toEqual(expected)
+    await ensureResourceNumberSchema(legacy)
+    expect(await assignments()).toEqual(expected)
+    await legacy.query("DELETE FROM works WHERE id = 'work-newer'")
+    const inserted = await Promise.all([
+      legacy.query("INSERT INTO works (id) VALUES ('after-work') RETURNING resource_number"),
+      legacy.query("INSERT INTO community_uploads (id) VALUES ('after-upload') RETURNING resource_number"),
+    ])
+    expect(inserted.map(({ rows }) => rows[0].resource_number).sort()).toEqual(['4', '5'])
+  } finally {
+    await legacy.end()
+  }
+})
+
+test('resource number lookup finds public entries on both upload paths while keeping drafts and pending items private', async ({ page }) => {
+  const form = new FormData()
+  form.set('title', 'Community numbered fixture')
+  form.set('description', 'Search fixture')
+  form.set('file', new Blob([await bytes('sample.png')], { type: 'image/png' }), 'numbered.png')
+  const response = await fetch(base + '/api/community/uploads', {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + a.token },
+    body: form,
+  })
+  expect(response.status).toBe(201)
+  const { upload: communityUpload } = (await response.json()).data
+  files.add(communityUpload.fileUrl)
+
+  const workNumber = work.resourceNumber
+  const uploadNumber = communityUpload.resourceNumber
+  expect(workNumber).toMatch(/^\d{5,}$/)
+  expect(uploadNumber).toMatch(/^\d{5,}$/)
+  expect(workNumber).not.toBe(uploadNumber)
+
+  const findWork = async (query) => (await api('GET', '/api/v1/works?' + new URLSearchParams({ query }))).data.data.works
+  const findUpload = async (number) => (await api('GET', '/api/community/uploads?' + new URLSearchParams({ number }))).data.data.uploads
+  expect(await findWork(workNumber)).toEqual([])
+  expect(await findUpload(uploadNumber)).toEqual([])
+  await makePublic()
+  await pool.query("UPDATE community_uploads SET status = 'approved' WHERE id = $1", [communityUpload.id])
+  for (const query of [workNumber, String(Number(workNumber)), '#' + workNumber, work.title]) {
+    expect(await findWork(query)).toMatchObject([{ id: work.id, resourceNumber: workNumber }])
+  }
+  expect(await findUpload('#' + uploadNumber)).toMatchObject([{ id: communityUpload.id, resourceNumber: uploadNumber }])
+  expect(await findWork(uploadNumber)).toEqual([])
+  expect(await findUpload(workNumber)).toEqual([])
+  expect((await api('GET', '/api/community/uploads?number=9223372036854775808')).status).toBe(400)
+
+  await page.addInitScript(() => localStorage.setItem('mrright-language', 'zh'))
+  await page.goto(base + '/community')
+  const search = page.locator('#topbar-q')
+  await search.fill(uploadNumber)
+  await search.press('Enter')
+  await expect(page.locator('.community-card')).toHaveCount(1)
+  await expect(page.locator('.community-card')).toContainText('资源编号 #' + uploadNumber)
+  const explore = page.locator('#explore-search')
+  await explore.fill(workNumber)
+  await page.getByRole('button', { name: '搜索', exact: true }).click()
+  await expect(page.locator('.work-tile')).toHaveCount(1)
+  await expect(page.locator('.work-tile')).toContainText('资源编号 #' + workNumber)
+  await page.locator('.work-tile-media').click()
+  await expect(page.locator('.work-info')).toContainText('资源编号 #' + workNumber)
+
+  await pool.query("UPDATE works SET status = 'hidden' WHERE id = $1", [work.id])
+  await pool.query("UPDATE community_uploads SET status = 'rejected' WHERE id = $1", [communityUpload.id])
+  expect(await findWork(workNumber)).toEqual([])
+  expect(await findUpload(uploadNumber)).toEqual([])
 })

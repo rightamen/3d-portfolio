@@ -995,6 +995,12 @@ paths:
       tags: [Community]
       summary: List publicly approved community uploads.
       x-cpp-sdk: true
+      parameters:
+        - in: query
+          name: number
+          description: Exact resource number, with optional leading zeroes.
+          schema: { type: string }
+          example: "00001"
       responses:
         "200":
           description: |
@@ -1013,6 +1019,11 @@ paths:
                           uploads:
                             type: array
                             items: { $ref: "#/components/schemas/CommunityUpload" }
+        "400":
+          description: Invalid resource number.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
     post:
       operationId: uploadCommunityResource
       tags: [Community]
@@ -2173,6 +2184,7 @@ components:
       type: object
       properties:
         id: { type: string }
+        resourceNumber: { type: string, example: "00001" }
         title: { type: string }
         description: { type: string }
         assetCategory: { $ref: "#/components/schemas/AssetCategory" }
@@ -2247,6 +2259,7 @@ components:
       description: Reduced projection of CommunityUpload used for /users/{handle}/resources and activity.
       properties:
         id: { type: string }
+        resourceNumber: { type: string, example: "00001" }
         title: { type: string }
         description: { type: string }
         assetCategory: { $ref: "#/components/schemas/AssetCategory" }

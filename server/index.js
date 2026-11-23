@@ -1,6 +1,7 @@
 import {createUploadStorage} from './uploadStorage.js'
 import {RESOURCE_TYPES,WORK_RESOURCE_KINDS,allowedWorkExtension,workUploadExtensions,defaultDownloadAsset} from './workResources.js'
 import { registerCommunicationRoutes } from './communicationRoutes.js'
+import { parseResourceNumber } from './resourceNumbers.js'
 import { registerSocialRoutes } from './socialRoutes.js'
 import cors from 'cors'
 import { isContentVersion, readCuration } from './exhibition.js'
@@ -1005,6 +1006,7 @@ const toPublicUploadPayload = (upload) => ({
   fileUrl: upload.fileUrl,
   id: upload.id,
   previewUrl: upload.previewUrl,
+  resourceNumber: upload.resourceNumber,
   title: upload.title,
 })
 
@@ -3061,10 +3063,14 @@ app.patch('/api/admin/works/:id/status', requireAdmin, requireWorksStore, async 
   return sendData(response, { work })
 })
 
-app.get('/api/community/uploads', async (_request, response) => {
+app.get('/api/community/uploads', async (request, response) => {
+  const resourceNumber = parseResourceNumber(request.query.number)
+  if (request.query.number !== undefined && !resourceNumber) {
+    return sendError(response, API_ERROR_CODES.VALIDATION_ERROR, 'Invalid resource number.', 400)
+  }
   if (!communityStore) return sendData(response, { uploads: [] })
 
-  sendData(response, { uploads: await communityStore.listApprovedUploads() })
+  return sendData(response, { uploads: await communityStore.listApprovedUploads(resourceNumber) })
 })
 
 app.get('/api/community/posts', async (_request, response) => {

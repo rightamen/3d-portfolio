@@ -356,6 +356,7 @@ export const createAdminStore = ({ pool, projectStore }) => {
         SELECT
           community_uploads.id,
           community_uploads.status,
+          community_uploads.resource_number,
           community_uploads.title,
           community_uploads.description,
           community_uploads.asset_category,
@@ -771,7 +772,7 @@ export const createAdminStore = ({ pool, projectStore }) => {
       const [itemsResult, countResult] = await Promise.all([
         pool.query(
           `
-            SELECT id, status, title, description, asset_category, file_name, file_type,
+            SELECT id, status, resource_number, title, description, asset_category, file_name, file_type,
               file_size, file_url, preview_url, created_at, updated_at
             FROM community_uploads
             WHERE user_id = $1
@@ -1476,6 +1477,7 @@ export const createAdminStore = ({ pool, projectStore }) => {
           SELECT
             community_uploads.id,
             community_uploads.status,
+            community_uploads.resource_number,
             community_uploads.title,
             community_uploads.description,
             community_uploads.asset_category,

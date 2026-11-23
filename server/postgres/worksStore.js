@@ -1,3 +1,4 @@
+import { parseResourceNumber } from '../resourceNumbers.js'
 import { createCommunicationStore } from './communicationStore.js'
 import { createSocialStore } from './socialStore.js'
 import { createCollectionsStore } from './collectionsStore.js'
@@ -115,7 +116,11 @@ export const createWorksStore = ({ pool }) => {
         params.push(category)
         conditions.push(`works.asset_category = $${params.length}`)
       }
-      if (query) {
+      const resourceNumber = parseResourceNumber(query)
+      if (resourceNumber) {
+        params.push(resourceNumber)
+        conditions.push(`works.resource_number = $${params.length}::bigint`)
+      } else if (query) {
         params.push(`%${query}%`)
         conditions.push(
           `(works.title ILIKE $${params.length} OR works.summary ILIKE $${params.length}

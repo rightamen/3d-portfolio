@@ -1,4 +1,4 @@
-import {ensureResourceSchema} from './resourceSchema.js'
+import { ensureResourceNumberSchema, ensureResourceSchema } from './resourceSchema.js'
 import { ensureCommunicationSchema } from './communicationSchema.js'
 import { ensureSocialSchema } from './socialSchema.js'
 // Every CREATE TABLE / ADD COLUMN the service needs, run once at startup.
@@ -916,5 +916,6 @@ export const ensureSchema = async (pool) => {
   await ensureSocialSchema(pool)
   await ensureCommunicationSchema(pool)
   await ensureResourceSchema(pool)
+  await ensureResourceNumberSchema(pool)
 
 }

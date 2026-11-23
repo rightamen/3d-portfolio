@@ -1,3 +1,4 @@
+import ResourceNumber from '../components/ResourceNumber'
 import SocialActions from '../components/SocialActions'
 import ReportButton from '../components/ReportButton'
 import { readInterfaceMotion } from '../hooks/useInterfacePreferences'
@@ -222,6 +223,7 @@ const CreatorProfile = ({ copy, language, handle, authToken, visitorUser }) => {
           )}
           <div>
             <h3>{item.title}</h3>
+            <ResourceNumber copy={copy} number={item.resourceNumber} />
             <p>{item.description}</p>
             <small>{formatDate(item.createdAt)}</small>
           </div>

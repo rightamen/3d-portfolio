@@ -2,10 +2,12 @@ import {resourceTypes,resourceLabels} from '../lib/resources'
 import { useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 
+import { parseResourceNumber } from '../../server/resourceNumbers.js'
+import CommunityResourceCard from '../components/CommunityResourceCard'
 import SpatialGallery from '../components/SpatialGallery'
 import PublishCta from '../components/PublishCta'
 import WorkCard from '../components/WorkCard'
-import { getWorks } from '../lib/api'
+import { getCommunityUploads, getWorks } from '../lib/api'
 import { getApiErrorMessage } from '../lib/i18n'
 import { assetCategoryProfiles } from '../lib/assetCategories'
 import { assetCategoryLabel } from '../lib/works'
@@ -30,19 +32,23 @@ const ExplorePage = ({ authToken, copy, language }) => {
   const requestedPage = Number(searchParams.get('page') || 1)
   const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1
   const queryParam = searchParams.get('query') || ''
+  const lookupNumber = !category && !resourceType && page === 1 ? parseResourceNumber(queryParam) : null
 
   // One key for the whole query. Results are stored WITH the key that produced
   // them, so "still loading" is derived rather than assigned -- which keeps the
   // effect free of a synchronous setState and, more usefully, means a stale
   // result set can never be shown under a filter that did not produce it.
   const requestKey = JSON.stringify([category, page, queryParam,resourceType])
-  const [result, setResult] = useState({ key: '', error: null, pagination: null, status: 'loading', works: [] })
+  const [result, setResult] = useState({ key: '', error: null, pagination: null, status: 'loading', works: [], uploads: [] })
 
   useEffect(() => {
     let isMounted = true
 
-    getWorks({ category, page, query: queryParam,resourceType })
-      .then((payload) => {
+    Promise.all([
+      getWorks({ category, page, query: queryParam, resourceType }),
+      lookupNumber ? getCommunityUploads(lookupNumber) : null,
+    ])
+      .then(([payload, community]) => {
         if (!isMounted) return
         setResult({
           key: requestKey,
@@ -50,6 +56,7 @@ const ExplorePage = ({ authToken, copy, language }) => {
           pagination: payload.pagination || null,
           status: 'ready',
           works: payload.works || [],
+          uploads: community?.uploads || [],
         })
       })
       .catch((error) => {
@@ -60,16 +67,18 @@ const ExplorePage = ({ authToken, copy, language }) => {
           pagination: null,
           status: 'error',
           works: [],
+          uploads: [],
         })
       })
 
     return () => {
       isMounted = false
     }
-  }, [category, page, queryParam, requestKey,resourceType])
+  }, [category, page, queryParam, requestKey, resourceType, lookupNumber])
 
   const status = result.key === requestKey ? result.status : 'loading'
   const works = result.key === requestKey ? result.works : EMPTY_WORKS
+  const uploads = result.key === requestKey ? result.uploads : EMPTY_WORKS
   const pagination = status === 'loading' ? null : result.pagination
   // Translate errors at render time; changing language does not fetch the
   // same catalogue again or discard the current results.
@@ -129,14 +138,17 @@ const ExplorePage = ({ authToken, copy, language }) => {
         {/* Uncontrolled, keyed on the URL's own value: changing the filter
             remounts it with the new default, which is the syncing an effect
             was doing before, without the effect. */}
-        <input
-          defaultValue={queryParam}
-          id="explore-search"
-          key={queryParam}
-          name="query"
-          placeholder={copy.exploreSearchPlaceholder}
-          type="search"
-        />
+        <div className="explore-search-field">
+          <input
+            defaultValue={queryParam}
+            id="explore-search"
+            key={queryParam}
+            name="query"
+            placeholder={copy.exploreSearchPlaceholder}
+            type="search"
+          />
+          <button className="secondary-action" type="submit">{copy.resourceSearchSubmit}</button>
+        </div>
         <select
           aria-label={copy.exploreCategoryAll}
           onChange={(event) => updateFilters({ category: event.target.value })}
@@ -163,9 +175,17 @@ const ExplorePage = ({ authToken, copy, language }) => {
         </div>
       )}
 
-      {view === 'spatial' && <SpatialGallery works={works} status={status} copy={copy} language={language} />}
+      {uploads.length > 0 && (
+        <div className="community-grid">
+          {uploads.map((upload) => (
+            <CommunityResourceCard key={upload.id} upload={upload} authToken={authToken} copy={copy} language={language} />
+          ))}
+        </div>
+      )}
 
-      {status === 'ready' && works.length === 0 && view === 'grid' && (
+      {view === 'spatial' && uploads.length === 0 && <SpatialGallery works={works} status={status} copy={copy} language={language} />}
+
+      {status === 'ready' && works.length === 0 && uploads.length === 0 && view === 'grid' && (
         <div className="asset-empty-state">
           <strong>{copy.exploreEmptyTitle}</strong>
           <span>{copy.exploreEmptyBody}</span>

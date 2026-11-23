@@ -26,11 +26,12 @@ export const createCommunityStore = ({ pool }) => ({
     }
   },
 
-  listApprovedUploads: async () => {
+  listApprovedUploads: async (resourceNumber = null) => {
     const result = await pool.query(`
       SELECT
         community_uploads.id,
         community_uploads.status,
+        community_uploads.resource_number,
         community_uploads.title,
         community_uploads.description,
         community_uploads.asset_category,
@@ -47,9 +48,10 @@ export const createCommunityStore = ({ pool }) => ({
       FROM community_uploads
       LEFT JOIN visitor_users ON visitor_users.id = community_uploads.user_id
       WHERE community_uploads.status = 'approved'
+        ${resourceNumber ? 'AND community_uploads.resource_number = $1::bigint' : ''}
       ORDER BY community_uploads.created_at DESC
       LIMIT 100
-    `)
+    `, resourceNumber ? [resourceNumber] : [])
 
     return result.rows.map((row) => toCommunityUpload(row))
   },
@@ -302,6 +304,7 @@ export const createCommunityStore = ({ pool }) => ({
         SELECT
           community_uploads.id,
           community_uploads.status,
+          community_uploads.resource_number,
           community_uploads.title,
           community_uploads.description,
           community_uploads.asset_category,
@@ -359,6 +362,7 @@ export const createCommunityStore = ({ pool }) => ({
         SELECT
           community_uploads.id,
           community_uploads.status,
+          community_uploads.resource_number,
           community_uploads.title,
           community_uploads.description,
           community_uploads.asset_category,
@@ -455,6 +459,7 @@ export const createCommunityStore = ({ pool }) => ({
         VALUES ($1, 'pending', $2, $3, $4, $5, $6, $7, $8, $9, $10)
         RETURNING
           id,
+          resource_number,
           status,
           title,
           description,

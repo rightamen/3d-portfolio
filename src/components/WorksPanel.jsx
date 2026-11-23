@@ -1,3 +1,4 @@
+import ResourceNumber from './ResourceNumber'
 import {resourceTypes,resourceLabels,resourceSlots,resourceAccept} from '../lib/resources'
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
@@ -336,7 +337,9 @@ const WorksPanel = ({ authToken, copy, language, visitorUser }) => {
             </span>
             <div>
               <div className="admin-row-title">
-                <strong>{work.title}</strong><span className="resource-type-badge">{labels[work.resourceType || 'model']}</span>
+                <strong>{work.title}</strong>
+                <ResourceNumber copy={copy} number={work.resourceNumber} />
+                <span className="resource-type-badge">{labels[work.resourceType || 'model']}</span>
                 <span className={`status-pill status-${work.status}`}>
                   {copy[STATUS_KEYS[work.status]] || work.status}
                 </span>

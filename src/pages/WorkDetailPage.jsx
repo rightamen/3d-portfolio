@@ -1,3 +1,4 @@
+import ResourceNumber from '../components/ResourceNumber'
 import ResourceMedia from '../components/ResourceMedia'
 import AssetDownload from '../components/AssetDownload'
 import {resourceLabels,assetKindLabels} from '../lib/resources'
@@ -153,6 +154,7 @@ const WorkDetailPage = ({ authToken, copy, language, visitorUser }) => {
 
         <div className="work-info">
           <p className="resource-type-label">{resourceLabels(copy)[work.resourceType || 'model']}</p><h1 className="text-heading">{title}</h1>
+          <ResourceNumber copy={copy} number={work.resourceNumber} />
           {work.creator?.handle &&
             (work.creator.profilePublic ? (
               <Link className="work-creator" to={`/u/${work.creator.handle}`}>

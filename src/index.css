@@ -4601,6 +4601,20 @@ body {
   margin-bottom: 1.75rem;
 }
 
+.explore-search-field {
+  display: flex;
+  flex: 2 1 18rem;
+  gap: 8px;
+  min-width: 0;
+}
+
+.resource-number {
+  color: var(--theme-muted, #a6a9b8);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .explore-filters input,
 .explore-filters select {
   flex: 1 1 12rem;
