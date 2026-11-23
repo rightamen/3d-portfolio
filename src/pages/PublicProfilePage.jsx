@@ -1,3 +1,4 @@
+import CreatorNumber from '../components/CreatorNumber'
 import ResourceNumber from '../components/ResourceNumber'
 import SocialActions from '../components/SocialActions'
 import ReportButton from '../components/ReportButton'
@@ -410,6 +411,7 @@ const CreatorProfile = ({ copy, language, handle, authToken, visitorUser }) => {
                 <h1 tabIndex={-1}>{profile.displayName}</h1>
                 <div className="public-profile-meta-line">
                   <span>@{profile.handle}</span>
+                  <CreatorNumber copy={copy} number={profile.creatorNumber} />
                   {profile.location && <span>{profile.location}</span>}
                 </div>
                 {profile.bio && <p>{profile.bio}</p>}

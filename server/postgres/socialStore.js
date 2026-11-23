@@ -1,3 +1,5 @@
+import { formatCreatorNumber, isCreatorNumberQuery } from '../creatorNumbers.js'
+import { parseResourceNumber } from '../resourceNumbers.js'
 import { randomUUID } from 'node:crypto'
 import { socialFail } from '../socialValidation.js'
 export const inTransaction=async(pool,run)=>{const client=await pool.connect();try{await client.query('BEGIN');const value=await run(client);await client.query('COMMIT');return value}catch(error){await client.query('ROLLBACK');throw error}finally{client.release()}}
@@ -48,11 +50,48 @@ export const createSocialStore=({pool})=>({
   }
   const result=await pool.query('SELECT '+personColumns+','+columns+' FROM '+from+' WHERE '+where+' ORDER BY '+order+' LIMIT $2 OFFSET $3',[userId,limit,offset]);return {counts,total:counts[tab],items:result.rows.map(row=>({id:row.connection_id,user:person(row),createdAt:row.created_at.toISOString(),friendship:friendship({...row,id:row.connection_id},userId)}))}
  },
- listPublicCreators:async({query='',limit=24,offset=0})=>{
-  const where=publicCondition+' AND ($1=\'\' OR strpos(lower(u.handle),lower($1))>0 OR strpos(lower(u.display_name),lower($1))>0)'
-  const total=await pool.query('SELECT count(*)::int AS count FROM visitor_users u WHERE '+where,[query])
-  const result=await pool.query("SELECT u.handle,u.display_name,u.avatar_url,u.bio,u.location,(SELECT count(*)::int FROM works w WHERE w.creator_id=u.id AND w.status='published') AS work_count FROM visitor_users u WHERE "+where+' ORDER BY work_count DESC,lower(u.handle) LIMIT $2 OFFSET $3',[query,limit,offset])
-  return {total:total.rows[0].count,items:result.rows.map(row=>({handle:row.handle,displayName:row.display_name,avatarUrl:row.avatar_url,bio:row.bio,location:row.location,workCount:row.work_count}))}
+ listPublicCreators: async ({ query = '', limit = 24, offset = 0 }) => {
+  const normalized = query.normalize('NFKC')
+  const params = []
+  let match = ''
+  if (isCreatorNumberQuery(normalized)) {
+   const number = parseResourceNumber(normalized)
+   if (!number) return { total: 0, items: [] }
+   params.push(number)
+   match = 'AND u.creator_number = $1::bigint'
+  } else if (normalized.startsWith('@')) {
+   const handle = normalized.slice(1)
+   if (!handle) return { total: 0, items: [] }
+   params.push(handle)
+   match = 'AND strpos(lower(u.handle), lower($1)) > 0'
+  } else if (query) {
+   params.push(query)
+   match = 'AND (strpos(lower(u.handle), lower($1)) > 0 OR strpos(lower(u.display_name), lower($1)) > 0)'
+  }
+  const where = publicCondition + ' ' + match
+  const [total, result] = await Promise.all([
+   pool.query('SELECT count(*)::int AS count FROM visitor_users u WHERE ' + where, params),
+   pool.query(`
+    SELECT u.handle, u.display_name, u.avatar_url, u.bio, u.location, u.creator_number,
+      (SELECT count(*)::int FROM works w WHERE w.creator_id = u.id AND w.status = 'published') AS work_count
+    FROM visitor_users u
+    WHERE ${where}
+    ORDER BY work_count DESC, lower(u.handle)
+    LIMIT $${params.length + 1} OFFSET $${params.length + 2}
+   `, [...params, limit, offset]),
+  ])
+  return {
+   total: total.rows[0].count,
+   items: result.rows.map((row) => ({
+    handle: row.handle,
+    displayName: row.display_name,
+    avatarUrl: row.avatar_url,
+    bio: row.bio,
+    location: row.location,
+    workCount: row.work_count,
+    creatorNumber: formatCreatorNumber(row.creator_number),
+   })),
+  }
  },
  searchPeople:async(userId,{query,limit,offset})=>{
   const pattern=query;const where=publicCondition+' AND u.id<>$1 AND (strpos(lower(u.handle),lower($2))>0 OR strpos(lower(u.display_name),lower($2))>0)'

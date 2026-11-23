@@ -1,13 +1,15 @@
 import {resourceTypes,resourceLabels} from '../lib/resources'
 import { useCallback, useEffect, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 
+import { isCreatorNumberQuery } from '../../server/creatorNumbers.js'
 import { parseResourceNumber } from '../../server/resourceNumbers.js'
 import CommunityResourceCard from '../components/CommunityResourceCard'
+import CreatorDirectoryCard from '../components/CreatorDirectoryCard'
 import SpatialGallery from '../components/SpatialGallery'
 import PublishCta from '../components/PublishCta'
 import WorkCard from '../components/WorkCard'
-import { getCommunityUploads, getWorks } from '../lib/api'
+import { getCommunityUploads, getCreators, getWorks } from '../lib/api'
 import { getApiErrorMessage } from '../lib/i18n'
 import { assetCategoryProfiles } from '../lib/assetCategories'
 import { assetCategoryLabel } from '../lib/works'
@@ -19,7 +21,7 @@ import { assetCategoryLabel } from '../lib/works'
 
 // A stable identity for "nothing yet", so a render with no results does not
 // invalidate the memo below.
-const EMPTY_WORKS = []
+const EMPTY_RESULTS = []
 
 const ExplorePage = ({ authToken, copy, language }) => {
   // The filters live in the URL, not in component state alone: a filtered
@@ -32,57 +34,55 @@ const ExplorePage = ({ authToken, copy, language }) => {
   const requestedPage = Number(searchParams.get('page') || 1)
   const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1
   const queryParam = searchParams.get('query') || ''
-  const lookupNumber = !category && !resourceType && page === 1 ? parseResourceNumber(queryParam) : null
+  const normalizedQuery = queryParam.trim().normalize('NFKC')
+  const number = parseResourceNumber(normalizedQuery)
+  const creatorOnly = normalizedQuery.startsWith('@') || /^0[0-9]{5}$/.test(normalizedQuery)
+  const lookupNumber = !creatorOnly && !category && !resourceType && page === 1 ? number : null
+  const creatorQuery = page === 1 && !normalizedQuery.startsWith('#') &&
+    (!number || isCreatorNumberQuery(normalizedQuery)) ? queryParam.trim().slice(0, 60) : ''
 
-  // One key for the whole query. Results are stored WITH the key that produced
-  // them, so "still loading" is derived rather than assigned -- which keeps the
-  // effect free of a synchronous setState and, more usefully, means a stale
-  // result set can never be shown under a filter that did not produce it.
-  const requestKey = JSON.stringify([category, page, queryParam,resourceType])
-  const [result, setResult] = useState({ key: '', error: null, pagination: null, status: 'loading', works: [], uploads: [] })
+  // Keep the data keyed by the URL so an older request cannot render under
+  // newer search terms or filters.
+  const requestKey = JSON.stringify([category, page, queryParam, resourceType])
+  const [result, setResult] = useState(null)
 
   useEffect(() => {
     let isMounted = true
 
-    Promise.all([
-      getWorks({ category, page, query: queryParam, resourceType }),
+    Promise.allSettled([
+      creatorOnly ? null : getWorks({ category, page, query: queryParam, resourceType }),
       lookupNumber ? getCommunityUploads(lookupNumber) : null,
-    ])
-      .then(([payload, community]) => {
-        if (!isMounted) return
-        setResult({
-          key: requestKey,
-          error: null,
-          pagination: payload.pagination || null,
-          status: 'ready',
-          works: payload.works || [],
-          uploads: community?.uploads || [],
-        })
+      creatorQuery ? getCreators({ query: creatorQuery, limit: 6 }) : null,
+    ]).then(([catalogue, community, people]) => {
+      if (!isMounted) return
+      setResult({
+        key: requestKey,
+        catalogue: catalogue.value,
+        uploads: community.value?.uploads || EMPTY_RESULTS,
+        people: people.value,
+        resourceError: catalogue.reason || community.reason,
+        creatorError: people.reason,
       })
-      .catch((error) => {
-        if (!isMounted) return
-        setResult({
-          key: requestKey,
-          error,
-          pagination: null,
-          status: 'error',
-          works: [],
-          uploads: [],
-        })
-      })
+    })
 
     return () => {
       isMounted = false
     }
-  }, [category, page, queryParam, requestKey, resourceType, lookupNumber])
+  }, [category, page, queryParam, requestKey, resourceType, lookupNumber, creatorOnly, creatorQuery])
 
-  const status = result.key === requestKey ? result.status : 'loading'
-  const works = result.key === requestKey ? result.works : EMPTY_WORKS
-  const uploads = result.key === requestKey ? result.uploads : EMPTY_WORKS
-  const pagination = status === 'loading' ? null : result.pagination
-  // Translate errors at render time; changing language does not fetch the
-  // same catalogue again or discard the current results.
-  const message = result.error?.code ? getApiErrorMessage(result.error, copy) : copy.exploreLoadError
+  const data = result?.key === requestKey ? result : null
+  const status = data ? 'ready' : 'loading'
+  const works = data?.catalogue?.works || EMPTY_RESULTS
+  const uploads = data?.uploads || EMPTY_RESULTS
+  const creators = data?.people?.creators || EMPTY_RESULTS
+  const pagination = data?.catalogue?.pagination
+  const resourceError = data?.resourceError
+  const creatorError = data?.creatorError
+  const showSpatial = !creatorOnly && view === 'spatial' && uploads.length === 0 &&
+    (works.length > 0 || !creators.length)
+  const showEmpty = data && !resourceError && !creatorError && !showSpatial &&
+    !works.length && !uploads.length && !creators.length
+  const creatorsUrl = '/creators?' + new URLSearchParams({ q: creatorQuery })
 
   // Every filter change resets to page one. Staying on page 4 while narrowing
   // the results to three works is how a browse page shows an empty screen and
@@ -119,10 +119,12 @@ const ExplorePage = ({ authToken, copy, language }) => {
         </div>
       </header>
 
-      <div className="spatial-browse-toggle" role="group" aria-label={copy.spatialView}>
-        <button type="button" aria-pressed={view === 'grid'} onClick={() => setView('grid')}>{copy.spatialGrid}</button>
-        <button type="button" aria-pressed={view === 'spatial'} onClick={() => setView('spatial')}>{copy.spatialLabel}</button>
-      </div>
+      {!creatorOnly && (
+        <div className="spatial-browse-toggle" role="group" aria-label={copy.spatialView}>
+          <button type="button" aria-pressed={view === 'grid'} onClick={() => setView('grid')}>{copy.spatialGrid}</button>
+          <button type="button" aria-pressed={view === 'spatial'} onClick={() => setView('spatial')}>{copy.spatialLabel}</button>
+        </div>
+      )}
       <PublishCta authToken={authToken} copy={copy} />
 
       <form
@@ -149,23 +151,47 @@ const ExplorePage = ({ authToken, copy, language }) => {
           />
           <button className="secondary-action" type="submit">{copy.resourceSearchSubmit}</button>
         </div>
-        <select
-          aria-label={copy.exploreCategoryAll}
-          onChange={(event) => updateFilters({ category: event.target.value })}
-          value={category}
-        >
-          <option value="">{copy.exploreCategoryAll}</option>
-          {categories.map((item) => (
-            <option key={item} value={item}>
-              {assetCategoryLabel(item, language)}
-            </option>
-          ))}
-        </select>
-        <select aria-label={copy.resourceType} value={resourceType} onChange={e=>updateFilters({resourceType:e.target.value})}><option value="">{copy.resourceAll}</option>{resourceTypes.map(t=><option key={t} value={t}>{resourceLabels(copy)[t]}</option>)}</select>
+        {!creatorOnly && (
+          <>
+            <select
+              aria-label={copy.exploreCategoryAll}
+              onChange={(event) => updateFilters({ category: event.target.value })}
+              value={category}
+            >
+              <option value="">{copy.exploreCategoryAll}</option>
+              {categories.map((item) => (
+                <option key={item} value={item}>
+                  {assetCategoryLabel(item, language)}
+                </option>
+              ))}
+            </select>
+            <select aria-label={copy.resourceType} value={resourceType} onChange={e=>updateFilters({resourceType:e.target.value})}><option value="">{copy.resourceAll}</option>{resourceTypes.map(t=><option key={t} value={t}>{resourceLabels(copy)[t]}</option>)}</select>
+          </>
+        )}
       </form>
 
       {status === 'loading' && <p className="text-neutral-400">{copy.exploreLoading}</p>}
-      {status === 'error' && <p className="text-coral">{message}</p>}
+      {resourceError && (
+        <p className="text-coral" role="alert">
+          {getApiErrorMessage(resourceError, copy, copy.exploreLoadError)}
+        </p>
+      )}
+      {creatorError && <p className="text-coral" role="alert">{copy.socialError}</p>}
+      {creators.length > 0 && (
+        <section className="explore-creator-results" aria-labelledby="creator-results-title">
+          <header>
+            <h2 id="creator-results-title">{copy.socialCreators}</h2>
+            {data.people.pagination?.hasNext && (
+              <Link className="secondary-action" to={creatorsUrl}>{copy.creatorSearchMore}</Link>
+            )}
+          </header>
+          <div className="creator-directory-grid">
+            {creators.map((creator) => (
+              <CreatorDirectoryCard key={creator.handle} creator={creator} copy={copy} />
+            ))}
+          </div>
+        </section>
+      )}
 
       {status === 'ready' && works.length > 0 && view === 'grid' && (
         <div className="explore-grid">
@@ -183,12 +209,12 @@ const ExplorePage = ({ authToken, copy, language }) => {
         </div>
       )}
 
-      {view === 'spatial' && uploads.length === 0 && <SpatialGallery works={works} status={status} copy={copy} language={language} />}
+      {showSpatial && <SpatialGallery works={works} status={resourceError ? 'error' : status} copy={copy} language={language} />}
 
-      {status === 'ready' && works.length === 0 && uploads.length === 0 && view === 'grid' && (
+      {showEmpty && (
         <div className="asset-empty-state">
-          <strong>{copy.exploreEmptyTitle}</strong>
-          <span>{copy.exploreEmptyBody}</span>
+          <strong>{creatorOnly ? copy.socialDirectoryEmpty : copy.exploreEmptyTitle}</strong>
+          {!creatorOnly && <span>{copy.exploreEmptyBody}</span>}
         </div>
       )}
 

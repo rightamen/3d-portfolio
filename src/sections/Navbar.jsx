@@ -54,8 +54,6 @@ const Navbar = ({
   const search = (event) => {
     event.preventDefault()
     const value = String(event.target.elements.q.value || '').trim()
-    // Always to /explore: search IS the catalogue, filtered. An empty query
-    // lands there unfiltered rather than doing nothing.
     navigate(value ? `/explore?query=${encodeURIComponent(value)}` : '/explore')
     setOpen(false)
   }

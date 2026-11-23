@@ -1,3 +1,4 @@
+import { formatCreatorNumber } from '../creatorNumbers.js'
 import { formatResourceNumber } from '../resourceNumbers.js'
 import { acceptsPayment, readStoredPaymentInfo } from '../paymentInfo.js'
 import { readStoredTheme, themeToTokens } from '../themes.js'
@@ -115,6 +116,7 @@ export const toAccountProfile = (row) =>
     ? {
         ...toAccountUserRecord(row),
         ...toCreatorProfileContent(row),
+        creatorNumber: formatCreatorNumber(row.creator_number),
         contactLinks: row.contact_links || {},
         contactsPublic: row.contacts_public === true,
         lastLoginAt: row.last_login_at?.toISOString?.() || row.last_login_at || null,
@@ -146,6 +148,7 @@ export const toPublicProfile = (row) =>
     ? {
         ...toCreatorProfileContent(row),
         activityPublic: row.activity_public !== false,
+        creatorNumber: formatCreatorNumber(row.creator_number),
         avatarUrl: row.avatar_url || '',
         bannerUrl: row.banner_url || '',
         bio: row.bio || '',

@@ -3,6 +3,7 @@ import { spawn } from 'node:child_process'
 import { createHash,randomBytes,randomUUID } from 'node:crypto'
 import pg from 'pg'
 import { ensureSchema } from '../../server/postgres/schema.js'
+import { ensureCreatorNumberSchema } from '../../server/postgres/creatorNumberSchema.js'
 import { assertDisposableDatabaseUrl } from '../../scripts/lib/disposable-postgres.mjs'
 const databaseUrl=process.env.API_TEST_DATABASE_URL || ''
 test.skip(!databaseUrl,'Requires disposable database')
@@ -154,12 +155,84 @@ test('public creator discovery exposes only public fields, counts published work
  expect(found.status).toBe(200)
  expect(found.data.data.creators).toHaveLength(1)
  const creator=found.data.data.creators[0]
- expect(Object.keys(creator).sort()).toEqual(['avatarUrl','bio','displayName','handle','location','workCount'])
+ expect(Object.keys(creator).sort()).toEqual(['avatarUrl','bio','creatorNumber','displayName','handle','location','workCount'])
  expect(creator).toMatchObject({handle:a.handle,workCount:1})
+ expect(creator.creatorNumber).toMatch(/^[1-9][0-9]{7}$/)
+ const numberSearch = (number) => api('GET', '/api/creators?q=' + encodeURIComponent(number))
+ expect((await numberSearch(creator.creatorNumber)).data.data.creators).toEqual([creator])
+ expect((await numberSearch('@' + a.handle)).data.data.creators).toEqual([creator])
+ expect((await numberSearch('9223372036854775808')).data.data.creators).toEqual([])
+ for (const hidden of [b,c]) {
+  const { rows } = await pool.query('SELECT creator_number FROM visitor_users WHERE id = $1', [hidden.id])
+  expect((await numberSearch(rows[0].creator_number)).data.data.creators).toEqual([])
+ }
  for(const hidden of [b,c])expect((await api('GET','/api/creators?q='+hidden.handle)).data.data.creators).toEqual([])
  expect((await api('GET','/api/creators?q=%25')).data.data.creators).toEqual([])
  const paged=await api('GET','/api/v1/creators?limit=1&page=2')
  expect(paged.status).toBe(200);expect(paged.data.data.creators).toHaveLength(1)
  expect(paged.data.pagination).toMatchObject({page:2,limit:1})
  expect((await api('GET','/api/creators?q='+encodeURIComponent('x'.repeat(61)))).status).toBe(400)
+})
+
+test('creator IDs reserve 000001 for the owner and randomly assign unique stable IDs to other accounts', async () => {
+ await pool.query('CREATE SCHEMA creator_number_migration')
+ const legacy = new pg.Pool({ connectionString: databaseUrl, options: '-c search_path=creator_number_migration' })
+ try {
+  await legacy.query(`
+   CREATE TABLE visitor_users (id text PRIMARY KEY, email text NOT NULL, created_at timestamptz NOT NULL DEFAULT now());
+   INSERT INTO visitor_users VALUES ('older', 'older@example.test', '2025-01-01');
+   INSERT INTO visitor_users (id, email) VALUES ('owner', 'owner@example.test');
+  `)
+  const rows = async () => (await legacy.query('SELECT id, creator_number FROM visitor_users ORDER BY id')).rows
+  await ensureCreatorNumberSchema(legacy, 'owner@example.test')
+  const original = await rows()
+  expect(original[0]).toMatchObject({ id: 'older', creator_number: expect.stringMatching(/^[1-9][0-9]{7}$/) })
+  expect(original[1]).toEqual({ id: 'owner', creator_number: '1' })
+
+  const concurrent = await Promise.all(Array.from({ length: 12 }, (_, index) =>
+   legacy.query('INSERT INTO visitor_users (id, email) VALUES ($1, $2) RETURNING creator_number', ['new-' + index, index + '@example.test'])
+    .then(({ rows: [row] }) => row.creator_number),
+  ))
+  expect(concurrent.every((number) => /^[1-9][0-9]{7}$/.test(number))).toBe(true)
+  expect(new Set([...concurrent, original[0].creator_number]).size).toBe(13)
+  const before = await rows()
+  await ensureCreatorNumberSchema(legacy, 'owner@example.test')
+  expect(await rows()).toEqual(before)
+  await legacy.query("DELETE FROM visitor_users WHERE id = 'older'")
+  expect((await legacy.query('SELECT number FROM creator_number_reservations WHERE number = $1', [original[0].creator_number])).rowCount).toBe(1)
+ } finally {
+  await legacy.end()
+ }
+})
+
+test('the homepage search finds creators by nickname and number and opens their public profile', async ({ page }) => {
+ const nickname = 'Home Creator ' + a.handle
+ await pool.query('UPDATE visitor_users SET display_name = $2 WHERE id = $1', [a.id, nickname])
+ const profilePath = '/api/users/' + a.handle
+ const { creatorNumber } = (await api('GET', profilePath)).data.data.profile
+ expect(creatorNumber).toMatch(/^[1-9][0-9]{7}$/)
+
+ await page.addInitScript(() => localStorage.setItem('mrright-language', 'zh'))
+ await page.emulateMedia({ reducedMotion: 'reduce' })
+ await page.goto(base + '/', { waitUntil: 'domcontentloaded' })
+ const topSearch = page.locator('#topbar-q')
+ const results = page.locator('.explore-creator-results')
+ await topSearch.fill(nickname)
+ await topSearch.press('Enter')
+ await expect(results.getByRole('link', { name: nickname }).last()).toBeVisible()
+ await expect(results.locator('.creator-number')).toHaveText('用户编号 ' + creatorNumber)
+
+ await page.locator('#explore-search').fill(creatorNumber)
+ await page.getByRole('button', { name: '搜索', exact: true }).click()
+ await expect(page).toHaveURL(new RegExp('/explore[?]query=' + creatorNumber + '$'))
+ await expect(results.locator('.creator-directory-card')).toHaveCount(1)
+ await results.getByRole('heading', { name: nickname }).getByRole('link').click()
+ await expect(page.locator('.public-profile-hero .creator-number')).toHaveText('用户编号 ' + creatorNumber)
+
+ const nextHandle = a.handle + '-renamed'
+ await pool.query('UPDATE visitor_users SET handle = $2 WHERE id = $1', [a.id, nextHandle])
+ const renamed = await api('GET', '/api/creators?q=' + creatorNumber)
+ expect(renamed.data.data.creators).toMatchObject([{ handle: nextHandle, creatorNumber }])
+ const own = await api('GET', '/api/account/profile', a.token)
+ expect(own.data.data.profile.creatorNumber).toBe(creatorNumber)
 })

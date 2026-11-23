@@ -1,3 +1,4 @@
+import { ensureCreatorNumberSchema } from './creatorNumberSchema.js'
 import { ensureResourceNumberSchema, ensureResourceSchema } from './resourceSchema.js'
 import { ensureCommunicationSchema } from './communicationSchema.js'
 import { ensureSocialSchema } from './socialSchema.js'
@@ -913,6 +914,7 @@ export const ensureSchema = async (pool) => {
       ON work_favorites (user_id, created_at DESC, work_id);
   `)
 
+  await ensureCreatorNumberSchema(pool)
   await ensureSocialSchema(pool)
   await ensureCommunicationSchema(pool)
   await ensureResourceSchema(pool)

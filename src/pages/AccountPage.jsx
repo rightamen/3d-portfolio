@@ -1,3 +1,4 @@
+import CreatorNumber from '../components/CreatorNumber'
 import ResourceNumber from '../components/ResourceNumber'
 import CreatorWorkspace from '../components/CreatorWorkspace'
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
@@ -1086,6 +1087,7 @@ const AccountPage = ({
         <div className="admin-section-header">
           <div>
             <h2>{copy.accountSettingsTitle}</h2>
+            <CreatorNumber copy={copy} number={profile?.creatorNumber} />
             <p className="account-section-intro">{copy.accountSettingsIntro}</p>
           </div>
           <a

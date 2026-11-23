@@ -2093,6 +2093,10 @@ components:
         - $ref: "#/components/schemas/User"
         - type: object
           properties:
+            creatorNumber:
+              type: string
+              description: Stable public user number, with at least six digits.
+              example: "000001"
             contactLinks:
               type: object
               additionalProperties: true
@@ -2116,6 +2120,10 @@ components:
         - $ref: "#/components/schemas/User"
         - type: object
           properties:
+            creatorNumber:
+              type: string
+              description: Stable public user number, with at least six digits.
+              example: "000001"
             publicEmail:
               type: string
               description: Only present/non-empty when contactsPublic is true.
